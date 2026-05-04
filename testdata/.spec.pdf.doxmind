@@ -1,5 +1,896 @@
 {
+  "version": 1,
   "id": "path:db688ce10754f33e",
+  "source_path": "spec.pdf",
+  "updated_at": "2026-05-04T01:38:43Z",
+  "pdf_parsed_cache": {
+    "sourceHash": "7ec7070950af06df657e5b6229ce380b3b90558154ddcc2b276e69ac13fb8f95",
+    "parsed": {
+      "version": 2,
+      "pageCount": 2,
+      "pages": [
+        {
+          "pageIndex": 0,
+          "width": 595,
+          "height": 842,
+          "blocks": [
+            {
+              "id": "p0-b0",
+              "bbox": [
+                56,
+                40.35,
+                370.226,
+                70.578
+              ],
+              "lines": [
+                {
+                  "bbox": [
+                    56,
+                    40.35,
+                    370.226,
+                    70.578
+                  ],
+                  "spans": [
+                    {
+                      "text": "doXmind Sidecar Migration Plan",
+                      "bbox": [
+                        56,
+                        40.35,
+                        370.226,
+                        70.578
+                      ],
+                      "font": "Helvetica",
+                      "size": 22,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p0-b1",
+              "bbox": [
+                56,
+                76.175,
+                172.776,
+                91.289
+              ],
+              "lines": [
+                {
+                  "bbox": [
+                    56,
+                    76.175,
+                    172.776,
+                    91.289
+                  ],
+                  "spans": [
+                    {
+                      "text": "Working draft · Q2 2026",
+                      "bbox": [
+                        56,
+                        76.175,
+                        172.776,
+                        91.289
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#66666b",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p0-b2",
+              "bbox": [
+                56,
+                120,
+                535.325,
+                167.609
+              ],
+              "lines": [
+                {
+                  "bbox": [
+                    56,
+                    120,
+                    525.513,
+                    135.114
+                  ],
+                  "spans": [
+                    {
+                      "text": "doXmind Mini is the local sidecar edition: a desktop document editor where every workbook lives",
+                      "bbox": [
+                        56,
+                        120,
+                        525.513,
+                        135.114
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                },
+                {
+                  "bbox": [
+                    56,
+                    136.248,
+                    535.325,
+                    151.362
+                  ],
+                  "spans": [
+                    {
+                      "text": "next to its source on disk. The Markdown facade stays portable, while the hidden .doxmind sidecar",
+                      "bbox": [
+                        56,
+                        136.248,
+                        535.325,
+                        151.362
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                },
+                {
+                  "bbox": [
+                    56,
+                    152.495,
+                    360.447,
+                    167.609
+                  ],
+                  "spans": [
+                    {
+                      "text": "carries the rich editor HTML and any doXmind-only block data.",
+                      "bbox": [
+                        56,
+                        152.495,
+                        360.447,
+                        167.609
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p0-b3",
+              "bbox": [
+                56,
+                184.99,
+                519.452,
+                232.599
+              ],
+              "lines": [
+                {
+                  "bbox": [
+                    56,
+                    184.99,
+                    511.466,
+                    200.104
+                  ],
+                  "spans": [
+                    {
+                      "text": "This document exists so the PDF editor has a real test fixture: paragraphs with sentence-level",
+                      "bbox": [
+                        56,
+                        184.99,
+                        511.466,
+                        200.104
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                },
+                {
+                  "bbox": [
+                    56,
+                    201.238,
+                    519.452,
+                    216.352
+                  ],
+                  "spans": [
+                    {
+                      "text": "whitespace, a heading hierarchy, and a multi-page layout. Open it inside the editor to verify that",
+                      "bbox": [
+                        56,
+                        201.238,
+                        519.452,
+                        216.352
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                },
+                {
+                  "bbox": [
+                    56,
+                    217.485,
+                    436.281,
+                    232.599
+                  ],
+                  "spans": [
+                    {
+                      "text": "paragraphs are detected as flowable blocks rather than per-run glyph clusters.",
+                      "bbox": [
+                        56,
+                        217.485,
+                        436.281,
+                        232.599
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p0-b4",
+              "bbox": [
+                56,
+                249.98,
+                170.323,
+                265.094
+              ],
+              "lines": [
+                {
+                  "bbox": [
+                    56,
+                    249.98,
+                    170.323,
+                    265.094
+                  ],
+                  "spans": [
+                    {
+                      "text": "Goals for the migration:",
+                      "bbox": [
+                        56,
+                        249.98,
+                        170.323,
+                        265.094
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p0-b5",
+              "bbox": [
+                56,
+                308.175,
+                316.436,
+                323.289
+              ],
+              "lines": [
+                {
+                  "bbox": [
+                    56,
+                    308.175,
+                    316.436,
+                    323.289
+                  ],
+                  "spans": [
+                    {
+                      "text": "  ·  Markdown remains the user-facing source of truth.",
+                      "bbox": [
+                        56,
+                        308.175,
+                        316.436,
+                        323.289
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p0-b6",
+              "bbox": [
+                56,
+                326.175,
+                372.69,
+                341.289
+              ],
+              "lines": [
+                {
+                  "bbox": [
+                    56,
+                    326.175,
+                    372.69,
+                    341.289
+                  ],
+                  "spans": [
+                    {
+                      "text": "  ·  Sidecar holds editor HTML and block extras (databases, etc.).",
+                      "bbox": [
+                        56,
+                        326.175,
+                        372.69,
+                        341.289
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p0-b7",
+              "bbox": [
+                56,
+                344.175,
+                380.049,
+                359.289
+              ],
+              "lines": [
+                {
+                  "bbox": [
+                    56,
+                    344.175,
+                    380.049,
+                    359.289
+                  ],
+                  "spans": [
+                    {
+                      "text": "  ·  External edits to Markdown invalidate the sidecar on next open.",
+                      "bbox": [
+                        56,
+                        344.175,
+                        380.049,
+                        359.289
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p0-b8",
+              "bbox": [
+                56,
+                362.175,
+                351.306,
+                377.289
+              ],
+              "lines": [
+                {
+                  "bbox": [
+                    56,
+                    362.175,
+                    351.306,
+                    377.289
+                  ],
+                  "spans": [
+                    {
+                      "text": "  ·  Database-block data eventually lives in extras.databases.",
+                      "bbox": [
+                        56,
+                        362.175,
+                        351.306,
+                        377.289
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p0-b9",
+              "bbox": [
+                56,
+                401.02,
+                159.46,
+                420.298
+              ],
+              "lines": [
+                {
+                  "bbox": [
+                    56,
+                    401.02,
+                    159.46,
+                    420.298
+                  ],
+                  "spans": [
+                    {
+                      "text": "Open algorithm",
+                      "bbox": [
+                        56,
+                        401.02,
+                        159.46,
+                        420.298
+                      ],
+                      "font": "Helvetica-Bold",
+                      "size": 14,
+                      "color": "#000000",
+                      "flags": 16,
+                      "bold": true,
+                      "italic": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p0-b10",
+              "bbox": [
+                56,
+                424,
+                413.049,
+                504.104
+              ],
+              "lines": [
+                {
+                  "bbox": [
+                    56,
+                    424,
+                    325.016,
+                    439.114
+                  ],
+                  "spans": [
+                    {
+                      "text": "1. Read the .md file and split frontmatter from the body.",
+                      "bbox": [
+                        56,
+                        424,
+                        325.016,
+                        439.114
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                },
+                {
+                  "bbox": [
+                    56,
+                    440.248,
+                    413.049,
+                    455.362
+                  ],
+                  "spans": [
+                    {
+                      "text": "2. Look for a same-name hidden .doxmind sidecar in the parent directory.",
+                      "bbox": [
+                        56,
+                        440.248,
+                        413.049,
+                        455.362
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                },
+                {
+                  "bbox": [
+                    56,
+                    456.495,
+                    378.773,
+                    471.609
+                  ],
+                  "spans": [
+                    {
+                      "text": "3. If the sidecar is missing, import the Markdown into editor HTML.",
+                      "bbox": [
+                        56,
+                        456.495,
+                        378.773,
+                        471.609
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                },
+                {
+                  "bbox": [
+                    56,
+                    472.743,
+                    406.592,
+                    487.857
+                  ],
+                  "spans": [
+                    {
+                      "text": "4. If present and the markdown_hash matches, use the sidecar's HTML.",
+                      "bbox": [
+                        56,
+                        472.743,
+                        406.592,
+                        487.857
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                },
+                {
+                  "bbox": [
+                    56,
+                    488.99,
+                    383.712,
+                    504.104
+                  ],
+                  "spans": [
+                    {
+                      "text": "5. If the hash differs, treat external Markdown edits as authoritative.",
+                      "bbox": [
+                        56,
+                        488.99,
+                        383.712,
+                        504.104
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "pageIndex": 1,
+          "width": 595,
+          "height": 842,
+          "blocks": [
+            {
+              "id": "p1-b0",
+              "bbox": [
+                56,
+                44.74,
+                243.02,
+                69.526
+              ],
+              "lines": [
+                {
+                  "bbox": [
+                    56,
+                    44.74,
+                    243.02,
+                    69.526
+                  ],
+                  "spans": [
+                    {
+                      "text": "Out-of-scope features",
+                      "bbox": [
+                        56,
+                        44.74,
+                        243.02,
+                        69.526
+                      ],
+                      "font": "Helvetica-Bold",
+                      "size": 18,
+                      "color": "#000000",
+                      "flags": 16,
+                      "bold": true,
+                      "italic": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p1-b1",
+              "bbox": [
+                56,
+                96,
+                529.187,
+                127.362
+              ],
+              "lines": [
+                {
+                  "bbox": [
+                    56,
+                    96,
+                    529.187,
+                    111.114
+                  ],
+                  "spans": [
+                    {
+                      "text": "The local sidecar edition deliberately drops several surfaces from earlier branches. None of these",
+                      "bbox": [
+                        56,
+                        96,
+                        529.187,
+                        111.114
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                },
+                {
+                  "bbox": [
+                    56,
+                    112.248,
+                    197.24,
+                    127.362
+                  ],
+                  "spans": [
+                    {
+                      "text": "should reappear by accident.",
+                      "bbox": [
+                        56,
+                        112.248,
+                        197.24,
+                        127.362
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p1-b2",
+              "bbox": [
+                56,
+                144.743,
+                537.129,
+                208.599
+              ],
+              "lines": [
+                {
+                  "bbox": [
+                    56,
+                    144.743,
+                    537.129,
+                    159.857
+                  ],
+                  "spans": [
+                    {
+                      "text": "Removed: JWT auth, OAuth login, Stripe billing, credit quotas, sharing links, community publishing,",
+                      "bbox": [
+                        56,
+                        144.743,
+                        537.129,
+                        159.857
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                },
+                {
+                  "bbox": [
+                    56,
+                    160.99,
+                    536.502,
+                    176.104
+                  ],
+                  "spans": [
+                    {
+                      "text": "comments, follows, bookmarks, push notifications, telemetry, RLHF reporting, S3, Postgres, Redis,",
+                      "bbox": [
+                        56,
+                        160.99,
+                        536.502,
+                        176.104
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                },
+                {
+                  "bbox": [
+                    56,
+                    177.238,
+                    506.615,
+                    192.352
+                  ],
+                  "spans": [
+                    {
+                      "text": "hosted cloud sync, chat, agents, providers, OpenRouter, autocomplete, quick edit, document",
+                      "bbox": [
+                        56,
+                        177.238,
+                        506.615,
+                        192.352
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                },
+                {
+                  "bbox": [
+                    56,
+                    193.485,
+                    286.472,
+                    208.599
+                  ],
+                  "spans": [
+                    {
+                      "text": "review, prompts, and knowledge-base retrieval.",
+                      "bbox": [
+                        56,
+                        193.485,
+                        286.472,
+                        208.599
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p1-b3",
+              "bbox": [
+                56,
+                225.98,
+                512.115,
+                257.342
+              ],
+              "lines": [
+                {
+                  "bbox": [
+                    56,
+                    225.98,
+                    512.115,
+                    241.094
+                  ],
+                  "spans": [
+                    {
+                      "text": "If a feature has to come back, design it around the local sidecar edition first, not a remix of the",
+                      "bbox": [
+                        56,
+                        225.98,
+                        512.115,
+                        241.094
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                },
+                {
+                  "bbox": [
+                    56,
+                    242.228,
+                    111.638,
+                    257.342
+                  ],
+                  "spans": [
+                    {
+                      "text": "cloud build.",
+                      "bbox": [
+                        56,
+                        242.228,
+                        111.638,
+                        257.342
+                      ],
+                      "font": "Helvetica",
+                      "size": 11,
+                      "color": "#000000",
+                      "flags": 0,
+                      "bold": false,
+                      "italic": false
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
   "pdf_editor": {
     "edits": {},
     "freeText": [],
@@ -392,8 +1283,5 @@
     },
     "textEdits": {},
     "version": 2
-  },
-  "source_path": "spec.pdf",
-  "updated_at_unix_nanos": "1777856193453172000",
-  "version": 1
+  }
 }

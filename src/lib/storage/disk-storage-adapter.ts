@@ -2,7 +2,9 @@ import type {
   DocumentContent,
   DocumentHandle,
   DocumentMeta,
+  ExcelDocStateRead,
   ExcelEditorState,
+  PdfDocStateRead,
   PdfEditorState,
   WorkspaceDocumentType,
   MarkdownSearchOptions,
@@ -37,6 +39,10 @@ interface WorkspaceDocumentDto {
   title?: string | null;
   documentType?: WorkspaceDocumentType;
   hasSidecar: boolean;
+  icon?: string | null;
+  cover?: string | null;
+  coverPosition?: number | null;
+  favorite?: boolean | null;
 }
 
 interface DocReadResultDto {
@@ -142,24 +148,75 @@ export class DiskStorageAdapter implements StorageAdapter {
     });
   }
 
-  async write(handle: DocumentHandle, content: StorageWriteInput): Promise<DocumentContent> {
-    const existing = await this.read(handle);
-    const meta = normalizeWriteMeta(handle, existing, content);
-    const markdown = content.markdown ?? existing.markdown ?? "";
-    const html = content.html ?? existing.html ?? "";
-
-    await this.invoke<void>("doc_write_workspace", {
+  async readPdfDocState(handle: DocumentHandle): Promise<PdfDocStateRead | null> {
+    return this.invoke<PdfDocStateRead | null>("workspace_read_pdf_doc_state", {
       root: this.requireRoot(),
       path: requireHandlePath(handle),
-      payload: {
-        html,
-        markdown,
-        meta,
-        extras: content.extras ?? existing.extras ?? null,
-      },
+    });
+  }
+
+  async writePdfParsedCache(
+    handle: DocumentHandle,
+    sourceHash: string,
+    parsed: unknown
+  ): Promise<void> {
+    await this.invoke<void>("workspace_write_pdf_parsed_cache", {
+      root: this.requireRoot(),
+      path: requireHandlePath(handle),
+      sourceHash,
+      parsed,
+    });
+  }
+
+  async readExcelDocState(handle: DocumentHandle): Promise<ExcelDocStateRead | null> {
+    return this.invoke<ExcelDocStateRead | null>("workspace_read_excel_doc_state", {
+      root: this.requireRoot(),
+      path: requireHandlePath(handle),
+    });
+  }
+
+  async writeExcelParsedCache(
+    handle: DocumentHandle,
+    sourceHash: string,
+    parsed: unknown
+  ): Promise<void> {
+    await this.invoke<void>("workspace_write_excel_parsed_cache", {
+      root: this.requireRoot(),
+      path: requireHandlePath(handle),
+      sourceHash,
+      parsed,
+    });
+  }
+
+  async write(handle: DocumentHandle, content: StorageWriteInput): Promise<DocumentContent> {
+    // Partial payload: only include keys the caller actually wants to update.
+    // Meta-only writes (cover/icon/etc.) must NOT send empty html/markdown,
+    // or the server will overwrite the body with "" and wipe the document.
+    const payload: Record<string, unknown> = {};
+    if (content.html !== undefined) payload.html = content.html;
+    if (content.markdown !== undefined) payload.markdown = content.markdown;
+    if (content.name !== undefined) payload.name = content.name;
+    if (content.meta !== undefined) payload.meta = content.meta;
+    if (content.extras !== undefined) payload.extras = content.extras;
+
+    const result = await this.invoke<DocReadResultDto>("doc_write_workspace", {
+      root: this.requireRoot(),
+      path: requireHandlePath(handle),
+      payload,
     });
 
-    return this.read({ ...handle, id: meta.id });
+    const nextHandle = this.handleFromRead(handle, result);
+    return {
+      handle: nextHandle,
+      name: basename(handle.path || handle.relPath || result.meta.title || "Untitled.md"),
+      html: result.html,
+      markdown: result.markdown,
+      meta: result.meta,
+      extras: result.extras,
+      source: result.source,
+      documentType: "markdown",
+      updatedAt: result.meta.updated || new Date().toISOString(),
+    };
   }
 
   async create(input: StorageCreateInput): Promise<WorkspaceEntry> {
@@ -468,10 +525,10 @@ function entryFromDocument(doc: WorkspaceDocumentDto): WorkspaceEntry {
     preview: doc.title || "",
     wordCount: 0,
     documentType: doc.documentType ?? documentTypeFromPath(doc.path),
-    isFavorite: false,
-    icon: null,
-    coverImageUrl: null,
-    coverPosition: 0.5,
+    isFavorite: doc.favorite ?? false,
+    icon: doc.icon ?? null,
+    coverImageUrl: doc.cover ?? null,
+    coverPosition: doc.coverPosition ?? 0.5,
   };
 }
 
@@ -504,25 +561,6 @@ function folderHandle(path: string): DocumentHandle {
     kind: "folder",
     path: clean,
     relPath: clean,
-  };
-}
-
-function normalizeWriteMeta(
-  handle: DocumentHandle,
-  existing: DocumentContent,
-  content: StorageWriteInput
-): DocumentMeta {
-  const id = handle.id.startsWith("path:") ? crypto.randomUUID() : handle.id;
-  return {
-    ...(existing.meta || {}),
-    ...(content.meta || {}),
-    id,
-    title:
-      content.name ??
-      content.meta?.title ??
-      existing.meta?.title ??
-      stripMarkdownExtension(existing.name),
-    updated: new Date().toISOString(),
   };
 }
 

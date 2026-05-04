@@ -107,6 +107,9 @@ export const InlineMath = Node.create<InlineMathOptions>({
 
   renderMarkdown(node) {
     const latex = node.attrs?.latex || "";
+    // Empty placeholder has no portable markdown form — skip it. The node
+    // lives in the sidecar HTML and is restored from there on reopen.
+    if (!latex.trim()) return "";
     return "$" + latex + "$";
   },
 

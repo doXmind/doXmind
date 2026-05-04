@@ -127,7 +127,12 @@ export function ImageEmptyState({ onSetSrc }: ImageEmptyStateProps) {
   );
 
   return (
-    <div ref={containerRef} className="relative" onClick={(e) => e.stopPropagation()}>
+    <div
+      ref={containerRef}
+      className="relative"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
       {/* Header — callout-like row, always visible */}
       <div
         role="button"

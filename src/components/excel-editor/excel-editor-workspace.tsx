@@ -150,7 +150,7 @@ import {
   type CFOverlay,
   type RangeStats,
 } from "@/lib/excel/conditional-formats";
-import { cn } from "@/lib/utils";
+import { cn, sha256Hex } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 
 interface ExcelEditorWorkspaceProps {
@@ -406,14 +406,45 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
 
     (async () => {
       try {
-        const bytes = await adapter.readBinary!(handle);
+        // Kick off the binary read and the combined sidecar read in parallel.
+        // The sidecar holds both the editor state and the parsed-workbook
+        // cache; if the cache's hash matches the freshly-read bytes we skip
+        // the heavy openpyxl round-trip entirely.
+        const [bytes, docState] = await Promise.all([
+          adapter.readBinary!(handle),
+          adapter.readExcelDocState
+            ? adapter.readExcelDocState(handle).catch(() => null)
+            : adapter.readExcelEditorState
+              ? adapter.readExcelEditorState(handle).then(
+                  (editor) => ({ editor, parsedCache: null }),
+                  () => null
+                )
+              : Promise.resolve(null),
+        ]);
         if (cancelled) return;
         xlsxBytesRef.current = bytes;
-        const parsed = await fetchExcelWorkbook(bytes, file.name, controller.signal);
-        const sidecar = adapter.readExcelEditorState
-          ? await adapter.readExcelEditorState(handle).catch(() => null)
-          : null;
+
+        const sourceHash = await sha256Hex(bytes);
         if (cancelled) return;
+
+        let parsed: ExcelWorkbookDto;
+        const cachedParsed =
+          docState?.parsedCache && docState.parsedCache.sourceHash === sourceHash
+            ? (docState.parsedCache.parsed as ExcelWorkbookDto)
+            : null;
+        if (cachedParsed) {
+          parsed = cachedParsed;
+        } else {
+          parsed = await fetchExcelWorkbook(bytes, file.name, controller.signal);
+          if (cancelled) return;
+          // Persist the cache so subsequent opens skip the parse. Fire and
+          // forget — a failed write just means the next open re-parses.
+          if (adapter.writeExcelParsedCache) {
+            void adapter.writeExcelParsedCache(handle, sourceHash, parsed).catch(() => {});
+          }
+        }
+
+        const sidecar = docState?.editor ?? null;
         setWorkbook(parsed);
         setEditorState(sidecar);
         setActiveSheetId(sidecar?.activeSheetId ?? parsed.sheets[0]?.id ?? null);

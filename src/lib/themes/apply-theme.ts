@@ -68,6 +68,23 @@ const ALL_CSS_VARS = [
 export function applyTheme(theme: ThemeDefinition): void {
   const root = document.documentElement;
 
+  // The blocking script in <head> already applied the cached theme by id and
+  // CSS-variable values before React hydrated. If we're being asked to apply
+  // the same theme post-hydration, the DOM is already correct — skip the
+  // setProperty churn and the localStorage write. This eliminates the
+  // first-paint flash + the redundant style recalculation.
+  if (root.getAttribute("data-theme") === theme.id) {
+    try {
+      const cached = localStorage.getItem("doxmind-theme-cache");
+      if (cached) {
+        const parsed = JSON.parse(cached) as { id?: string } | null;
+        if (parsed && parsed.id === theme.id) return;
+      }
+    } catch {
+      // localStorage unavailable / parse failed — fall through and re-apply.
+    }
+  }
+
   root.setAttribute("data-theme", theme.id);
 
   const vars: Record<string, string> = {};

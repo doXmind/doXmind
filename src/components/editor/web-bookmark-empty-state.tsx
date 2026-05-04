@@ -65,7 +65,12 @@ export function WebBookmarkEmptyState({ onSubmit }: WebBookmarkEmptyStateProps) 
   }, []);
 
   return (
-    <div ref={containerRef} className="relative" onClick={(e) => e.stopPropagation()}>
+    <div
+      ref={containerRef}
+      className="relative"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
       {/* Header — callout-like row, always visible */}
       <div
         role="button"
@@ -92,7 +97,7 @@ export function WebBookmarkEmptyState({ onSubmit }: WebBookmarkEmptyStateProps) 
           <form onSubmit={handleSubmit} className="flex flex-col gap-2.5">
             <input
               ref={inputRef}
-              type="url"
+              type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={handleKeyDown}

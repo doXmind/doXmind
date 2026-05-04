@@ -12,6 +12,7 @@ import html
 import json
 import os
 import re
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -82,6 +83,19 @@ def markdown_to_html(md: str) -> str:
 SIDECAR_VERSION = 1
 IGNORED_SCAN_DIRS = {".git", "node_modules", "target", ".next", "out", "dist", "build", ".trash"}
 
+# Per-root TTL cache for `workspace_scan`. Within a single user action the
+# adapter often calls scan -> index_rebuild -> search back-to-back, each of
+# which previously did its own `rglob("*")` walk. The TTL is short enough
+# that external file changes still get picked up promptly; mutating commands
+# below explicitly invalidate the entry for their root.
+_SCAN_CACHE_TTL_SECONDS = 1.5
+_scan_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def _invalidate_scan_cache(root: str | Path) -> None:
+    key = str(Path(root).resolve()) if root else ""
+    _scan_cache.pop(key, None)
+
 
 class WorkspaceInvokeRequest(BaseModel):
     command: str
@@ -141,6 +155,30 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
             str(payload.get("path") or ""),
             payload.get("payload") or {},
         )
+    if command == "workspace_read_pdf_doc_state":
+        return read_pdf_doc_state(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+        )
+    if command == "workspace_write_pdf_parsed_cache":
+        return write_pdf_parsed_cache(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+            str(payload.get("sourceHash") or ""),
+            payload.get("parsed") or {},
+        )
+    if command == "workspace_read_excel_doc_state":
+        return read_excel_doc_state(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+        )
+    if command == "workspace_write_excel_parsed_cache":
+        return write_excel_parsed_cache(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+            str(payload.get("sourceHash") or ""),
+            payload.get("parsed") or {},
+        )
     if command == "doc_write_workspace":
         return write_doc_workspace(
             str(payload.get("root") or ""),
@@ -197,6 +235,12 @@ def workspace_default_root() -> str:
 
 def workspace_scan(root: str) -> dict[str, Any]:
     workspace = canonical_workspace_root(root)
+    key = str(workspace)
+    now = time.monotonic()
+    cached = _scan_cache.get(key)
+    if cached is not None and now - cached[0] < _SCAN_CACHE_TTL_SECONDS:
+        return cached[1]
+
     documents: list[dict[str, Any]] = []
     for path in sorted(workspace.rglob("*")):
         if any(part in IGNORED_SCAN_DIRS for part in path.relative_to(workspace).parts[:-1]):
@@ -208,7 +252,9 @@ def workspace_scan(root: str) -> dict[str, Any]:
         ):
             continue
         documents.append(document_dto_for_path(workspace, path))
-    return {"root": str(workspace), "documents": documents}
+    result = {"root": str(workspace), "documents": documents}
+    _scan_cache[key] = (now, result)
+    return result
 
 
 def workspace_index_rebuild(root: str) -> dict[str, Any]:
@@ -309,6 +355,7 @@ def write_pdf_editor_state(root: str, rel_path: str, payload: dict[str, Any]) ->
     path = resolve_existing_workspace_path(workspace, rel_path)
     if not is_pdf_file(path):
         raise ValueError("PDF editor state is only enabled for PDFs")
+    existing = read_sidecar(sidecar_path_for(path)) or {}
     sidecar = {
         "version": SIDECAR_VERSION,
         "id": stable_path_id(relative_path_string(workspace, path)),
@@ -316,6 +363,49 @@ def write_pdf_editor_state(root: str, rel_path: str, payload: dict[str, Any]) ->
         "updated_at": now_iso(),
         "pdf_editor": payload,
     }
+    cache = existing.get("pdf_parsed_cache")
+    if cache is not None:
+        sidecar["pdf_parsed_cache"] = cache
+    atomic_write(sidecar_path_for(path), json.dumps(sidecar, indent=2, ensure_ascii=False).encode())
+    _invalidate_scan_cache(workspace)
+
+
+def read_pdf_doc_state(root: str, rel_path: str) -> dict[str, Any] | None:
+    """Combined sidecar read for PDF open: editor state + parsed cache."""
+    workspace = canonical_workspace_root(root)
+    path = resolve_existing_workspace_path(workspace, rel_path)
+    if not is_pdf_file(path):
+        raise ValueError("PDF document state is only enabled for PDFs")
+    sidecar = read_sidecar(sidecar_path_for(path))
+    if not sidecar:
+        return None
+    editor = sidecar.get("pdf_editor")
+    cache = sidecar.get("pdf_parsed_cache")
+    return {
+        "editor": editor if isinstance(editor, dict) else None,
+        "parsedCache": cache if isinstance(cache, dict) else None,
+    }
+
+
+def write_pdf_parsed_cache(
+    root: str, rel_path: str, source_hash: str, parsed: Any
+) -> None:
+    workspace = canonical_workspace_root(root)
+    path = resolve_existing_workspace_path(workspace, rel_path)
+    if not is_pdf_file(path):
+        raise ValueError("PDF parsed cache is only enabled for PDFs")
+    if not source_hash.strip():
+        raise ValueError("sourceHash is required")
+    existing = read_sidecar(sidecar_path_for(path)) or {}
+    sidecar = {
+        "version": SIDECAR_VERSION,
+        "id": existing.get("id") or stable_path_id(relative_path_string(workspace, path)),
+        "source_path": relative_path_string(workspace, path),
+        "updated_at": now_iso(),
+        "pdf_parsed_cache": {"sourceHash": source_hash, "parsed": parsed},
+    }
+    if existing.get("pdf_editor") is not None:
+        sidecar["pdf_editor"] = existing["pdf_editor"]
     atomic_write(sidecar_path_for(path), json.dumps(sidecar, indent=2, ensure_ascii=False).encode())
 
 
@@ -336,6 +426,7 @@ def write_excel_editor_state(root: str, rel_path: str, payload: dict[str, Any]) 
     path = resolve_existing_workspace_path(workspace, rel_path)
     if not is_excel_file(path):
         raise ValueError("Excel editor state is only enabled for .xlsx/.xlsm files")
+    existing = read_sidecar(sidecar_path_for(path)) or {}
     sidecar = {
         "version": SIDECAR_VERSION,
         "id": stable_path_id(relative_path_string(workspace, path)),
@@ -343,14 +434,114 @@ def write_excel_editor_state(root: str, rel_path: str, payload: dict[str, Any]) 
         "updated_at": now_iso(),
         "excel_editor": payload,
     }
+    # Preserve the parsed-workbook cache across editor-state saves; it only
+    # changes when the source xlsx itself is rewritten.
+    cache = existing.get("excel_parsed_cache")
+    if cache is not None:
+        sidecar["excel_parsed_cache"] = cache
+    atomic_write(sidecar_path_for(path), json.dumps(sidecar, indent=2, ensure_ascii=False).encode())
+    _invalidate_scan_cache(workspace)
+
+
+def read_excel_doc_state(root: str, rel_path: str) -> dict[str, Any] | None:
+    """Combined sidecar read for Excel open: editor state + parsed cache.
+
+    Returns ``{"editor": ..., "parsedCache": ...}`` so the open path needs a
+    single sidecar read instead of two parallel ones. Either field may be
+    null when absent.
+    """
+    workspace = canonical_workspace_root(root)
+    path = resolve_existing_workspace_path(workspace, rel_path)
+    if not is_excel_file(path):
+        raise ValueError("Excel document state is only enabled for .xlsx/.xlsm files")
+    sidecar = read_sidecar(sidecar_path_for(path))
+    if not sidecar:
+        return None
+    editor = sidecar.get("excel_editor")
+    cache = sidecar.get("excel_parsed_cache")
+    return {
+        "editor": editor if isinstance(editor, dict) else None,
+        "parsedCache": cache if isinstance(cache, dict) else None,
+    }
+
+
+def write_excel_parsed_cache(
+    root: str, rel_path: str, source_hash: str, parsed: Any
+) -> None:
+    workspace = canonical_workspace_root(root)
+    path = resolve_existing_workspace_path(workspace, rel_path)
+    if not is_excel_file(path):
+        raise ValueError("Excel parsed cache is only enabled for .xlsx/.xlsm files")
+    if not source_hash.strip():
+        raise ValueError("sourceHash is required")
+    existing = read_sidecar(sidecar_path_for(path)) or {}
+    sidecar = {
+        "version": SIDECAR_VERSION,
+        "id": existing.get("id") or stable_path_id(relative_path_string(workspace, path)),
+        "source_path": relative_path_string(workspace, path),
+        "updated_at": now_iso(),
+        "excel_parsed_cache": {"sourceHash": source_hash, "parsed": parsed},
+    }
+    if existing.get("excel_editor") is not None:
+        sidecar["excel_editor"] = existing["excel_editor"]
     atomic_write(sidecar_path_for(path), json.dumps(sidecar, indent=2, ensure_ascii=False).encode())
 
 
-def write_doc_workspace(root: str, rel_path: str, payload: dict[str, Any]) -> None:
+def write_doc_workspace(root: str, rel_path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Persist a markdown document and return its post-write DocReadResult.
+
+    Returning the result eliminates the round-trip the client previously
+    needed to refresh state after every save.
+    """
     workspace = canonical_workspace_root(root)
     ensure_markdown_path(rel_path)
     path = resolve_workspace_path_for_write(workspace, rel_path)
-    write_doc(path, payload)
+
+    # Merge incoming meta with existing sidecar/frontmatter so callers can
+    # send partial payloads (the editor only knows about html/markdown).
+    incoming_meta = dict(payload.get("meta") or {})
+    existing_meta: dict[str, Any] = {}
+    existing_extras: Any = None
+    if path.exists():
+        try:
+            raw = path.read_text(encoding="utf-8")
+            existing_meta, _ = parse_frontmatter(raw)
+        except OSError:
+            existing_meta = {}
+        sidecar = read_sidecar(sidecar_path_for(path))
+        if sidecar:
+            if not existing_meta.get("id") and sidecar.get("id"):
+                existing_meta["id"] = sidecar["id"]
+            existing_extras = sidecar.get("extras")
+
+    merged_meta: dict[str, Any] = {**existing_meta, **incoming_meta}
+    if not str(merged_meta.get("id") or "").strip():
+        merged_meta["id"] = str(uuid.uuid4())
+    name = payload.get("name")
+    if name and not merged_meta.get("title"):
+        merged_meta["title"] = name
+    merged_meta["updated"] = now_iso()
+
+    extras = payload.get("extras")
+    if extras is None and "extras" not in payload:
+        extras = existing_extras
+
+    final_payload = {
+        "html": payload.get("html") or "",
+        "markdown": payload.get("markdown") or "",
+        "extras": extras,
+        "meta": merged_meta,
+    }
+    write_doc(path, final_payload)
+    _invalidate_scan_cache(workspace)
+
+    return {
+        "html": final_payload["html"],
+        "markdown": final_payload["markdown"],
+        "meta": merged_meta,
+        "extras": extras,
+        "source": "sidecar",
+    }
 
 
 def doc_create(root: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -361,6 +552,7 @@ def doc_create(root: str, payload: dict[str, Any]) -> dict[str, Any]:
     if path.exists():
         raise ValueError(f"document already exists: {rel_path}")
     write_doc(path, payload)
+    _invalidate_scan_cache(workspace)
     return document_dto_for_path(workspace, path)
 
 
@@ -380,6 +572,7 @@ def doc_create_pdf(root: str, rel_path: str, byte_list: Any) -> dict[str, Any]:
         raise ValueError("payload is not a PDF (missing %PDF- header)")
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write(path, data)
+    _invalidate_scan_cache(workspace)
     return document_dto_for_path(workspace, path)
 
 
@@ -399,6 +592,7 @@ def doc_create_excel(root: str, rel_path: str, byte_list: Any) -> dict[str, Any]
         raise ValueError("payload is not an XLSX (missing PK ZIP header)")
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write(path, data)
+    _invalidate_scan_cache(workspace)
     return document_dto_for_path(workspace, path)
 
 
@@ -440,6 +634,7 @@ def move_document_pair(root: str, old_path: str, new_path: str) -> dict[str, Any
     source.rename(destination)
     if source_sidecar.exists():
         source_sidecar.rename(destination_sidecar)
+    _invalidate_scan_cache(workspace)
     return document_dto_for_path(workspace, destination)
 
 
@@ -461,6 +656,7 @@ def doc_delete(root: str, rel_path: str) -> dict[str, Any]:
         sidecar_path.rename(sidecar_trash)
         sidecar_trash_path = relative_path_string(workspace, sidecar_trash)
 
+    _invalidate_scan_cache(workspace)
     return {
         "path": rel_path,
         "sidecarPath": relative_path_string(workspace, sidecar_path) if sidecar_trash_path else None,
@@ -475,6 +671,7 @@ def workspace_create_folder(root: str, rel_path: str) -> None:
     if destination.exists():
         raise ValueError(f"folder already exists: {rel_path}")
     destination.mkdir(parents=True, exist_ok=False)
+    _invalidate_scan_cache(workspace)
 
 
 def workspace_rename_folder(root: str, old_path: str, new_path: str) -> None:
@@ -487,6 +684,7 @@ def workspace_rename_folder(root: str, old_path: str, new_path: str) -> None:
         raise ValueError(f"destination already exists: {new_path}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     source.rename(destination)
+    _invalidate_scan_cache(workspace)
 
 
 def workspace_delete_folder(root: str, rel_path: str) -> dict[str, Any]:
@@ -497,6 +695,7 @@ def workspace_delete_folder(root: str, rel_path: str) -> dict[str, Any]:
     trash_path = unique_trash_dir_path(workspace, rel_path)
     trash_path.parent.mkdir(parents=True, exist_ok=True)
     source.rename(trash_path)
+    _invalidate_scan_cache(workspace)
     return {
         "path": rel_path,
         "sidecarPath": None,

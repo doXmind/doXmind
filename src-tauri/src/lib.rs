@@ -29,6 +29,8 @@ use tauri_plugin_dialog::{DialogExt, FilePath};
 
 #[cfg(target_os = "macos")]
 mod dock_menu;
+#[cfg(target_os = "macos")]
+mod menu_bar;
 
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
@@ -245,6 +247,24 @@ impl From<DocWritePayloadDto> for DocPayload {
     }
 }
 
+/// Partial payload accepted by [`doc_write_workspace`]. The server merges
+/// any missing fields against the existing sidecar so a single round-trip
+/// suffices for the editor's "save" flow.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DocWriteInputDto {
+    #[serde(default)]
+    html: Option<String>,
+    #[serde(default)]
+    markdown: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    meta: Option<serde_json::Value>,
+    #[serde(default)]
+    extras: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkspaceScanResultDto {
@@ -262,6 +282,17 @@ struct WorkspaceDocumentDto {
     title: Option<String>,
     document_type: String,
     has_sidecar: bool,
+    // Frontmatter-sourced display metadata. These ride along on the scan
+    // result so the workspace list can render icons, covers, and favorite
+    // stars without an extra per-file read on the client.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    icon: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cover: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cover_position: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    favorite: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -443,14 +474,107 @@ async fn doc_write(path: String, payload: DocWritePayloadDto) -> Result<(), Stri
 async fn doc_write_workspace(
     root: String,
     path: String,
-    payload: DocWritePayloadDto,
-) -> Result<(), String> {
+    payload: DocWriteInputDto,
+) -> Result<ReadResultDto, String> {
     let root = canonical_workspace_root(&root)?;
     ensure_markdown_path(&path)?;
     let path = resolve_workspace_path_for_write(&root, &path)?;
-    doxmind_sidecar::write_doc(path, &DocPayload::from(payload))
+
+    // Merge incoming meta with the existing sidecar/frontmatter so callers
+    // can send partial payloads. Falling through to read_doc here is cheap
+    // (one file read) and saves the client an extra IPC round-trip. Also
+    // capture html/markdown so meta-only writes (cover, icon, …) don't wipe
+    // the body — without this, partial payloads would overwrite the document
+    // with empty content.
+    let mut existing_html: Option<String> = None;
+    let mut existing_markdown: Option<String> = None;
+    let mut existing_meta: Option<DocMeta> = None;
+    let mut existing_extras: Option<serde_json::Value> = None;
+    if path.exists() {
+        if let Ok(read) = doxmind_sidecar::read_doc(&path).await {
+            existing_html = Some(read.html);
+            existing_markdown = Some(read.markdown);
+            existing_meta = Some(read.meta);
+            existing_extras = read.extras;
+        }
+    }
+
+    let mut meta = match existing_meta {
+        Some(m) => m,
+        None => DocMeta::new(uuid::Uuid::new_v4().to_string()),
+    };
+
+    if let Some(value) = payload.meta {
+        if let serde_json::Value::Object(map) = value {
+            for (key, val) in map {
+                match key.as_str() {
+                    "id" => {
+                        if let Some(id) = val.as_str() {
+                            if !id.trim().is_empty() {
+                                meta.id = id.to_string();
+                            }
+                        }
+                    }
+                    "title" => {
+                        meta.title = val.as_str().map(String::from);
+                    }
+                    "icon" => {
+                        meta.icon = val.as_str().map(String::from);
+                    }
+                    "favorite" => {
+                        meta.favorite = val.as_bool();
+                    }
+                    "cover" => {
+                        meta.cover = val.as_str().map(String::from);
+                    }
+                    "created" => {
+                        meta.created = val.as_str().map(String::from);
+                    }
+                    "updated" => {
+                        meta.updated = val.as_str().map(String::from);
+                    }
+                    _ => {
+                        meta.extras.insert(key, val);
+                    }
+                }
+            }
+        }
+    }
+
+    if meta.id.trim().is_empty() {
+        meta.id = uuid::Uuid::new_v4().to_string();
+    }
+    if let Some(name) = payload.name.as_ref() {
+        if meta.title.as_deref().unwrap_or("").is_empty() {
+            meta.title = Some(name.clone());
+        }
+    }
+    meta.updated = Some(doxmind_sidecar::now_iso8601());
+
+    let extras = payload.extras.or(existing_extras);
+
+    // Fall back to existing sidecar content when the client doesn't include
+    // html/markdown — keeps meta-only writes from clobbering the body.
+    let html = payload.html.or(existing_html).unwrap_or_default();
+    let markdown = payload.markdown.or(existing_markdown).unwrap_or_default();
+    let doc_payload = DocPayload {
+        html: html.clone(),
+        markdown: markdown.clone(),
+        meta: meta.clone(),
+        extras: extras.clone(),
+    };
+
+    doxmind_sidecar::write_doc(&path, &doc_payload)
         .await
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+
+    Ok(ReadResultDto {
+        html,
+        markdown,
+        meta,
+        extras,
+        source: "sidecar".to_string(),
+    })
 }
 
 #[tauri::command]
@@ -497,13 +621,83 @@ fn workspace_write_pdf_editor_state(
     }
     let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
     let rel_path = relative_path_string(&root, &path)?;
-    let sidecar = serde_json::json!({
+    let existing_cache = read_sidecar_field(&sidecar_path, "pdf_parsed_cache");
+    let mut sidecar = serde_json::json!({
         "version": 1,
         "id": stable_path_id(&rel_path),
         "source_path": rel_path,
         "updated_at_unix_nanos": unix_nanos().to_string(),
         "pdf_editor": payload,
     });
+    if let Some(cache) = existing_cache {
+        sidecar
+            .as_object_mut()
+            .unwrap()
+            .insert("pdf_parsed_cache".to_string(), cache);
+    }
+    fs::write(
+        sidecar_path,
+        serde_json::to_vec_pretty(&sidecar)
+            .map_err(|err| format!("failed to encode PDF sidecar: {err}"))?,
+    )
+    .map_err(|err| format!("failed to write PDF sidecar: {err}"))
+}
+
+#[tauri::command]
+fn workspace_read_pdf_doc_state(
+    root: String,
+    path: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let root = canonical_workspace_root(&root)?;
+    let path = resolve_existing_workspace_path(&root, &path)?;
+    if !is_pdf_file(&path) {
+        return Err("PDF document state is only enabled for PDFs".to_string());
+    }
+    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
+    let raw = match fs::read_to_string(&sidecar_path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("failed to read PDF sidecar: {err}")),
+    };
+    let sidecar: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|err| format!("invalid PDF sidecar JSON: {err}"))?;
+    Ok(Some(serde_json::json!({
+        "editor": sidecar.get("pdf_editor").cloned().unwrap_or(serde_json::Value::Null),
+        "parsedCache": sidecar.get("pdf_parsed_cache").cloned().unwrap_or(serde_json::Value::Null),
+    })))
+}
+
+#[tauri::command]
+fn workspace_write_pdf_parsed_cache(
+    root: String,
+    path: String,
+    source_hash: String,
+    parsed: serde_json::Value,
+) -> Result<(), String> {
+    let root = canonical_workspace_root(&root)?;
+    let path = resolve_existing_workspace_path(&root, &path)?;
+    if !is_pdf_file(&path) {
+        return Err("PDF parsed cache is only enabled for PDFs".to_string());
+    }
+    if source_hash.trim().is_empty() {
+        return Err("sourceHash is required".to_string());
+    }
+    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
+    let rel_path = relative_path_string(&root, &path)?;
+    let existing_editor = read_sidecar_field(&sidecar_path, "pdf_editor");
+    let mut sidecar = serde_json::json!({
+        "version": 1,
+        "id": stable_path_id(&rel_path),
+        "source_path": rel_path,
+        "updated_at_unix_nanos": unix_nanos().to_string(),
+        "pdf_parsed_cache": { "sourceHash": source_hash, "parsed": parsed },
+    });
+    if let Some(editor) = existing_editor {
+        sidecar
+            .as_object_mut()
+            .unwrap()
+            .insert("pdf_editor".to_string(), editor);
+    }
     fs::write(
         sidecar_path,
         serde_json::to_vec_pretty(&sidecar)
@@ -546,19 +740,95 @@ fn workspace_write_excel_editor_state(
     }
     let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
     let rel_path = relative_path_string(&root, &path)?;
-    let sidecar = serde_json::json!({
+    let existing_cache = read_sidecar_field(&sidecar_path, "excel_parsed_cache");
+    let mut sidecar = serde_json::json!({
         "version": 1,
         "id": stable_path_id(&rel_path),
         "source_path": rel_path,
         "updated_at_unix_nanos": unix_nanos().to_string(),
         "excel_editor": payload,
     });
+    if let Some(cache) = existing_cache {
+        sidecar
+            .as_object_mut()
+            .unwrap()
+            .insert("excel_parsed_cache".to_string(), cache);
+    }
     fs::write(
         sidecar_path,
         serde_json::to_vec_pretty(&sidecar)
             .map_err(|err| format!("failed to encode Excel sidecar: {err}"))?,
     )
     .map_err(|err| format!("failed to write Excel sidecar: {err}"))
+}
+
+#[tauri::command]
+fn workspace_read_excel_doc_state(
+    root: String,
+    path: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let root = canonical_workspace_root(&root)?;
+    let path = resolve_existing_workspace_path(&root, &path)?;
+    if !is_excel_file(&path) {
+        return Err("Excel document state is only enabled for .xlsx/.xlsm files".to_string());
+    }
+    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
+    let raw = match fs::read_to_string(&sidecar_path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("failed to read Excel sidecar: {err}")),
+    };
+    let sidecar: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|err| format!("invalid Excel sidecar JSON: {err}"))?;
+    Ok(Some(serde_json::json!({
+        "editor": sidecar.get("excel_editor").cloned().unwrap_or(serde_json::Value::Null),
+        "parsedCache": sidecar.get("excel_parsed_cache").cloned().unwrap_or(serde_json::Value::Null),
+    })))
+}
+
+#[tauri::command]
+fn workspace_write_excel_parsed_cache(
+    root: String,
+    path: String,
+    source_hash: String,
+    parsed: serde_json::Value,
+) -> Result<(), String> {
+    let root = canonical_workspace_root(&root)?;
+    let path = resolve_existing_workspace_path(&root, &path)?;
+    if !is_excel_file(&path) {
+        return Err("Excel parsed cache is only enabled for .xlsx/.xlsm files".to_string());
+    }
+    if source_hash.trim().is_empty() {
+        return Err("sourceHash is required".to_string());
+    }
+    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
+    let rel_path = relative_path_string(&root, &path)?;
+    let existing_editor = read_sidecar_field(&sidecar_path, "excel_editor");
+    let mut sidecar = serde_json::json!({
+        "version": 1,
+        "id": stable_path_id(&rel_path),
+        "source_path": rel_path,
+        "updated_at_unix_nanos": unix_nanos().to_string(),
+        "excel_parsed_cache": { "sourceHash": source_hash, "parsed": parsed },
+    });
+    if let Some(editor) = existing_editor {
+        sidecar
+            .as_object_mut()
+            .unwrap()
+            .insert("excel_editor".to_string(), editor);
+    }
+    fs::write(
+        sidecar_path,
+        serde_json::to_vec_pretty(&sidecar)
+            .map_err(|err| format!("failed to encode Excel sidecar: {err}"))?,
+    )
+    .map_err(|err| format!("failed to write Excel sidecar: {err}"))
+}
+
+fn read_sidecar_field(sidecar_path: &Path, key: &str) -> Option<serde_json::Value> {
+    let raw = fs::read_to_string(sidecar_path).ok()?;
+    let sidecar: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    sidecar.get(key).cloned()
 }
 
 #[tauri::command]
@@ -1060,13 +1330,18 @@ fn document_dto_for_path(
         "markdown"
     }
     .to_string();
-    let (id, id_source, title) = if document_type == "markdown" {
+    let (id, id_source, title, scan_meta) = if document_type == "markdown" {
         let raw = fs::read_to_string(path)
             .map_err(|err| format!("failed to read markdown document for scan: {err}"))?;
-        let (frontmatter_id, title) = parse_frontmatter_scan_fields(&raw);
-        match frontmatter_id {
-            Some(id) => (id, "frontmatter".to_string(), title),
-            None => (stable_path_id(&relative_path), "path".to_string(), title),
+        let meta = parse_frontmatter_scan_fields(&raw);
+        match meta.id.clone() {
+            Some(id) => (id, "frontmatter".to_string(), meta.title.clone(), meta),
+            None => (
+                stable_path_id(&relative_path),
+                "path".to_string(),
+                meta.title.clone(),
+                meta,
+            ),
         }
     } else {
         (
@@ -1074,6 +1349,7 @@ fn document_dto_for_path(
             "path".to_string(),
             path.file_stem()
                 .map(|name| name.to_string_lossy().into_owned()),
+            ScanFrontmatter::default(),
         )
     };
 
@@ -1088,30 +1364,63 @@ fn document_dto_for_path(
         title,
         document_type,
         has_sidecar: doxmind_sidecar::sidecar_path_for(path).exists(),
+        icon: scan_meta.icon,
+        cover: scan_meta.cover,
+        cover_position: scan_meta.cover_position,
+        favorite: scan_meta.favorite,
     })
 }
 
-fn parse_frontmatter_scan_fields(raw: &str) -> (Option<String>, Option<String>) {
+#[derive(Debug, Default, Clone)]
+struct ScanFrontmatter {
+    id: Option<String>,
+    title: Option<String>,
+    icon: Option<String>,
+    cover: Option<String>,
+    cover_position: Option<f64>,
+    favorite: Option<bool>,
+}
+
+fn parse_frontmatter_scan_fields(raw: &str) -> ScanFrontmatter {
+    let mut out = ScanFrontmatter::default();
     let mut lines = raw.lines();
     if !matches!(lines.next().map(str::trim), Some("---")) {
-        return (None, None);
+        return out;
     }
 
-    let mut id = None;
-    let mut title = None;
     for line in lines {
         if line.trim() == "---" {
             break;
         }
-        if id.is_none() {
-            id = parse_yaml_scalar(line, "id");
+        if out.id.is_none() {
+            out.id = parse_yaml_scalar(line, "id");
         }
-        if title.is_none() {
-            title = parse_yaml_scalar(line, "title");
+        if out.title.is_none() {
+            out.title = parse_yaml_scalar(line, "title");
+        }
+        if out.icon.is_none() {
+            out.icon = parse_yaml_scalar(line, "icon");
+        }
+        if out.cover.is_none() {
+            out.cover = parse_yaml_scalar(line, "cover");
+        }
+        if out.cover_position.is_none() {
+            // Editor sends snake_case (`cover_position`), legacy docs may use
+            // camelCase (`coverPosition`). Accept both for forward-compat.
+            out.cover_position = parse_yaml_scalar(line, "cover_position")
+                .or_else(|| parse_yaml_scalar(line, "coverPosition"))
+                .and_then(|v| v.parse::<f64>().ok());
+        }
+        if out.favorite.is_none() {
+            out.favorite = parse_yaml_scalar(line, "favorite").and_then(|v| match v.as_str() {
+                "true" => Some(true),
+                "false" => Some(false),
+                _ => None,
+            });
         }
     }
 
-    (id, title)
+    out
 }
 
 fn parse_yaml_scalar(line: &str, key: &str) -> Option<String> {
@@ -1120,14 +1429,15 @@ fn parse_yaml_scalar(line: &str, key: &str) -> Option<String> {
     if value.is_empty() {
         return None;
     }
-    Some(
-        value
-            .trim_matches('"')
-            .trim_matches('\'')
-            .trim()
-            .to_string(),
-    )
-    .filter(|value| !value.is_empty())
+    let unquoted = value
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim()
+        .to_string();
+    if unquoted.is_empty() || unquoted == "null" || unquoted == "~" {
+        return None;
+    }
+    Some(unquoted)
 }
 
 fn stable_path_id(path: &str) -> String {
@@ -1150,8 +1460,7 @@ fn rebuild_workspace_index(root: &Path) -> Result<WorkspaceIndexDto, String> {
     for path in paths {
         let raw = fs::read_to_string(&path)
             .map_err(|err| format!("failed to read markdown document for index: {err}"))?;
-        let (frontmatter_id, _) = parse_frontmatter_scan_fields(&raw);
-        if let Some(id) = frontmatter_id {
+        if let Some(id) = parse_frontmatter_scan_fields(&raw).id {
             ids.entry(id).or_insert(relative_path_string(root, &path)?);
         }
     }
@@ -1229,7 +1538,7 @@ fn search_workspace_markdown(
     for path in paths {
         let raw = fs::read_to_string(&path)
             .map_err(|err| format!("failed to read markdown document for search: {err}"))?;
-        let (_, title) = parse_frontmatter_scan_fields(&raw);
+        let title = parse_frontmatter_scan_fields(&raw).title;
         let matches = markdown_line_matches(&raw, &needle);
         if matches.is_empty() {
             continue;
@@ -1634,15 +1943,39 @@ fn unregister_window_target(
 }
 
 /// Receive the latest recents from any window. The dock menu reads this
-/// global state on every right-click, so the most recent push wins.
+/// global state on every right-click, so the most recent push wins. The
+/// macOS menu bar's `Open Recent` submenu and the tray's `Recent Files`
+/// submenu are rebuilt eagerly here because both are static menus that
+/// don't query state at click time.
 #[tauri::command]
-fn dock_set_recents(recents: Vec<OpenTarget>) {
+fn dock_set_recents(app: AppHandle, recents: Vec<OpenTarget>) {
     #[cfg(target_os = "macos")]
-    dock_menu::set_recents(recents);
+    {
+        dock_menu::set_recents(recents.clone());
+        if let Err(err) = menu_bar::refresh_recents(&app, &recents) {
+            log::warn!("[menu] failed to refresh app menu recents: {err}");
+        }
+        refresh_macos_tray_menu(&app, &recents);
+    }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = recents;
+        let _ = (app, recents);
     }
+}
+
+/// Look up what the focused window currently has open. Returns the path and
+/// whether it's a file or folder. Used by the menu-bar `Reveal in Finder`
+/// item, which fires from native code without context about the active doc.
+#[tauri::command]
+fn current_window_open_target(
+    window: WebviewWindow,
+    registry: tauri::State<'_, WindowRegistry>,
+) -> Option<OpenTarget> {
+    registry
+        .open_targets
+        .lock()
+        .ok()
+        .and_then(|map| map.get(window.label()).cloned())
 }
 
 /// Holds the per-process WebView init script. We need it on hand whenever a
@@ -1725,8 +2058,12 @@ window.__TAURI_PLATFORM__ = "{platform}";
             workspace_read_binary,
             workspace_read_pdf_editor_state,
             workspace_write_pdf_editor_state,
+            workspace_read_pdf_doc_state,
+            workspace_write_pdf_parsed_cache,
             workspace_read_excel_editor_state,
             workspace_write_excel_editor_state,
+            workspace_read_excel_doc_state,
+            workspace_write_excel_parsed_cache,
             workspace_scan,
             workspace_index_rebuild,
             workspace_index_read,
@@ -1745,7 +2082,8 @@ window.__TAURI_PLATFORM__ = "{platform}";
             open_new_window,
             register_window_target,
             unregister_window_target,
-            dock_set_recents
+            dock_set_recents,
+            current_window_open_target
         ])
         .setup(move |app| {
             // Spawn the backend.
@@ -1777,6 +2115,9 @@ window.__TAURI_PLATFORM__ = "{platform}";
                 apply_dock_icon();
                 if let Err(err) = install_macos_tray(app.handle()) {
                     log::warn!("[tray] failed to install: {err}");
+                }
+                if let Err(err) = menu_bar::install(app.handle()) {
+                    log::warn!("[menu] failed to install app menu bar: {err}");
                 }
                 // Dock menu install is deferred to `RunEvent::Ready` below
                 // because NSApplication's delegate may not be set yet at this
@@ -1891,51 +2232,141 @@ fn focus_main_window(app: &AppHandle) {
 /// lets macOS recolor it to match the active menu bar appearance. Menu items
 /// emit `tray://*` events that the frontend listens for to invoke the same
 /// store actions the in-app UI uses (so we don't reimplement file creation
-/// in Rust).
+/// in Rust). The dropdown's `Recent Files` submenu is rebuilt on every
+/// `dock_set_recents` push by `refresh_macos_tray_menu` below.
+#[cfg(target_os = "macos")]
+const TRAY_ID: &str = "doxmind-tray";
+#[cfg(target_os = "macos")]
+const TRAY_RECENT_PREFIX: &str = "tray-recent-";
+
 #[cfg(target_os = "macos")]
 fn install_macos_tray(app: &AppHandle) -> tauri::Result<()> {
     let icon_bytes = include_bytes!("../icons/tray-icon-template.png");
     let icon = Image::from_bytes(icon_bytes)?;
 
-    let new_file = MenuItemBuilder::with_id("tray-new-file", "New Document")
-        .accelerator("CmdOrCtrl+N")
-        .build(app)?;
-    let show = MenuItemBuilder::with_id("tray-show", "Open doXmind").build(app)?;
-    let settings = MenuItemBuilder::with_id("tray-settings", "Settings…").build(app)?;
-    let quit = PredefinedMenuItem::quit(app, Some("Quit doXmind"))?;
+    let menu = build_tray_menu(app, &[])?;
 
-    let menu = MenuBuilder::new(app)
-        .item(&new_file)
-        .separator()
-        .item(&show)
-        .item(&settings)
-        .separator()
-        .item(&quit)
-        .build()?;
-
-    TrayIconBuilder::with_id("doxmind-tray")
+    TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
         .icon_as_template(true)
         .menu(&menu)
         .show_menu_on_left_click(true)
         .tooltip("doXmind")
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "tray-new-file" => {
-                focus_main_window(app);
-                let _ = app.emit("tray://new-file", ());
-            }
-            "tray-show" => {
-                focus_main_window(app);
-            }
-            "tray-settings" => {
-                focus_main_window(app);
-                let _ = app.emit("tray://settings", ());
-            }
-            _ => {}
-        })
+        .on_menu_event(handle_tray_menu_event)
         .build(app)?;
 
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn build_tray_menu(
+    app: &AppHandle,
+    recents: &[OpenTarget],
+) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::SubmenuBuilder;
+
+    let new_file = MenuItemBuilder::with_id("tray-new-file", "New Document")
+        .accelerator("CmdOrCtrl+N")
+        .build(app)?;
+    let open_file = MenuItemBuilder::with_id("tray-open-file", "Open File…").build(app)?;
+    let open_folder = MenuItemBuilder::with_id("tray-open-folder", "Open Folder…").build(app)?;
+
+    let recents_submenu = {
+        let mut builder = SubmenuBuilder::new(app, "Recent Files");
+        if recents.is_empty() {
+            let empty = MenuItemBuilder::with_id("tray-recent-empty", "No Recent Items")
+                .enabled(false)
+                .build(app)?;
+            builder = builder.item(&empty);
+        } else {
+            for (idx, entry) in recents.iter().take(10).enumerate() {
+                let label = recent_short_label(entry);
+                let id = format!("{TRAY_RECENT_PREFIX}{idx}");
+                builder = builder.item(&MenuItemBuilder::with_id(id, label).build(app)?);
+            }
+        }
+        builder.build()?
+    };
+
+    let show = MenuItemBuilder::with_id("tray-show", "Open doXmind").build(app)?;
+    let settings = MenuItemBuilder::with_id("tray-settings", "Settings…").build(app)?;
+    let quit = PredefinedMenuItem::quit(app, Some("Quit doXmind"))?;
+
+    MenuBuilder::new(app)
+        .item(&new_file)
+        .separator()
+        .item(&open_file)
+        .item(&open_folder)
+        .item(&recents_submenu)
+        .separator()
+        .item(&show)
+        .item(&settings)
+        .separator()
+        .item(&quit)
+        .build()
+}
+
+#[cfg(target_os = "macos")]
+fn recent_short_label(entry: &OpenTarget) -> String {
+    let normalized = entry.path.replace('\\', "/");
+    let trimmed = normalized.trim_end_matches('/');
+    trimmed
+        .rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| entry.path.clone())
+}
+
+#[cfg(target_os = "macos")]
+fn handle_tray_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
+    let id = event.id().as_ref().to_string();
+    if let Some(rest) = id.strip_prefix(TRAY_RECENT_PREFIX) {
+        if let Ok(idx) = rest.parse::<usize>() {
+            if let Some(entry) = dock_menu::recent_at(idx) {
+                let _ = app.emit("tray://open-recent", entry);
+            }
+        }
+        return;
+    }
+
+    match id.as_str() {
+        "tray-new-file" => {
+            focus_main_window(app);
+            let _ = app.emit("tray://new-file", ());
+        }
+        "tray-open-file" => {
+            focus_main_window(app);
+            let _ = app.emit("tray://open-file", ());
+        }
+        "tray-open-folder" => {
+            focus_main_window(app);
+            let _ = app.emit("tray://open-folder", ());
+        }
+        "tray-show" => {
+            focus_main_window(app);
+        }
+        "tray-settings" => {
+            focus_main_window(app);
+            let _ = app.emit("tray://settings", ());
+        }
+        _ => {}
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn refresh_macos_tray_menu(app: &AppHandle, recents: &[OpenTarget]) {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return;
+    };
+    match build_tray_menu(app, recents) {
+        Ok(menu) => {
+            if let Err(err) = tray.set_menu(Some(menu)) {
+                log::warn!("[tray] failed to refresh menu: {err}");
+            }
+        }
+        Err(err) => log::warn!("[tray] failed to rebuild menu: {err}"),
+    }
 }
 
 fn shutdown_backend(app: &AppHandle) {

@@ -24,7 +24,9 @@ from exceptions import (
     InternalError,
     UnsupportedFileTypeError,
 )
-from services.excel_workbook import export_edited_workbook, parse_workbook
+
+# `services.excel_workbook` imports openpyxl (~80ms+ cold); defer until first
+# Excel API call so server boot stays cheap when the user only opens markdown.
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -58,6 +60,8 @@ async def parse_workbook_route(
             max_size=settings.max_import_file_size,
             actual_size=len(xlsx_bytes),
         )
+
+    from services.excel_workbook import parse_workbook
 
     try:
         return parse_workbook(xlsx_bytes)
@@ -95,6 +99,8 @@ async def export_edited_route(
         raise BadRequestError(message="Invalid JSON in 'edits'") from exc
     if not isinstance(payload, dict):
         raise BadRequestError(message="'edits' must be a JSON object")
+
+    from services.excel_workbook import export_edited_workbook
 
     try:
         edited = export_edited_workbook(xlsx_bytes, payload)

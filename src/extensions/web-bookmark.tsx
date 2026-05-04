@@ -66,8 +66,11 @@ export const WebBookmark = Node.create<WebBookmarkOptions>({
   },
 
   renderMarkdown(node) {
-    const title = node.attrs?.title || node.attrs?.url || "Link";
     const url = node.attrs?.url || "";
+    // Empty placeholder (no url) has no portable markdown form — skip it.
+    // The node lives in the sidecar HTML and is restored from there on reopen.
+    if (!url) return "";
+    const title = node.attrs?.title || node.attrs?.url || "Link";
     return `[${title}](${url})`;
   },
 

@@ -422,8 +422,14 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
     const handleBeforeUnload = () => {
       void saveCurrentNow();
     };
+    // Native menu's File ▸ Save (⌘S) dispatches this event so the same
+    // flush path is used for tab-close, app-close, and explicit save.
+    const handleSaveNow = () => {
+      void saveCurrentNow();
+    };
     window.addEventListener("beforeunload", handleBeforeUnload);
     window.addEventListener("pagehide", handleBeforeUnload);
+    window.addEventListener("doxmind:save-now", handleSaveNow);
 
     let unlistenClose: (() => void) | null = null;
     let closingAfterFlush = false;
@@ -446,6 +452,7 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       window.removeEventListener("pagehide", handleBeforeUnload);
+      window.removeEventListener("doxmind:save-now", handleSaveNow);
       unlistenClose?.();
     };
   }, [debouncedSave, editor, persistContent]);

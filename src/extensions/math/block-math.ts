@@ -112,6 +112,9 @@ export const BlockMath = Node.create<BlockMathOptions>({
 
   renderMarkdown(node) {
     const latex = node.attrs?.latex || "";
+    // Empty placeholder has no portable markdown form — skip it. The node
+    // lives in the sidecar HTML and is restored from there on reopen.
+    if (!latex.trim()) return "";
     return "$$\n" + latex + "\n$$";
   },
 

@@ -143,6 +143,23 @@ export function isMacPlatform(): boolean {
   return navigator.platform.toUpperCase().indexOf("MAC") >= 0;
 }
 
+/** SHA-256 of arbitrary bytes, hex-encoded. Used to key parsed-document
+ *  caches so an unchanged source file skips re-parsing. */
+export async function sha256Hex(data: ArrayBuffer | Uint8Array): Promise<string> {
+  const view = data instanceof Uint8Array ? data : new Uint8Array(data);
+  // Copy into a fresh ArrayBuffer so we always pass an `ArrayBuffer` (not a
+  // `SharedArrayBuffer`) to subtle.digest, which TS now distinguishes.
+  const copy = new Uint8Array(view.byteLength);
+  copy.set(view);
+  const digest = await crypto.subtle.digest("SHA-256", copy.buffer);
+  const bytes = new Uint8Array(digest);
+  let out = "";
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, "0");
+  }
+  return out;
+}
+
 /**
  * Format a keyboard shortcut for the current platform.
  * Converts "Ctrl" to "⌘" on macOS, "Alt" to "⌥", "Shift" to "⇧".

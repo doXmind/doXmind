@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import { storeLogger } from "@/lib/logger";
 import { eventBus } from "@/lib/events";
 import { syncDatabasesForDocument } from "@/stores/database-store";
+import { useEditorStore } from "@/stores/editor-store";
 import type { FileItem } from "@/types";
 import { documentTypeFromName } from "@/lib/document-types";
 import {
@@ -883,16 +884,21 @@ export const useFileStore = create<FileState>()(
           files: state.files.map((f) => (f.id === fileId ? { ...f, icon } : f)),
         }));
 
+        const editor = useEditorStore.getState();
+        editor.setSaving(true);
         try {
           await getAdapter(get()).write(handleForFile(file), {
             meta: { id: file.id, icon },
           });
+          editor.setLastSavedAt(new Date().toISOString());
         } catch (error) {
           log.error("Failed to set file icon", error);
           // Revert on error
           set((state) => ({
             files: state.files.map((f) => (f.id === fileId ? { ...f, icon: file.icon } : f)),
           }));
+        } finally {
+          editor.setSaving(false);
         }
       },
 
@@ -904,10 +910,13 @@ export const useFileStore = create<FileState>()(
           files: state.files.map((f) => (f.id === fileId ? { ...f, coverImageUrl: url } : f)),
         }));
 
+        const editor = useEditorStore.getState();
+        editor.setSaving(true);
         try {
           await getAdapter(get()).write(handleForFile(file), {
             meta: { id: file.id, cover: url },
           });
+          editor.setLastSavedAt(new Date().toISOString());
         } catch (error) {
           log.error("Failed to set cover image", error);
           set((state) => ({
@@ -915,6 +924,8 @@ export const useFileStore = create<FileState>()(
               f.id === fileId ? { ...f, coverImageUrl: file.coverImageUrl } : f
             ),
           }));
+        } finally {
+          editor.setSaving(false);
         }
       },
 
@@ -927,10 +938,13 @@ export const useFileStore = create<FileState>()(
           files: state.files.map((f) => (f.id === fileId ? { ...f, coverPosition: clamped } : f)),
         }));
 
+        const editor = useEditorStore.getState();
+        editor.setSaving(true);
         try {
           await getAdapter(get()).write(handleForFile(file), {
             meta: { id: file.id, cover_position: clamped },
           });
+          editor.setLastSavedAt(new Date().toISOString());
         } catch (error) {
           log.error("Failed to set cover position", error);
           set((state) => ({
@@ -938,6 +952,8 @@ export const useFileStore = create<FileState>()(
               f.id === fileId ? { ...f, coverPosition: file.coverPosition } : f
             ),
           }));
+        } finally {
+          editor.setSaving(false);
         }
       },
 

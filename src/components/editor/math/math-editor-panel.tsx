@@ -119,6 +119,7 @@ export function MathEditorPanel({
         displayMode ? "w-full" : cn("inline-flex max-w-[420px]", isInputVisible && "w-full")
       )}
       onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       {/* Header — preview when there's content, placeholder when empty.
           Click anywhere to expand the input row. */}

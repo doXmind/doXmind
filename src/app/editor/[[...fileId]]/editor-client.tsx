@@ -69,16 +69,15 @@ export function EditorClient() {
     const folder = params.get("folder");
     const file = params.get("file");
     const store = useFileStore.getState();
-    // Push the persisted recents to Rust on cold boot so the dock right-click
-    // menu is populated even before the user opens anything in this session.
-    void syncRecentsToDock(store.recents);
-    if (folder) {
-      void store.openFolder(folder);
-    } else if (file) {
-      void store.openFile(file);
-    } else {
-      void store.loadFiles();
-    }
+    // Push persisted recents to Rust + open the requested target in parallel.
+    // syncRecentsToDock is independent of file load and shouldn't gate the
+    // editor first paint.
+    const open = folder
+      ? store.openFolder(folder)
+      : file
+        ? store.openFile(file)
+        : store.loadFiles();
+    void Promise.all([syncRecentsToDock(store.recents), open]);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only run on mount
   }, []);
 
@@ -119,12 +118,20 @@ export function EditorClient() {
 
   // Files on disk can be edited by external tools. On focus, re-read the
   // active document so stale sidecars are ignored and markdown wins.
+  // Throttle per-file: alt-tabbing in/out within a few seconds doesn't need
+  // another full read — we just looked. External editors taking longer than
+  // the throttle window (5s) will still be picked up on the next focus.
   useEffect(() => {
+    const lastRefreshAt = new Map<string, number>();
+    const REFRESH_THROTTLE_MS = 5000;
     const refreshCurrentFile = () => {
       const id = useFileStore.getState().currentFileId;
-      if (id) {
-        void useFileStore.getState().loadFileContent(id, { force: true });
-      }
+      if (!id) return;
+      const now = Date.now();
+      const last = lastRefreshAt.get(id) ?? 0;
+      if (now - last < REFRESH_THROTTLE_MS) return;
+      lastRefreshAt.set(id, now);
+      void useFileStore.getState().loadFileContent(id, { force: true });
     };
     window.addEventListener("focus", refreshCurrentFile);
     return () => window.removeEventListener("focus", refreshCurrentFile);

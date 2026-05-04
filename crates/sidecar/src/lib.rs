@@ -350,7 +350,7 @@ fn temp_sibling(target: &Path) -> PathBuf {
     parent.join(format!(".{name}.tmp-{nonce}"))
 }
 
-fn now_iso8601() -> String {
+pub fn now_iso8601() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     // RFC 3339 / ISO 8601 in UTC, second precision. Avoids pulling chrono.
     let secs = SystemTime::now()

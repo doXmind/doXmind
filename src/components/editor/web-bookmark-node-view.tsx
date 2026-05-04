@@ -32,6 +32,11 @@ export function WebBookmarkNodeView({ node, updateAttributes }: NodeViewProps) {
   // Track URLs we've already attempted to unfurl in this session so a failed
   // fetch doesn't retry on every keystroke.
   const attempted = useRef<Set<string>>(new Set());
+  // Latest URL on the node, read inside async callbacks to detect a URL change
+  // mid-fetch. Mutating a ref during render is safe; we only need the freshest
+  // value, not a re-render trigger.
+  const latestUrlRef = useRef(url);
+  latestUrlRef.current = url;
 
   // Decide whether the bookmark needs enrichment: we trust attrs that have a
   // real title (different from the URL) and at least *some* extra metadata.
@@ -41,11 +46,13 @@ export function WebBookmarkNodeView({ node, updateAttributes }: NodeViewProps) {
     if (!needsUnfurl) return;
     if (attempted.current.has(url)) return;
     attempted.current.add(url);
-    let cancelled = false;
     setIsLoading(true);
     unfurlLink(url)
       .then((meta) => {
-        if (cancelled) return;
+        // Strict-mode-dev re-runs this effect on mount; URL is unchanged so the
+        // result is still relevant. Only drop it if the user actually swapped
+        // the bookmark URL while the fetch was in flight.
+        if (latestUrlRef.current !== url) return;
         updateAttributes({
           url: meta.url,
           title: meta.title,
@@ -59,50 +66,43 @@ export function WebBookmarkNodeView({ node, updateAttributes }: NodeViewProps) {
         // leave the bookmark with whatever the user typed.
       })
       .finally(() => {
-        if (!cancelled) setIsLoading(false);
+        setIsLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
   }, [needsUnfurl, url, updateAttributes]);
 
   if (!url) {
     return (
-      <NodeViewWrapper className="my-2">
+      <NodeViewWrapper className="not-prose my-2">
         <WebBookmarkEmptyState onSubmit={(newUrl) => updateAttributes({ url: newUrl })} />
       </NodeViewWrapper>
     );
   }
 
   const displayTitle = title || url;
-  const host = (() => {
-    try {
-      return new URL(url).hostname.replace(/^www\./, "");
-    } catch {
-      return url;
-    }
-  })();
 
   return (
-    <NodeViewWrapper className="my-2" contentEditable={false}>
+    <NodeViewWrapper className="not-prose my-2" contentEditable={false}>
       <a
         href={url}
         target="_blank"
         rel="noreferrer"
         className={cn(
-          "group flex w-full overflow-hidden rounded-md border border-border/60 bg-card no-underline",
+          "group flex w-full overflow-hidden rounded-md border border-border/60 bg-card",
+          // !-prefix overrides .ProseMirror a's text-primary + underline (which
+          // beat plain Tailwind utilities on specificity).
+          "!text-foreground !no-underline hover:!opacity-100",
           "transition-colors hover:border-border hover:bg-accent/30",
           isLoading && "animate-pulse"
         )}
       >
         {/* Text column */}
-        <div className="flex min-w-0 flex-1 flex-col justify-between gap-1.5 px-4 py-3">
+        <div className="flex min-w-0 flex-1 flex-col justify-between gap-2 px-[14px] py-3">
           <div className="space-y-1">
-            <div className="line-clamp-1 text-[15px] font-medium text-foreground">
+            <div className="line-clamp-1 text-[14px] font-semibold leading-[1.3] text-foreground">
               {displayTitle}
             </div>
             {description ? (
-              <div className="line-clamp-2 text-[13px] leading-[1.45] text-muted-foreground">
+              <div className="line-clamp-2 text-[12px] leading-[1.4] text-muted-foreground">
                 {description}
               </div>
             ) : null}
@@ -113,25 +113,25 @@ export function WebBookmarkNodeView({ node, updateAttributes }: NodeViewProps) {
               <img
                 src={faviconUrl}
                 alt=""
-                className="h-3.5 w-3.5 shrink-0 rounded-[2px]"
+                className="h-4 w-4 shrink-0 rounded-[2px]"
                 onError={(e) => {
                   (e.currentTarget as HTMLImageElement).style.display = "none";
                 }}
               />
             ) : (
-              <Globe className="h-3.5 w-3.5 shrink-0 opacity-60" />
+              <Globe className="h-4 w-4 shrink-0 opacity-60" />
             )}
-            <span className="truncate">{host}</span>
+            <span className="truncate">{url}</span>
           </div>
         </div>
 
-        {/* OG image column */}
+        {/* OG image column — Notion uses a fixed ~2:1 thumbnail anchored right */}
         {imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imageUrl}
             alt=""
-            className="hidden h-[112px] w-[180px] shrink-0 object-cover sm:block"
+            className="hidden h-[120px] w-[140px] shrink-0 object-cover sm:block"
             onError={(e) => {
               (e.currentTarget as HTMLImageElement).style.display = "none";
             }}

@@ -70,6 +70,9 @@ export const MermaidChart = Node.create<MermaidChartOptions>({
 
   renderMarkdown(node) {
     const code = node.attrs?.code || "";
+    // Empty placeholder has no portable markdown form — skip it. The node
+    // lives in the sidecar HTML and is restored from there on reopen.
+    if (!code.trim()) return "";
     return "```mermaid\n" + code + "\n```";
   },
 

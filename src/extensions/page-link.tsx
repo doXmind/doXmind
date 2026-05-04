@@ -54,6 +54,10 @@ export const PageLink = Node.create<PageLinkOptions>({
   },
 
   renderMarkdown(node) {
+    const pageId = node.attrs?.pageId || "";
+    // Empty placeholder (no target page) has no portable markdown form — skip
+    // it. The node lives in the sidecar HTML and is restored from there on reopen.
+    if (!pageId) return "";
     const title = node.attrs?.pageTitle || "Untitled";
     return title;
   },

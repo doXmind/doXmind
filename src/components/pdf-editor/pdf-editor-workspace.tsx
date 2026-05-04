@@ -33,6 +33,7 @@ import {
   fetchPdfBlocks,
   migrateLegacyTextEdits,
   paragraphsFromResponse,
+  type PdfBlocksResponse,
   type PdfParagraph,
 } from "@/lib/pdf/parse-blocks";
 import {
@@ -41,7 +42,7 @@ import {
   type ExportPagePayload,
   type ExportTextEditPayload,
 } from "@/lib/pdf/export-edited";
-import { cn } from "@/lib/utils";
+import { cn, sha256Hex } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 
@@ -344,10 +345,20 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
 
       try {
         const pdfjs = getPdfjs();
-        const bytes = await adapter.readBinary(file.storageHandle);
-        const editorState = adapter.readPdfEditorState
-          ? await adapter.readPdfEditorState(file.storageHandle)
-          : null;
+        // Binary read + sidecar read (editor state + parsed-blocks cache)
+        // run in parallel; pdfjs decoding starts as soon as bytes arrive.
+        const [bytes, docState] = await Promise.all([
+          adapter.readBinary(file.storageHandle),
+          adapter.readPdfDocState
+            ? adapter.readPdfDocState(file.storageHandle).catch(() => null)
+            : adapter.readPdfEditorState
+              ? adapter.readPdfEditorState(file.storageHandle).then(
+                  (editor) => ({ editor, parsedCache: null }),
+                  () => null
+                )
+              : Promise.resolve(null),
+        ]);
+        const editorState = docState?.editor ?? null;
         const pdf = await pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise;
         if (cancelled) return;
 
@@ -361,10 +372,25 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
         setHighlightBoxes(normalized.highlights);
 
         // Phase 2: try the PyMuPDF sidecar for paragraph-aware blocks.
-        // On failure (sidecar offline / older build) we silently keep the
-        // legacy single-run path — the editor stays fully functional.
+        // The parsed cache lives in the .doxmind sidecar keyed by SHA-256
+        // of the source bytes; an unchanged PDF skips PyMuPDF entirely.
         const blocksBytes = new Uint8Array(bytes);
-        const blocks = await fetchPdfBlocks(blocksBytes);
+        const sourceHash = await sha256Hex(blocksBytes);
+        const cachedBlocks =
+          docState?.parsedCache && docState.parsedCache.sourceHash === sourceHash
+            ? (docState.parsedCache.parsed as PdfBlocksResponse)
+            : null;
+        let blocks: PdfBlocksResponse | null;
+        if (cachedBlocks) {
+          blocks = cachedBlocks;
+        } else {
+          blocks = await fetchPdfBlocks(blocksBytes);
+          if (blocks && adapter.writePdfParsedCache) {
+            void adapter
+              .writePdfParsedCache(file.storageHandle, sourceHash, blocks)
+              .catch(() => {});
+          }
+        }
         if (cancelled) return;
         if (blocks) {
           const allParagraphs = paragraphsFromResponse(blocks);

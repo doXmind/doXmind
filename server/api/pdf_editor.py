@@ -20,8 +20,10 @@ from exceptions import (
     InternalError,
     UnsupportedFileTypeError,
 )
-from services.pdf_blocks import parse_pdf_blocks
-from services.pdf_export import export_edited_pdf
+
+# `services.pdf_blocks` and `services.pdf_export` import pymupdf (heavy);
+# defer until first PDF API call so server boot stays cheap when the user
+# only opens markdown / Excel.
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -77,6 +79,8 @@ async def parse_blocks(
 
     indexes = _parse_page_indexes(page_indexes)
 
+    from services.pdf_blocks import parse_pdf_blocks
+
     try:
         result = parse_pdf_blocks(pdf_bytes, page_indexes=indexes)
     except ValueError as exc:
@@ -120,6 +124,8 @@ async def export_edited(
         raise BadRequestError(message="Invalid JSON in 'edits'") from exc
     if not isinstance(payload, dict):
         raise BadRequestError(message="'edits' must be a JSON object")
+
+    from services.pdf_export import export_edited_pdf
 
     try:
         edited_bytes = export_edited_pdf(pdf_bytes, payload)

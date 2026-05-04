@@ -408,6 +408,16 @@ export interface MarkdownSearchResults {
   results: MarkdownSearchResult[];
 }
 
+export interface PdfDocStateRead {
+  editor: PdfEditorState | null;
+  parsedCache: { sourceHash: string; parsed: unknown } | null;
+}
+
+export interface ExcelDocStateRead {
+  editor: ExcelEditorState | null;
+  parsedCache: { sourceHash: string; parsed: unknown } | null;
+}
+
 export interface StorageAdapter {
   readonly mode: WorkspaceMode;
 
@@ -417,8 +427,18 @@ export interface StorageAdapter {
   readBinary?(handle: DocumentHandle): Promise<Uint8Array>;
   readPdfEditorState?(handle: DocumentHandle): Promise<PdfEditorState | null>;
   writePdfEditorState?(handle: DocumentHandle, state: PdfEditorState): Promise<void>;
+  /** Combined sidecar read for PDF open: editor state + parsed-blocks cache. */
+  readPdfDocState?(handle: DocumentHandle): Promise<PdfDocStateRead | null>;
+  writePdfParsedCache?(handle: DocumentHandle, sourceHash: string, parsed: unknown): Promise<void>;
   readExcelEditorState?(handle: DocumentHandle): Promise<ExcelEditorState | null>;
   writeExcelEditorState?(handle: DocumentHandle, state: ExcelEditorState): Promise<void>;
+  /** Combined sidecar read for Excel open: editor state + parsed-workbook cache. */
+  readExcelDocState?(handle: DocumentHandle): Promise<ExcelDocStateRead | null>;
+  writeExcelParsedCache?(
+    handle: DocumentHandle,
+    sourceHash: string,
+    parsed: unknown
+  ): Promise<void>;
   create(input: StorageCreateInput): Promise<WorkspaceEntry>;
   rename(handle: DocumentHandle, name: string): Promise<WorkspaceEntry>;
   move(handle: DocumentHandle, parent: DocumentHandle | null): Promise<WorkspaceEntry>;

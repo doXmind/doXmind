@@ -143,6 +143,7 @@ export function MermaidEditorPanel({
     <div
       className="mermaid-editor-panel doxmind-block-placeholder relative flex w-full flex-col overflow-hidden rounded-lg"
       onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       {/* Header — preview when there's code, placeholder when empty */}
       <div

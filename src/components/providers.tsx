@@ -3,7 +3,7 @@
 import { ThemeProvider } from "next-themes";
 import { MotionConfig } from "framer-motion";
 import { useThemeManager } from "@/hooks/use-theme-manager";
-import { TrayMenuListener } from "@/components/tray-menu-listener";
+import { NativeMenuListener } from "@/components/native-menu-listener";
 import { AppearanceInjector } from "@/components/appearance-injector";
 
 function ThemeInitializer() {
@@ -24,7 +24,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <MotionConfig reducedMotion="user">
         <ThemeInitializer />
         <AppearanceInjector />
-        <TrayMenuListener />
+        <NativeMenuListener />
         {children}
       </MotionConfig>
     </ThemeProvider>

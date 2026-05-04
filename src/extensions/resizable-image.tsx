@@ -170,6 +170,9 @@ export const ResizableImage = Node.create<ResizableImageOptions>({
     const src = (node.attrs?.src as string) ?? "";
     const alt = (node.attrs?.alt as string) ?? "";
     const title = (node.attrs?.title as string) ?? "";
+    // Empty placeholder (no src) has no portable markdown form — skip it.
+    // The node lives in the sidecar HTML and is restored from there on reopen.
+    if (!src) return "";
     if (title) return `![${alt}](${src} "${title}")`;
     return `![${alt}](${src})`;
   },
@@ -232,7 +235,7 @@ export const ResizableImage = Node.create<ResizableImageOptions>({
   parseHTML() {
     return [
       {
-        tag: "img[src]",
+        tag: "img",
       },
     ];
   },

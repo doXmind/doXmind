@@ -53,6 +53,14 @@ pub fn set_recents(recents: Vec<OpenTarget>) {
     }
 }
 
+/// Look up a single recent by index, used to resolve clicks on dynamically
+/// generated `menu-recent-N` items in the application menu bar and tray.
+pub fn recent_at(idx: usize) -> Option<OpenTarget> {
+    RECENTS
+        .get()
+        .and_then(|m| m.lock().ok().and_then(|g| g.get(idx).cloned()))
+}
+
 /// Install `applicationDockMenu:` on the NSApplicationDelegate that Tauri
 /// already set. Must run on the main thread, after the Tauri app has built
 /// its delegate (i.e. inside `setup`).
