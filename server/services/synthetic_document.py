@@ -50,6 +50,7 @@ EXCEL_BLOCK_TYPE = "excel-block"
 
 _MIGRATE_ENV_VAR = "DOXMIND_SIDECAR_MIGRATE"
 _MIGRATE_DISABLED_VALUES = frozenset({"0", "false", "no", "off"})
+_MIGRATE_ENABLED_VALUES = frozenset({"1", "true", "yes", "on"})
 
 _LEGACY_KEYS_BY_BLOCK_TYPE: dict[str, tuple[str, ...]] = {
     PDF_BLOCK_TYPE: ("pdf_editor", "pdf_parsed_cache"),
@@ -361,7 +362,16 @@ def _migration_disabled() -> bool:
     raw = os.environ.get(_MIGRATE_ENV_VAR)
     if raw is None:
         return False
-    return raw.strip().lower() in _MIGRATE_DISABLED_VALUES
+    value = raw.strip().lower()
+    if value in _MIGRATE_DISABLED_VALUES:
+        return True
+    if value in _MIGRATE_ENABLED_VALUES:
+        return False
+    raise ValueError(
+        f"DOXMIND_SIDECAR_MIGRATE has invalid value {raw!r}; accepted: "
+        f"{sorted(_MIGRATE_DISABLED_VALUES)} (disabled), "
+        f"{sorted(_MIGRATE_ENABLED_VALUES)} (enabled)"
+    )
 
 
 def _detect_legacy_block_type(sidecar: dict[str, Any]) -> str | None:
