@@ -57,6 +57,7 @@ _Avoid_: PDF wrapper，Excel wrapper，virtual document。
 
 **Block placeholder**:
 **External-reference Custom Block** 在 markdown 里的占位符表达，固定为 HTML 注释格式：`<!-- {block_type} id="{uuid}" src="{relative_path}" [...其他属性] -->`。`id` 是该块实例的稳定标识（UUID v4），跨 rename / move 不变；`src` 是被引用文件相对于 Document 所在目录的路径。占位符在 GitHub / pandoc 等 markdown 渲染下不可见——**它是 doXmind 的内部状态表达，不是文档内容**。
+规范详见 [docs/sidecar-format.md](docs/sidecar-format.md)。
 
 **Block correlation**:
 一个 External-reference Custom Block 实例在 **Block placeholder**（markdown）、TipTap node（HTML/编辑器）、**Extras** slot（sidecar）三处的对应关系，靠 `id` 串联。每次 `MarkdownDocumentState.read` 都会扫一遍并产出一份 **Correlation report**，列出三种破裂事件：
