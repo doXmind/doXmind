@@ -31,6 +31,11 @@ pymupdf>=1.24.0
 # multi-MB sheets which the editor isn't optimised for yet.
 openpyxl>=3.1.5
 
+# Cross-platform OS trash for the doc_delete fallback used by the browser
+# dev surface. On macOS / Windows it talks to the native recycle bin; the
+# Tauri app uses the Rust `trash` crate directly and never touches this.
+send2trash>=1.8.3
+
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.25.2

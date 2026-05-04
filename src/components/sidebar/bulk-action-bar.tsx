@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { FolderInput, Trash2, Download, X, AlertTriangle } from "lucide-react";
+import { FolderInput, Trash2, Download, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
-import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -144,26 +144,14 @@ export function BulkActionBar() {
         </div>
       </div>
 
-      {/* Move to Trash Confirmation Modal */}
-      <Modal open={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
-        <ModalHeader onClose={() => setShowDeleteModal(false)}>
-          <span className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-destructive" />
-            {t("moveToTrashConfirmTitle", { count: selectedCount })}
-          </span>
-        </ModalHeader>
-        <p className="text-sm text-muted-foreground">
-          {selectedCount > 1 ? t("moveToTrashDescMultiple") : t("moveToTrashDescSingle")}
-        </p>
-        <ModalFooter>
-          <Button variant="outline" onClick={() => setShowDeleteModal(false)}>
-            {tc("cancel")}
-          </Button>
-          <Button variant="destructive" onClick={handleDeleteConfirm}>
-            {t("moveToTrash")}
-          </Button>
-        </ModalFooter>
-      </Modal>
+      <ConfirmModal
+        open={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={handleDeleteConfirm}
+        title={t("moveToTrashTitleBulk", { count: selectedCount })}
+        description={t("moveToTrashDescBulk")}
+        confirmLabel={t("moveToTrash")}
+      />
     </>
   );
 }

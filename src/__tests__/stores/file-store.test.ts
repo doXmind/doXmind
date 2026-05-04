@@ -27,8 +27,6 @@ function resetStore() {
     expandedFolderIds: new Set(),
     selectedFileIds: new Set(),
     loadedContentIds: new Set(),
-    trashFiles: [],
-    isTrashLoading: false,
   });
 }
 
@@ -253,7 +251,7 @@ describe("useFileStore disk workspace", () => {
     });
     invokeMock.mockResolvedValueOnce({
       path: "Doc.md",
-      trashPath: ".trash/Doc.md",
+      sidecarPath: null,
     });
 
     await useFileStore.getState().deleteFile("doc-1");

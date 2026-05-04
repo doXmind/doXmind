@@ -182,11 +182,31 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     }
   }, [allFolders, justCreatedFileId, clearJustCreatedFileId]);
 
-  // Trash recovery is currently a stub (`loadTrash` always returns empty),
-  // so a misclick on a folder Delete is unrecoverable — and folders take
-  // their children with them. A confirm modal is the minimum safety net
-  // until the Trash workflow is wired up properly.
+  // OS Trash is the recovery path (per ADR 0005). Confirm is defense-in-depth
+  // and surfaces how many children move with the folder so the user can
+  // reconsider before triggering a multi-file delete.
   const [folderPendingDelete, setFolderPendingDelete] = useState<FileItemType | null>(null);
+
+  // Count documents under a folder by walking the file-store entries
+  // (already in memory) rather than hitting disk. Subfolders are traversed
+  // but not counted themselves; sidecars are implicit (one per doc).
+  const countDocsUnderFolder = (folder: FileItemType | null): number => {
+    if (!folder) return 0;
+    let docs = 0;
+    const stack: string[] = [folder.id];
+    while (stack.length > 0) {
+      const parentId = stack.pop();
+      const children = files.filter((f) => f.parentId === parentId);
+      for (const child of children) {
+        if (child.isFolder) {
+          stack.push(child.id);
+        } else {
+          docs += 1;
+        }
+      }
+    }
+    return docs;
+  };
 
   const handleDeleteFolderDirect = (folder: FileItemType) => {
     setFolderPendingDelete(folder);
@@ -609,8 +629,10 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         open={folderPendingDelete !== null}
         onClose={() => setFolderPendingDelete(null)}
         onConfirm={handleDeleteFolderConfirmed}
-        title={t("moveToTrashConfirmTitle", { count: 1 })}
-        description={t("moveToTrashDescSingle")}
+        title={t("moveToTrashTitleFolder", { name: folderPendingDelete?.name ?? "" })}
+        description={t("moveToTrashDescFolder", {
+          count: countDocsUnderFolder(folderPendingDelete),
+        })}
         confirmLabel={t("moveToTrash")}
       />
     </div>

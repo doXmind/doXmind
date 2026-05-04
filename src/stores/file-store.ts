@@ -180,22 +180,6 @@ interface FileState {
   selectAll: () => void;
   bulkMoveFiles: (fileIds: string[], folderId: string | null) => Promise<void>;
   bulkDeleteFiles: (fileIds: string[]) => Promise<void>;
-
-  // Trash
-  trashFiles: Array<{
-    id: string;
-    name: string;
-    isFolder: boolean;
-    parentId: string | null;
-    deletedAt: string;
-    createdAt: string;
-    updatedAt: string;
-  }>;
-  isTrashLoading: boolean;
-  loadTrash: () => Promise<void>;
-  restoreFile: (id: string) => Promise<void>;
-  permanentDeleteFile: (id: string) => Promise<void>;
-  emptyTrash: () => Promise<void>;
 }
 
 function getAdapter(state: Pick<FileState, "rootPath">): StorageAdapter {
@@ -263,8 +247,6 @@ export const useFileStore = create<FileState>()(
       sortBy: "modified-newest" as SortOption,
       justCreatedFileId: null,
       expandedFolderIds: new Set<string>(),
-      trashFiles: [],
-      isTrashLoading: false,
       selectedFileIds: new Set<string>(),
       loadedContentIds: new Set<string>(),
 
@@ -669,22 +651,45 @@ export const useFileStore = create<FileState>()(
       deleteFile: async (id: string) => {
         const state = get();
         const fileToDelete = state.files.find((f) => f.id === id);
+        if (!fileToDelete) return;
 
-        // Collect all files to delete (folder + children if it's a folder)
-        const filesToDelete: string[] = [id];
-        if (fileToDelete?.isFolder) {
-          const childFiles = state.files.filter((f) => f.parentId === id);
-          filesToDelete.push(...childFiles.map((f) => f.id));
+        // The backend's workspace_delete_folder trashes the entire subtree
+        // atomically (single OS-trash entry per folder). Issuing per-child
+        // adapter.delete calls in parallel races the parent's trash and
+        // fails the children with "not found" once the folder is gone —
+        // the bug we'd been masking by swallowing throws. Resolve it by
+        // talking to the adapter exactly once: for a folder, the folder
+        // handle covers the whole subtree; for a regular file, just the
+        // file. Optimistic state still removes every descendant so the
+        // sidebar reflects what just left disk.
+        const collectDescendantIds = (rootId: string): string[] => {
+          const out: string[] = [];
+          const stack = [rootId];
+          while (stack.length > 0) {
+            const parentId = stack.pop();
+            for (const child of state.files) {
+              if (child.parentId === parentId) {
+                out.push(child.id);
+                if (child.isFolder) stack.push(child.id);
+              }
+            }
+          }
+          return out;
+        };
+
+        const idsLeavingStore = new Set<string>([id]);
+        if (fileToDelete.isFolder) {
+          for (const descendantId of collectDescendantIds(id)) {
+            idsLeavingStore.add(descendantId);
+          }
         }
 
-        // Filter out all files to delete
-        const newFiles = state.files.filter((f) => !filesToDelete.includes(f.id));
+        const newFiles = state.files.filter((f) => !idsLeavingStore.has(f.id));
         const nextFile = newFiles.find((f) => !f.isFolder);
-        const newCurrentId = filesToDelete.includes(state.currentFileId || "")
+        const newCurrentId = idsLeavingStore.has(state.currentFileId || "")
           ? (nextFile?.id ?? null)
           : state.currentFileId;
 
-        // Optimistic update
         set({
           files: newFiles,
           currentFileId: newCurrentId,
@@ -692,13 +697,7 @@ export const useFileStore = create<FileState>()(
 
         try {
           const adapter = getAdapter(state);
-          await Promise.all(
-            filesToDelete.map((fileId) => {
-              const file = state.files.find((item) => item.id === fileId);
-              return file ? adapter.delete(handleForFile(file)) : Promise.resolve();
-            })
-          );
-
+          await adapter.delete(handleForFile(fileToDelete));
           eventBus.emit("storage:changed");
         } catch (error) {
           log.error("Failed to delete file(s)", error);
@@ -1213,30 +1212,6 @@ export const useFileStore = create<FileState>()(
         }
       },
 
-      // Trash operations
-      loadTrash: async () => {
-        set({ isTrashLoading: true });
-        set({ trashFiles: [], isTrashLoading: false });
-      },
-
-      restoreFile: async (id: string) => {
-        set((state) => ({
-          trashFiles: state.trashFiles.filter((f) => f.id !== id),
-        }));
-        await get().loadFiles();
-      },
-
-      permanentDeleteFile: async (id: string) => {
-        set((state) => ({
-          trashFiles: state.trashFiles.filter((f) => f.id !== id),
-        }));
-        eventBus.emit("storage:changed");
-      },
-
-      emptyTrash: async () => {
-        set({ trashFiles: [] });
-        eventBus.emit("storage:changed");
-      },
     }),
     {
       name: "doxmind-files",

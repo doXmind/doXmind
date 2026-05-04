@@ -21,7 +21,9 @@ import {
   DropdownMenuContent,
 } from "@/components/ui/dropdown-menu";
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
+import { useEditorStore } from "@/stores/editor-store";
 import { storeLogger } from "@/lib/logger";
+import { sidecarFilenameFor } from "@/lib/storage/sidecar-name";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { FileActionsMenuItems, getMenuItemCount } from "@/components/sidebar/file-actions-menu";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
@@ -66,10 +68,10 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
   const [contextMenuReady, setContextMenuReady] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const [newName, setNewName] = useState(getNameWithoutExtension(file.name));
-  // Trash recovery is currently a stub (`loadTrash` always returns empty),
-  // so a misclick on Delete is unrecoverable. A confirm step is the minimum
-  // safety net while the Trash workflow is wired up properly.
+  // OS Trash is the recovery path (per ADR 0005). Confirm is defense-in-depth
+  // and doubles as the place to tell the user the hidden sidecar moves too.
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const isCurrentFileDirty = useEditorStore((s) => (isActive ? s.isDirty : false));
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -274,7 +276,13 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       navigateToEditorFile(nextId);
     } catch (error) {
       log.error("Failed to delete file", error);
-      notify.error(t("failedToDelete"));
+      // Surface the specific backend message — in particular the
+      // "document moved to Trash but sidecar move failed" partial-fail
+      // signal — instead of the generic "delete failed" string. The user
+      // needs to know whether the .md is already in Trash so they don't
+      // re-try and double-delete.
+      const { title, description } = getErrorMessage(error);
+      notify.error(title || t("failedToDelete"), description ? { description } : undefined);
     }
   };
 
@@ -567,8 +575,16 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
         open={isDeleteConfirmOpen}
         onClose={() => setIsDeleteConfirmOpen(false)}
         onConfirm={handleDeleteConfirmed}
-        title={t("moveToTrashConfirmTitle", { count: 1 })}
-        description={t("moveToTrashDescSingle")}
+        title={
+          isCurrentFileDirty
+            ? t("moveToTrashTitleUnsaved", { name: file.name })
+            : t("moveToTrashTitleSingle", { name: file.name })
+        }
+        description={
+          isCurrentFileDirty
+            ? t("moveToTrashDescUnsaved")
+            : t("moveToTrashDescSingle", { sidecar: sidecarFilenameFor(file.name) })
+        }
         confirmLabel={t("moveToTrash")}
       />
     </div>
