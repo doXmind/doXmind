@@ -1,0 +1,35 @@
+version = 1
+name = "doxmind-desktop"
+
+[setup]
+script = """
+set -euo pipefail
+node --version
+npm ci
+cd server && uv sync
+"""
+
+[[actions]]
+name = "Run Dev"
+icon = "run"
+command = "npm run dev:desktop"
+
+[[actions]]
+name = "Test"
+icon = "checkmark"
+command = "npm run test:ci"
+
+[[actions]]
+name = "Lint"
+icon = "checkmark"
+command = "npm run lint"
+
+[[actions]]
+name = "Type Check"
+icon = "checkmark"
+command = "npm run type-check"
+
+[[actions]]
+name = "Server Tests"
+icon = "checkmark"
+command = "cd server && .venv/bin/pytest"
