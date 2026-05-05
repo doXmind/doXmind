@@ -19,7 +19,7 @@ from openpyxl import Workbook, load_workbook
 from services.excel_workbook import export_edited_workbook, parse_workbook
 
 ROOT = Path(__file__).resolve().parents[2]
-FIXTURE = ROOT / "testdata" / "budget.xlsx"
+FIXTURE = Path(__file__).resolve().parent / "fixtures" / "budget.xlsx"
 
 
 def export_workbook(edits: dict[str, Any]):

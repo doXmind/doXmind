@@ -80,6 +80,12 @@ CLAUDE.md
 /content
 test_output.txt
 
+# Local workspace fixtures. testdata/ holds a live developer workspace
+# (Markdown/PDF/Excel files plus their hidden .doxmind sidecars, .lock
+# files, and .bak migration backups). The sidecars churn on every editor
+# session, so this directory must not be tracked.
+testdata/
+
 # Tauri
 target/
 src-tauri/target/
