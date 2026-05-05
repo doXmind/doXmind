@@ -306,6 +306,8 @@ def workspace_markdown_search(root: str, query: str, limit: Any = None) -> list[
 
 
 def read_doc(path: Path) -> dict[str, Any]:
+    from services.block_correlation import BlockCorrelation, CorrelationReport
+    from services.external_ref_blocks import default_external_ref_block_registry
     from services.markdown_document_state import (
         EmptyDocument,
         MarkdownDocumentState,
@@ -314,7 +316,11 @@ def read_doc(path: Path) -> dict[str, Any]:
         UsedSidecar,
     )
 
-    outcome = MarkdownDocumentState().read(path)
+    state = MarkdownDocumentState(
+        correlator=BlockCorrelation(default_external_ref_block_registry()),
+    )
+    outcome = state.read(path)
+    correlation: CorrelationReport | None = outcome.correlation
     if isinstance(outcome, UsedSidecar):
         return {
             "html": outcome.html,
@@ -322,9 +328,17 @@ def read_doc(path: Path) -> dict[str, Any]:
             "meta": outcome.meta,
             "extras": outcome.extras,
             "source": "sidecar",
+            "correlation": _serialize_correlation_report(correlation),
         }
     if isinstance(outcome, EmptyDocument):
-        return {"html": "", "markdown": "", "meta": outcome.meta, "extras": None, "source": "empty"}
+        return {
+            "html": "",
+            "markdown": "",
+            "meta": outcome.meta,
+            "extras": None,
+            "source": "empty",
+            "correlation": _serialize_correlation_report(correlation),
+        }
     if isinstance(outcome, SidecarStale):
         if not outcome.markdown.strip():
             return {
@@ -333,6 +347,7 @@ def read_doc(path: Path) -> dict[str, Any]:
                 "meta": outcome.meta,
                 "extras": outcome.salvaged_extras or None,
                 "source": "empty",
+                "correlation": _serialize_correlation_report(correlation),
             }
         return {
             "html": outcome.fresh_html,
@@ -340,6 +355,7 @@ def read_doc(path: Path) -> dict[str, Any]:
             "meta": outcome.meta,
             "extras": outcome.salvaged_extras or None,
             "source": "markdown",
+            "correlation": _serialize_correlation_report(correlation),
         }
     assert isinstance(outcome, NoSidecar)
     return {
@@ -348,6 +364,36 @@ def read_doc(path: Path) -> dict[str, Any]:
         "meta": outcome.meta,
         "extras": None,
         "source": "markdown",
+        "correlation": _serialize_correlation_report(correlation),
+    }
+
+
+def _serialize_correlation_report(report: Any) -> dict[str, Any] | None:
+    """Serialize a ``CorrelationReport`` into a JSON-safe dict.
+
+    Returns ``None`` when no correlator ran (the report itself is ``None``).
+    An empty report (correlator ran, no events) serializes as
+    ``{"events": [], "blocking": False}`` so callers can distinguish
+    "correlation didn't run" from "correlation ran cleanly".
+    """
+    from services.block_correlation import CorrelationReport
+
+    if report is None:
+        return None
+    if not isinstance(report, CorrelationReport):
+        raise TypeError(f"expected CorrelationReport, got {type(report).__name__}")
+    return {
+        "events": [
+            {
+                "kind": event.kind,
+                "block_type": event.block_type,
+                "id": event.id,
+                "how_handled": event.how_handled.value,
+                "detail": dict(event.detail),
+            }
+            for event in report.events
+        ],
+        "blocking": report.blocking,
     }
 
 

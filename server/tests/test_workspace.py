@@ -401,3 +401,56 @@ def test_doc_delete_rejects_unknown_extension(sync_client, tmp_path, patched_os_
     assert response.status_code == 400
     assert "must end in .md" in response.json()["detail"]
     assert note_path.exists()
+
+
+def test_doc_read_includes_empty_correlation_for_plain_markdown(sync_client, tmp_path):
+    doc = tmp_path / "Plain.md"
+    doc.write_text("# Plain\n\nNo placeholders here.\n", encoding="utf-8")
+
+    read = invoke(sync_client, "doc_read", {"path": str(doc)})
+
+    assert read["correlation"] == {"events": [], "blocking": False}
+
+
+def test_doc_read_reports_new_event_for_unmatched_pdf_placeholder(sync_client, tmp_path):
+    body = (
+        "---\nid: doc-1\ntitle: Notes\n---\n\n"
+        '<!-- pdf-block id="abc" src="report.pdf" -->\n'
+    )
+    doc = tmp_path / "Notes.md"
+    doc.write_text(body, encoding="utf-8")
+
+    read = invoke(sync_client, "doc_read", {"path": str(doc)})
+
+    correlation = read["correlation"]
+    assert correlation is not None
+    assert correlation["blocking"] is False
+    assert len(correlation["events"]) == 1
+    event = correlation["events"][0]
+    assert event["kind"] == "new"
+    assert event["block_type"] == "pdf-block"
+    assert event["id"] == "abc"
+    assert event["how_handled"] == "created_empty"
+
+
+def test_doc_read_reports_blocking_duplicate_pdf_placeholders(sync_client, tmp_path):
+    body = (
+        "---\nid: doc-1\ntitle: Notes\n---\n\n"
+        '<!-- pdf-block id="abc" src="report.pdf" -->\n\n'
+        '<!-- pdf-block id="abc" src="report.pdf" -->\n'
+    )
+    doc = tmp_path / "Notes.md"
+    doc.write_text(body, encoding="utf-8")
+
+    read = invoke(sync_client, "doc_read", {"path": str(doc)})
+
+    correlation = read["correlation"]
+    assert correlation is not None
+    assert correlation["blocking"] is True
+    duplicate_events = [e for e in correlation["events"] if e["kind"] == "duplicate"]
+    assert len(duplicate_events) == 1
+    duplicate = duplicate_events[0]
+    assert duplicate["block_type"] == "pdf-block"
+    assert duplicate["id"] == "abc"
+    assert duplicate["how_handled"] == "errored"
+    assert duplicate["detail"]["locations"] == [{"line": 1}, {"line": 3}]
