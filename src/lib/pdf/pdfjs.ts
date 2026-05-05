@@ -42,10 +42,50 @@ if (typeof WeakMap !== 'undefined' && !WeakMap.prototype.getOrInsertComputed) {
     configurable: true,
   });
 }
+if (typeof ReadableStream !== 'undefined') {
+  var readableStreamPrototype = ReadableStream.prototype;
+  if (!readableStreamPrototype.values) {
+    Object.defineProperty(readableStreamPrototype, 'values', {
+      value: function (options) {
+        var reader = this.getReader();
+        var preventCancel = Boolean(options && options.preventCancel);
+        var iterator = {
+          next: function () {
+            return reader.read();
+          },
+          return: function (value) {
+            if (preventCancel) {
+              reader.releaseLock();
+              return Promise.resolve({ value: value, done: true });
+            }
+            return reader.cancel(value).then(function () {
+              return { value: value, done: true };
+            });
+          },
+        };
+        if (typeof Symbol !== 'undefined' && Symbol.asyncIterator) {
+          iterator[Symbol.asyncIterator] = function () {
+            return iterator;
+          };
+        }
+        return iterator;
+      },
+      writable: true,
+      configurable: true,
+    });
+  }
+  if (typeof Symbol !== 'undefined' && Symbol.asyncIterator && !readableStreamPrototype[Symbol.asyncIterator]) {
+    Object.defineProperty(readableStreamPrototype, Symbol.asyncIterator, {
+      value: readableStreamPrototype.values,
+      writable: true,
+      configurable: true,
+    });
+  }
+}
 `;
 
 let mainThreadPolyfilled = false;
-function installMainThreadPolyfill() {
+export function installPdfjsCompatibilityPolyfills() {
   if (mainThreadPolyfilled) return;
 
   new Function(POLYFILL_SRC)();
@@ -55,7 +95,7 @@ function installMainThreadPolyfill() {
 let workerConfigured = false;
 
 export function getPdfjs() {
-  installMainThreadPolyfill();
+  installPdfjsCompatibilityPolyfills();
 
   if (!workerConfigured) {
     // Webpack rewrites this `new URL(...)` into the static asset URL of the
