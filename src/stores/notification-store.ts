@@ -12,6 +12,12 @@ export type ProgressStatus = "running" | "success" | "error";
 export interface ProgressTask {
   id: string;
   label: string;
+  /**
+   * Optional step text shown beneath the label. Long-running tasks
+   * (PDF export, large imports) update this as they move through
+   * phases so the user sees the operation is making progress.
+   */
+  detail?: string;
   status: ProgressStatus;
   message?: string;
   startedAt: number;
@@ -26,7 +32,8 @@ interface NotificationState {
   dismissError: (id: string) => void;
   clearAllErrors: () => void;
 
-  startProgress: (label: string) => string;
+  startProgress: (label: string, detail?: string) => string;
+  updateProgress: (id: string, patch: { label?: string; detail?: string }) => void;
   resolveProgress: (id: string, message?: string) => void;
   failProgress: (id: string, message?: string) => void;
   removeProgress: (id: string) => void;
@@ -54,12 +61,29 @@ export const useNotificationStore = create<NotificationState>((set) => ({
 
   clearAllErrors: () => set({ errors: [] }),
 
-  startProgress: (label) => {
+  startProgress: (label, detail) => {
     const id = makeId("prog");
     set((state) => ({
-      progress: [...state.progress, { id, label, status: "running", startedAt: Date.now() }],
+      progress: [
+        ...state.progress,
+        { id, label, detail, status: "running", startedAt: Date.now() },
+      ],
     }));
     return id;
+  },
+
+  updateProgress: (id, patch) => {
+    set((state) => ({
+      progress: state.progress.map((task) =>
+        task.id === id
+          ? {
+              ...task,
+              ...(patch.label !== undefined ? { label: patch.label } : {}),
+              ...(patch.detail !== undefined ? { detail: patch.detail } : {}),
+            }
+          : task
+      ),
+    }));
   },
 
   resolveProgress: (id, message) => {

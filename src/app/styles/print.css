@@ -2,10 +2,9 @@
    doXmind print stylesheet (Markdown → PDF export)
 
    Design notes:
-   - The exporter triggers `window.print()`. Browser/Tauri WebView
-     uses Chromium to render the page under @media print, then the
-     user picks "Save as PDF" (or our native command writes the PDF
-     directly via WebKit/WebView2).
+   - Markdown PDF export now renders through the local Python/PyMuPDF
+     sidecar. This stylesheet remains for manual browser print preview and
+     the regular print command path.
    - PDF must always be light mode regardless of editor theme. We
      re-declare every relevant CSS custom property under @media print
      with !important, which overrides:
@@ -14,10 +13,6 @@
           document.documentElement.style.setProperty(...) — those are
           inline styles WITHOUT !important, so a stylesheet rule
           with !important wins.
-   - We also support an `html[data-pdf-export="light"]` selector
-     for previewing the print output in DevTools without actually
-     printing. The orchestrator sets this attribute right before
-     calling window.print() and removes it on `afterprint`.
    - Per-block rules cover every custom TipTap block (callout, code,
      mermaid, math, database, web bookmark, page link, toggle,
      columns, TOC, resizable image). Without these, blocks fall
@@ -865,25 +860,4 @@
     height: 0 !important;
     border: 0 !important;
   }
-}
-
-/* =============================================================
-   Print preview mode — same rules applied via attribute, so devs
-   can preview the print output in the live editor by setting:
-     document.documentElement.dataset.pdfExport = "light"
-   The exporter does NOT set this in the normal flow (it only sets
-   it transiently if needed for headless/native PDF capture).
-   ============================================================= */
-html[data-pdf-export="light"] {
-  color-scheme: light !important;
-}
-html[data-pdf-export="light"] header,
-html[data-pdf-export="light"] aside,
-html[data-pdf-export="light"] .desktop-chrome-header,
-html[data-pdf-export="light"] .files-sidebar,
-html[data-pdf-export="light"] .bubble-menu,
-html[data-pdf-export="light"] [role="toolbar"],
-html[data-pdf-export="light"] .block-handle,
-html[data-pdf-export="light"] .status-bar {
-  display: none !important;
 }

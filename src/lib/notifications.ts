@@ -51,13 +51,19 @@ export const notify = {
     );
   },
 
-  startProgress(label: string): string {
-    return useNotificationStore.getState().startProgress(label);
+  startProgress(label: string, detail?: string): string {
+    return useNotificationStore.getState().startProgress(label, detail);
+  },
+  updateProgress(id: string, patch: { label?: string; detail?: string }): void {
+    useNotificationStore.getState().updateProgress(id, patch);
   },
   resolveProgress(id: string, message?: string): void {
     useNotificationStore.getState().resolveProgress(id, message);
   },
   failProgress(id: string, message?: string): void {
     useNotificationStore.getState().failProgress(id, message);
+  },
+  removeProgress(id: string): void {
+    useNotificationStore.getState().removeProgress(id);
   },
 };
