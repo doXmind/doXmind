@@ -100,23 +100,37 @@
   animation: mathPanelFadeIn 0.15s ease-out;
 }
 
-/* Mermaid rendered chart layout */
+/* Mermaid rendered chart layout.
+ *
+ * `display: block` (not flex) — WebKit (which Tauri ships) collapses SVG
+ * children inside flex containers to 0×0 when the SVG sizes via viewBox +
+ * width="100%" + inline max-width, which is exactly what mermaid emits.
+ * Block layout with text-align centers the chart horizontally without
+ * triggering that bug. The empty-placeholder span centers the same way.
+ */
 .ProseMirror .mermaid-chart-wrapper .mermaid-rendered {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
+  text-align: center;
   max-height: 480px;
   min-height: 4rem;
   overflow: auto;
 }
 
-/* Ensure mermaid SVGs are responsive */
+.ProseMirror .mermaid-chart-wrapper .mermaid-rendered-svg-host {
+  display: block;
+}
+
+/* Mermaid emits `style="max-width: <natural>px"` inline on the SVG; that
+ * inline rule beats the CSS rule below on specificity and keeps the chart
+ * pinned at its natural width. Use !important so the SVG can flex with the
+ * container instead of staying at mermaid's calculated width. */
 .ProseMirror .mermaid-chart-wrapper .mermaid-rendered svg {
-  max-width: 100%;
+  max-width: 100% !important;
   max-height: 460px;
   height: auto;
   width: auto;
   margin: 0 auto;
+  display: inline-block;
 }
 
 /*

@@ -15,6 +15,69 @@ let renderCounter = 0;
 let renderQueue: Promise<void> = Promise.resolve();
 
 /**
+ * Theme-change pub/sub. Mermaid bakes the theme palette into the SVG at render
+ * time, so cached SVGs go stale when the user switches themes. Consumers
+ * subscribe here to re-render their charts and to invalidate any per-chart
+ * caches keyed on theme.
+ */
+const themeChangeListeners = new Set<() => void>();
+let themeObserverInstalled = false;
+let lastObservedThemeKey: string | null = null;
+
+function computeThemeKey(): string {
+  if (typeof document === "undefined") return "ssr";
+  const isDark = document.documentElement.classList.contains("dark");
+  const themeId =
+    document.documentElement.getAttribute("data-theme") || (isDark ? "dark" : "notion");
+  return `${themeId}-${isDark ? "dark" : "light"}`;
+}
+
+function ensureThemeObserver(): void {
+  if (themeObserverInstalled || typeof document === "undefined") return;
+  themeObserverInstalled = true;
+  lastObservedThemeKey = computeThemeKey();
+  const observer = new MutationObserver(() => {
+    const next = computeThemeKey();
+    if (next === lastObservedThemeKey) return;
+    lastObservedThemeKey = next;
+    themeChangeListeners.forEach((fn) => {
+      try {
+        fn();
+      } catch {
+        // listener errors must not break the observer
+      }
+    });
+  });
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme", "class"],
+  });
+}
+
+/**
+ * Stable string for the active editor theme. Use as a cache key alongside the
+ * mermaid source to avoid serving a light-mode SVG after the user switches to
+ * dark mode (or vice-versa).
+ */
+export function getMermaidThemeKey(): string {
+  ensureThemeObserver();
+  return computeThemeKey();
+}
+
+/**
+ * Subscribe to mermaid theme changes. Fires when the document's `data-theme`
+ * or `.dark` class flips. Returns an unsubscribe function. Designed to be
+ * passed directly to `useSyncExternalStore`.
+ */
+export function subscribeMermaidTheme(listener: () => void): () => void {
+  ensureThemeObserver();
+  themeChangeListeners.add(listener);
+  return () => {
+    themeChangeListeners.delete(listener);
+  };
+}
+
+/**
  * Custom Mermaid themes — Notion-style gray-tone palette.
  *
  * Design principles:

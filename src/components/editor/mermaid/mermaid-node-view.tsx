@@ -1,13 +1,48 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useEffect, useSyncExternalStore } from "react";
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import { cn } from "@/lib/utils";
-import { renderMermaidSvg } from "@/lib/mermaid-renderer";
+import {
+  renderMermaidSvg,
+  getMermaidThemeKey,
+  subscribeMermaidTheme,
+} from "@/lib/mermaid-renderer";
 import { MermaidEditorPanel } from "./mermaid-editor-panel";
 
 /**
+ * Module-level caches that survive ProseMirror node-view remounts during
+ * initial setContent and React StrictMode double-invoke. Without these the
+ * async mermaid render result is lost whenever the component unmounts before
+ * the SVG resolves and the next mount has to start from scratch.
+ *
+ * Both caches are keyed on `${theme}::${code}` because mermaid bakes the
+ * theme palette into the SVG as concrete fill/stroke attributes — flipping
+ * light/dark must not serve the previous palette back.
+ */
+const svgCache = new Map<string, string>();
+const inFlightRenders = new Map<string, Promise<string>>();
+
+function chartCacheKey(theme: string, code: string): string {
+  return `${theme}::${code}`;
+}
+
+function useMermaidThemeKey(): string {
+  return useSyncExternalStore(subscribeMermaidTheme, getMermaidThemeKey, () => "ssr");
+}
+
+type RenderState =
+  | { kind: "empty" }
+  | { kind: "loading" }
+  | { kind: "ready"; svg: string }
+  | { kind: "error" };
+
+/**
  * Renders the Mermaid chart in non-edit mode; click to enter edit mode.
+ *
+ * The SVG is held in React state and projected via `dangerouslySetInnerHTML`
+ * rather than written imperatively, so a remount or re-render driven by
+ * ProseMirror cannot wipe the chart between commit and the next paint.
  */
 export function MermaidNodeView({
   node,
@@ -19,9 +54,19 @@ export function MermaidNodeView({
   const { code } = node.attrs;
 
   const [localCode, setLocalCode] = useState(code || "");
-  const [renderError, setRenderError] = useState(false);
   const [isEditing, setIsEditing] = useState(!code);
-  const renderedRef = useRef<HTMLDivElement>(null);
+  const themeKey = useMermaidThemeKey();
+
+  const trimmedCode = (code || "").trim();
+  const cacheKey = trimmedCode ? chartCacheKey(themeKey, trimmedCode) : "";
+
+  // Initialize state from cache if available so a remount paints the SVG on
+  // the very first commit — no "Rendering mermaid…" flicker.
+  const [renderState, setRenderState] = useState<RenderState>(() => {
+    if (!trimmedCode) return { kind: "empty" };
+    const cached = svgCache.get(cacheKey);
+    return cached ? { kind: "ready", svg: cached } : { kind: "loading" };
+  });
 
   // Listen for block-enter-edit event (Enter key from block selection)
   useEffect(() => {
@@ -41,46 +86,59 @@ export function MermaidNodeView({
     return () => document.removeEventListener("block-enter-edit", handler);
   }, [getPos]);
 
-  // Render the saved chart when not editing.
+  // Drive the async render. State transitions are committed via setState so
+  // React owns the DOM — no imperative innerHTML races with ProseMirror.
   useEffect(() => {
-    if (!renderedRef.current || isEditing) return;
-    const target = renderedRef.current;
-    const mermaidCode = (code || "").trim();
+    if (isEditing) return;
 
-    if (!mermaidCode) {
-      target.innerHTML =
-        '<span class="mermaid-empty-placeholder">Empty chart — click to edit</span>';
-      setRenderError(false);
+    if (!trimmedCode) {
+      setRenderState({ kind: "empty" });
       return;
     }
 
-    let cancelled = false;
-    (async () => {
-      try {
-        const svg = await renderMermaidSvg(mermaidCode);
-        if (cancelled) return;
-        target.innerHTML = svg;
-        const svgEl = target.querySelector("svg");
-        if (svgEl) {
-          svgEl.style.maxWidth = "100%";
-          svgEl.style.maxHeight = "460px";
-          svgEl.style.height = "auto";
-          svgEl.style.width = "auto";
-          svgEl.style.margin = "0 auto";
+    const cached = svgCache.get(cacheKey);
+    if (cached) {
+      setRenderState({ kind: "ready", svg: cached });
+      return;
+    }
+
+    setRenderState({ kind: "loading" });
+
+    let inFlight = inFlightRenders.get(cacheKey);
+    if (!inFlight) {
+      inFlight = renderMermaidSvg(trimmedCode);
+      inFlightRenders.set(cacheKey, inFlight);
+      inFlight.then(
+        (svg) => {
+          svgCache.set(cacheKey, svg);
+          if (inFlightRenders.get(cacheKey) === inFlight) {
+            inFlightRenders.delete(cacheKey);
+          }
+        },
+        () => {
+          if (inFlightRenders.get(cacheKey) === inFlight) {
+            inFlightRenders.delete(cacheKey);
+          }
         }
-        setRenderError(false);
-      } catch {
+      );
+    }
+
+    let cancelled = false;
+    inFlight.then(
+      (svg) => {
         if (cancelled) return;
-        setRenderError(true);
-        const safe = mermaidCode.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        target.innerHTML = `<pre class="text-xs text-muted-foreground whitespace-pre-wrap font-mono p-2"><span class="text-muted-foreground/70 select-none">mermaid</span>\n${safe}</pre>`;
+        setRenderState({ kind: "ready", svg });
+      },
+      () => {
+        if (cancelled) return;
+        setRenderState({ kind: "error" });
       }
-    })();
+    );
 
     return () => {
       cancelled = true;
     };
-  }, [code, isEditing]);
+  }, [trimmedCode, cacheKey, isEditing]);
 
   // Sync local code when prop changes
   useEffect(() => {
@@ -143,14 +201,46 @@ export function MermaidNodeView({
   return (
     <NodeViewWrapper as="div" className="mermaid-chart-wrapper my-4 block">
       <div
-        ref={renderedRef}
         onClick={handleEnterEdit}
         className={cn(
           "mermaid-rendered cursor-pointer overflow-auto rounded-lg border border-border/40 bg-card p-4 text-center transition-all duration-150",
           "hover:border-border hover:bg-accent/20",
-          renderError && "border-destructive/50"
+          renderState.kind === "error" && "border-destructive/50"
         )}
-      />
+      >
+        <MermaidRenderedContent state={renderState} code={trimmedCode} />
+      </div>
     </NodeViewWrapper>
   );
 }
+
+function MermaidRenderedContent({ state, code }: { state: RenderState; code: string }) {
+  if (state.kind === "empty") {
+    return <span className="mermaid-empty-placeholder">Empty chart — click to edit</span>;
+  }
+  if (state.kind === "loading") {
+    return <span className="mermaid-empty-placeholder text-xs">Rendering mermaid…</span>;
+  }
+  if (state.kind === "error") {
+    return (
+      <pre className="whitespace-pre-wrap p-2 text-left font-mono text-xs text-muted-foreground">
+        <span className="select-none text-muted-foreground/70">mermaid{"\n"}</span>
+        {code}
+      </pre>
+    );
+  }
+  // ready — project the SVG; React owns the subtree so ProseMirror can't wipe it.
+  return (
+    <div className="mermaid-rendered-svg-host" dangerouslySetInnerHTML={{ __html: state.svg }} />
+  );
+}
+
+// Test-only hook to reset the module-level caches between cases.
+export const __mermaidTestUtils = {
+  clearCaches() {
+    svgCache.clear();
+    inFlightRenders.clear();
+  },
+  cacheKey: chartCacheKey,
+  svgCacheSize: () => svgCache.size,
+};

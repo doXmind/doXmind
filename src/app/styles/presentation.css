@@ -713,14 +713,16 @@
   cursor: default;
   max-height: 65vh;
   overflow: auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
+  text-align: center;
 }
 
 .presentation-content .mermaid-rendered svg {
+  max-width: 100% !important;
   max-height: 60vh;
   width: auto;
+  margin: 0 auto;
+  display: inline-block;
 }
 
 .presentation-content .mermaid-rendered:hover {
