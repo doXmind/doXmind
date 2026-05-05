@@ -9,8 +9,9 @@ is never modified by `write_full`.
 
 `open_pdf` / `open_excel` route the disk side through the same wire
 format that `MarkdownDocumentState` produces, including version and
-markdown-hash checks. ExternalRefBlockRegistry (#4) will replace the
-hardcoded PDF/Excel block declarations here. Legacy sidecar shapes
+markdown-hash checks. Block declarations come from the
+`ExternalRefBlockRegistry`; the factory looks up its PDF/Excel
+definitions at construction time. Legacy sidecar shapes
 (`{pdf_editor, pdf_parsed_cache, excel_editor, excel_parsed_cache}`) are
 migrated in place on first open via `migrate_legacy_sidecar`; ADR-0003
 explains why migration runs as an explicit step rather than at save time.
@@ -21,12 +22,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from services.external_ref_blocks import (
+    ExternalRefBlockRegistry,
+    default_external_ref_block_registry,
+)
 from services.markdown_document_state import DocumentSnapshot
 from services.sidecar_io import (
     SIDECAR_VERSION,
@@ -38,6 +42,7 @@ from services.sidecar_io import (
     build_md_with_frontmatter,
     hash_markdown,
     now_iso,
+    placeholder_re_for,
     read_sidecar,
     sidecar_path_for,
 )
@@ -65,10 +70,6 @@ _LEGACY_PARSED_CACHE_KEY = {
     PDF_BLOCK_TYPE: "pdf_parsed_cache",
     EXCEL_BLOCK_TYPE: "excel_parsed_cache",
 }
-
-_PLACEHOLDER_RE = re.compile(
-    r"<!--\s*(?P<block>pdf-block|excel-block)\s+id=\"(?P<id>[^\"]+)\"\s+src=\"(?P<src>[^\"]+)\"\s*-->"
-)
 
 
 class LegacySidecarError(Exception):
@@ -130,11 +131,16 @@ class Document:
 
 
 class SyntheticDocumentFactory:
+    def __init__(self, registry: ExternalRefBlockRegistry | None = None) -> None:
+        self._registry = registry or default_external_ref_block_registry()
+        self._pdf_def = self._registry.by_block_type(PDF_BLOCK_TYPE)
+        self._excel_def = self._registry.by_block_type(EXCEL_BLOCK_TYPE)
+
     def open_pdf(self, pdf_path: Path) -> Document:
-        return self._open(pdf_path, PDF_BLOCK_TYPE)
+        return self._open(pdf_path, self._pdf_def.block_type)
 
     def open_excel(self, xlsx_path: Path) -> Document:
-        return self._open(xlsx_path, EXCEL_BLOCK_TYPE)
+        return self._open(xlsx_path, self._excel_def.block_type)
 
     def write_full(self, document: Document, snapshot: DocumentSnapshot) -> Document:
         """Persist `snapshot` to the Synthetic Document's sidecar.
@@ -243,8 +249,7 @@ class SyntheticDocumentFactory:
                             f"unexpected sidecar read result: {type(locked_sidecar).__name__}"
                         )
                     if not any(
-                        key in locked_sidecar.data
-                        for key in _LEGACY_KEYS_BY_BLOCK_TYPE[block_type]
+                        key in locked_sidecar.data for key in _LEGACY_KEYS_BY_BLOCK_TYPE[block_type]
                     ):
                         logger.info(
                             "migration.success",
@@ -297,17 +302,20 @@ class SyntheticDocumentFactory:
         )
 
     def _synthesize_new(self, path: Path, block_type: str) -> Document:
+        definition = self._registry.by_block_type(block_type)
         block_id = str(uuid.uuid4())
         rel_src = path.name
-        body = _placeholder_line(block_type, block_id, rel_src) + "\n"
+        body = _placeholder_line(definition.block_type, block_id, rel_src) + "\n"
         meta: dict[str, Any] = {"id": str(uuid.uuid4()), "title": path.stem}
         snapshot = DocumentSnapshot(
-            html=_placeholder_html(block_type, block_id, rel_src),
+            html=_placeholder_html(definition.block_type, block_id, rel_src),
             markdown=body,
             meta=meta,
             extras={"blocks": {block_id: {}}},
         )
-        document = Document(path=path, block_id=block_id, block_type=block_type, snapshot=snapshot)
+        document = Document(
+            path=path, block_id=block_id, block_type=definition.block_type, snapshot=snapshot
+        )
         return self.write_full(document, snapshot)
 
     def _read_markdown_shape(
@@ -429,7 +437,5 @@ def _placeholder_html(block_type: str, block_id: str, rel_src: str) -> str:
 
 
 def _first_block_id_in_html(html: str, block_type: str) -> str | None:
-    for match in _PLACEHOLDER_RE.finditer(html):
-        if match.group("block") == block_type:
-            return match.group("id")
-    return None
+    match = placeholder_re_for((block_type,)).search(html)
+    return match.group("id") if match else None
