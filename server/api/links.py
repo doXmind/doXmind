@@ -8,6 +8,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 from fastapi import APIRouter
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from exceptions import BadRequestError
@@ -187,4 +188,58 @@ async def unfurl(payload: UnfurlRequest) -> UnfurlResponse:
         description=(description or "").strip() or None,
         favicon_url=urljoin(final_url, favicon) if favicon else urljoin(final_url, "/favicon.ico"),
         image_url=urljoin(final_url, image) if image else None,
+    )
+
+
+_IMAGE_MAX_BYTES = 6_000_000  # 6MB cap; OG / favicon are normally well under
+_ALLOWED_IMAGE_PREFIXES = ("image/",)
+
+
+@router.get("/image")
+async def image_proxy(url: str) -> Response:
+    """Fetch a remote image and return its bytes inline.
+
+    The Markdown PDF export rasterises web bookmark cards in the browser
+    via html-to-image, which taints the canvas as soon as a bookmark's
+    OG-thumbnail or favicon is cross-origin (almost always true). The
+    webview can't bypass CORS, but the local sidecar can — so we proxy
+    the image through here, deliver it same-origin to the webview, and
+    the export pipeline data-URLs it for capture.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise BadRequestError(message="Invalid image URL")
+
+    headers = {
+        "User-Agent": _USER_AGENT,
+        # Some CDNs return WebP for `*/*` accept; bookmark thumbnails are
+        # always rendered through <img>, so any image content type works.
+        "Accept": "image/*,*/*;q=0.8",
+    }
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=_FETCH_TIMEOUT,
+            headers=headers,
+        ) as client:
+            async with client.stream("GET", url) as resp:
+                resp.raise_for_status()
+                content_type = (resp.headers.get("content-type") or "").lower().split(";")[0].strip()
+                if not any(content_type.startswith(p) for p in _ALLOWED_IMAGE_PREFIXES):
+                    raise BadRequestError(message="Resource is not an image")
+                buf = bytearray()
+                async for chunk in resp.aiter_bytes():
+                    buf.extend(chunk)
+                    if len(buf) > _IMAGE_MAX_BYTES:
+                        raise BadRequestError(message="Image too large")
+                body = bytes(buf)
+    except httpx.HTTPError as exc:
+        logger.info("image proxy failed for %s: %s", url, exc)
+        raise BadRequestError(message="Could not fetch image") from exc
+
+    return Response(
+        content=body,
+        media_type=content_type or "application/octet-stream",
+        # Local sidecar — short cache OK; matches the unfurl-cache cadence.
+        headers={"Cache-Control": "private, max-age=300"},
     )

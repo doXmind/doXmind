@@ -82,15 +82,11 @@ export function UnifiedHeader() {
       return;
     }
 
-    // Markdown → PDF: route through the print pipeline. Native (Tauri)
-    // path saves directly via NSPrintOperation; browser fallback uses
-    // window.print(). Both honor @media print, which forces light mode
-    // and applies per-block rules from print.css.
+    // Markdown -> PDF: render with the local Python/PyMuPDF sidecar, then let
+    // the desktop shell write the returned PDF bytes to the selected file.
     if (format === "pdf") {
       const result = await exportMarkdownAsPdf({ fileName: currentFile.name });
       if (result.ok) {
-        // Native path saves to a chosen path; browser path shows the OS
-        // print dialog. Either way the OS surface is the success signal.
         return;
       }
       if (result.error && result.error !== "cancelled") {

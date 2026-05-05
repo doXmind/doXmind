@@ -289,24 +289,22 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
   const handleExport = (format: "markdown" | "pdf" | "docx") => {
     const formatLabel = format === "markdown" ? "Markdown" : format.toUpperCase();
 
-    // PDF: route through the print pipeline. The orchestrator handles
-    // navigating to this file (if it isn't already active), waiting for
-    // the editor to mount + render, mermaid light re-render, and
-    // restoring the user's previous navigation when done.
+    // PDF: route through the PyMuPDF export pipeline. The orchestrator
+    // owns the progress toast (start → step updates → resolve/fail), drives
+    // navigation if this isn't the active file, and restores the user's
+    // previous navigation when done. We just kick it off and surface a
+    // banner if it failed for a non-cancellation reason.
     if (format === "pdf") {
-      const progressId = notify.startProgress(t("exportingAs", { format: formatLabel }));
       void (async () => {
         try {
           const result = await exportMarkdownAsPdf({
             fileId: file.id,
             fileName: file.name,
           });
-          notify.resolveProgress(progressId);
           if (!result.ok && result.error && result.error !== "cancelled") {
             notify.error(t("failedToExport", { format: formatLabel }));
           }
         } catch (err) {
-          notify.failProgress(progressId);
           log.error("Failed to export PDF", err);
           notify.error(t("failedToExport", { format: formatLabel }));
         }

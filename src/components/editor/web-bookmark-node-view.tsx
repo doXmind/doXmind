@@ -81,7 +81,22 @@ export function WebBookmarkNodeView({ node, updateAttributes }: NodeViewProps) {
   const displayTitle = title || url;
 
   return (
-    <NodeViewWrapper className="not-prose my-2" contentEditable={false}>
+    <NodeViewWrapper
+      className="not-prose my-2"
+      contentEditable={false}
+      // Bookmark metadata is mirrored as data-* attrs on the live DOM so the
+      // PDF export pipeline (transformWebBookmarks in pdf-export-html.ts) can
+      // rebuild the card from `editor.innerHTML` without scraping computed
+      // Tailwind classes off the rendered tree. TipTap's renderHTML attrs
+      // don't reliably propagate to the React node-view wrapper, so we set
+      // them here explicitly.
+      data-type="web-bookmark"
+      data-url={url}
+      data-title={title}
+      data-description={description ?? ""}
+      data-favicon-url={faviconUrl ?? ""}
+      data-image-url={imageUrl ?? ""}
+    >
       <a
         href={url}
         target="_blank"

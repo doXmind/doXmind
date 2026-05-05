@@ -1935,21 +1935,15 @@ fn current_window_open_target(
         .and_then(|map| map.get(window.label()).cloned())
 }
 
-/// Save the active editor window as a PDF using the native print pipeline.
-/// On macOS this runs `NSPrintOperation` with `NSPrintSaveJob` disposition
-/// and `showsPrintPanel = NO`, so the file is written without any system
-/// dialog. NSPrintOperation honors `@media print`, so the same stylesheet
-/// that drives Cmd+P also drives this command.
-///
-/// Returns `Err("unsupported")` on platforms where the native pathway
-/// isn't wired up — the frontend treats that as a signal to fall back to
-/// `window.print()`.
+/// Write the PDF bytes produced by the local Python sidecar to the selected
+/// path. The shell handles filesystem access; PyMuPDF handles document layout.
 #[tauri::command]
 async fn save_window_pdf(
     window: WebviewWindow,
     target_path: String,
+    bytes: Vec<u8>,
 ) -> Result<(), String> {
-    pdf_export::save_window_pdf(window, target_path)
+    pdf_export::save_window_pdf(window, target_path, bytes)
 }
 
 /// Holds the per-process WebView init script. We need it on hand whenever a
