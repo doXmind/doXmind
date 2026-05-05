@@ -29,6 +29,7 @@ from services.markdown_document_state import (
     UsedSidecar,
 )
 from services.sidecar_io import CorruptSidecarError, sidecar_path_for
+from services.synthetic_document import _placeholder_line
 
 
 def _write_md(path: Path, body: str, meta_lines: list[str] | None = None) -> None:
@@ -214,6 +215,68 @@ def test_configured_correlator_populates_empty_report_for_all_read_outcomes(
         CorrelationReport(),
         CorrelationReport(),
     ]
+
+
+def test_configured_correlator_propagates_new_events_in_read_outcomes(
+    tmp_path: Path,
+) -> None:
+    used_state = _state_with_correlator()
+    used_path = tmp_path / "UsedNew.md"
+    used_markdown = _placeholder_line("pdf-block", "used-new", "assets/spec.pdf")
+    used_state.write_full(
+        used_path,
+        DocumentSnapshot(
+            html=used_markdown,
+            markdown=used_markdown,
+            meta={"id": "used-new-doc"},
+            extras={"blocks": {}},
+        ),
+    )
+
+    stale_state = _state_with_correlator()
+    stale_path = tmp_path / "StaleNew.md"
+    stale_state.write_full(
+        stale_path,
+        DocumentSnapshot(
+            html="<p>old</p>",
+            markdown="old",
+            meta={"id": "stale-new-doc"},
+            extras={},
+        ),
+    )
+    stale_markdown = _placeholder_line("excel-block", "stale-new", "assets/budget.xlsx")
+    stale_path.write_text(
+        f"---\nid: stale-new-doc\n---\n\n{stale_markdown}\n",
+        encoding="utf-8",
+    )
+
+    no_sidecar_path = tmp_path / "NoSidecarNew.md"
+    no_sidecar_markdown = _placeholder_line("pdf-block", "no-sidecar-new", "assets/ref.pdf")
+    _write_md(
+        no_sidecar_path,
+        no_sidecar_markdown,
+        meta_lines=["id: no-sidecar-new-doc"],
+    )
+
+    outcomes = (
+        used_state.read(used_path),
+        stale_state.read(stale_path),
+        _state_with_correlator().read(no_sidecar_path),
+    )
+
+    assert isinstance(outcomes[0], UsedSidecar)
+    assert outcomes[0].extras == {"blocks": {"used-new": {}}}
+    assert isinstance(outcomes[1], SidecarStale)
+    assert outcomes[1].salvaged_extras == {"blocks": {"stale-new": {}}}
+    assert isinstance(outcomes[2], NoSidecar)
+    for outcome, block_id in zip(
+        outcomes, ("used-new", "stale-new", "no-sidecar-new"), strict=True
+    ):
+        assert outcome.correlation is not None
+        assert outcome.correlation.blocking is False
+        event = outcome.correlation.by_kind("new")[0]
+        assert event.id == block_id
+        assert event.how_handled == HowHandled.CREATED_EMPTY
 
 
 def test_no_sidecar_with_non_empty_body(tmp_path: Path) -> None:

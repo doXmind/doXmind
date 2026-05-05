@@ -1,7 +1,8 @@
-"""Block correlation result types and orphan slot resolution."""
+"""Block correlation for External-reference placeholders and Extras slots."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal
@@ -9,6 +10,7 @@ from typing import Any, Literal
 from services.external_ref_blocks import (
     ExternalRefBlockDefinition,
     ExternalRefBlockRegistry,
+    NewPolicy,
     OrphanPolicy,
 )
 
@@ -56,16 +58,55 @@ class BlockCorrelation:
         self._registry = registry
 
     def correlate(self, *, markdown_body: str, extras: dict[str, Any]) -> CorrelationResult:
-        from services.synthetic_document import _PLACEHOLDER_RE
-
-        placeholder_ids = {match.group("id") for match in _PLACEHOLDER_RE.finditer(markdown_body)}
         events: list[CorrelationEvent] = []
+        resolved_extras = dict(extras)
+        placeholder_re = _placeholder_re_for(self._registry.block_types())
+        placeholder_ids: set[str] = set()
+
+        for match in placeholder_re.finditer(markdown_body):
+            block_type = match.group("block_type")
+            block_id = match.group("id")
+            placeholder_ids.add(block_id)
+
+            blocks = resolved_extras.get("blocks")
+            if isinstance(blocks, dict) and block_id in blocks:
+                continue
+
+            definition = self._registry.by_block_type(block_type)
+            if definition.on_new == NewPolicy.EMPTY:
+                current_blocks = resolved_extras.get("blocks")
+                next_blocks = dict(current_blocks) if isinstance(current_blocks, dict) else {}
+                next_blocks[block_id] = {}
+                resolved_extras["blocks"] = next_blocks
+                how_handled = HowHandled.CREATED_EMPTY
+            elif definition.on_new == NewPolicy.SKIP:
+                how_handled = HowHandled.SKIPPED
+            else:
+                raise ValueError(
+                    f"unsupported on_new policy {definition.on_new!r} for {block_type}"
+                )
+
+            events.append(
+                CorrelationEvent(
+                    kind="new",
+                    block_type=block_type,
+                    id=block_id,
+                    how_handled=how_handled,
+                    detail={
+                        "src": match.group("src"),
+                        "attrs": match.group("attrs"),
+                    },
+                )
+            )
+
+        resolved_extras = self._resolve_orphans(
+            extras=resolved_extras,
+            placeholder_ids=placeholder_ids,
+            events=events,
+        )
+
         return CorrelationResult(
-            resolved_extras=self._resolve_orphans(
-                extras=extras,
-                placeholder_ids=placeholder_ids,
-                events=events,
-            ),
+            resolved_extras=resolved_extras,
             report=CorrelationReport(events=events),
         )
 
@@ -125,6 +166,17 @@ class BlockCorrelation:
             if matched is not None:
                 return matched
         return None
+
+
+def _placeholder_re_for(block_types: tuple[str, ...]) -> re.Pattern[str]:
+    if not block_types:
+        return re.compile(r"a\Ab")
+    alternatives = "|".join(re.escape(block_type) for block_type in block_types)
+    return re.compile(
+        rf"<!--\s*(?P<block_type>{alternatives})\s+"
+        r"id=\"(?P<id>[^\"]+)\"\s+"
+        r"src=\"(?P<src>[^\"]+)\"(?P<attrs>.*?)\s*-->"
+    )
 
 
 def _explicit_block_type(slot_value: Any) -> str | None:
