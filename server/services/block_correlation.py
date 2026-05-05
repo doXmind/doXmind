@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, NamedTuple
@@ -88,28 +89,59 @@ class BlockCorrelation:
 
         placeholder_ids: set[str] = {block_id for (_, block_id) in placeholders_by_key}
 
-        # Pass 2: duplicate detection (errored events block saves). Track
-        # ids handled as duplicates so pass 3 does not also auto-create a
-        # slot for an ambiguous placeholder.
+        # Pass 2: duplicate detection. ERROR blocks the save; DEDUPE renames
+        # subsequent occurrences to fresh ids and provisions slots; KEEP_FIRST
+        # silently keeps the first placeholder. Only ERROR is tracked in
+        # `duplicate_ids` because only ERROR leaves the id ambiguous for
+        # pass 3.
         duplicate_ids: set[str] = set()
         for (block_type, block_id), placeholders in placeholders_by_key.items():
             if len(placeholders) < 2:
                 continue
             entry = self._registry.by_block_type(block_type)
-            if entry.on_duplicate != DuplicatePolicy.ERROR:
-                continue
-            duplicate_ids.add(block_id)
-            events.append(
-                CorrelationEvent(
-                    kind="duplicate",
-                    block_type=block_type,
-                    id=block_id,
-                    how_handled=HowHandled.ERRORED,
-                    detail={
-                        "locations": [{"line": p.line} for p in placeholders]
-                    },
+            if entry.on_duplicate == DuplicatePolicy.ERROR:
+                duplicate_ids.add(block_id)
+                events.append(
+                    CorrelationEvent(
+                        kind="duplicate",
+                        block_type=block_type,
+                        id=block_id,
+                        how_handled=HowHandled.ERRORED,
+                        detail={
+                            "locations": [{"line": p.line} for p in placeholders]
+                        },
+                    )
                 )
-            )
+            elif entry.on_duplicate == DuplicatePolicy.DEDUPE:
+                renamed_ids = [str(uuid.uuid4()) for _ in placeholders[1:]]
+                placeholder_ids.update(renamed_ids)
+                if entry.on_new == NewPolicy.EMPTY:
+                    current_blocks = resolved_extras.get("blocks")
+                    next_blocks = (
+                        dict(current_blocks) if isinstance(current_blocks, dict) else {}
+                    )
+                    for new_id in renamed_ids:
+                        next_blocks[new_id] = {}
+                    resolved_extras["blocks"] = next_blocks
+                events.append(
+                    CorrelationEvent(
+                        kind="duplicate",
+                        block_type=block_type,
+                        id=block_id,
+                        how_handled=HowHandled.DEDUPED,
+                        detail={
+                            "locations": [{"line": p.line} for p in placeholders],
+                            "rename": {"from": block_id, "to": renamed_ids},
+                        },
+                    )
+                )
+            elif entry.on_duplicate == DuplicatePolicy.KEEP_FIRST:
+                continue
+            else:
+                raise ValueError(
+                    f"unsupported on_duplicate policy {entry.on_duplicate!r} "
+                    f"for {block_type}"
+                )
 
         # Pass 3: new-id detection (placeholders missing from extras).
         # Skip ids already handled as duplicates — slot creation for an

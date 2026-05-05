@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import uuid
+
+import pytest
+
 from services.block_correlation import (
     BlockCorrelation,
     CorrelationEvent,
@@ -354,3 +358,226 @@ def test_report_blocking_tracks_only_errored_events() -> None:
 
     assert non_blocking_report.blocking is False
     assert blocking_report.blocking is True
+
+
+def _test_block_definition(
+    *,
+    on_orphan: OrphanPolicy = OrphanPolicy.DISCARD,
+    on_duplicate: DuplicatePolicy = DuplicatePolicy.ERROR,
+    on_new: NewPolicy = NewPolicy.EMPTY,
+) -> ExternalRefBlockDefinition:
+    return ExternalRefBlockDefinition(
+        block_type="test-block",
+        hydration=HydrationMode.LAZY,
+        on_orphan=on_orphan,
+        on_duplicate=on_duplicate,
+        on_new=on_new,
+        salvage=keep_prior_value,
+    )
+
+
+def _test_block_placeholder(block_id: str, src: str = "assets/data.bin") -> str:
+    return f'<!-- test-block id="{block_id}" src="{src}" -->'
+
+
+def test_duplicate_keep_first_keeps_first_placeholder_and_emits_no_event() -> None:
+    registry = ExternalRefBlockRegistry(
+        [_test_block_definition(on_duplicate=DuplicatePolicy.KEEP_FIRST)]
+    )
+    correlator = BlockCorrelation(registry)
+    block_id = "shared-id"
+    markdown = "\n".join(
+        [
+            _test_block_placeholder(block_id, "assets/a.bin"),
+            _test_block_placeholder(block_id, "assets/b.bin"),
+            _test_block_placeholder(block_id, "assets/c.bin"),
+        ]
+    )
+
+    result = correlator.correlate(markdown_body=markdown, extras={"blocks": {}})
+
+    assert result.report.by_kind("duplicate") == []
+    assert result.report.blocking is False
+    assert result.resolved_extras["blocks"] == {block_id: {}}
+    assert len(result.report.by_kind("new")) == 1
+    new_event = result.report.by_kind("new")[0]
+    assert new_event.id == block_id
+    assert new_event.how_handled == HowHandled.CREATED_EMPTY
+
+
+def test_duplicate_keep_first_does_not_create_slot_when_extras_already_has_id() -> None:
+    registry = ExternalRefBlockRegistry(
+        [_test_block_definition(on_duplicate=DuplicatePolicy.KEEP_FIRST)]
+    )
+    correlator = BlockCorrelation(registry)
+    block_id = "shared-id"
+    extras = {"blocks": {block_id: {"value": 1}}}
+    markdown = "\n".join(
+        [
+            _test_block_placeholder(block_id, "assets/a.bin"),
+            _test_block_placeholder(block_id, "assets/b.bin"),
+        ]
+    )
+
+    result = correlator.correlate(markdown_body=markdown, extras=extras)
+
+    assert result.report.events == []
+    assert result.report.blocking is False
+    assert result.resolved_extras == extras
+
+
+def test_duplicate_dedupe_renames_subsequent_placeholders_and_emits_event() -> None:
+    registry = ExternalRefBlockRegistry(
+        [_test_block_definition(on_duplicate=DuplicatePolicy.DEDUPE)]
+    )
+    correlator = BlockCorrelation(registry)
+    original_id = "shared-id"
+    markdown = "\n".join(
+        [
+            _test_block_placeholder(original_id, "assets/a.bin"),
+            _test_block_placeholder(original_id, "assets/b.bin"),
+            _test_block_placeholder(original_id, "assets/c.bin"),
+        ]
+    )
+
+    result = correlator.correlate(markdown_body=markdown, extras={"blocks": {}})
+
+    duplicates = result.report.by_kind("duplicate")
+    assert len(duplicates) == 1
+    duplicate = duplicates[0]
+    assert duplicate.block_type == "test-block"
+    assert duplicate.id == original_id
+    assert duplicate.how_handled == HowHandled.DEDUPED
+    assert duplicate.detail["locations"] == [
+        {"line": 1},
+        {"line": 2},
+        {"line": 3},
+    ]
+    rename = duplicate.detail["rename"]
+    assert rename["from"] == original_id
+    renamed_to = rename["to"]
+    assert isinstance(renamed_to, list)
+    assert len(renamed_to) == 2
+    for new_id in renamed_to:
+        # Confirm fresh UUIDv4
+        parsed = uuid.UUID(new_id)
+        assert parsed.version == 4
+    assert len(set(renamed_to)) == 2
+
+    blocks = result.resolved_extras["blocks"]
+    assert set(blocks) == {original_id, *renamed_to}
+    assert blocks[original_id] == {}
+    for new_id in renamed_to:
+        assert blocks[new_id] == {}
+
+    assert result.report.blocking is False
+
+
+def test_duplicate_dedupe_with_skip_new_policy_does_not_provision_slots() -> None:
+    registry = ExternalRefBlockRegistry(
+        [
+            _test_block_definition(
+                on_duplicate=DuplicatePolicy.DEDUPE,
+                on_new=NewPolicy.SKIP,
+            )
+        ]
+    )
+    correlator = BlockCorrelation(registry)
+    original_id = "shared-id"
+    markdown = "\n".join(
+        [
+            _test_block_placeholder(original_id, "assets/a.bin"),
+            _test_block_placeholder(original_id, "assets/b.bin"),
+        ]
+    )
+
+    result = correlator.correlate(markdown_body=markdown, extras={"blocks": {}})
+
+    duplicates = result.report.by_kind("duplicate")
+    assert len(duplicates) == 1
+    assert duplicates[0].how_handled == HowHandled.DEDUPED
+    assert result.resolved_extras["blocks"] == {}
+    assert result.report.blocking is False
+
+
+def test_mixed_event_correlate_emits_orphan_duplicate_and_new() -> None:
+    correlator = BlockCorrelation(default_external_ref_block_registry())
+    orphan_id = "orphan-pdf"
+    duplicate_id = "duplicate-pdf"
+    new_id = "fresh-pdf"
+    extras = {"blocks": {orphan_id: {"page": 7}}}
+    markdown = "\n".join(
+        [
+            _pdf_placeholder(duplicate_id, "assets/a.pdf"),
+            _pdf_placeholder(duplicate_id, "assets/b.pdf"),
+            _pdf_placeholder(new_id, "assets/c.pdf"),
+        ]
+    )
+
+    result = correlator.correlate(markdown_body=markdown, extras=extras)
+
+    duplicates = result.report.by_kind("duplicate")
+    new_events = result.report.by_kind("new")
+    orphans = result.report.by_kind("orphan")
+
+    assert len(duplicates) == 1
+    assert duplicates[0].id == duplicate_id
+    assert duplicates[0].how_handled == HowHandled.ERRORED
+
+    # Pass 3 skips ambiguous (errored) duplicates, so only the fresh id
+    # gets a new event.
+    assert len(new_events) == 1
+    assert new_events[0].id == new_id
+    assert new_events[0].how_handled == HowHandled.CREATED_EMPTY
+
+    assert len(orphans) == 1
+    assert orphans[0].id == orphan_id
+    assert orphans[0].how_handled == HowHandled.DISCARDED
+
+    assert result.report.blocking is True
+    assert result.resolved_extras["blocks"] == {new_id: {}}
+
+
+@pytest.mark.parametrize(
+    ("how_handled_values", "expected_blocking"),
+    [
+        ([], False),
+        ([HowHandled.DISCARDED], False),
+        ([HowHandled.KEPT], False),
+        ([HowHandled.CREATED_EMPTY], False),
+        ([HowHandled.SKIPPED], False),
+        ([HowHandled.DEDUPED], False),
+        (
+            [
+                HowHandled.DISCARDED,
+                HowHandled.KEPT,
+                HowHandled.CREATED_EMPTY,
+                HowHandled.SKIPPED,
+                HowHandled.DEDUPED,
+            ],
+            False,
+        ),
+        ([HowHandled.ERRORED], True),
+        ([HowHandled.DISCARDED, HowHandled.ERRORED], True),
+        (
+            [HowHandled.ERRORED, HowHandled.KEPT, HowHandled.DEDUPED],
+            True,
+        ),
+    ],
+)
+def test_blocking_invariant_iff_any_errored_event(
+    how_handled_values: list[HowHandled],
+    expected_blocking: bool,
+) -> None:
+    events = [
+        CorrelationEvent(
+            kind="duplicate",
+            block_type="pdf-block",
+            id=f"id-{index}",
+            how_handled=value,
+        )
+        for index, value in enumerate(how_handled_values)
+    ]
+    report = CorrelationReport(events=events)
+
+    assert report.blocking is expected_blocking
