@@ -1,6 +1,9 @@
 /* Editor Styles */
 .editor-page-frame {
-  --editor-page-x: 1rem;
+  /* Side gutter has to fit the floating block handle ([+] [⋮], 2 × 28px
+     buttons + 6px content gap = 62px, see block-handle.tsx). Anything
+     smaller and the handle clips into the sidebar / window edge. */
+  --editor-page-x: 4rem;
   --editor-outline-gutter: 0px;
   box-sizing: border-box;
   width: min(
@@ -15,7 +18,6 @@
 
 @media (min-width: 768px) {
   .editor-page-frame {
-    --editor-page-x: 3rem;
     padding-top: 2rem;
     padding-bottom: 2rem;
   }
