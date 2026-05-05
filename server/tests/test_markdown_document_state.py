@@ -13,7 +13,12 @@ from typing import Any
 
 import pytest
 
-from services.block_correlation import BlockCorrelation, CorrelationReport
+from services.block_correlation import (
+    BlockCorrelation,
+    CorrelationEvent,
+    CorrelationReport,
+    HowHandled,
+)
 from services.external_ref_blocks import default_external_ref_block_registry
 from services.markdown_document_state import (
     DocumentSnapshot,
@@ -40,6 +45,10 @@ def _state_with_correlator() -> MarkdownDocumentState:
     )
 
 
+def _pdf_placeholder(block_id: str) -> str:
+    return f'<!-- pdf-block id="{block_id}" src="assets/spec.pdf" -->'
+
+
 def test_used_sidecar_when_hash_matches(tmp_path: Path) -> None:
     state = MarkdownDocumentState()
     path = tmp_path / "Plan.md"
@@ -61,6 +70,97 @@ def test_used_sidecar_when_hash_matches(tmp_path: Path) -> None:
     assert outcome.meta["id"] == "doc-1"
     assert outcome.extras == {"databases": {}}
     assert outcome.correlation is None
+
+
+def test_used_sidecar_discards_orphan_pdf_block_slot(tmp_path: Path) -> None:
+    state = _state_with_correlator()
+    path = tmp_path / "UsedOrphan.md"
+    block_id = "1a2b3c4d-1111-4aaa-8bbb-123456789abc"
+    state.write_full(
+        path,
+        DocumentSnapshot(
+            html="<p>body</p>",
+            markdown="body without a placeholder",
+            meta={"id": "doc-1"},
+            extras={
+                "blocks": {
+                    block_id: {
+                        "editor": {"version": 1},
+                        "parsedCache": {"pages": []},
+                    }
+                }
+            },
+        ),
+    )
+
+    outcome = state.read(path)
+
+    assert isinstance(outcome, UsedSidecar)
+    assert outcome.extras == {"blocks": {}}
+    assert outcome.correlation is not None
+    assert outcome.correlation.events == [
+        CorrelationEvent(
+            kind="orphan",
+            block_type="pdf-block",
+            id=block_id,
+            how_handled=HowHandled.DISCARDED,
+            detail={"slot_key": f"blocks/{block_id}"},
+        )
+    ]
+    assert outcome.correlation.blocking is False
+
+
+def test_stale_sidecar_discards_salvaged_pdf_slot_after_placeholder_removed(
+    tmp_path: Path,
+) -> None:
+    class KeepEverythingSalvager:
+        def salvage(
+            self,
+            *,
+            markdown_body: str,  # noqa: ARG002
+            extras: dict[str, Any],
+        ) -> tuple[dict[str, Any], list[str]]:
+            return dict(extras), []
+
+    state = MarkdownDocumentState(
+        salvager=KeepEverythingSalvager(),
+        correlator=BlockCorrelation(default_external_ref_block_registry()),
+    )
+    path = tmp_path / "StaleOrphan.md"
+    block_id = "1a2b3c4d-1111-4aaa-8bbb-123456789abc"
+    state.write_full(
+        path,
+        DocumentSnapshot(
+            html=_pdf_placeholder(block_id),
+            markdown=_pdf_placeholder(block_id) + "\n",
+            meta={"id": "doc-1"},
+            extras={
+                "blocks": {
+                    block_id: {
+                        "editor": {"version": 1},
+                        "parsedCache": {"pages": []},
+                    }
+                }
+            },
+        ),
+    )
+    path.write_text("---\nid: doc-1\n---\n\n# Placeholder removed\n", encoding="utf-8")
+
+    outcome = state.read(path)
+
+    assert isinstance(outcome, SidecarStale)
+    assert outcome.salvaged_extras == {"blocks": {}}
+    assert outcome.correlation is not None
+    assert outcome.correlation.events == [
+        CorrelationEvent(
+            kind="orphan",
+            block_type="pdf-block",
+            id=block_id,
+            how_handled=HowHandled.DISCARDED,
+            detail={"slot_key": f"blocks/{block_id}"},
+        )
+    ]
+    assert outcome.correlation.blocking is False
 
 
 def test_configured_correlator_populates_empty_report_for_all_read_outcomes(
