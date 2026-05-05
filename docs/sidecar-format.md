@@ -57,8 +57,8 @@ body-only hashing produces false stale results.
 New markdown-shape Sidecars should use only these top-level keys. Legacy
 PDF/Excel sidecars may contain older top-level keys while they are awaiting
 Sidecar migration. Slot-only writes can create a partial Sidecar before the
-next full write; readers therefore tolerate missing `id` or `html`, but full
-Document and Synthetic Document writes must include them.
+next full write — see "Partial Sidecar Shape" below for the exact field set
+and reader contract.
 
 `extras` is reserved for doXmind-owned state that has no portable markdown
 representation. Portable document content belongs in the `.md` body, not in the
@@ -66,6 +66,49 @@ Sidecar. Self-contained Custom Blocks do not require `extras` slots. The
 deprecated database block may still use legacy `extras.databases` while it
 exists, but new External-reference block state should use `extras.blocks.<id>`
 unless the block type explicitly declares another slot key.
+
+### Partial Sidecar Shape
+
+`MarkdownDocumentState.write_slot` is a slot-only writer used by lazy block
+hydration paths (per ADR-0002). When it runs against a Document whose Sidecar
+does not yet exist, it produces a Sidecar with only the minimal fields needed
+to record the slot value and link the Sidecar to the current `.md` body:
+
+```json
+{
+  "version": 1,
+  "markdown_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "extras": {
+    "blocks": {
+      "1a2b3c4d-1111-4aaa-8bbb-123456789abc": {}
+    }
+  },
+  "updated_at": "2026-04-29T17:38:00Z"
+}
+```
+
+A partial Sidecar omits `id`, `html`, and `source_path`. It is a legitimate
+on-disk state, not a corruption signal — the next `MarkdownDocumentState.write_full`
+upgrades the Sidecar to the full shape.
+
+Reader contract for partial Sidecars:
+
+- `id` MAY be absent. Readers MUST treat an absent `id` as "no Sidecar-recorded
+  id"; resolution falls back to frontmatter or to assigning a fresh id at the
+  next full write. Readers MUST NOT treat an absent `id` as a malformed
+  Sidecar. (An *empty-string* `id` is still treated as malformed, per the rule
+  above.)
+- `html` MAY be absent. Readers MUST treat an absent `html` as the empty
+  string for the purpose of editor hydration; the editor then re-imports HTML
+  from the `.md` body, just as it would for a missing Sidecar.
+- `source_path` MAY be absent.
+- `version`, `markdown_hash`, `updated_at`, and `extras` follow the same rules
+  as in the full shape. In particular, `markdown_hash` is still authoritative
+  for staleness detection.
+
+`SyntheticDocumentFactory._write_sidecar` always writes the full shape; the
+partial shape is exclusive to `MarkdownDocumentState.write_slot` against a
+previously-absent Sidecar.
 
 ## Block Placeholder Grammar
 
@@ -136,8 +179,21 @@ their state lives in markdown. They may still be present in the frontend
 
 ## Renderer Invisibility
 
-Block placeholders are HTML comments. They must remain invisible in standard
-markdown rendering, including GitHub-rendered markdown and pandoc export.
+Block placeholders are HTML comments. They must remain invisible to readers in
+doXmind's internal markdown rendering — that is, the path that runs through
+`markdown_to_html` in `sidecar_io.py`. This is the only renderer covered by CI;
+the regression test in `test_sidecar_format.py` locks the placeholder to
+production output by importing the canonical placeholder helper and asserting
+that the rendered HTML keeps the comment as a standalone block-level node, not
+nested inside `<p>` or any other element.
+
+Invisibility under GitHub-rendered markdown and pandoc export is a design
+invariant of the placeholder grammar — single-line HTML comments are dropped by
+both renderers — but it is **not** verified by CI. It is verified by inspection
+only. If a new External-reference block type proposes a placeholder shape that
+strays from the single-line HTML-comment grammar, the burden is on the proposer
+to re-confirm that shape is invisible in GitHub and pandoc output before the
+spec is updated.
 
 This is a contract for every current and future External-reference block type:
 the markdown placeholder must preserve doXmind's internal id/src correlation
