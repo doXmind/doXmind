@@ -1,10 +1,14 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useSyncExternalStore } from "react";
 import { useTranslations } from "next-intl";
 import { GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { renderMermaidSvg } from "@/lib/mermaid-renderer";
+import {
+  renderMermaidSvg,
+  getMermaidThemeKey,
+  subscribeMermaidTheme,
+} from "@/lib/mermaid-renderer";
 
 interface MermaidEditorPanelProps {
   code: string;
@@ -37,6 +41,7 @@ export function MermaidEditorPanel({
 
   const [isInputVisible, setIsInputVisible] = useState(() => !!code.trim());
   const [renderError, setRenderError] = useState(false);
+  const themeKey = useSyncExternalStore(subscribeMermaidTheme, getMermaidThemeKey, () => "ssr");
 
   useEffect(() => {
     if (!isInputVisible) return;
@@ -88,7 +93,9 @@ export function MermaidEditorPanel({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [code]);
+    // themeKey participates so flipping light/dark mode mid-edit re-renders
+    // the live preview against the new palette.
+  }, [code, themeKey]);
 
   const handleInput = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => onChange(e.target.value),
