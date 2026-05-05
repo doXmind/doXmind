@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from api import workspace as workspace_module
-from services.sidecar_io import SIDECAR_VERSION, sidecar_path_for
+from services.sidecar_io import SIDECAR_VERSION, hash_markdown, sidecar_path_for
 from services.synthetic_document import (
     PDF_BLOCK_TYPE,
     LegacySidecarError,
@@ -431,6 +431,46 @@ def test_doc_read_reports_new_event_for_unmatched_pdf_placeholder(sync_client, t
     assert event["block_type"] == "pdf-block"
     assert event["id"] == "abc"
     assert event["how_handled"] == "created_empty"
+
+
+def test_doc_read_reports_orphan_event_for_extras_slot_without_placeholder(
+    sync_client, tmp_path
+):
+    body = "---\nid: doc-1\ntitle: Notes\n---\n\nNo placeholders.\n"
+    doc = tmp_path / "Notes.md"
+    doc.write_text(body, encoding="utf-8")
+    sidecar_payload = {
+        "version": SIDECAR_VERSION,
+        "id": "doc-1",
+        "html": "<p>No placeholders.</p>",
+        "markdown_hash": hash_markdown(body),
+        "updated_at": "2026-01-01T00:00:00Z",
+        "extras": {"blocks": {"orphaned": {"block_type": "pdf-block", "page": 1}}},
+    }
+    sidecar_path_for(doc).write_text(json.dumps(sidecar_payload), encoding="utf-8")
+
+    read = invoke(sync_client, "doc_read", {"path": str(doc)})
+
+    correlation = read["correlation"]
+    assert correlation is not None
+    assert correlation["blocking"] is False
+    orphan_events = [e for e in correlation["events"] if e["kind"] == "orphan"]
+    assert len(orphan_events) == 1
+    orphan = orphan_events[0]
+    assert orphan["block_type"] == "pdf-block"
+    assert orphan["id"] == "orphaned"
+    assert orphan["how_handled"] == "discarded"
+    assert orphan["detail"] == {"slot_key": "blocks/orphaned"}
+
+
+def test_doc_read_includes_empty_correlation_for_empty_document(sync_client, tmp_path):
+    doc = tmp_path / "Empty.md"
+    doc.write_text("", encoding="utf-8")
+
+    read = invoke(sync_client, "doc_read", {"path": str(doc)})
+
+    assert read["source"] == "empty"
+    assert read["correlation"] == {"events": [], "blocking": False}
 
 
 def test_doc_read_reports_blocking_duplicate_pdf_placeholders(sync_client, tmp_path):

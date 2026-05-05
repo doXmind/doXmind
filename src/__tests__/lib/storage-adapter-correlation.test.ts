@@ -47,6 +47,42 @@ describe("DiskStorageAdapter correlation plumbing", () => {
     expect(content.correlation).toEqual(correlation);
   });
 
+  it("preserves a non-blocking resolved correlation report on read", async () => {
+    const correlation: CorrelationReport = {
+      events: [
+        {
+          kind: "new",
+          block_type: "pdf-block",
+          id: "fresh",
+          how_handled: "created_empty",
+          detail: { src: "report.pdf", attrs: "" },
+        },
+        {
+          kind: "orphan",
+          block_type: "excel-block",
+          id: "stale",
+          how_handled: "discarded",
+          detail: { slot_key: "blocks/stale" },
+        },
+      ],
+      blocking: false,
+    };
+    const invoke = (async () => ({
+      html: "<p>x</p>",
+      markdown: "x",
+      meta,
+      extras: null,
+      source: "sidecar",
+      correlation,
+    })) as unknown as <T>(command: string, payload: Record<string, unknown>) => Promise<T>;
+
+    const adapter = new DiskStorageAdapter({ root: "/workspace", invoke });
+    const content = await adapter.read(baseHandle);
+
+    expect(content.correlation).toEqual(correlation);
+    expect(content.correlation?.blocking).toBe(false);
+  });
+
   it("normalises an empty correlation report (correlator ran cleanly)", async () => {
     const correlation: CorrelationReport = { events: [], blocking: false };
     const invoke = (async () => ({
