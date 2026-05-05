@@ -1,4 +1,7 @@
 export type {
+  CorrelationEvent,
+  CorrelationEventKind,
+  CorrelationReport,
   DocumentContent,
   DocumentHandle,
   DocumentMeta,
@@ -12,6 +15,7 @@ export type {
   ExcelEditorState,
   ExcelStructuralOp,
   ExcelWorkbookOp,
+  HowHandled,
   MarkdownSearchOptions,
   MarkdownSearchResult,
   MarkdownSearchResults,

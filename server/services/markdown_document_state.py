@@ -6,10 +6,11 @@ reconciliation, salvage of `extras` when the sidecar is stale, atomic
 sidecar writes, and `meta.id` backfill from the sidecar.
 
 `read()` returns a sealed `ReadOutcome` union with four variants:
-`UsedSidecar`, `SidecarStale`, `NoSidecar`, `EmptyDocument`. Callers branch
-on the variant rather than inspecting shape. `correlation` is a typed
-placeholder; #4 will populate it via the canonical
-`ExternalRefBlockRegistry`.
+`UsedSidecar`, `SidecarStale`, `NoSidecar`, `EmptyDocument`. Callers
+branch on the variant rather than inspecting shape. `correlation` is
+populated by the optional `Correlator` (typically `BlockCorrelation`
+backed by the canonical `ExternalRefBlockRegistry`); it is `None` when
+no correlator is configured.
 """
 
 from __future__ import annotations
@@ -38,12 +39,7 @@ from services.sidecar_io import (
 
 
 class Salvager(Protocol):
-    """Decides which extras slots survive when a Sidecar goes stale.
-
-    #4 will replace this protocol with the canonical
-    `ExternalRefBlockRegistry`, which consults each registered Custom Block
-    type for its salvage rule.
-    """
+    """Decides which extras slots survive when a Sidecar goes stale."""
 
     def salvage(
         self,
