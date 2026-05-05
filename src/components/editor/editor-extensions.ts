@@ -39,6 +39,7 @@ import { BlockSelectionExtension } from "@/extensions/block-selection-extension"
 import { BlockHandleExtension } from "@/extensions/block-handle-extension";
 import { BlockColorExtension } from "@/extensions/block-color-extension";
 import { AtomBlockLiftPlugin } from "@/extensions/atom-block-lift-plugin";
+import { customBlockTipTapExtensions } from "@/extensions/registry";
 import type { Extensions } from "@tiptap/react";
 
 /**
@@ -142,6 +143,9 @@ export function getEditorExtensions(): Extensions {
 
     // Page Link (link to internal page)
     PageLink,
+
+    // Custom Block Extensions registry (external-reference blocks)
+    ...customBlockTipTapExtensions,
 
     // Link paste auto-conversion
     LinkPaste,
