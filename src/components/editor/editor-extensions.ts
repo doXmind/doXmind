@@ -22,15 +22,10 @@ import TableRow from "@tiptap/extension-table-row";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import { CustomCodeBlock } from "@/extensions/code-block";
-import { InlineMath, BlockMath } from "@/extensions/math";
-import { MermaidChart } from "@/extensions/mermaid";
-import { Callout } from "@/extensions/callout";
-import { Toggle, ToggleSummary, ToggleBody } from "@/extensions/toggle";
 import { Columns, Column } from "@/extensions/columns";
 import { TableOfContents } from "@/extensions/toc";
 import { WebBookmark } from "@/extensions/web-bookmark";
 import { DatabaseBlock } from "@/extensions/database";
-import { PageLink } from "@/extensions/page-link";
 import { LinkPaste } from "@/extensions/link-paste";
 import { TrailingNode } from "@/extensions/trailing-node";
 import { SlashCommands } from "./slash-commands";
@@ -110,23 +105,12 @@ export function getEditorExtensions(): Extensions {
     // Code blocks with syntax highlighting (custom Notion-style)
     CustomCodeBlock,
 
-    // Math support (LaTeX/KaTeX)
-    InlineMath,
-    BlockMath,
-
-    // Mermaid diagram blocks
-    MermaidChart,
+    // Custom Block Extensions registry — Self-contained (mermaid, callout, math,
+    // toggle, page-link) and External-reference (pdf-block, excel-block) blocks.
+    ...customBlockTipTapExtensions,
 
     // Auto-lift atom blocks (mermaid, math, image, hr, toc) out of list items
     AtomBlockLiftPlugin,
-
-    // Callout blocks (info, warning, error, tip)
-    Callout,
-
-    // Toggle/collapsible blocks
-    Toggle,
-    ToggleSummary,
-    ToggleBody,
 
     // Multi-column layout (2–5 columns)
     Columns,
@@ -138,14 +122,8 @@ export function getEditorExtensions(): Extensions {
     // Web Bookmark (visual URL card)
     WebBookmark,
 
-    // Notion-style database block (table + board views)
+    // Notion-style database block (deprecated; not migrated to registry per ADR-0004)
     DatabaseBlock,
-
-    // Page Link (link to internal page)
-    PageLink,
-
-    // Custom Block Extensions registry (external-reference blocks)
-    ...customBlockTipTapExtensions,
 
     // Link paste auto-conversion
     LinkPaste,

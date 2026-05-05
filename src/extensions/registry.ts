@@ -1,16 +1,24 @@
 import { Node, mergeAttributes } from "@tiptap/core";
+import type { Extension, Mark } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { MermaidChart } from "@/extensions/mermaid";
+import { Callout } from "@/extensions/callout";
+import { InlineMath, BlockMath } from "@/extensions/math";
+import { Toggle, ToggleSummary, ToggleBody } from "@/extensions/toggle";
+import { PageLink } from "@/extensions/page-link";
 
 type CustomBlockNode = Pick<ProseMirrorNode, "attrs"> | { attrs?: Record<string, unknown> };
-type TipTapExtensionDefinition = Node<ExternalReferenceBlockOptions>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyTipTapExtension = Node<any> | Mark<any> | Extension<any>;
 type ExternalReferenceBlockType = "pdf-block" | "excel-block";
+type SelfContainedBlockType = "mermaid" | "callout" | "math" | "toggle" | "page-link";
 
 export type CustomBlockCategory = "self-contained" | "external-reference";
 
 interface BaseCustomBlockExtension {
   blockType: string;
   category: CustomBlockCategory;
-  extension: TipTapExtensionDefinition;
+  extensions: readonly AnyTipTapExtension[];
 }
 
 export interface ExternalReferenceCustomBlockExtension extends BaseCustomBlockExtension {
@@ -21,7 +29,6 @@ export interface ExternalReferenceCustomBlockExtension extends BaseCustomBlockEx
 }
 
 export interface SelfContainedCustomBlockExtension extends BaseCustomBlockExtension {
-  // Self-contained blocks are migrated in slice #34.
   category: "self-contained";
 }
 
@@ -43,32 +50,44 @@ export interface ExternalReferenceBlockOptions {
 export const CUSTOM_BLOCK_PLACEHOLDER_REGEX =
   /^<!--\s*(pdf-block|excel-block)\s+id="([^"]+)"\s+src="([^"]+)"(.*?)\s*-->(?:\n|$)/;
 
-export const PdfBlock: TipTapExtensionDefinition = createExternalReferenceBlockExtension({
+export const PdfBlock = createExternalReferenceBlockExtension({
   name: "pdfBlock",
   blockType: "pdf-block",
   label: "PDF",
 });
 
-export const ExcelBlock: TipTapExtensionDefinition = createExternalReferenceBlockExtension({
+export const ExcelBlock = createExternalReferenceBlockExtension({
   name: "excelBlock",
   blockType: "excel-block",
   label: "Excel",
 });
 
-export const CustomBlockExtensions: Record<
-  ExternalReferenceBlockType,
-  ExternalReferenceCustomBlockExtension
-> = {
+type CustomBlockExtensionsMap = {
+  [K in ExternalReferenceBlockType]: ExternalReferenceCustomBlockExtension;
+} & {
+  [K in SelfContainedBlockType]: SelfContainedCustomBlockExtension;
+};
+
+export const CustomBlockExtensions: CustomBlockExtensionsMap = {
   "pdf-block": createExternalReferenceRegistryEntry("pdf-block", PdfBlock),
   "excel-block": createExternalReferenceRegistryEntry("excel-block", ExcelBlock),
+  mermaid: { blockType: "mermaid", category: "self-contained", extensions: [MermaidChart] },
+  callout: { blockType: "callout", category: "self-contained", extensions: [Callout] },
+  math: { blockType: "math", category: "self-contained", extensions: [InlineMath, BlockMath] },
+  toggle: {
+    blockType: "toggle",
+    category: "self-contained",
+    extensions: [Toggle, ToggleSummary, ToggleBody],
+  },
+  "page-link": { blockType: "page-link", category: "self-contained", extensions: [PageLink] },
 };
 
 export const customBlockExtensionsByType: Record<string, CustomBlockExtension> =
   CustomBlockExtensions;
 
-export const customBlockTipTapExtensions = Object.values(CustomBlockExtensions).map(
-  (entry) => entry.extension
-);
+export const customBlockTipTapExtensions: AnyTipTapExtension[] = Object.values(
+  CustomBlockExtensions
+).flatMap((entry) => [...entry.extensions]);
 
 export function parseCustomBlockPlaceholder(
   source: string
@@ -88,12 +107,12 @@ export function parseCustomBlockPlaceholderComment(
 
 function createExternalReferenceRegistryEntry(
   blockType: ExternalReferenceBlockType,
-  extension: TipTapExtensionDefinition
+  extension: Node<ExternalReferenceBlockOptions>
 ): ExternalReferenceCustomBlockExtension {
   return {
     blockType,
     category: "external-reference",
-    extension,
+    extensions: [extension],
     extractIdFromNode: (node) => readStringAttr(node, "id"),
     extractSrcFromNode: (node) => readStringAttr(node, "src"),
     placeholderTemplate: (id, src) => placeholderTemplateFor(blockType, id, src),
@@ -108,7 +127,7 @@ function createExternalReferenceBlockExtension({
   name: string;
   blockType: ExternalReferenceBlockType;
   label: string;
-}): TipTapExtensionDefinition {
+}): Node<ExternalReferenceBlockOptions> {
   return Node.create<ExternalReferenceBlockOptions>({
     name,
 
