@@ -339,25 +339,32 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
         setStatus("error");
         return;
       }
+      const handle = file.storageHandle;
 
       setStatus("loading");
       setActiveObject(null);
 
       try {
         const pdfjs = getPdfjs();
+        const readDocState = async () => {
+          if (adapter.readPdfDocState) {
+            try {
+              return await adapter.readPdfDocState(handle);
+            } catch (error) {
+              console.warn("Combined PDF state read failed; falling back to editor state", error);
+            }
+          }
+          if (adapter.readPdfEditorState) {
+            return adapter.readPdfEditorState(handle).then(
+              (editor) => ({ editor, parsedCache: null }),
+              () => null
+            );
+          }
+          return null;
+        };
         // Binary read + sidecar read (editor state + parsed-blocks cache)
         // run in parallel; pdfjs decoding starts as soon as bytes arrive.
-        const [bytes, docState] = await Promise.all([
-          adapter.readBinary(file.storageHandle),
-          adapter.readPdfDocState
-            ? adapter.readPdfDocState(file.storageHandle).catch(() => null)
-            : adapter.readPdfEditorState
-              ? adapter.readPdfEditorState(file.storageHandle).then(
-                  (editor) => ({ editor, parsedCache: null }),
-                  () => null
-                )
-              : Promise.resolve(null),
-        ]);
+        const [bytes, docState] = await Promise.all([adapter.readBinary(handle), readDocState()]);
         const editorState = docState?.editor ?? null;
         const pdf = await pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise;
         if (cancelled) return;
@@ -423,11 +430,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
           for (const para of migrated.paragraphs) {
             const box = paragraphToTextBox(para);
             (boxesByPage[para.pageIndex] ??= []).push(box);
-            if (
-              para.text !== para.originalText ||
-              Boolean(para.styleRanges?.length) ||
-              Boolean(para.deleted)
-            ) {
+            if (isTextBoxEdited(box)) {
               editsByParagraphId[para.id] = box;
             }
           }
@@ -578,15 +581,11 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   };
 
   const updateTextBox = (id: string, patch: Partial<PdfTextBox>) => {
-    let updatedBox: PdfTextBox | null = null;
-    setTextBoxes((boxes) =>
-      boxes.map((box) => {
-        if (box.id !== id) return box;
-        updatedBox = { ...box, ...patch };
-        return updatedBox;
-      })
-    );
-    if (updatedBox) commitTextBoxEdit(updatedBox);
+    const current = textBoxes.find((box) => box.id === id);
+    if (!current) return;
+    const updatedBox = { ...current, ...patch };
+    setTextBoxes((boxes) => boxes.map((box) => (box.id === id ? updatedBox : box)));
+    commitTextBoxEdit(updatedBox);
   };
 
   const updateTextBoxText = (id: string, text: string) => {
@@ -935,6 +934,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
 
   const setEditorDirty = useEditorStore((s) => s.setDirty);
   const setEditorSaving = useEditorStore((s) => s.setSaving);
+  const setLastSavedAt = useEditorStore((s) => s.setLastSavedAt);
 
   /**
    * Snapshot of edits keyed for change detection. Used by both auto-save
@@ -977,6 +977,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
         // up at runtime.
         await adapter.writePdfEditorState!(handle, state);
         setEditorDirty(false);
+        setLastSavedAt(new Date().toISOString());
       } catch (error) {
         console.error("Auto-save failed", error);
       } finally {
@@ -993,6 +994,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
     highlightBoxes,
     setEditorDirty,
     setEditorSaving,
+    setLastSavedAt,
   ]);
 
   /**
@@ -2940,9 +2942,18 @@ function textBoxFontWeight(box: PdfTextBox): CSSProperties["fontWeight"] {
 }
 
 function isTextBoxEdited(box: PdfTextBox): boolean {
+  const original = box.originalBbox;
+  const moved =
+    original !== undefined &&
+    (Math.abs(original.x - box.x) > 0.5 ||
+      Math.abs(original.y - box.y) > 0.5 ||
+      Math.abs(original.width - box.width) > 0.5 ||
+      Math.abs(original.height - box.height) > 0.5);
+
   return (
     box.text !== box.originalText ||
     box.fontSize !== (box.originalFontSize ?? box.fontSize) ||
+    moved ||
     Boolean(box.color) ||
     Boolean(box.bold) ||
     Boolean(box.italic) ||
