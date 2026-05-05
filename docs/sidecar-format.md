@@ -165,17 +165,21 @@ doXmind-written placeholders.
 
 ## Block Type Vocabulary
 
-| `block_type`  | Category           | Backend registry presence | Default `slot_key_for_id(id)` | `hydration_mode` | `salvage_rule`                              | Frontend extension class |
-| ------------- | ------------------ | ------------------------- | ----------------------------- | ---------------- | ------------------------------------------- | ------------------------ |
-| `pdf-block`   | External-reference | Yes                       | `blocks/<id>`                 | LAZY             | Keep matching slot; discard orphan slots    | —                        |
-| `excel-block` | External-reference | Yes                       | `blocks/<id>`                 | LAZY             | Keep matching slot; discard orphan slots    | —                        |
+| `block_type`  | Category           | Backend registry presence | Default `slot_key_for_id(id)` | `hydration_mode` | `salvage_rule`                              | Frontend extension class                  |
+| ------------- | ------------------ | ------------------------- | ----------------------------- | ---------------- | ------------------------------------------- | ----------------------------------------- |
+| `pdf-block`   | External-reference | Yes                       | `blocks/<id>`                 | LAZY             | Keep matching slot; discard orphan slots    | `PdfBlock`                                |
+| `excel-block` | External-reference | Yes                       | `blocks/<id>`                 | LAZY             | Keep matching slot; discard orphan slots    | `ExcelBlock`                              |
+| `mermaid`     | Self-contained     | No                        | —                             | —                | —                                           | `MermaidChart`                            |
+| `callout`     | Self-contained     | No                        | —                             | —                | —                                           | `Callout`                                 |
+| `math`        | Self-contained     | No                        | —                             | —                | —                                           | `InlineMath`, `BlockMath`                 |
+| `toggle`      | Self-contained     | No                        | —                             | —                | —                                           | `Toggle`, `ToggleSummary`, `ToggleBody`   |
+| `page-link`   | Self-contained     | No                        | —                             | —                | —                                           | `PageLink`                                |
 
-_The frontend extension class column will be filled in when slice #33 (#33) creates the corresponding CustomBlockExtensions entries._
-
-Self-contained Custom Blocks such as mermaid, callout, math, toggle, and
-page-link are intentionally absent from the backend registry because all of
-their state lives in markdown. They may still be present in the frontend
-`CustomBlockExtensions` registry.
+Self-contained Custom Blocks live entirely in markdown and the Sidecar's `html`
+field; they have no backend registry presence, no slot, no hydration mode, and
+no salvage rule. The deprecated `database` block is intentionally not migrated
+to the frontend `CustomBlockExtensions` registry per ADR-0004 and is therefore
+absent from the table above.
 
 ## Renderer Invisibility
 
