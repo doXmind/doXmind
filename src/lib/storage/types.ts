@@ -22,6 +22,37 @@ export interface DocumentContent {
   source?: "sidecar" | "markdown" | "empty";
   documentType?: WorkspaceDocumentType;
   updatedAt: string;
+  /**
+   * Block-correlation report from the backend. `null` means no correlator
+   * ran (e.g. older clients or non-markdown reads); an empty
+   * `{events: [], blocking: false}` means the correlator ran cleanly.
+   * Frontend callers can ignore this field — future UI work will surface
+   * it. See `docs/adr/0004-custom-block-registry-split-and-correlation.md`.
+   */
+  correlation?: CorrelationReport | null;
+}
+
+export type CorrelationEventKind = "orphan" | "duplicate" | "new";
+
+export type HowHandled =
+  | "errored"
+  | "discarded"
+  | "created_empty"
+  | "kept"
+  | "skipped"
+  | "deduped";
+
+export interface CorrelationEvent {
+  kind: CorrelationEventKind;
+  block_type: string;
+  id: string;
+  how_handled: HowHandled;
+  detail: Record<string, unknown>;
+}
+
+export interface CorrelationReport {
+  events: CorrelationEvent[];
+  blocking: boolean;
 }
 
 export interface DocumentMeta {

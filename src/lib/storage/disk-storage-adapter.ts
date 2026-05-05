@@ -1,4 +1,5 @@
 import type {
+  CorrelationReport,
   DocumentContent,
   DocumentHandle,
   DocumentMeta,
@@ -51,6 +52,7 @@ interface DocReadResultDto {
   meta: DocumentMeta;
   extras?: unknown;
   source: "sidecar" | "markdown" | "empty";
+  correlation?: CorrelationReport | null;
 }
 
 interface MarkdownSearchResultDto {
@@ -107,6 +109,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       source: result.source,
       documentType: "markdown",
       updatedAt: result.meta.updated || new Date().toISOString(),
+      correlation: result.correlation ?? null,
     };
   }
 
@@ -216,6 +219,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       source: result.source,
       documentType: "markdown",
       updatedAt: result.meta.updated || new Date().toISOString(),
+      correlation: result.correlation ?? null,
     };
   }
 
