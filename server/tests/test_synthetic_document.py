@@ -595,3 +595,85 @@ def test_open_pdf_recovers_after_good_sidecar_is_restored(tmp_path):
 
     assert recovered.block_id == original.block_id
     assert recovered.snapshot.extras == original.snapshot.extras
+
+
+# ---------------------------------------------------------------------------
+# id stability across an external src rename
+# ---------------------------------------------------------------------------
+
+
+def _externally_rename_pdf(pdf_path: Path, new_name: str) -> Path:
+    """Simulate the user moving a PDF on disk: rename the binary, move the
+    sidecar, and rewrite the placeholder src inside the sidecar JSON."""
+    sidecar_path = sidecar_path_for(pdf_path)
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    sidecar["html"] = sidecar["html"].replace(f'src="{pdf_path.name}"', f'src="{new_name}"')
+
+    new_pdf_path = pdf_path.parent / new_name
+    pdf_path.rename(new_pdf_path)
+    sidecar_path.unlink()
+    atomic_write(
+        sidecar_path_for(new_pdf_path),
+        json.dumps(sidecar, indent=2, ensure_ascii=False).encode(),
+    )
+    return new_pdf_path
+
+
+def test_changing_placeholder_src_preserves_existing_slot_for_same_id(tmp_path):
+    pdf_path = _make_pdf(tmp_path, name="foo.pdf")
+    factory = SyntheticDocumentFactory()
+    original = factory.open_pdf(pdf_path)
+    new_extras = {
+        "blocks": {
+            original.block_id: {
+                "editor": {"version": 1, "edits": {"4:0": {"text": "annotated"}}},
+                "parsedCache": {"sourceHash": "stable", "parsed": {"pages": [1]}},
+            }
+        }
+    }
+    factory.write_full(original, replace(original.snapshot, extras=new_extras))
+
+    renamed_pdf_path = _externally_rename_pdf(pdf_path, "foo-renamed.pdf")
+
+    reopened = factory.open_pdf(renamed_pdf_path)
+
+    assert reopened.block_id == original.block_id
+    assert reopened.snapshot.extras == new_extras
+    assert 'src="foo-renamed.pdf"' in reopened.snapshot.html
+
+
+def _externally_rename_excel(xlsx_path: Path, new_name: str) -> Path:
+    sidecar_path = sidecar_path_for(xlsx_path)
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    sidecar["html"] = sidecar["html"].replace(f'src="{xlsx_path.name}"', f'src="{new_name}"')
+
+    new_xlsx_path = xlsx_path.parent / new_name
+    xlsx_path.rename(new_xlsx_path)
+    sidecar_path.unlink()
+    atomic_write(
+        sidecar_path_for(new_xlsx_path),
+        json.dumps(sidecar, indent=2, ensure_ascii=False).encode(),
+    )
+    return new_xlsx_path
+
+
+def test_changing_excel_placeholder_src_preserves_existing_slot_for_same_id(tmp_path):
+    xlsx_path = _make_excel(tmp_path, name="forecast.xlsx")
+    factory = SyntheticDocumentFactory()
+    original = factory.open_excel(xlsx_path)
+    new_extras = {
+        "blocks": {
+            original.block_id: {
+                "editor": {"version": 1, "sheets": [{"name": "Q4"}]},
+            }
+        }
+    }
+    factory.write_full(original, replace(original.snapshot, extras=new_extras))
+
+    renamed_xlsx_path = _externally_rename_excel(xlsx_path, "forecast-2027.xlsx")
+
+    reopened = factory.open_excel(renamed_xlsx_path)
+
+    assert reopened.block_id == original.block_id
+    assert reopened.snapshot.extras == new_extras
+    assert 'src="forecast-2027.xlsx"' in reopened.snapshot.html

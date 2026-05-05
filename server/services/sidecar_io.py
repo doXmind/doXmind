@@ -205,6 +205,23 @@ def sidecar_path_for(md_path: Path) -> Path:
     return md_path.parent / f".{stem}.doxmind"
 
 
+def placeholder_re_for(block_types: tuple[str, ...]) -> re.Pattern[str]:
+    """Compile the External-reference placeholder regex for `block_types`.
+
+    Single source of truth for the canonical placeholder grammar
+    (id-before-src; trailing `(?P<attrs>.*?)\\s*-->`). Empty `block_types`
+    returns a never-matching pattern.
+    """
+    if not block_types:
+        return re.compile(r"a\Ab")
+    alternatives = "|".join(re.escape(block_type) for block_type in block_types)
+    return re.compile(
+        rf"<!--\s*(?P<block_type>{alternatives})\s+"
+        r"id=\"(?P<id>[^\"]+)\"\s+"
+        r"src=\"(?P<src>[^\"]+)\"(?P<attrs>.*?)\s*-->"
+    )
+
+
 def hash_markdown(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 

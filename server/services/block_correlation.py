@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -15,6 +14,7 @@ from services.external_ref_blocks import (
     NewPolicy,
     OrphanPolicy,
 )
+from services.sidecar_io import placeholder_re_for
 
 CorrelationEventKind = Literal["orphan", "duplicate", "new"]
 
@@ -70,7 +70,7 @@ class BlockCorrelation:
     def correlate(self, *, markdown_body: str, extras: dict[str, Any]) -> CorrelationResult:
         events: list[CorrelationEvent] = []
         resolved_extras = dict(extras)
-        placeholder_re = _placeholder_re_for(self._registry.block_types())
+        placeholder_re = placeholder_re_for(self._registry.block_types())
 
         # Pass 1: line-by-line scan, group by (block_type, id) for duplicate detection.
         placeholders_by_key: dict[tuple[str, str], list[_Placeholder]] = {}
@@ -107,9 +107,7 @@ class BlockCorrelation:
                         block_type=block_type,
                         id=block_id,
                         how_handled=HowHandled.ERRORED,
-                        detail={
-                            "locations": [{"line": p.line} for p in placeholders]
-                        },
+                        detail={"locations": [{"line": p.line} for p in placeholders]},
                     )
                 )
             elif entry.on_duplicate == DuplicatePolicy.DEDUPE:
@@ -117,9 +115,7 @@ class BlockCorrelation:
                 placeholder_ids.update(renamed_ids)
                 if entry.on_new == NewPolicy.EMPTY:
                     current_blocks = resolved_extras.get("blocks")
-                    next_blocks = (
-                        dict(current_blocks) if isinstance(current_blocks, dict) else {}
-                    )
+                    next_blocks = dict(current_blocks) if isinstance(current_blocks, dict) else {}
                     for new_id in renamed_ids:
                         next_blocks[new_id] = {}
                     resolved_extras["blocks"] = next_blocks
@@ -139,8 +135,7 @@ class BlockCorrelation:
                 continue
             else:
                 raise ValueError(
-                    f"unsupported on_duplicate policy {entry.on_duplicate!r} "
-                    f"for {block_type}"
+                    f"unsupported on_duplicate policy {entry.on_duplicate!r} for {block_type}"
                 )
 
         # Pass 3: new-id detection (placeholders missing from extras).
@@ -246,17 +241,6 @@ class BlockCorrelation:
             if matched is not None:
                 return matched
         return None
-
-
-def _placeholder_re_for(block_types: tuple[str, ...]) -> re.Pattern[str]:
-    if not block_types:
-        return re.compile(r"a\Ab")
-    alternatives = "|".join(re.escape(block_type) for block_type in block_types)
-    return re.compile(
-        rf"<!--\s*(?P<block_type>{alternatives})\s+"
-        r"id=\"(?P<id>[^\"]+)\"\s+"
-        r"src=\"(?P<src>[^\"]+)\"(?P<attrs>.*?)\s*-->"
-    )
 
 
 def _explicit_block_type(slot_value: Any) -> str | None:
