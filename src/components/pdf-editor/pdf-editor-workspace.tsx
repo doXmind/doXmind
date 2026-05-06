@@ -46,6 +46,7 @@ import { cn, sha256Hex } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { perfAsync, perfMeasure, perfSync } from "@/lib/perf";
+import { isSwitchCacheStillValid } from "@/lib/switch-cache-validation";
 
 // Module-level switch cache. Holds the cost-dominating pieces of a PDF open
 // so that flipping back to a recently-opened PDF avoids both the Tauri
@@ -432,11 +433,14 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
         // external rewrite of the PDF surfaces on next open.
         let switchCached = pdfSwitchCacheGet(file.id);
         if (switchCached) {
-          const stat = adapter.statBinary
-            ? await adapter.statBinary(handle).catch(() => null)
-            : null;
+          // Sync gate; semantics documented in switch-cache-validation.ts.
+          const probe = adapter.statBinary ? () => adapter.statBinary!(handle) : undefined;
+          const stillValid = await isSwitchCacheStillValid(
+            { mtimeNs: switchCached.mtimeNs, size: switchCached.size },
+            probe
+          );
           if (cancelled) return;
-          if (stat && (stat.mtimeNs !== switchCached.mtimeNs || stat.size !== switchCached.size)) {
+          if (!stillValid) {
             pdfSwitchCache.delete(file.id);
             switchCached = null;
           }

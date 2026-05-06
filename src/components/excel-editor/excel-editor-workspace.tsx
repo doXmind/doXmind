@@ -153,6 +153,7 @@ import {
 import { cn, sha256Hex } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { perfAsync, perfMeasure, perfSync } from "@/lib/perf";
+import { isSwitchCacheStillValid } from "@/lib/switch-cache-validation";
 
 // Module-level switch cache. The whole point of this layer is to dodge the
 // 18+ MB JSON response from /api/excel/parse-workbook on a re-open. The
@@ -483,11 +484,18 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
         // edits to the source workbook don't get silently masked.
         let switchCached = excelSwitchCacheGet(file.id);
         if (switchCached) {
-          const stat = adapter.statBinary
-            ? await adapter.statBinary(handle).catch(() => null)
-            : null;
+          // Sync gate; semantics documented in switch-cache-validation.ts.
+          // Cache hit only proceeds when stat confirms (mtime, size). Stat
+          // throwing is treated as "fall through" same as a real mismatch
+          // — serving unverifiable cached bytes is the kind of bug that
+          // destroys trust.
+          const probe = adapter.statBinary ? () => adapter.statBinary!(handle) : undefined;
+          const stillValid = await isSwitchCacheStillValid(
+            { mtimeNs: switchCached.mtimeNs, size: switchCached.size },
+            probe
+          );
           if (cancelled) return;
-          if (stat && (stat.mtimeNs !== switchCached.mtimeNs || stat.size !== switchCached.size)) {
+          if (!stillValid) {
             excelSwitchCache.delete(file.id);
             switchCached = null;
           }

@@ -778,6 +778,24 @@ fn workspace_read_excel_editor_state(
     Ok(sidecar.get("excel_editor").cloned())
 }
 
+/// Write `bytes` to `path` atomically via temp-file + rename.
+///
+/// Contract:
+///   * The temp file is created in the **same directory** as `path` so the
+///     final `fs::rename` is intra-filesystem and POSIX-atomic. Cross-device
+///     renames would fail at the rename step, which is fine for our use
+///     (sidecars always live next to the source they describe — see ADR
+///     0001 / 0003).
+///   * `sync_all()` flushes both the file contents and its metadata to
+///     disk before the rename, so the rename is the only window during
+///     which a crash could leave nothing-or-old (never new-with-zero-bytes).
+///   * `fs::rename` is atomic on Unix (POSIX `rename(2)`) and on Windows
+///     (`MoveFileEx` with `MOVEFILE_REPLACE_EXISTING`) when source and
+///     destination share a volume.
+///   * On error, the temp file is best-effort removed and the original
+///     `path` (if any) is left untouched. Callers can safely ignore the
+///     `Err` — the next call will retry without data loss. The slim-on-read
+///     site does exactly that.
 fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let parent = path.parent().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::InvalidInput, "path has no parent")
