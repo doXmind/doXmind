@@ -16,10 +16,14 @@ no correlator is configured.
 from __future__ import annotations
 
 import json
+import os
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 from typing import Any, Protocol
 
+from lib.timing import timed as perf_timed
 from services.block_correlation import CorrelationReport, CorrelationResult
 from services.sidecar_io import (
     SIDECAR_VERSION,
@@ -36,6 +40,55 @@ from services.sidecar_io import (
     read_sidecar,
     sidecar_path_for,
 )
+
+# Process-local LRU cache for read() results, keyed on (path, file mtime,
+# file size, sidecar mtime, sidecar size). The `markdown_to_html` step on
+# the no-sidecar branch is by far the dominant cost (~535ms on a 4MB file
+# in benchmarks), so keeping ~32 recent ReadOutcomes in memory turns repeat
+# opens into a lookup. The correlator/salvager identity is intentionally
+# *not* part of the key — production wires them once per process, and tests
+# that pass custom variants should call `_clear_read_cache()` between cases
+# (or set `DOXMIND_DISABLE_DOC_CACHE=1`).
+_READ_CACHE_MAX = 32
+_READ_CACHE: OrderedDict[tuple, ReadOutcome] = OrderedDict()
+_READ_CACHE_LOCK = Lock()
+
+
+def _read_cache_disabled() -> bool:
+    return os.environ.get("DOXMIND_DISABLE_DOC_CACHE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _read_cache_key(path: Path) -> tuple | None:
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    sidecar_path = sidecar_path_for(path)
+    try:
+        ss = sidecar_path.stat()
+        sidecar_mtime: int | None = ss.st_mtime_ns
+        sidecar_size: int | None = ss.st_size
+    except OSError:
+        sidecar_mtime = None
+        sidecar_size = None
+    return (
+        str(path),
+        st.st_mtime_ns,
+        st.st_size,
+        sidecar_mtime,
+        sidecar_size,
+    )
+
+
+def _clear_read_cache() -> None:
+    """Clear the process-local read cache. For tests + benchmarks."""
+    with _READ_CACHE_LOCK:
+        _READ_CACHE.clear()
 
 
 class Salvager(Protocol):
@@ -124,75 +177,123 @@ class MarkdownDocumentState:
     def read(self, path: Path) -> ReadOutcome:
         if not path.is_absolute():
             raise ValueError("document path must be absolute")
-        raw = path.read_text(encoding="utf-8")
-        meta, body = parse_frontmatter(raw)
-        current_hash = hash_markdown(raw)
-        sidecar_path = sidecar_path_for(path)
-        sidecar_result = read_sidecar(sidecar_path)
+        # Cache lookup is split out of the perf-instrumented body below so
+        # cache hits don't show up as `doc_read.total` spans (they'd skew
+        # p50/p95). Hits are tagged with their own span instead.
+        cache_key = None if _read_cache_disabled() else _read_cache_key(path)
+        if cache_key is not None:
+            with _READ_CACHE_LOCK:
+                cached = _READ_CACHE.get(cache_key)
+                if cached is not None:
+                    _READ_CACHE.move_to_end(cache_key)
+                    with perf_timed("doc_read.cache_hit", path=str(path)):
+                        pass
+                    return cached
 
-        if isinstance(sidecar_result, Loaded):
-            sidecar = sidecar_result.data
-            sidecar_id = sidecar.get("id")
-            if sidecar_id and meta.get("id") != sidecar_id:
-                meta["id"] = sidecar_id
+        result = self._read_uncached(path)
 
-            version_ok = sidecar.get("version") == SIDECAR_VERSION
-            hash_ok = sidecar.get("markdown_hash") == current_hash
-            if version_ok and hash_ok:
-                extras = sidecar.get("extras")
-                if not isinstance(extras, dict) and extras is not None:
-                    extras = None
-                correlation_result = self._correlate(markdown_body=body, extras=extras)
-                return UsedSidecar(
-                    html=sidecar.get("html") or "",
-                    markdown=body,
+        if cache_key is not None:
+            with _READ_CACHE_LOCK:
+                _READ_CACHE[cache_key] = result
+                _READ_CACHE.move_to_end(cache_key)
+                while len(_READ_CACHE) > _READ_CACHE_MAX:
+                    _READ_CACHE.popitem(last=False)
+
+        return result
+
+    def _read_uncached(self, path: Path) -> ReadOutcome:
+        with perf_timed("doc_read.total", path=str(path)) as total_span:
+            with perf_timed("doc_read.read_text"):
+                raw = path.read_text(encoding="utf-8")
+            total_span["bytes"] = len(raw)
+
+            with perf_timed("doc_read.parse_frontmatter"):
+                meta, body = parse_frontmatter(raw)
+            with perf_timed("doc_read.hash_markdown", bytes=len(raw)):
+                current_hash = hash_markdown(raw)
+            sidecar_path = sidecar_path_for(path)
+            with perf_timed("doc_read.read_sidecar"):
+                sidecar_result = read_sidecar(sidecar_path)
+
+            if isinstance(sidecar_result, Loaded):
+                sidecar = sidecar_result.data
+                sidecar_id = sidecar.get("id")
+                if sidecar_id and meta.get("id") != sidecar_id:
+                    meta["id"] = sidecar_id
+
+                version_ok = sidecar.get("version") == SIDECAR_VERSION
+                hash_ok = sidecar.get("markdown_hash") == current_hash
+                if version_ok and hash_ok:
+                    extras = sidecar.get("extras")
+                    if not isinstance(extras, dict) and extras is not None:
+                        extras = None
+                    with perf_timed("doc_read.correlate", branch="sidecar_fresh"):
+                        correlation_result = self._correlate(markdown_body=body, extras=extras)
+                    total_span["branch"] = "sidecar_fresh"
+                    return UsedSidecar(
+                        html=sidecar.get("html") or "",
+                        markdown=body,
+                        meta=meta,
+                        extras=_extras_from_correlation_result(extras, correlation_result),
+                        correlation=_report_from_correlation_result(correlation_result),
+                    )
+
+                existing_extras = sidecar.get("extras")
+                extras_for_salvage = (
+                    existing_extras if isinstance(existing_extras, dict) else {}
+                )
+                with perf_timed("doc_read.salvage"):
+                    salvaged, discarded = self._salvager.salvage(
+                        markdown_body=body, extras=extras_for_salvage
+                    )
+                with perf_timed("doc_read.correlate", branch="sidecar_stale"):
+                    correlation_result = self._correlate(markdown_body=body, extras=salvaged)
+                with perf_timed("doc_read.markdown_to_html", branch="sidecar_stale"):
+                    fresh_html = "" if not body.strip() else markdown_to_html(body)
+                total_span["branch"] = "sidecar_stale"
+                return SidecarStale(
+                    fresh_html=fresh_html,
+                    markdown="" if not body.strip() else body,
                     meta=meta,
-                    extras=_extras_from_correlation_result(extras, correlation_result),
+                    salvaged_extras=_extras_from_correlation_result(salvaged, correlation_result)
+                    or {},
+                    discarded_slots=discarded,
                     correlation=_report_from_correlation_result(correlation_result),
                 )
 
-            existing_extras = sidecar.get("extras")
-            extras_for_salvage = existing_extras if isinstance(existing_extras, dict) else {}
-            salvaged, discarded = self._salvager.salvage(
-                markdown_body=body, extras=extras_for_salvage
-            )
-            correlation_result = self._correlate(markdown_body=body, extras=salvaged)
-            fresh_html = "" if not body.strip() else markdown_to_html(body)
-            return SidecarStale(
-                fresh_html=fresh_html,
-                markdown="" if not body.strip() else body,
+            if isinstance(sidecar_result, Corrupt):
+                forensic_path = _write_forensic_copy(sidecar_path, sidecar_result.raw)
+                raise CorruptSidecarError(
+                    sidecar_path,
+                    forensic_path,
+                    sidecar_result.reason,
+                )
+
+            if not isinstance(sidecar_result, Missing):
+                raise TypeError(
+                    f"unexpected sidecar read result: {type(sidecar_result).__name__}"
+                )
+
+            if not body.strip():
+                with perf_timed("doc_read.correlate", branch="empty"):
+                    correlation_result = self._correlate(markdown_body="", extras={})
+                total_span["branch"] = "empty"
+                return EmptyDocument(
+                    meta=meta,
+                    correlation=_report_from_correlation_result(correlation_result),
+                )
+
+            with perf_timed("doc_read.correlate", branch="no_sidecar"):
+                correlation_result = self._correlate(markdown_body=body, extras={})
+            with perf_timed("doc_read.markdown_to_html", branch="no_sidecar"):
+                html = markdown_to_html(body)
+            total_span["branch"] = "no_sidecar"
+            return NoSidecar(
+                html=html,
+                markdown=body,
                 meta=meta,
-                salvaged_extras=_extras_from_correlation_result(salvaged, correlation_result)
-                or {},
-                discarded_slots=discarded,
                 correlation=_report_from_correlation_result(correlation_result),
             )
-
-        if isinstance(sidecar_result, Corrupt):
-            forensic_path = _write_forensic_copy(sidecar_path, sidecar_result.raw)
-            raise CorruptSidecarError(
-                sidecar_path,
-                forensic_path,
-                sidecar_result.reason,
-            )
-
-        if not isinstance(sidecar_result, Missing):
-            raise TypeError(f"unexpected sidecar read result: {type(sidecar_result).__name__}")
-
-        if not body.strip():
-            correlation_result = self._correlate(markdown_body="", extras={})
-            return EmptyDocument(
-                meta=meta,
-                correlation=_report_from_correlation_result(correlation_result),
-            )
-
-        correlation_result = self._correlate(markdown_body=body, extras={})
-        return NoSidecar(
-            html=markdown_to_html(body),
-            markdown=body,
-            meta=meta,
-            correlation=_report_from_correlation_result(correlation_result),
-        )
 
     def write_full(self, path: Path, snapshot: DocumentSnapshot) -> None:
         meta = dict(snapshot.meta)

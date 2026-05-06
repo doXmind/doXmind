@@ -11,9 +11,13 @@ formatting, named ranges).
 
 from __future__ import annotations
 
+import hashlib
 import io
 import logging
+import os
+from collections import OrderedDict
 from dataclasses import dataclass
+from threading import Lock
 from typing import Any
 
 from openpyxl import load_workbook
@@ -33,6 +37,8 @@ from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 
+from lib.timing import timed as perf_timed
+
 logger = logging.getLogger(__name__)
 
 # Defensive caps. A pathological workbook can exceed Excel's nominal
@@ -42,6 +48,32 @@ logger = logging.getLogger(__name__)
 MAX_SHEETS = 64
 MAX_ROWS_PER_SHEET = 5000
 MAX_COLS_PER_SHEET = 200
+
+# Process-local LRU cache for parsed workbook DTOs. The dual openpyxl load
+# in parse_workbook is the slowest backend operation in the whole app
+# (15+ seconds on an 8 MB workbook); even with the frontend sidecar cache,
+# every fresh process or post-edit save pays it again. Hashing the input
+# bytes is ~30 ms on big workbooks — trivial next to the 15 s parse it
+# replaces. The hash also serves as a content fingerprint, so any
+# byte-level modification invalidates automatically.
+_XLSX_CACHE_MAX = 8
+_XLSX_CACHE: OrderedDict[str, dict[str, Any]] = OrderedDict()
+_XLSX_CACHE_LOCK = Lock()
+
+
+def _xlsx_cache_disabled() -> bool:
+    return os.environ.get("DOXMIND_DISABLE_XLSX_CACHE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _clear_xlsx_cache() -> None:
+    """For tests / benchmarks."""
+    with _XLSX_CACHE_LOCK:
+        _XLSX_CACHE.clear()
 
 
 @dataclass
@@ -91,45 +123,68 @@ def parse_workbook(
         raise ValueError("empty xlsx body")
     parse_limits = limits or ParseLimits()
 
-    try:
-        # data_only=False so we keep the raw formulas. Frontend gets a
-        # second pass with data_only=True for the cached results.
-        wb_formulas = load_workbook(
-            io.BytesIO(xlsx_bytes), data_only=False, read_only=False
-        )
-        wb_values = load_workbook(
-            io.BytesIO(xlsx_bytes), data_only=True, read_only=True
-        )
-    except Exception as exc:
-        # openpyxl raises a grab-bag of exception types on malformed files.
-        raise ValueError(f"failed to parse xlsx: {exc}") from exc
+    cache_key: str | None = None
+    if not _xlsx_cache_disabled():
+        with perf_timed("excel.parse_workbook.hash", bytes=len(xlsx_bytes)):
+            cache_key = hashlib.sha256(xlsx_bytes).hexdigest()
+        with _XLSX_CACHE_LOCK:
+            cached = _XLSX_CACHE.get(cache_key)
+            if cached is not None:
+                _XLSX_CACHE.move_to_end(cache_key)
+                with perf_timed("excel.parse_workbook.cache_hit"):
+                    pass
+                return cached
 
-    sheets: list[dict[str, Any]] = []
-    truncated_sheets = len(wb_formulas.sheetnames) > parse_limits.max_sheets
-    rows_truncated: dict[str, bool] = {}
-    cols_truncated: dict[str, bool] = {}
+    with perf_timed("excel.parse_workbook.total", bytes=len(xlsx_bytes)) as total_span:
+        try:
+            # data_only=False so we keep the raw formulas. Frontend gets a
+            # second pass with data_only=True for the cached results.
+            with perf_timed("excel.load_data_only_false"):
+                wb_formulas = load_workbook(
+                    io.BytesIO(xlsx_bytes), data_only=False, read_only=False
+                )
+            with perf_timed("excel.load_data_only_true"):
+                wb_values = load_workbook(
+                    io.BytesIO(xlsx_bytes), data_only=True, read_only=True
+                )
+        except Exception as exc:
+            # openpyxl raises a grab-bag of exception types on malformed files.
+            raise ValueError(f"failed to parse xlsx: {exc}") from exc
 
-    try:
-        for index, name in enumerate(wb_formulas.sheetnames):
-            if index >= parse_limits.max_sheets:
-                break
-            formula_sheet = wb_formulas[name]
-            value_sheet = wb_values[name] if name in wb_values.sheetnames else None
-            sheet_dto, sheet_truncations = _parse_sheet(
-                formula_sheet,
-                value_sheet,
-                index=index,
-                limits=parse_limits,
-            )
-            sheets.append(sheet_dto)
-            if sheet_truncations.get("rows"):
-                rows_truncated[sheet_dto["id"]] = True
-            if sheet_truncations.get("cols"):
-                cols_truncated[sheet_dto["id"]] = True
-    except ValueError as exc:
-        raise ValueError(f"failed to parse xlsx: {exc}") from exc
+        sheets: list[dict[str, Any]] = []
+        truncated_sheets = len(wb_formulas.sheetnames) > parse_limits.max_sheets
+        rows_truncated: dict[str, bool] = {}
+        cols_truncated: dict[str, bool] = {}
+        total_span["sheet_count"] = min(len(wb_formulas.sheetnames), parse_limits.max_sheets)
 
-    return {
+        try:
+            with perf_timed("excel.parse_sheets") as sheets_span:
+                cell_total = 0
+                for index, name in enumerate(wb_formulas.sheetnames):
+                    if index >= parse_limits.max_sheets:
+                        break
+                    formula_sheet = wb_formulas[name]
+                    value_sheet = (
+                        wb_values[name] if name in wb_values.sheetnames else None
+                    )
+                    sheet_dto, sheet_truncations = _parse_sheet(
+                        formula_sheet,
+                        value_sheet,
+                        index=index,
+                        limits=parse_limits,
+                    )
+                    cell_total += len(sheet_dto.get("cells", []))
+                    sheets.append(sheet_dto)
+                    if sheet_truncations.get("rows"):
+                        rows_truncated[sheet_dto["id"]] = True
+                    if sheet_truncations.get("cols"):
+                        cols_truncated[sheet_dto["id"]] = True
+                sheets_span["cells"] = cell_total
+            total_span["cells"] = cell_total
+        except ValueError as exc:
+            raise ValueError(f"failed to parse xlsx: {exc}") from exc
+
+    result = {
         "version": 1,
         "sheets": sheets,
         "truncated": {
@@ -138,6 +193,15 @@ def parse_workbook(
             "colsBy": cols_truncated,
         },
     }
+
+    if cache_key is not None:
+        with _XLSX_CACHE_LOCK:
+            _XLSX_CACHE[cache_key] = result
+            _XLSX_CACHE.move_to_end(cache_key)
+            while len(_XLSX_CACHE) > _XLSX_CACHE_MAX:
+                _XLSX_CACHE.popitem(last=False)
+
+    return result
 
 
 def _parse_sheet(

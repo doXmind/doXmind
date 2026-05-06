@@ -45,6 +45,44 @@ import {
 import { cn, sha256Hex } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { perfAsync, perfMeasure, perfSync } from "@/lib/perf";
+
+// Module-level switch cache. Holds the cost-dominating pieces of a PDF open
+// so that flipping back to a recently-opened PDF avoids both the Tauri
+// readBinary IPC and the FastAPI parse-blocks round-trip. Sidecar editor
+// state is *not* cached — it's small to read and we want the freshest
+// annotations on every mount in case another window edited them.
+//
+// Keying by fileId is enough in practice: doxmind doesn't reuse fileIds
+// across files, and if the source PDF is replaced externally the next
+// readBinary in the cache-miss path will pick up new bytes (if a user edits
+// inside doxmind, only the sidecar changes, the binary stays put).
+type PdfSwitchCacheEntry = {
+  bytes: Uint8Array;
+  blocks: PdfBlocksResponse | null;
+  sourceHash: string;
+};
+const PDF_SWITCH_CACHE_MAX = 4;
+const pdfSwitchCache = new Map<string, PdfSwitchCacheEntry>();
+
+function pdfSwitchCacheGet(fileId: string): PdfSwitchCacheEntry | null {
+  const entry = pdfSwitchCache.get(fileId);
+  if (entry) {
+    pdfSwitchCache.delete(fileId);
+    pdfSwitchCache.set(fileId, entry);
+    return entry;
+  }
+  return null;
+}
+
+function pdfSwitchCacheSet(fileId: string, entry: PdfSwitchCacheEntry): void {
+  pdfSwitchCache.set(fileId, entry);
+  while (pdfSwitchCache.size > PDF_SWITCH_CACHE_MAX) {
+    const firstKey = pdfSwitchCache.keys().next().value;
+    if (firstKey === undefined) break;
+    pdfSwitchCache.delete(firstKey);
+  }
+}
 
 interface PdfTextBox {
   id: string;
@@ -346,7 +384,13 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
 
       try {
         const pdfjs = getPdfjs();
-        const readDocState = async () => {
+        // Two sidecar readers, mirroring Excel:
+        //   * Full: editor state + parsedCache (the parsed block tree). Used
+        //     on a cold open so we can skip PyMuPDF when the hash matches.
+        //   * Editor-only: skip parsedCache entirely. Used on a switch-cache
+        //     hit where blocks are already in memory and pulling the cached
+        //     blocks back over IPC + JSON-parsing them is wasted work.
+        const readDocStateFull = async () => {
           if (adapter.readPdfDocState) {
             try {
               return await adapter.readPdfDocState(handle);
@@ -362,14 +406,87 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
           }
           return null;
         };
-        // Binary read + sidecar read (editor state + parsed-blocks cache)
-        // run in parallel; pdfjs decoding starts as soon as bytes arrive.
-        const [bytes, docState] = await Promise.all([adapter.readBinary(handle), readDocState()]);
-        const editorState = docState?.editor ?? null;
-        const pdf = await pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise;
+        const readEditorOnly = async () => {
+          if (adapter.readPdfEditorState) {
+            return adapter.readPdfEditorState(handle).then(
+              (editor) => ({ editor, parsedCache: null }),
+              () => null
+            );
+          }
+          if (adapter.readPdfDocState) {
+            try {
+              const state = await adapter.readPdfDocState(handle);
+              return state ? { editor: state.editor, parsedCache: null } : null;
+            } catch {
+              return null;
+            }
+          }
+          return null;
+        };
+
+        // Acquire bytes + blocks (the costly pieces) either from the
+        // module-level switch cache or via the full read + parse pipeline.
+        // Editor state always comes from the sidecar so cross-window edits
+        // are visible.
+        const switchCached = pdfSwitchCacheGet(file.id);
+        let bytes: Uint8Array;
+        let blocks: PdfBlocksResponse | null;
+        let sourceHash: string;
+        let editorState: Awaited<ReturnType<typeof readDocStateFull>>;
+        if (switchCached) {
+          perfSync("doxmind.pdf.switchCacheHit", () => undefined, { fileId: file.id });
+          const docState = await perfAsync("doxmind.pdf.readEditorOnly", () => readEditorOnly(), {
+            fileId: file.id,
+          });
+          if (cancelled) return;
+          bytes = switchCached.bytes;
+          blocks = switchCached.blocks;
+          sourceHash = switchCached.sourceHash;
+          editorState = docState;
+        } else {
+          perfSync("doxmind.pdf.switchCacheMiss", () => undefined, { fileId: file.id });
+          // Binary read + sidecar read (editor state + parsed-blocks cache)
+          // run in parallel; pdfjs decoding starts as soon as bytes arrive.
+          const [readBytes, docState] = await perfAsync("doxmind.pdf.readBinaryAndSidecar", () =>
+            Promise.all([adapter.readBinary!(handle), readDocStateFull()])
+          );
+          if (cancelled) return;
+          // Phase 2: try the PyMuPDF sidecar for paragraph-aware blocks.
+          // The parsed cache lives in the .doxmind sidecar keyed by SHA-256
+          // of the source bytes; an unchanged PDF skips PyMuPDF entirely.
+          const blocksBytes = new Uint8Array(readBytes);
+          sourceHash = await sha256Hex(blocksBytes);
+          const cachedBlocks =
+            docState?.parsedCache && docState.parsedCache.sourceHash === sourceHash
+              ? (docState.parsedCache.parsed as PdfBlocksResponse)
+              : null;
+          if (cachedBlocks) {
+            blocks = cachedBlocks;
+          } else {
+            blocks = await perfAsync("doxmind.pdf.fetchBlocks", () => fetchPdfBlocks(blocksBytes), {
+              bytes: blocksBytes.byteLength,
+            });
+            if (blocks && adapter.writePdfParsedCache) {
+              void adapter
+                .writePdfParsedCache(file.storageHandle, sourceHash, blocks)
+                .catch(() => {});
+            }
+          }
+          bytes = readBytes;
+          editorState = docState;
+          // Populate the switch cache so future re-opens skip readBinary +
+          // fetchPdfBlocks entirely.
+          pdfSwitchCacheSet(file.id, { bytes, blocks, sourceHash });
+        }
+
+        const pdf = await perfAsync(
+          "doxmind.pdf.pdfjsGetDocument",
+          () => pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise,
+          { bytes: bytes.byteLength, cacheHit: !!switchCached }
+        );
         if (cancelled) return;
 
-        const normalized = normalizePdfEditorState(editorState);
+        const normalized = normalizePdfEditorState(editorState?.editor ?? null);
         setSourceBytes(new Uint8Array(bytes));
         setPageCount(pdf.numPages);
         setCurrentPageIndex((pageIndex) => clampPageIndex(pageIndex, pdf.numPages));
@@ -377,28 +494,6 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
         setLegacyEdits(normalized.legacyEdits);
         setFreeTextBoxes(normalized.freeText);
         setHighlightBoxes(normalized.highlights);
-
-        // Phase 2: try the PyMuPDF sidecar for paragraph-aware blocks.
-        // The parsed cache lives in the .doxmind sidecar keyed by SHA-256
-        // of the source bytes; an unchanged PDF skips PyMuPDF entirely.
-        const blocksBytes = new Uint8Array(bytes);
-        const sourceHash = await sha256Hex(blocksBytes);
-        const cachedBlocks =
-          docState?.parsedCache && docState.parsedCache.sourceHash === sourceHash
-            ? (docState.parsedCache.parsed as PdfBlocksResponse)
-            : null;
-        let blocks: PdfBlocksResponse | null;
-        if (cachedBlocks) {
-          blocks = cachedBlocks;
-        } else {
-          blocks = await fetchPdfBlocks(blocksBytes);
-          if (blocks && adapter.writePdfParsedCache) {
-            void adapter
-              .writePdfParsedCache(file.storageHandle, sourceHash, blocks)
-              .catch(() => {});
-          }
-        }
-        if (cancelled) return;
         if (blocks) {
           const allParagraphs = paragraphsFromResponse(blocks);
           // Apply persisted v2 edits, then migrate any leftover v1 textEdits.
@@ -454,7 +549,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
     return () => {
       cancelled = true;
     };
-  }, [adapter, file.storageHandle]);
+  }, [adapter, file.id, file.storageHandle]);
 
   useEffect(() => {
     let cancelled = false;
@@ -555,6 +650,22 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
           });
         }
         setStatus("ready");
+        // Close the switch.firstPaint measure once per file open. The start
+        // mark is cleared so subsequent page renders (this effect re-fires on
+        // every page change) don't keep stamping new measures.
+        if (typeof window !== "undefined") {
+          const w = window as unknown as Record<string, unknown>;
+          const startMark = w.__doxmindSwitchStartMark as string | undefined;
+          const fileIdAtStart = w.__doxmindSwitchFileId as string | undefined;
+          if (startMark && fileIdAtStart) {
+            perfMeasure("doxmind.switch.firstPaint", startMark, undefined, {
+              fileId: fileIdAtStart,
+              documentType: "pdf",
+            });
+            w.__doxmindSwitchStartMark = undefined;
+            w.__doxmindSwitchFileId = undefined;
+          }
+        }
       } catch (error) {
         console.error(error);
         if (!cancelled) setStatus("error");

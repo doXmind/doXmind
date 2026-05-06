@@ -13,6 +13,7 @@ import {
   type WorkspaceEntry,
 } from "@/lib/storage";
 import { registerWindowTarget, syncRecentsToDock, unregisterWindowTarget } from "@/lib/window";
+import { perfAsync, perfSync } from "@/lib/perf";
 
 const log = storeLogger.child("File");
 
@@ -336,45 +337,70 @@ export const useFileStore = create<FileState>()(
       },
 
       loadFileContent: async (fileId: string, options?: { force?: boolean }) => {
-        if (!options?.force && get().loadedContentIds.has(fileId)) return;
+        const cacheHit = !options?.force && get().loadedContentIds.has(fileId);
+        if (cacheHit) {
+          // Surface cache hits in the perf log so the dev overlay can show
+          // hit/miss ratios; near-zero duration since we bail immediately.
+          perfSync("doxmind.loadFileContent.cacheHit", () => undefined, {
+            fileId,
+            forced: !!options?.force,
+          });
+          return;
+        }
         // Prevent duplicate concurrent fetches for the same file
         if (pendingContentLoads.has(fileId)) return;
         pendingContentLoads.add(fileId);
         try {
-          const file = get().files.find((f) => f.id === fileId);
-          if (!file) return;
-          if (file.documentType === "pdf" || file.documentType === "excel") {
-            set((state) => ({
-              loadedContentIds: new Set([...state.loadedContentIds, fileId]),
-            }));
-            return;
-          }
-          const fullFile = await getAdapter(get()).read(handleForFile(file));
-          syncDatabasesForDocument(fullFile.extras, fullFile.html, fullFile.markdown);
-          set((state) => {
-            // Only update if the file exists in the files array.
-            // If loadFiles() hasn't completed yet, files may be empty — in that case
-            // skip the update and don't mark as loaded so it retries after loadFiles.
-            const fileExists = state.files.some((f) => f.id === fileId);
-            if (!fileExists) return {};
+          await perfAsync(
+            "doxmind.loadFileContent.total",
+            async () => {
+              const file = get().files.find((f) => f.id === fileId);
+              if (!file) return;
+              if (file.documentType === "pdf" || file.documentType === "excel") {
+                set((state) => ({
+                  loadedContentIds: new Set([...state.loadedContentIds, fileId]),
+                }));
+                return;
+              }
+              const fullFile = await perfAsync(
+                "doxmind.loadFileContent.adapterRead",
+                () => getAdapter(get()).read(handleForFile(file)),
+                { fileId, documentType: file.documentType }
+              );
+              perfSync(
+                "doxmind.loadFileContent.syncDatabases",
+                () => syncDatabasesForDocument(fullFile.extras, fullFile.html, fullFile.markdown),
+                { htmlBytes: fullFile.html?.length ?? 0 }
+              );
+              perfSync("doxmind.loadFileContent.storeCommit", () =>
+                set((state) => {
+                  // Only update if the file exists in the files array.
+                  // If loadFiles() hasn't completed yet, files may be empty — in that case
+                  // skip the update and don't mark as loaded so it retries after loadFiles.
+                  const fileExists = state.files.some((f) => f.id === fileId);
+                  if (!fileExists) return {};
 
-            return {
-              files: state.files.map((f) =>
-                f.id === fileId
-                  ? {
-                      ...f,
-                      id: fullFile.handle.id,
-                      content: fullFile.html,
-                      contentMarkdown: fullFile.markdown ?? null,
-                      storageHandle: fullFile.handle,
-                    }
-                  : f
-              ),
-              currentFileId:
-                state.currentFileId === fileId ? fullFile.handle.id : state.currentFileId,
-              loadedContentIds: new Set([...state.loadedContentIds, fullFile.handle.id]),
-            };
-          });
+                  return {
+                    files: state.files.map((f) =>
+                      f.id === fileId
+                        ? {
+                            ...f,
+                            id: fullFile.handle.id,
+                            content: fullFile.html,
+                            contentMarkdown: fullFile.markdown ?? null,
+                            storageHandle: fullFile.handle,
+                          }
+                        : f
+                    ),
+                    currentFileId:
+                      state.currentFileId === fileId ? fullFile.handle.id : state.currentFileId,
+                    loadedContentIds: new Set([...state.loadedContentIds, fullFile.handle.id]),
+                  };
+                })
+              );
+            },
+            { fileId, forced: !!options?.force }
+          );
         } catch (error) {
           log.error("Failed to load file content", error);
         } finally {
@@ -1211,7 +1237,6 @@ export const useFileStore = create<FileState>()(
           throw error;
         }
       },
-
     }),
     {
       name: "doxmind-files",
