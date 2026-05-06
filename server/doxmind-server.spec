@@ -17,6 +17,12 @@ hiddenimports += collect_submodules("uvicorn")
 hiddenimports += collect_submodules("aiosqlite")
 hiddenimports += collect_submodules("sqlalchemy.dialects.sqlite")
 hiddenimports += collect_submodules("email_validator")
+# orjson is a Rust-extension import inside a try/except in excel_workbook.py.
+# PyInstaller's static analyzer normally picks it up, but the conditional
+# import has bitten us before — list it explicitly. Falling back to stdlib
+# json works at runtime, but the JSON round-trip hot path on the workbook
+# cache assumes orjson is present (~2x faster on multi-MB DTOs).
+hiddenimports += ["orjson"]
 # Local packages — collect everything so dynamic imports (router glob,
 # middleware) resolve at runtime.
 hiddenimports += collect_submodules("api")
