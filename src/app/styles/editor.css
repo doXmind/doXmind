@@ -516,13 +516,13 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   /* Clip the column-resize-handle (right:-2px) on the last column
      so it doesn't cause wrapper overflow / phantom scrollbar */
   overflow: clip;
-  /* Default render fills the content column like any other block.
-     When the user drags a column wider or adds columns, the explicit
-     <col> widths sum past 100% — the table grows past the wrapper and
-     .tableWrapper handles it (max-width up to the scroll edge, then
-     horizontal scroll). */
-  width: 100%;
-  min-width: max-content;
+  /* Size to content rather than forcing 100% — short cells shouldn't be
+     stretched to fill the column. The table grows naturally up to the
+     wrapper width (max-width: 100%), and word-break on cells keeps long
+     content wrapping inside the cap. */
+  width: auto;
+  max-width: 100%;
+  table-layout: auto;
 }
 
 .ProseMirror th,
@@ -533,6 +533,10 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   line-height: 1.4;
   vertical-align: top;
   transition: border-color 0.15s ease;
+  /* Force long URLs / unbroken tokens to wrap so a single cell can't push
+     the whole table past the content column. */
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* Active table: darker borders when cursor is inside.
@@ -583,51 +587,15 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   background-color: hsl(217 91% 60% / 0.7);
 }
 
-/* Table wrapper — content-width by default, extends rightward only when needed.
-   Default insert sits within the content column like other blocks; once the
-   user drags a column wider, the wrapper grows up to the scroll edge
-   (--right-extend) and then horizontally scrolls. */
+/* Table wrapper — strictly bounded by the content column (Typora-style).
+   No horizontal scroll: long content wraps inside cells via the word-break
+   rules on th/td. Manual column drags redistribute widths within 100%. */
 .ProseMirror .tableWrapper {
   margin-top: 1.5rem;
   margin-bottom: 1rem;
-  overflow-x: auto;
-  /* Hide scrollbar by default, only show when actively scrolling */
-  scrollbar-width: none;
-  /* Hug the table's natural width but always at least fill the content
-     column. With max-width below, this means: default = content column,
-     wider tables grow rightward up to that bound, beyond it = scroll. */
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
   max-width: 100%;
-}
-.ProseMirror .tableWrapper::-webkit-scrollbar {
-  height: 6px;
-}
-.ProseMirror .tableWrapper::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 3px;
-}
-.ProseMirror .tableWrapper:hover::-webkit-scrollbar-thumb {
-  background: hsl(var(--foreground) / 0.15);
-}
-/* Firefox: show thin scrollbar on hover */
-.ProseMirror .tableWrapper:hover {
-  scrollbar-width: thin;
-}
-
-@media (min-width: 768px) {
-  .ProseMirror .tableWrapper {
-    /* Allow the wrapper to extend past the content column up to the scroll
-       edge — but only when its child table actually needs that width. */
-    max-width: calc(100% + var(--right-extend, 0px) - 3rem);
-  }
-}
-
-/* Mobile: constrain table to viewport */
-@media (max-width: 767px) {
-  .ProseMirror .tableWrapper {
-    max-width: calc(100vw - 2rem);
-  }
+  overflow: hidden;
 }
 
 /* Table column/row highlight on handle hover */

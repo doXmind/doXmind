@@ -615,35 +615,6 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
 
   useBlockKeyboardShortcuts(editor);
 
-  // Set --right-extend CSS variable for Notion-style table rightward breakout.
-  // The available right edge excludes the outline gutter so tables do not
-  // expand under the collapsed rail.
-  useEffect(() => {
-    const el = scrollAreaRef.current;
-    if (!el || !editor) return;
-    const update = () => {
-      const pm = editor.view.dom;
-      const desktopReservedInset = window.matchMedia("(min-width: 768px)").matches
-        ? reservedRightInset
-        : 0;
-      const elRect = el.getBoundingClientRect();
-      const pmPaddingRight = parseFloat(getComputedStyle(pm).paddingRight) || 0;
-      const pmContentRight = pm.getBoundingClientRect().right - pmPaddingRight;
-      const availableRight = elRect.right - desktopReservedInset;
-      const rightExtend = Math.max(0, availableRight - pmContentRight);
-      el.style.setProperty("--right-extend", `${rightExtend}px`);
-    };
-    const observer = new ResizeObserver(() => update());
-    observer.observe(el);
-    window.addEventListener("resize", update);
-    // Also update once now in case ResizeObserver already fired before editor was ready
-    update();
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", update);
-    };
-  }, [editor, reservedRightInset]);
-
   const pageFrameStyle = {
     "--editor-outline-gutter": `${reservedRightInset}px`,
   } as CSSProperties;
@@ -713,11 +684,7 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
               )}
               style={pageFrameStyle}
             >
-              <DocumentTitle
-                fileId={file.id}
-                fileName={file.name}
-                onEnterEditor={() => editor.commands.focus("start")}
-              />
+              <DocumentTitle fileId={file.id} />
               <EditorContent editor={editor} />
             </div>
           </ScrollArea>

@@ -96,7 +96,9 @@ export function getEditorExtensions(): Extensions {
     // Tables
     Table.configure({
       resizable: true,
-      cellMinWidth: 200,
+      // Lower than TipTap's 25 but well below the old 200, which forced any
+      // resize to balloon the table past the content column for short cells.
+      cellMinWidth: 50,
     }),
     TableRow,
     TableCell,
