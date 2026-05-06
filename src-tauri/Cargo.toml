@@ -1,6 +1,6 @@
 [package]
 name = "doxmind"
-version = "1.0.1"
+version = "1.0.2"
 description = "doXmind — local-first Markdown workspace"
 authors = ["doXmind"]
 edition = "2021"
