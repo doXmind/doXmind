@@ -52,7 +52,30 @@
     },
     "category": "Productivity",
     "shortDescription": "Local-first Markdown workspace",
-    "longDescription": "doXmind is a local-first desktop Markdown workspace. Documents stay as portable .md files, while hidden .doxmind sidecars preserve rich editor state and structured blocks."
+    "longDescription": "doXmind is a local-first desktop Markdown workspace. Documents stay as portable .md files, while hidden .doxmind sidecars preserve rich editor state and structured blocks.",
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown"],
+        "name": "Markdown Document",
+        "description": "Markdown document",
+        "role": "Editor",
+        "rank": "Owner"
+      },
+      {
+        "ext": ["pdf"],
+        "name": "PDF Document",
+        "description": "PDF document",
+        "role": "Editor",
+        "rank": "Alternate"
+      },
+      {
+        "ext": ["xlsx", "xlsm"],
+        "name": "Excel Workbook",
+        "description": "Excel workbook",
+        "role": "Editor",
+        "rank": "Alternate"
+      }
+    ]
   },
   "plugins": {}
 }

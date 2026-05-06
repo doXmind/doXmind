@@ -16,7 +16,7 @@ const log = storeLogger.child("NativeMenu");
 const FILE_FILTERS = [
   {
     name: "Documents",
-    extensions: ["md", "markdown", "pdf", "xlsx", "docx", "pptx"],
+    extensions: ["md", "markdown", "pdf", "xlsx", "xlsm", "docx", "pptx"],
   },
 ];
 
@@ -106,6 +106,29 @@ export function NativeMenuListener() {
       void syncRecentsToDock([]);
     };
 
+    // Drain any file paths the OS handed us via file association — populated
+    // from CLI args at startup (Windows/Linux) and from RunEvent::Opened
+    // (macOS Finder "Open With" / drag-to-dock). Multiple windows may race
+    // here; the Rust queue is drained atomically so only the first caller
+    // gets the paths, and openWindowForTarget dedupes by focusing an
+    // existing window when one already shows the file.
+    const drainPendingOpenPaths = async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const paths = await invoke<string[]>("take_pending_open_paths");
+        for (const path of paths) {
+          try {
+            await openWindowForTarget({ kind: "file", path });
+          } catch (error) {
+            log.error("open from os association failed", error);
+            notify.error("Failed to open file");
+          }
+        }
+      } catch (error) {
+        log.error("take_pending_open_paths failed", error);
+      }
+    };
+
     void (async () => {
       const { listen } = await import("@tauri-apps/api/event");
 
@@ -180,13 +203,23 @@ export function NativeMenuListener() {
         })();
       });
 
+      const offOsOpen = await listen("os://open-pending", () => {
+        void drainPendingOpenPaths();
+      });
+
       if (cancelled) {
         offRecent();
         offTrayRecent();
         offUrl();
+        offOsOpen();
       } else {
-        unlisteners.push(offRecent, offTrayRecent, offUrl);
+        unlisteners.push(offRecent, offTrayRecent, offUrl, offOsOpen);
       }
+
+      // Pick up anything queued before this listener mounted — covers both
+      // CLI args harvested in setup() and Opened events that fired during
+      // the webview's boot.
+      void drainPendingOpenPaths();
     })();
 
     return () => {

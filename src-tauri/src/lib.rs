@@ -131,6 +131,73 @@ impl WindowRegistry {
     }
 }
 
+/// Queue of file paths the OS asked us to open — populated from CLI args at
+/// startup (Windows/Linux file associations pass paths as argv) and from
+/// `RunEvent::Opened` (macOS Finder "Open With" / drag-to-dock). Drained by
+/// the frontend on mount via `take_pending_open_paths`.
+struct PendingOpenPaths(Mutex<Vec<String>>);
+
+impl PendingOpenPaths {
+    fn new() -> Self {
+        Self(Mutex::new(Vec::new()))
+    }
+
+    fn push(&self, path: String) {
+        if let Ok(mut q) = self.0.lock() {
+            q.push(path);
+        }
+    }
+
+    fn drain(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .map(|mut q| std::mem::take(&mut *q))
+            .unwrap_or_default()
+    }
+
+    /// Pop the first pending path, leaving the rest in the queue. Used at
+    /// setup time so the very first window can target a file directly
+    /// instead of flashing the welcome screen first.
+    fn pop_first(&self) -> Option<String> {
+        let mut q = self.0.lock().ok()?;
+        if q.is_empty() {
+            None
+        } else {
+            Some(q.remove(0))
+        }
+    }
+}
+
+/// Resolve a path string from argv or a file:// URL into a canonical absolute
+/// path that points at one of the document types doXmind can actually open.
+/// Returns None when the extension isn't supported or the file doesn't exist
+/// (e.g. an argv flag like `--debug` that happens to slip past the leading
+/// `-` filter).
+fn normalize_open_path(path: &str) -> Option<String> {
+    let p = std::path::Path::new(path);
+    let abs = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        std::fs::canonicalize(p).ok()?
+    };
+    if !abs.exists() {
+        return None;
+    }
+    let lower = abs.to_string_lossy().to_ascii_lowercase();
+    let supported = [".md", ".markdown", ".pdf", ".xlsx", ".xlsm"]
+        .iter()
+        .any(|ext| lower.ends_with(ext));
+    if !supported {
+        return None;
+    }
+    Some(abs.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn take_pending_open_paths(state: tauri::State<'_, PendingOpenPaths>) -> Vec<String> {
+    state.drain()
+}
+
 /// Ask the kernel for a free port by binding to :0 and reading it back.
 fn pick_free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
@@ -2098,6 +2165,20 @@ window.__TAURI_PLATFORM__ = "{platform}";
 
     let backend_state = Backend::new();
 
+    // Harvest file paths from CLI args before tauri starts dispatching events.
+    // Windows and Linux pass file-association arguments straight as argv;
+    // macOS uses RunEvent::Opened (handled below) but a `open -a doXmind foo.md`
+    // still routes through here too.
+    let pending_open_paths = PendingOpenPaths::new();
+    for arg in std::env::args().skip(1) {
+        if arg.starts_with('-') {
+            continue;
+        }
+        if let Some(path) = normalize_open_path(&arg) {
+            pending_open_paths.push(path);
+        }
+    }
+
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -2105,6 +2186,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
         .manage(BackendUrl(backend_url.clone()))
         .manage(backend_state)
         .manage(WindowRegistry::new())
+        .manage(pending_open_paths)
         .manage(InitScript(init_script.clone()))
         .invoke_handler(tauri::generate_handler![
             get_backend_url,
@@ -2146,7 +2228,8 @@ window.__TAURI_PLATFORM__ = "{platform}";
             unregister_window_target,
             dock_set_recents,
             current_window_open_target,
-            save_window_pdf
+            save_window_pdf,
+            take_pending_open_paths
         ])
         .setup(move |app| {
             // Spawn the backend.
@@ -2171,7 +2254,25 @@ window.__TAURI_PLATFORM__ = "{platform}";
             // The first window keeps the literal label "main" because the tray
             // menu's "Open doXmind" looks it up by that label. New windows get
             // unique labels from the registry's counter.
-            create_editor_window(&app.handle(), "main", None, &init_script)?;
+            //
+            // If the OS launched us with a file (file association on
+            // Windows/Linux argv, or `open -a doXmind foo.md`), point the main
+            // window at it directly so we don't flash the welcome screen.
+            // Remaining paths stay queued for the frontend to drain into
+            // additional windows. macOS RunEvent::Opened arrives later and is
+            // handled in the run-event loop below.
+            let initial_target = {
+                let pending: tauri::State<'_, PendingOpenPaths> = app.state();
+                pending.pop_first().map(|path| OpenTarget {
+                    kind: "file".to_string(),
+                    path,
+                })
+            };
+            create_editor_window(app.handle(), "main", initial_target.clone(), &init_script)?;
+            if let Some(target) = initial_target {
+                let registry: tauri::State<'_, WindowRegistry> = app.state();
+                registry.set("main", target);
+            }
 
             #[cfg(target_os = "macos")]
             {
@@ -2210,6 +2311,28 @@ window.__TAURI_PLATFORM__ = "{platform}";
                     } else {
                         dock_installed = true;
                     }
+                }
+            }
+            // macOS dispatches Finder "Open With" / drag-to-dock as file://
+            // URLs here. Push the paths into the shared queue and ping the
+            // frontend; the listener in NativeMenuListener calls
+            // `take_pending_open_paths` and routes each into a window via
+            // the existing open_window_for_target flow (focuses an existing
+            // window if the file is already showing, otherwise spawns a new
+            // one).
+            RunEvent::Opened { urls } => {
+                let pending: tauri::State<'_, PendingOpenPaths> = handle.state();
+                let mut added = false;
+                for url in urls {
+                    if let Ok(path) = url.to_file_path() {
+                        if let Some(normalized) = normalize_open_path(&path.to_string_lossy()) {
+                            pending.push(normalized);
+                            added = true;
+                        }
+                    }
+                }
+                if added {
+                    let _ = handle.emit("os://open-pending", ());
                 }
             }
             _ => {}
