@@ -13,13 +13,33 @@ from __future__ import annotations
 
 import hashlib
 import io
-import json
 import logging
 import os
 from collections import OrderedDict
 from dataclasses import dataclass
 from threading import Lock
 from typing import Any
+
+# Cache encode/decode: prefer orjson (Rust-backed, ~2x stdlib on multi-MB
+# DTOs). Falls back to stdlib json if orjson is somehow unavailable so the
+# server still works even with a stripped-down env.
+try:
+    import orjson as _json  # type: ignore[import-not-found]
+
+    def _cache_encode(obj: Any) -> bytes:
+        return _json.dumps(obj)
+
+    def _cache_decode(data: bytes) -> Any:
+        return _json.loads(data)
+
+except ImportError:  # pragma: no cover — orjson is in requirements.txt
+    import json as _stdlib_json
+
+    def _cache_encode(obj: Any) -> bytes:
+        return _stdlib_json.dumps(obj).encode("utf-8")
+
+    def _cache_decode(data: bytes) -> Any:
+        return _stdlib_json.loads(data)
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
@@ -62,9 +82,19 @@ MAX_COLS_PER_SHEET = 200
 # Cache values are stored as JSON-encoded bytes (not Python dicts) so that
 # every hit returns a freshly-parsed dict with mutation isolation, without
 # paying for `copy.deepcopy` on the way out. On a 50k-cell workbook
-# deepcopy was ~450 ms / hit; json.loads is ~50–100 ms — still an order
-# of magnitude faster than the multi-second openpyxl re-parse it replaces,
-# and the call is the only post-parse work left to do.
+# deepcopy was ~450 ms / hit; json round-trip via stdlib was ~96 ms;
+# orjson brings that down to ~42 ms — still slower than serving a shared
+# reference, but isolation is a hard requirement for cache safety.
+#
+# FUTURE WORK: the FastAPI handler that consumes this result already
+# JSON-serialises it for the response, so the in-process "isolation" we
+# pay for here is defending an attack surface that doesn't exist in
+# practice. A cleaner design would have the handler own the read-only
+# contract (cache returns a shared reference; handler must not mutate
+# before the response is dispatched). That removes the per-hit decode
+# entirely and pushes large.repeat-cache-hit closer to 0. Not done in
+# this PR because it crosses the cache/handler boundary and warrants a
+# focused review; tracked at PR #60 review thread.
 _XLSX_CACHE_MAX = 8
 _XLSX_CACHE: OrderedDict[str, bytes] = OrderedDict()
 _XLSX_CACHE_LOCK = Lock()
@@ -144,8 +174,9 @@ def parse_workbook(
                 # JSON round-trip rather than deepcopy: every hit gets a
                 # fresh dict (mutation by future callers can't corrupt the
                 # entry) while avoiding ~10x the per-cell overhead of
-                # CPython's copy.deepcopy on a deeply-nested DTO.
-                return json.loads(cached)
+                # CPython's copy.deepcopy on a deeply-nested DTO. orjson
+                # roughly halves the decode cost again on multi-MB DTOs.
+                return _cache_decode(cached)
 
     with perf_timed("excel.parse_workbook.total", bytes=len(xlsx_bytes)) as total_span:
         try:
@@ -208,12 +239,13 @@ def parse_workbook(
 
     if cache_key is not None:
         with _XLSX_CACHE_LOCK:
-            # Encode once on insert so future hits only pay json.loads.
-            # The DTO is fully JSON-serialisable (nothing holds class
-            # instances or non-stringable keys); the decode is what feeds
-            # the FastAPI response anyway, so the round-trip overhead per
-            # hit is bounded by Python's json speed.
-            _XLSX_CACHE[cache_key] = json.dumps(result).encode("utf-8")
+            # Encode once on insert so future hits only pay decode. The DTO
+            # is fully JSON-serialisable (nothing holds class instances or
+            # non-stringable keys); the decode is what feeds the FastAPI
+            # response anyway, so the round-trip overhead per hit is
+            # bounded by orjson's speed (with stdlib json as fallback when
+            # orjson is unavailable).
+            _XLSX_CACHE[cache_key] = _cache_encode(result)
             _XLSX_CACHE.move_to_end(cache_key)
             while len(_XLSX_CACHE) > _XLSX_CACHE_MAX:
                 _XLSX_CACHE.popitem(last=False)

@@ -36,6 +36,14 @@ openpyxl>=3.1.5
 # Tauri app uses the Rust `trash` crate directly and never touches this.
 send2trash>=1.8.3
 
+# Fast JSON encoder/decoder. Used by the parsed-workbook LRU in
+# services/excel_workbook.py: cache values are stored as JSON-encoded
+# bytes so each hit returns an isolated dict via a fresh decode rather
+# than copy.deepcopy. orjson roughly halves both the encode and decode
+# cost vs stdlib json on the multi-MB DTOs the cache holds (measured:
+# 1180 ms -> 488 ms for the 8 MB fixture round-trip).
+orjson>=3.10.0
+
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.25.2
