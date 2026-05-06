@@ -90,11 +90,42 @@ marked.use({
   ],
 });
 
+/**
+ * Reverts any `$...$` / `$$...$$` math spans that landed inside a table cell
+ * back to their literal markdown form. Math auto-recognition is product-scoped
+ * out of table cells (see docs/adr/0006-feature-scope-typora-notion.md). The
+ * markdown tokenizer (both client `marked` and server `markdown_to_html`)
+ * doesn't know about cell context, so we strip after parse — and storage
+ * paths that read previously-cached sidecar HTML also pipe through this.
+ */
+export function unwrapMathInTableCells(html: string): string {
+  if (typeof document === "undefined") return html; // SSR fallback
+  if (!html.includes("data-type=")) return html; // fast path: no custom blocks at all
+
+  const template = document.createElement("template");
+  template.innerHTML = html;
+
+  const mathInCells = template.content.querySelectorAll(
+    ':is(td, th) [data-type="inline-math"], :is(td, th) [data-type="block-math"]'
+  );
+  if (mathInCells.length === 0) return html;
+
+  for (const node of Array.from(mathInCells)) {
+    const latex = node.getAttribute("data-latex") || "";
+    const isBlock = node.getAttribute("data-type") === "block-math";
+    const literal = isBlock ? `$$${latex}$$` : `$${latex}$`;
+    node.replaceWith(document.createTextNode(literal));
+  }
+
+  return template.innerHTML;
+}
+
 export function markdownToHtml(markdown: string): string {
   if (!markdown || markdown.trim() === "") return "<p></p>";
 
   try {
-    return marked.parse(markdown, { async: false }) as string;
+    const html = marked.parse(markdown, { async: false }) as string;
+    return unwrapMathInTableCells(html);
   } catch (e) {
     console.error("Markdown to HTML conversion error:", e);
     return `<p>${markdown}</p>`;

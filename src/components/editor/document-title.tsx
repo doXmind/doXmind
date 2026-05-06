@@ -1,84 +1,36 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 import { Smile, FilePlus, ImagePlus } from "lucide-react";
 import { useFileStore } from "@/stores/file-store";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { CoverPickerModal } from "./cover-picker-modal";
+import { cn } from "@/lib/utils";
 
 interface DocumentTitleProps {
   fileId: string;
-  fileName: string;
-  onEnterEditor?: () => void;
 }
 
-export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitleProps) {
-  const { renameFile, getFile, setFileIcon, createFile, setCoverImage } = useFileStore();
+export function DocumentTitle({ fileId }: DocumentTitleProps) {
+  const { getFile, setFileIcon, createFile, setCoverImage } = useFileStore();
   const file = getFile(fileId);
   const icon = file?.icon ?? null;
   const hasCover = !!file?.coverImageUrl;
-  const displayName = fileName.replace(/\.md$/, "");
-  const [value, setValue] = useState(displayName);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showCoverModal, setShowCoverModal] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const iconButtonRef = useRef<HTMLButtonElement>(null);
   const addIconButtonRef = useRef<HTMLButtonElement>(null);
-  const isComposingRef = useRef(false);
 
   const handleCreateSubPage = useCallback(async () => {
     try {
-      // Create sub-page nested under the current file
       const newFileId = await createFile("Untitled.md", "", fileId);
       navigateToEditorFile(newFileId);
     } catch {
       // silently ignore if creation fails
     }
   }, [createFile, fileId]);
-
-  // Sync value when file changes
-  useEffect(() => {
-    setValue(displayName);
-  }, [displayName]);
-
-  // Auto-resize textarea to fit content
-  useEffect(() => {
-    const el = inputRef.current;
-    if (el) {
-      el.style.height = "auto";
-      el.style.height = `${el.scrollHeight}px`;
-    }
-  }, [value]);
-
-  const handleBlur = useCallback(async () => {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      setValue(displayName);
-      return;
-    }
-    const newName = trimmed.endsWith(".md") ? trimmed : `${trimmed}.md`;
-    if (newName !== fileName) {
-      try {
-        await renameFile(fileId, newName);
-      } catch {
-        setValue(displayName);
-      }
-    }
-  }, [value, displayName, fileName, fileId, renameFile]);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (isComposingRef.current) return;
-    if (e.key === "Enter") {
-      e.preventDefault();
-      onEnterEditor?.();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      setValue(displayName);
-      inputRef.current?.blur();
-    }
-  };
 
   const handleEmojiSelect = useCallback(
     (emoji: string | null) => {
@@ -90,13 +42,19 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
 
   return (
     <div
-      className="mb-2 mt-4 px-0"
+      className={cn(
+        "group relative",
+        // Without an icon, collapse to a thin hover-trigger strip so the editor
+        // body sits flush under the chrome header. With an icon set, reserve
+        // room for the floating toolbar (top 28px) plus the 36px glyph row.
+        icon ? "h-[68px] pt-7" : "h-7"
+      )}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Action buttons — above title, Notion-style; opacity transition, no layout shift */}
+      {/* Floating action toolbar — overlays the strip; opacity-only transition keeps layout stable */}
       <div
-        className="flex h-7 items-center gap-1 transition-opacity duration-150"
+        className="absolute left-0 right-0 top-0 z-10 flex h-7 items-center gap-1 transition-opacity duration-150"
         style={{ opacity: isHovered ? 1 : 0, pointerEvents: isHovered ? "auto" : "none" }}
       >
         {!icon && (
@@ -127,40 +85,18 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
         </button>
       </div>
 
-      <div className="flex items-start gap-2">
-        {/* Emoji icon button — only shown when icon is set */}
-        {icon && (
-          <button
-            ref={iconButtonRef}
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className="mt-1 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent"
-            title="Change document icon"
-          >
-            <span className="text-2xl leading-none">{icon}</span>
-          </button>
-        )}
+      {/* Emoji icon — only when set */}
+      {icon && (
+        <button
+          ref={iconButtonRef}
+          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+          className="flex h-9 w-9 items-center justify-center rounded-md transition-colors hover:bg-accent"
+          title="Change document icon"
+        >
+          <span className="text-2xl leading-none">{icon}</span>
+        </button>
+      )}
 
-        <textarea
-          ref={inputRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          onCompositionStart={() => {
-            isComposingRef.current = true;
-          }}
-          onCompositionEnd={() => {
-            isComposingRef.current = false;
-          }}
-          placeholder="Untitled"
-          rows={1}
-          className="w-full resize-none overflow-hidden border-none bg-transparent text-[2.5rem] font-bold leading-[1.2] tracking-tight text-foreground outline-none placeholder:text-muted-foreground/30 focus:ring-0 dark:placeholder:text-muted-foreground/50"
-          style={{ letterSpacing: "-0.02em" }}
-          spellCheck={false}
-        />
-      </div>
-
-      {/* Emoji picker */}
       {showEmojiPicker && (iconButtonRef.current || addIconButtonRef.current) && (
         <EmojiPicker
           onSelect={handleEmojiSelect}
@@ -169,7 +105,6 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
         />
       )}
 
-      {/* Cover picker modal */}
       <CoverPickerModal
         open={showCoverModal}
         onClose={() => setShowCoverModal(false)}

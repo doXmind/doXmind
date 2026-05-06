@@ -30,12 +30,27 @@ declare module "@tiptap/core" {
  * Matches text between single $ delimiters (not $$)
  * Triggers when user types a space or other character after closing $
  */
+/**
+ * True when the position lives inside a table cell or header. Math auto-recognition
+ * is disabled in that context — see docs/adr/0006-feature-scope-typora-notion.md.
+ */
+const isInsideTableCell = (doc: import("@tiptap/pm/model").Node, pos: number): boolean => {
+  const $pos = doc.resolve(pos);
+  for (let depth = $pos.depth; depth >= 0; depth -= 1) {
+    const name = $pos.node(depth).type.name;
+    if (name === "tableCell" || name === "tableHeader") return true;
+  }
+  return false;
+};
+
 const inlineMathInputRule = (type: NodeType) => {
   return new InputRule({
     // Match $...$ followed by space or at end of line
     // This triggers when user types space after closing $
     find: /(?<![\\$])\$([^$\n]+)\$(\s)?$/,
     handler: ({ state, range, match }) => {
+      if (isInsideTableCell(state.doc, range.from)) return null;
+
       const latex = match[1];
       const trailingSpace = match[2];
       if (!latex?.trim()) return null;
@@ -64,6 +79,8 @@ const inlineMathPasteRule = (type: NodeType) => {
     // Match $...$ but not $$...$$ (negative lookahead/lookbehind)
     find: /(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g,
     handler: ({ state, range, match }) => {
+      if (isInsideTableCell(state.doc, range.from)) return null;
+
       const latex = match[1];
       if (!latex?.trim()) return null;
 

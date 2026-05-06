@@ -29,11 +29,26 @@ declare module "@tiptap/core" {
  * Triggers when user types $$ followed by content and closing $$
  * Improved to trigger on space or at end of input
  */
+/**
+ * True when the position lives inside a table cell or header. Math auto-recognition
+ * is disabled in that context — see docs/adr/0006-feature-scope-typora-notion.md.
+ */
+const isInsideTableCell = (doc: import("@tiptap/pm/model").Node, pos: number): boolean => {
+  const $pos = doc.resolve(pos);
+  for (let depth = $pos.depth; depth >= 0; depth -= 1) {
+    const name = $pos.node(depth).type.name;
+    if (name === "tableCell" || name === "tableHeader") return true;
+  }
+  return false;
+};
+
 const blockMathInputRule = (type: NodeType) => {
   return new InputRule({
     // Match $$...$$ followed by space or at end of line
     find: /\$\$([\s\S]*?)\$\$(\s)?$/,
     handler: ({ state, range, match }) => {
+      if (isInsideTableCell(state.doc, range.from)) return null;
+
       const latex = match[1] || "";
       const trailingSpace = match[2];
       const { tr } = state;
@@ -59,6 +74,8 @@ const blockMathPasteRule = (type: NodeType) => {
   return new PasteRule({
     find: /\$\$([\s\S]*?)\$\$/g,
     handler: ({ state, range, match }) => {
+      if (isInsideTableCell(state.doc, range.from)) return null;
+
       const latex = match[1] || "";
       const { tr } = state;
 
@@ -74,6 +91,8 @@ const startBlockMathInputRule = (type: NodeType) => {
   return new InputRule({
     find: /^\$\$\s$/,
     handler: ({ state, range }) => {
+      if (isInsideTableCell(state.doc, range.from)) return null;
+
       const { tr } = state;
       const start = range.from;
       const end = range.to;
