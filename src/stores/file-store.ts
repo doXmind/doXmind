@@ -377,8 +377,21 @@ export const useFileStore = create<FileState>()(
                   // Only update if the file exists in the files array.
                   // If loadFiles() hasn't completed yet, files may be empty — in that case
                   // skip the update and don't mark as loaded so it retries after loadFiles.
-                  const fileExists = state.files.some((f) => f.id === fileId);
-                  if (!fileExists) return {};
+                  const existing = state.files.find((f) => f.id === fileId);
+                  if (!existing) return {};
+
+                  // Force-reload on window refocus must be a no-op when nothing
+                  // changed on disk. If we rewrite `content` with an equal-but-new
+                  // string, the editor's [file.content] effect re-runs setContent
+                  // and resets scroll/selection. Compare HTML byte-for-byte and
+                  // skip the slice update when unchanged.
+                  const htmlUnchanged = existing.content === fullFile.html;
+                  const handleIdUnchanged = existing.id === fullFile.handle.id;
+                  if (htmlUnchanged && handleIdUnchanged) {
+                    return {
+                      loadedContentIds: new Set([...state.loadedContentIds, fullFile.handle.id]),
+                    };
+                  }
 
                   return {
                     files: state.files.map((f) =>

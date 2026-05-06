@@ -582,6 +582,11 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
     }
 
     isFileSwitchingRef.current = true;
+    // Snapshot scroll before setContent so a disk-refresh (e.g. external editor
+    // wrote the .md while we were alt-tabbed away) can restore the viewport.
+    // Only the initial-mount / late-content branch (isEmpty) should land at the
+    // top — a refresh on an already-open doc must preserve where the user was.
+    const preservedScrollTop = scrollAreaRef.current?.scrollTop ?? 0;
     const timeoutId = setTimeout(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- domObserver is internal ProseMirror API
       const domObserver = (editor.view as any).domObserver;
@@ -592,15 +597,15 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
         () => editor.commands.setContent(file.content, { emitUpdate: false }),
         { bytes: file.content?.length ?? 0, branch: "lateContent" }
       );
-      // Same as the file-switch effect above: opening a doc must not steal
-      // focus or scroll the title off-screen.
       lastContentRef.current = editor.getHTML();
       editor.emit("update", { editor, transaction: editor.state.tr, appendedTransactions: [] });
 
       domObserver?.start();
 
       if (scrollAreaRef.current) {
-        scrollAreaRef.current.scrollTop = 0;
+        // isEmpty: content arrived after navigation, land at the top.
+        // Otherwise: external edit reconcile, keep the user's viewport.
+        scrollAreaRef.current.scrollTop = isEmpty ? 0 : preservedScrollTop;
       }
 
       requestAnimationFrame(() => {
