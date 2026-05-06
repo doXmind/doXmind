@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
 
@@ -10,6 +10,7 @@ import { useHighContrast } from "@/hooks/use-high-contrast";
 import { useEditorKeyboardShortcuts } from "@/hooks/use-editor-keyboard-shortcuts";
 import { useFileUrlSync } from "@/hooks/use-file-url-sync";
 import { openNewWindow, openWindowForTarget, syncRecentsToDock } from "@/lib/window";
+import { perfMark, perfMeasure } from "@/lib/perf";
 
 const DesktopEditor = dynamic(
   () => import("./_components/desktop-editor").then((m) => ({ default: m.DesktopEditor })),
@@ -36,6 +37,10 @@ const PresentationMode = dynamic(
     import("@/components/editor/presentation-mode").then((m) => ({
       default: m.PresentationMode,
     })),
+  { ssr: false }
+);
+const PerfOverlay = dynamic(
+  () => import("@/components/dev/perf-overlay").then((m) => ({ default: m.PerfOverlay })),
   { ssr: false }
 );
 
@@ -111,8 +116,28 @@ export function EditorClient() {
   // Load file content on demand when current file changes.
   useEffect(() => {
     if (!isSynced) return;
-    if (currentFileId && !useFileStore.getState().loadedContentIds.has(currentFileId)) {
-      loadFileContent(currentFileId);
+    if (currentFileId) {
+      // Mark the user-perceived "switch starts here" boundary even when the
+      // file is already in loadedContentIds — the editor-side `setContent`
+      // and first-paint still happen and dominate cost on hot switches.
+      const startMark = `doxmind.switch.start:${currentFileId}`;
+      perfMark(startMark);
+      if (typeof window !== "undefined") {
+        // Stash the mark name so the editor-side first-paint listener can
+        // close the measure on the next animation frame after setContent.
+        // Typed via the augmented Window interface in src/lib/perf.ts.
+        window.__doxmindSwitchStartMark = startMark;
+        window.__doxmindSwitchFileId = currentFileId;
+      }
+      if (!useFileStore.getState().loadedContentIds.has(currentFileId)) {
+        loadFileContent(currentFileId);
+      } else {
+        // Hot-switch: nothing to read. The editor-side effect closes the
+        // measure once setContent has flushed.
+        perfMeasure("doxmind.switch.cacheHitNoRead", startMark, undefined, {
+          fileId: currentFileId,
+        });
+      }
     }
   }, [currentFileId, loadFileContent, isSynced]);
 
@@ -142,6 +167,26 @@ export function EditorClient() {
     document.title = currentFileName ? currentFileName.replace(/\.md$/i, "") : "doXmind";
   }, [currentFileName]);
 
+  // ?perf=1 in the URL turns on the in-app perf overlay for this session.
+  // The flag persists in localStorage so a refresh keeps the panel visible.
+  const [perfEnabled, setPerfEnabled] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const search = new URLSearchParams(window.location.search);
+    if (search.get("perf") === "1") {
+      try {
+        window.localStorage.setItem("DOXMIND_PERF", "1");
+      } catch {
+        // storage may be locked in some sandboxed contexts
+      }
+    }
+    try {
+      setPerfEnabled(window.localStorage.getItem("DOXMIND_PERF") === "1");
+    } catch {
+      setPerfEnabled(false);
+    }
+  }, []);
+
   return (
     <>
       <DesktopEditor />
@@ -153,6 +198,7 @@ export function EditorClient() {
       <CommandPalette open={isCommandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
       <QuickSwitcher />
       <PresentationMode />
+      {perfEnabled && <PerfOverlay />}
     </>
   );
 }

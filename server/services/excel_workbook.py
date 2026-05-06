@@ -11,10 +11,35 @@ formatting, named ranges).
 
 from __future__ import annotations
 
+import hashlib
 import io
 import logging
+import os
+from collections import OrderedDict
 from dataclasses import dataclass
+from threading import Lock
 from typing import Any
+
+# Cache encode/decode: prefer orjson (Rust-backed, ~2x stdlib on multi-MB
+# DTOs). Falls back to stdlib json if orjson is somehow unavailable so the
+# server still works even with a stripped-down env.
+try:
+    import orjson as _json  # type: ignore[import-not-found]
+
+    def _cache_encode(obj: Any) -> bytes:
+        return _json.dumps(obj)
+
+    def _cache_decode(data: bytes) -> Any:
+        return _json.loads(data)
+
+except ImportError:  # pragma: no cover — orjson is in requirements.txt
+    import json as _stdlib_json
+
+    def _cache_encode(obj: Any) -> bytes:
+        return _stdlib_json.dumps(obj).encode("utf-8")
+
+    def _cache_decode(data: bytes) -> Any:
+        return _stdlib_json.loads(data)
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
@@ -33,6 +58,9 @@ from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 
+from lib.timing import record as perf_record
+from lib.timing import timed as perf_timed
+
 logger = logging.getLogger(__name__)
 
 # Defensive caps. A pathological workbook can exceed Excel's nominal
@@ -42,6 +70,49 @@ logger = logging.getLogger(__name__)
 MAX_SHEETS = 64
 MAX_ROWS_PER_SHEET = 5000
 MAX_COLS_PER_SHEET = 200
+
+# Process-local LRU cache for parsed workbook DTOs. The dual openpyxl load
+# in parse_workbook is the slowest backend operation in the whole app
+# (15+ seconds on an 8 MB workbook); even with the frontend sidecar cache,
+# every fresh process or post-edit save pays it again. Hashing the input
+# bytes is ~30 ms on big workbooks — trivial next to the 15 s parse it
+# replaces. The hash also serves as a content fingerprint, so any
+# byte-level modification invalidates automatically.
+#
+# Cache values are stored as JSON-encoded bytes (not Python dicts) so that
+# every hit returns a freshly-parsed dict with mutation isolation, without
+# paying for `copy.deepcopy` on the way out. On a 50k-cell workbook
+# deepcopy was ~450 ms / hit; json round-trip via stdlib was ~96 ms;
+# orjson brings that down to ~42 ms — still slower than serving a shared
+# reference, but isolation is a hard requirement for cache safety.
+#
+# FUTURE WORK: the FastAPI handler that consumes this result already
+# JSON-serialises it for the response, so the in-process "isolation" we
+# pay for here is defending an attack surface that doesn't exist in
+# practice. A cleaner design would have the handler own the read-only
+# contract (cache returns a shared reference; handler must not mutate
+# before the response is dispatched). That removes the per-hit decode
+# entirely and pushes large.repeat-cache-hit closer to 0. Not done in
+# this PR because it crosses the cache/handler boundary and warrants a
+# focused review; tracked at PR #60 review thread.
+_XLSX_CACHE_MAX = 8
+_XLSX_CACHE: OrderedDict[str, bytes] = OrderedDict()
+_XLSX_CACHE_LOCK = Lock()
+
+
+def _xlsx_cache_disabled() -> bool:
+    return os.environ.get("DOXMIND_DISABLE_XLSX_CACHE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _clear_xlsx_cache() -> None:
+    """For tests / benchmarks."""
+    with _XLSX_CACHE_LOCK:
+        _XLSX_CACHE.clear()
 
 
 @dataclass
@@ -91,45 +162,72 @@ def parse_workbook(
         raise ValueError("empty xlsx body")
     parse_limits = limits or ParseLimits()
 
-    try:
-        # data_only=False so we keep the raw formulas. Frontend gets a
-        # second pass with data_only=True for the cached results.
-        wb_formulas = load_workbook(
-            io.BytesIO(xlsx_bytes), data_only=False, read_only=False
-        )
-        wb_values = load_workbook(
-            io.BytesIO(xlsx_bytes), data_only=True, read_only=True
-        )
-    except Exception as exc:
-        # openpyxl raises a grab-bag of exception types on malformed files.
-        raise ValueError(f"failed to parse xlsx: {exc}") from exc
+    cache_key: str | None = None
+    if not _xlsx_cache_disabled():
+        with perf_timed("excel.parse_workbook.hash", bytes=len(xlsx_bytes)):
+            cache_key = hashlib.sha256(xlsx_bytes).hexdigest()
+        with _XLSX_CACHE_LOCK:
+            cached = _XLSX_CACHE.get(cache_key)
+            if cached is not None:
+                _XLSX_CACHE.move_to_end(cache_key)
+                perf_record("excel.parse_workbook.cache_hit")
+                # JSON round-trip rather than deepcopy: every hit gets a
+                # fresh dict (mutation by future callers can't corrupt the
+                # entry) while avoiding ~10x the per-cell overhead of
+                # CPython's copy.deepcopy on a deeply-nested DTO. orjson
+                # roughly halves the decode cost again on multi-MB DTOs.
+                return _cache_decode(cached)
 
-    sheets: list[dict[str, Any]] = []
-    truncated_sheets = len(wb_formulas.sheetnames) > parse_limits.max_sheets
-    rows_truncated: dict[str, bool] = {}
-    cols_truncated: dict[str, bool] = {}
+    with perf_timed("excel.parse_workbook.total", bytes=len(xlsx_bytes)) as total_span:
+        try:
+            # data_only=False so we keep the raw formulas. Frontend gets a
+            # second pass with data_only=True for the cached results.
+            with perf_timed("excel.load_data_only_false"):
+                wb_formulas = load_workbook(
+                    io.BytesIO(xlsx_bytes), data_only=False, read_only=False
+                )
+            with perf_timed("excel.load_data_only_true"):
+                wb_values = load_workbook(
+                    io.BytesIO(xlsx_bytes), data_only=True, read_only=True
+                )
+        except Exception as exc:
+            # openpyxl raises a grab-bag of exception types on malformed files.
+            raise ValueError(f"failed to parse xlsx: {exc}") from exc
 
-    try:
-        for index, name in enumerate(wb_formulas.sheetnames):
-            if index >= parse_limits.max_sheets:
-                break
-            formula_sheet = wb_formulas[name]
-            value_sheet = wb_values[name] if name in wb_values.sheetnames else None
-            sheet_dto, sheet_truncations = _parse_sheet(
-                formula_sheet,
-                value_sheet,
-                index=index,
-                limits=parse_limits,
-            )
-            sheets.append(sheet_dto)
-            if sheet_truncations.get("rows"):
-                rows_truncated[sheet_dto["id"]] = True
-            if sheet_truncations.get("cols"):
-                cols_truncated[sheet_dto["id"]] = True
-    except ValueError as exc:
-        raise ValueError(f"failed to parse xlsx: {exc}") from exc
+        sheets: list[dict[str, Any]] = []
+        truncated_sheets = len(wb_formulas.sheetnames) > parse_limits.max_sheets
+        rows_truncated: dict[str, bool] = {}
+        cols_truncated: dict[str, bool] = {}
+        total_span["sheet_count"] = min(len(wb_formulas.sheetnames), parse_limits.max_sheets)
 
-    return {
+        try:
+            with perf_timed("excel.parse_sheets") as sheets_span:
+                cell_total = 0
+                for index, name in enumerate(wb_formulas.sheetnames):
+                    if index >= parse_limits.max_sheets:
+                        break
+                    formula_sheet = wb_formulas[name]
+                    value_sheet = (
+                        wb_values[name] if name in wb_values.sheetnames else None
+                    )
+                    sheet_dto, sheet_truncations = _parse_sheet(
+                        formula_sheet,
+                        value_sheet,
+                        index=index,
+                        limits=parse_limits,
+                    )
+                    cell_total += len(sheet_dto.get("cells", []))
+                    sheets.append(sheet_dto)
+                    if sheet_truncations.get("rows"):
+                        rows_truncated[sheet_dto["id"]] = True
+                    if sheet_truncations.get("cols"):
+                        cols_truncated[sheet_dto["id"]] = True
+                sheets_span["cells"] = cell_total
+            total_span["cells"] = cell_total
+        except ValueError as exc:
+            raise ValueError(f"failed to parse xlsx: {exc}") from exc
+
+    result = {
         "version": 1,
         "sheets": sheets,
         "truncated": {
@@ -138,6 +236,21 @@ def parse_workbook(
             "colsBy": cols_truncated,
         },
     }
+
+    if cache_key is not None:
+        with _XLSX_CACHE_LOCK:
+            # Encode once on insert so future hits only pay decode. The DTO
+            # is fully JSON-serialisable (nothing holds class instances or
+            # non-stringable keys); the decode is what feeds the FastAPI
+            # response anyway, so the round-trip overhead per hit is
+            # bounded by orjson's speed (with stdlib json as fallback when
+            # orjson is unavailable).
+            _XLSX_CACHE[cache_key] = _cache_encode(result)
+            _XLSX_CACHE.move_to_end(cache_key)
+            while len(_XLSX_CACHE) > _XLSX_CACHE_MAX:
+                _XLSX_CACHE.popitem(last=False)
+
+    return result
 
 
 def _parse_sheet(

@@ -577,13 +577,44 @@ async fn doc_write_workspace(
 }
 
 #[tauri::command]
-fn workspace_read_binary(root: String, path: String) -> Result<Vec<u8>, String> {
+fn workspace_stat_binary(root: String, path: String) -> Result<serde_json::Value, String> {
+    // Cheap (mtime, size) probe used by the frontend switch caches to detect
+    // external edits. Bytes are NOT read; this is microseconds. mtime is
+    // serialised as a decimal string because Number can't hold ns precision.
+    let root = canonical_workspace_root(&root)?;
+    let path = resolve_existing_workspace_path(&root, &path)?;
+    if !is_pdf_file(&path) && !is_excel_file(&path) {
+        return Err("binary workspace stat is only enabled for PDF and Excel files".to_string());
+    }
+    let meta = fs::metadata(&path).map_err(|err| format!("failed to stat workspace file: {err}"))?;
+    let mtime_ns: u128 = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    Ok(serde_json::json!({
+        "mtimeNs": mtime_ns.to_string(),
+        "size": meta.len(),
+    }))
+}
+
+#[tauri::command]
+fn workspace_read_binary(root: String, path: String) -> Result<tauri::ipc::Response, String> {
+    // Returning `tauri::ipc::Response` instead of `Vec<u8>` opts into Tauri's
+    // raw-binary IPC channel: the bytes go over the bridge as an ArrayBuffer
+    // instead of being JSON-stringified into a `number[]` (~5x bloat) and then
+    // walked back into a `Uint8Array` on the JS side. This substantially
+    // reduces JSON-IPC overhead on the binary read path; the actual gain
+    // depends on file size and the dev/release build profile.
     let root = canonical_workspace_root(&root)?;
     let path = resolve_existing_workspace_path(&root, &path)?;
     if !is_pdf_file(&path) && !is_excel_file(&path) {
         return Err("binary workspace reads are only enabled for PDF and Excel files".to_string());
     }
-    fs::read(path).map_err(|err| format!("failed to read binary workspace file: {err}"))
+    let bytes =
+        fs::read(path).map_err(|err| format!("failed to read binary workspace file: {err}"))?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[tauri::command]
@@ -716,14 +747,75 @@ fn workspace_read_excel_editor_state(
         return Err("Excel editor state is only enabled for .xlsx/.xlsm files".to_string());
     }
     let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
-    let raw = match fs::read_to_string(sidecar_path) {
+    let raw = match fs::read_to_string(&sidecar_path) {
         Ok(raw) => raw,
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(err) => return Err(format!("failed to read Excel sidecar: {err}")),
     };
-    let sidecar: serde_json::Value =
+    let mut sidecar: serde_json::Value =
         serde_json::from_str(&raw).map_err(|err| format!("invalid Excel sidecar JSON: {err}"))?;
+    // Opportunistic migration: if this sidecar still carries the legacy
+    // `excel_parsed_cache` field (no longer written by us), strip it and
+    // rewrite the sidecar slim. The first cold read of an old workbook
+    // pays the full JSON parse once; every subsequent read sees a small
+    // editor-only sidecar. Failure to write back is non-fatal — we still
+    // return the editor state, the next read will just retry the strip.
+    let stripped = sidecar
+        .as_object_mut()
+        .map(|obj| obj.remove("excel_parsed_cache").is_some())
+        .unwrap_or(false);
+    if stripped {
+        if let Ok(bytes) = serde_json::to_vec_pretty(&sidecar) {
+            // Atomic write: stale parsedCache strip used to use plain
+            // fs::write, which truncates the file before writing. A crash
+            // (or a kill -9 from a debugger) mid-write would leave the
+            // user's editor state truncated. Slim-on-read is invoked on
+            // every cold open of a legacy sidecar, so the exposure window
+            // is much wider than for explicit save paths.
+            let _ = atomic_write_bytes(&sidecar_path, &bytes);
+        }
+    }
     Ok(sidecar.get("excel_editor").cloned())
+}
+
+/// Write `bytes` to `path` atomically via temp-file + rename.
+///
+/// Contract:
+///   * The temp file is created in the **same directory** as `path` so the
+///     final `fs::rename` is intra-filesystem and POSIX-atomic. Cross-device
+///     renames would fail at the rename step, which is fine for our use
+///     (sidecars always live next to the source they describe — see ADR
+///     0001 / 0003).
+///   * `sync_all()` flushes both the file contents and its metadata to
+///     disk before the rename, so the rename is the only window during
+///     which a crash could leave nothing-or-old (never new-with-zero-bytes).
+///   * `fs::rename` is atomic on Unix (POSIX `rename(2)`) and on Windows
+///     (`MoveFileEx` with `MOVEFILE_REPLACE_EXISTING`) when source and
+///     destination share a volume.
+///   * On error, the temp file is best-effort removed and the original
+///     `path` (if any) is left untouched. Callers can safely ignore the
+///     `Err` — the next call will retry without data loss. The slim-on-read
+///     site does exactly that.
+fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path has no parent")
+    })?;
+    let stem = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("doxmind");
+    let tmp = parent.join(format!(".{stem}.tmp.{}", uuid::Uuid::new_v4()));
+    {
+        use std::io::Write;
+        let mut f = fs::File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()?;
+    }
+    if let Err(err) = fs::rename(&tmp, path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(err);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -739,20 +831,20 @@ fn workspace_write_excel_editor_state(
     }
     let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
     let rel_path = relative_path_string(&root, &path)?;
-    let existing_cache = read_sidecar_field(&sidecar_path, "excel_parsed_cache");
-    let mut sidecar = serde_json::json!({
+    // Deliberately drop any pre-existing `excel_parsed_cache` field. The
+    // backend has its own process-local LRU and the frontend has a switch
+    // cache; the on-disk parsedCache (which can run to ~18 MB for a single
+    // workbook) was just bloat that slowed every cold read of this sidecar
+    // by a second. The next `excel_parsed_cache` write would re-create it
+    // if we ever decide to bring the on-disk shortcut back, so this is a
+    // soft drop, not a schema deprecation.
+    let sidecar = serde_json::json!({
         "version": 1,
         "id": stable_path_id(&rel_path),
         "source_path": rel_path,
         "updated_at_unix_nanos": unix_nanos().to_string(),
         "excel_editor": payload,
     });
-    if let Some(cache) = existing_cache {
-        sidecar
-            .as_object_mut()
-            .unwrap()
-            .insert("excel_parsed_cache".to_string(), cache);
-    }
     fs::write(
         sidecar_path,
         serde_json::to_vec_pretty(&sidecar)
@@ -2024,6 +2116,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
             doc_write,
             doc_write_workspace,
             workspace_read_binary,
+            workspace_stat_binary,
             workspace_read_pdf_editor_state,
             workspace_write_pdf_editor_state,
             workspace_read_pdf_doc_state,

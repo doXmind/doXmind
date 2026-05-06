@@ -36,15 +36,24 @@ import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
 import { rangeToMarkdown } from "@/lib/markdown-selection";
 import { useDatabaseStore } from "@/stores/database-store";
 import { eventBus } from "@/lib/events";
+import { perfMeasure, perfSync } from "@/lib/perf";
 
 /** Extract database block IDs from HTML (data-database-id) or markdown (<!-- database:uuid -->) */
-function extractDatabaseIds(content: string): Set<string> {
+function extractDatabaseIdsRaw(content: string): Set<string> {
   const ids = new Set<string>();
   // Match both HTML attribute and markdown comment formats
   const re = /(?:data-database-id="([a-f0-9-]+)"|<!-- database:([a-f0-9-]+) -->)/g;
   let m;
   while ((m = re.exec(content)) !== null) ids.add(m[1] || m[2]);
   return ids;
+}
+
+function extractDatabaseIds(content: string, callsite: string): Set<string> {
+  return perfSync(
+    `doxmind.editor.extractDatabaseIds.${callsite}`,
+    () => extractDatabaseIdsRaw(content),
+    { bytes: content.length }
+  );
 }
 
 function focusTrailingParagraph(view: EditorView): boolean {
@@ -229,7 +238,7 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
         lastContentRef.current = content;
 
         // Detect removed database blocks and cascade-delete them
-        const currentIds = extractDatabaseIds(contentMarkdown ?? content);
+        const currentIds = extractDatabaseIds(contentMarkdown ?? content, "save");
         for (const id of prevDbIdsRef.current) {
           if (!currentIds.has(id)) {
             // deleteDatabase emits "database:deleted" event on success,
@@ -475,7 +484,7 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
       initialFileIdRef.current = null;
       lastContentRef.current = editor.getHTML();
       // Snapshot database block IDs in the initial content
-      prevDbIdsRef.current = extractDatabaseIds(file.content);
+      prevDbIdsRef.current = extractDatabaseIds(file.content, "initialMount");
       return;
     }
 
@@ -500,7 +509,11 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
       const domObserver = (editor.view as any).domObserver;
       domObserver?.stop();
 
-      editor.commands.setContent(file.content, { emitUpdate: false });
+      perfSync(
+        "doxmind.editor.setContent",
+        () => editor.commands.setContent(file.content, { emitUpdate: false }),
+        { bytes: file.content?.length ?? 0, branch: "fileSwitch" }
+      );
       // Don't auto-focus: when a doc opens we want the page resting at the
       // top (title/cover visible) with no caret, the way Notion does it. The
       // user clicks (or presses Enter on the title) to start editing.
@@ -508,7 +521,7 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
       // to prevent false-positive change detection in debouncedSave.
       lastContentRef.current = editor.getHTML();
       // Snapshot database block IDs for the new file
-      prevDbIdsRef.current = extractDatabaseIds(file.content);
+      prevDbIdsRef.current = extractDatabaseIds(file.content, "fileSwitch");
       editor.emit("update", { editor, transaction: editor.state.tr, appendedTransactions: [] });
 
       // Restart DOM observer after content is fully replaced
@@ -525,6 +538,22 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
       // DOM observer callbacks to be discarded
       requestAnimationFrame(() => {
         isFileSwitchingRef.current = false;
+        // Close the user-visible "switch start → first paint" measure that
+        // editor-client opens on currentFileId change. The start mark is
+        // cleared so the second sync effect (lateContent) doesn't double-stamp.
+        // Globals are typed via the Window augmentation in src/lib/perf.ts.
+        if (typeof window !== "undefined") {
+          const startMark = window.__doxmindSwitchStartMark;
+          const fileIdAtStart = window.__doxmindSwitchFileId;
+          if (startMark && fileIdAtStart === file.id) {
+            perfMeasure("doxmind.switch.firstPaint", startMark, undefined, {
+              fileId: file.id,
+              documentType: "markdown",
+            });
+            window.__doxmindSwitchStartMark = undefined;
+            window.__doxmindSwitchFileId = undefined;
+          }
+        }
       });
     }, 0);
 
@@ -558,7 +587,11 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
       const domObserver = (editor.view as any).domObserver;
       domObserver?.stop();
 
-      editor.commands.setContent(file.content, { emitUpdate: false });
+      perfSync(
+        "doxmind.editor.setContent",
+        () => editor.commands.setContent(file.content, { emitUpdate: false }),
+        { bytes: file.content?.length ?? 0, branch: "lateContent" }
+      );
       // Same as the file-switch effect above: opening a doc must not steal
       // focus or scroll the title off-screen.
       lastContentRef.current = editor.getHTML();

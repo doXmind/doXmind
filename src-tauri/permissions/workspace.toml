@@ -12,6 +12,7 @@ commands.allow = [
   "doc_write",
   "doc_write_workspace",
   "workspace_read_binary",
+  "workspace_stat_binary",
   "workspace_read_pdf_editor_state",
   "workspace_write_pdf_editor_state",
   "workspace_read_pdf_doc_state",

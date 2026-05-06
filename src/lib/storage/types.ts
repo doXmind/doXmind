@@ -34,13 +34,7 @@ export interface DocumentContent {
 
 export type CorrelationEventKind = "orphan" | "duplicate" | "new";
 
-export type HowHandled =
-  | "errored"
-  | "discarded"
-  | "created_empty"
-  | "kept"
-  | "skipped"
-  | "deduped";
+export type HowHandled = "errored" | "discarded" | "created_empty" | "kept" | "skipped" | "deduped";
 
 export interface CorrelationEvent {
   kind: CorrelationEventKind;
@@ -456,6 +450,14 @@ export interface StorageAdapter {
   read(handle: DocumentHandle): Promise<DocumentContent>;
   write(handle: DocumentHandle, content: StorageWriteInput): Promise<DocumentContent>;
   readBinary?(handle: DocumentHandle): Promise<Uint8Array>;
+  /**
+   * Cheap (mtime, size) probe for cache invalidation. Used by the PDF/Excel
+   * workspace switch caches so that external edits to the source binary
+   * surface on the next open. Returns null if the underlying transport
+   * doesn't support stat (e.g. browser HTTP fallback). mtime is a decimal
+   * string of nanoseconds-since-epoch because Number can't hold ns precision.
+   */
+  statBinary?(handle: DocumentHandle): Promise<{ mtimeNs: string; size: number } | null>;
   readPdfEditorState?(handle: DocumentHandle): Promise<PdfEditorState | null>;
   writePdfEditorState?(handle: DocumentHandle, state: PdfEditorState): Promise<void>;
   /** Combined sidecar read for PDF open: editor state + parsed-blocks cache. */

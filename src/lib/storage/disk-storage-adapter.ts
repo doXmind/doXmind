@@ -19,6 +19,7 @@ import type {
 } from "./types";
 import { entriesToWorkspaceIndex } from "./search";
 import { apiUrl } from "@/lib/api/base";
+import { perfAsync } from "@/lib/perf";
 
 type TauriInvoker = <T>(command: string, payload: Record<string, unknown>) => Promise<T>;
 
@@ -96,9 +97,14 @@ export class DiskStorageAdapter implements StorageAdapter {
       throw new Error("Excel documents are binary; use readBinary instead");
     }
 
-    const result = await this.invoke<DocReadResultDto>("doc_read", {
-      path: this.absolutePath(handle),
-    });
+    const result = await perfAsync(
+      "doxmind.adapter.docRead",
+      () =>
+        this.invoke<DocReadResultDto>("doc_read", {
+          path: this.absolutePath(handle),
+        }),
+      { path: requireHandlePath(handle) }
+    );
     return {
       handle: this.handleFromRead(handle, result),
       name: basename(handle.path || handle.relPath || result.meta.title || "Untitled.md"),
@@ -113,12 +119,36 @@ export class DiskStorageAdapter implements StorageAdapter {
     };
   }
 
+  async statBinary(handle: DocumentHandle): Promise<{ mtimeNs: string; size: number } | null> {
+    try {
+      return await this.invoke<{ mtimeNs: string; size: number }>("workspace_stat_binary", {
+        root: this.requireRoot(),
+        path: requireHandlePath(handle),
+      });
+    } catch {
+      // The HTTP fallback (browser dev) may not implement stat. Returning
+      // null means "can't tell, assume cache is valid"; cache hit proceeds.
+      return null;
+    }
+  }
+
   async readBinary(handle: DocumentHandle): Promise<Uint8Array> {
-    const bytes = await this.invoke<number[]>("workspace_read_binary", {
-      root: this.requireRoot(),
-      path: requireHandlePath(handle),
-    });
-    return new Uint8Array(bytes);
+    // The Tauri command returns `tauri::ipc::Response` which surfaces here
+    // as an `ArrayBuffer` — that's the fast path (raw binary IPC, no JSON).
+    // The HTTP fallback (`invokeWorkspaceHttp`) hits a FastAPI endpoint that
+    // still returns a JSON `number[]`; we accept either shape.
+    const result = await perfAsync(
+      "doxmind.adapter.readBinary",
+      () =>
+        this.invoke<ArrayBuffer | number[] | Uint8Array>("workspace_read_binary", {
+          root: this.requireRoot(),
+          path: requireHandlePath(handle),
+        }),
+      { path: requireHandlePath(handle) }
+    );
+    if (result instanceof Uint8Array) return result;
+    if (result instanceof ArrayBuffer) return new Uint8Array(result);
+    return new Uint8Array(result);
   }
 
   async readPdfEditorState(handle: DocumentHandle): Promise<PdfEditorState | null> {

@@ -152,6 +152,53 @@ import {
 } from "@/lib/excel/conditional-formats";
 import { cn, sha256Hex } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
+import { perfAsync, perfMeasure, perfSync } from "@/lib/perf";
+import { isSwitchCacheStillValid } from "@/lib/switch-cache-validation";
+
+// Module-level switch cache. The whole point of this layer is to dodge the
+// 18+ MB JSON response from /api/excel/parse-workbook on a re-open. The
+// backend parse cache (services/excel_workbook.py) cuts the parse itself to
+// a few ms but the response is still serialised + transferred each time, so
+// switching back to a 8 MB workbook still cost ~1.2 s end-to-end. Holding
+// the parsed DTO and the source bytes in memory eliminates that.
+//
+// Key by fileId, but revalidate against (mtimeNs, size) on every hit via a
+// `statBinary` probe. A hit serves the cached entry only when the source
+// file on disk hasn't changed since we cached it — external edits (the
+// user opens the .xlsx in Excel proper, saves, comes back) invalidate the
+// entry and fall through to the cache-miss path. The stat costs ~µs.
+//
+// Memory note: each entry holds the source bytes (up to ~8 MB on a real
+// workbook) plus the parsed DTO (can run 18 MB on the same input), so
+// MAX=4 caps total memory at roughly 100 MB. Tune down if it bites.
+type ExcelSwitchCacheEntry = {
+  bytes: Uint8Array;
+  parsed: ExcelWorkbookDto;
+  sourceHash: string;
+  mtimeNs: string | null;
+  size: number | null;
+};
+const EXCEL_SWITCH_CACHE_MAX = 4;
+const excelSwitchCache = new Map<string, ExcelSwitchCacheEntry>();
+
+function excelSwitchCacheGet(fileId: string): ExcelSwitchCacheEntry | null {
+  const entry = excelSwitchCache.get(fileId);
+  if (entry) {
+    excelSwitchCache.delete(fileId);
+    excelSwitchCache.set(fileId, entry);
+    return entry;
+  }
+  return null;
+}
+
+function excelSwitchCacheSet(fileId: string, entry: ExcelSwitchCacheEntry): void {
+  excelSwitchCache.set(fileId, entry);
+  while (excelSwitchCache.size > EXCEL_SWITCH_CACHE_MAX) {
+    const firstKey = excelSwitchCache.keys().next().value;
+    if (firstKey === undefined) break;
+    excelSwitchCache.delete(firstKey);
+  }
+}
 
 interface ExcelEditorWorkspaceProps {
   file: FileItem;
@@ -406,50 +453,126 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
 
     (async () => {
       try {
-        // Kick off the binary read and the combined sidecar read in parallel.
-        // The sidecar holds both the editor state and the parsed-workbook
-        // cache; if the cache's hash matches the freshly-read bytes we skip
-        // the heavy openpyxl round-trip entirely.
-        const [bytes, docState] = await Promise.all([
-          adapter.readBinary!(handle),
-          adapter.readExcelDocState
-            ? adapter.readExcelDocState(handle).catch(() => null)
-            : adapter.readExcelEditorState
-              ? adapter.readExcelEditorState(handle).then(
-                  (editor) => ({ editor, parsedCache: null }),
+        // Always read editor state only. We used to also pull a parsedCache
+        // blob (the full ~18 MB parsed workbook DTO) hoping to skip openpyxl
+        // on the next cold open with a matching hash. Two things made that
+        // a net negative:
+        //   1. The backend's process-local LRU (#3 in services/excel_workbook.py)
+        //      already caches parse output for same-process re-opens.
+        //   2. Reading the 18 MB JSON back over IPC + parsing it on the main
+        //      thread cost ~1 s on every cold open — competing with the very
+        //      thing it tried to save (3.8 s openpyxl).
+        // The trade is: process-restart-then-reopen of an unmodified file now
+        // re-runs openpyxl once. Switch-cache + backend LRU together cover
+        // every other path, so the regression is bounded to that one slot.
+        const readEditorOnly = () =>
+          adapter.readExcelEditorState
+            ? adapter.readExcelEditorState(handle).then(
+                (editor) => ({ editor }),
+                () => null
+              )
+            : adapter.readExcelDocState
+              ? adapter.readExcelDocState(handle).then(
+                  (state) => (state ? { editor: state.editor } : null),
                   () => null
                 )
-              : Promise.resolve(null),
-        ]);
-        if (cancelled) return;
-        xlsxBytesRef.current = bytes;
+              : Promise.resolve(null);
 
-        const sourceHash = await sha256Hex(bytes);
-        if (cancelled) return;
-
-        let parsed: ExcelWorkbookDto;
-        const cachedParsed =
-          docState?.parsedCache && docState.parsedCache.sourceHash === sourceHash
-            ? (docState.parsedCache.parsed as ExcelWorkbookDto)
-            : null;
-        if (cachedParsed) {
-          parsed = cachedParsed;
-        } else {
-          parsed = await fetchExcelWorkbook(bytes, file.name, controller.signal);
+        // Switch-cache lookup is two-step: get the entry, then revalidate
+        // against the on-disk (mtime, size). If stat doesn't match, drop
+        // the entry and fall through to the cache-miss path so external
+        // edits to the source workbook don't get silently masked.
+        let switchCached = excelSwitchCacheGet(file.id);
+        if (switchCached) {
+          // Sync gate; semantics documented in switch-cache-validation.ts.
+          // Cache hit only proceeds when stat confirms (mtime, size). Stat
+          // throwing is treated as "fall through" same as a real mismatch
+          // — serving unverifiable cached bytes is the kind of bug that
+          // destroys trust.
+          const probe = adapter.statBinary ? () => adapter.statBinary!(handle) : undefined;
+          const stillValid = await isSwitchCacheStillValid(
+            { mtimeNs: switchCached.mtimeNs, size: switchCached.size },
+            probe
+          );
           if (cancelled) return;
-          // Persist the cache so subsequent opens skip the parse. Fire and
-          // forget — a failed write just means the next open re-parses.
-          if (adapter.writeExcelParsedCache) {
-            void adapter.writeExcelParsedCache(handle, sourceHash, parsed).catch(() => {});
+          if (!stillValid) {
+            excelSwitchCache.delete(file.id);
+            switchCached = null;
           }
         }
+        let bytes: Uint8Array;
+        let parsed: ExcelWorkbookDto;
+        let docState: Awaited<ReturnType<typeof readEditorOnly>>;
+        if (switchCached) {
+          perfSync("doxmind.excel.switchCacheHit", () => undefined, { fileId: file.id });
+          docState = await perfAsync("doxmind.excel.readEditorOnly", () => readEditorOnly(), {
+            fileId: file.id,
+          });
+          if (cancelled) return;
+          bytes = switchCached.bytes;
+          parsed = switchCached.parsed;
+        } else {
+          perfSync("doxmind.excel.switchCacheMiss", () => undefined, { fileId: file.id });
+          // Cold path: binary read + editor-only sidecar read + stat probe
+          // in parallel. The stat is needed to populate the cache key for
+          // future hot switches; if it fails (HTTP fallback) we cache with
+          // null mtime/size and any future hit will treat that as
+          // "unknown" and serve regardless. That's acceptable in dev.
+          const [readBytes, readDocState, statResult] = await perfAsync(
+            "doxmind.excel.readBinaryAndSidecar",
+            () =>
+              Promise.all([
+                adapter.readBinary!(handle),
+                readEditorOnly(),
+                adapter.statBinary
+                  ? adapter.statBinary(handle).catch(() => null)
+                  : Promise.resolve(null),
+              ])
+          );
+          if (cancelled) return;
 
+          parsed = await perfAsync(
+            "doxmind.excel.fetchWorkbook",
+            () => fetchExcelWorkbook(readBytes, file.name, controller.signal),
+            { bytes: readBytes.byteLength }
+          );
+          if (cancelled) return;
+
+          const sourceHash = await sha256Hex(readBytes);
+          if (cancelled) return;
+          bytes = readBytes;
+          docState = readDocState;
+          excelSwitchCacheSet(file.id, {
+            bytes,
+            parsed,
+            sourceHash,
+            mtimeNs: statResult?.mtimeNs ?? null,
+            size: statResult?.size ?? null,
+          });
+        }
+
+        xlsxBytesRef.current = bytes;
         const sidecar = docState?.editor ?? null;
         setWorkbook(parsed);
         setEditorState(sidecar);
         setActiveSheetId(sidecar?.activeSheetId ?? parsed.sheets[0]?.id ?? null);
         setSelection(singleCellRange(0, 0));
         setStatus("ready");
+        // Close the firstPaint measure once and clear the start mark so it
+        // doesn't get stamped repeatedly on subsequent re-renders. Globals
+        // are typed via the Window augmentation in src/lib/perf.ts.
+        if (typeof window !== "undefined") {
+          const startMark = window.__doxmindSwitchStartMark;
+          const fileIdAtStart = window.__doxmindSwitchFileId;
+          if (startMark && fileIdAtStart) {
+            perfMeasure("doxmind.switch.firstPaint", startMark, undefined, {
+              fileId: fileIdAtStart,
+              documentType: "excel",
+            });
+            window.__doxmindSwitchStartMark = undefined;
+            window.__doxmindSwitchFileId = undefined;
+          }
+        }
         // The truncation is reflected in the visible sheet tabs; further
         // surfacing was a noisy success-class toast that the design no
         // longer carries.
@@ -467,7 +590,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       cancelled = true;
       controller.abort();
     };
-  }, [adapter, file.name, file.storageHandle]);
+  }, [adapter, file.id, file.name, file.storageHandle]);
 
   // Display workbook = parsed workbook with workbook-level ops applied
   // (added / renamed / duplicated / deleted sheets). The tab strip and
@@ -544,14 +667,52 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       lastEngineCellsRef.current = undefined;
       return;
     }
-    const engine = createExcelEngine(displayWorkbook, editorStateRef.current);
-    engineRef.current?.hf.destroy();
-    engineRef.current = engine;
-    lastEngineCellsRef.current = editorStateRef.current?.cells;
-    setEngineGen((g) => g + 1);
+    // Defer the HyperFormula build past first paint. createExcelEngine is
+    // O(cells_with_values) synchronous (~50µs/cell on medium fixtures, ie.
+    // 50k cells ≈ 2.5s of main-thread work). Until the engine is ready,
+    // `computedValueAt` returns null and the renderer falls back to
+    // `cell.value` — the openpyxl data_only cached result — which is what
+    // the user saw in their last save anyway. The first edit they make
+    // will land in editorState.cells; when the deferred build picks up,
+    // it includes that patch via the existing editorStateRef threading.
+    //
+    // State-machine invariant: only the most recent uncancelled timeout
+    // ever commits an engine to engineRef. The four cases:
+    //   1. Effect re-runs before timer fires → cleanup sets cancelled=true,
+    //      clearTimeout aborts; nothing was built.
+    //   2. Effect re-runs while createExcelEngine is mid-build → the build
+    //      finishes but the post-build `if (cancelled)` branch destroys
+    //      its engine without touching engineRef. (Only one timer body
+    //      runs at a time on the JS thread, so this can't race itself.)
+    //   3. Build commits, then effect re-runs → cleanup destroys via the
+    //      `committed` reference and clears engineRef if it still matches.
+    //   4. Component unmounts → same as 3.
+    let cancelled = false;
+    let committed: ExcelEngine | null = null;
+    const handle = setTimeout(() => {
+      if (cancelled) return;
+      const engine = perfSync(
+        "doxmind.excel.createEngine",
+        () => createExcelEngine(displayWorkbook, editorStateRef.current),
+        { sheetCount: displayWorkbook.sheets.length }
+      );
+      if (cancelled) {
+        engine.hf.destroy();
+        return;
+      }
+      engineRef.current?.hf.destroy();
+      engineRef.current = engine;
+      committed = engine;
+      lastEngineCellsRef.current = editorStateRef.current?.cells;
+      setEngineGen((g) => g + 1);
+    }, 0);
     return () => {
-      engine.hf.destroy();
-      if (engineRef.current === engine) engineRef.current = null;
+      cancelled = true;
+      clearTimeout(handle);
+      if (committed) {
+        committed.hf.destroy();
+        if (engineRef.current === committed) engineRef.current = null;
+      }
     };
     // We intentionally don't depend on `editorState` here — the
     // incremental sync below handles cell-value updates without

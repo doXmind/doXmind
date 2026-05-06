@@ -19,6 +19,7 @@ from config import CORS_ORIGIN_REGEX, CORS_ORIGINS, get_cors_headers, get_settin
 from db.database import engine as db_engine
 from db.database import init_db
 from exceptions import AppException
+from lib.timing import timed as perf_timed
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -83,6 +84,20 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class PerfTimingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # No-op when DOXMIND_PERF is unset — perf_timed checks the flag and
+        # the surrounding `with` becomes ~free.
+        with perf_timed(
+            "request.total",
+            method=request.method,
+            path=request.url.path,
+        ) as span:
+            response = await call_next(request)
+            span["status"] = response.status_code
+            return response
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -92,6 +107,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(PerfTimingMiddleware)
 
 
 # Routers: document CRUD lives in the Tauri filesystem commands.
