@@ -11,6 +11,7 @@ frontend, since heuristics there would be fragile.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import io
 import os
@@ -22,6 +23,7 @@ from typing import Any
 
 import pymupdf
 
+from lib.timing import record as perf_record
 from lib.timing import timed as perf_timed
 
 # PyMuPDF span flag bits (see MuPDF docs).
@@ -152,9 +154,13 @@ def parse_pdf_blocks(
             cached = _PDF_CACHE.get(cache_key)
             if cached is not None:
                 _PDF_CACHE.move_to_end(cache_key)
-                with perf_timed("pdf.parse_blocks.cache_hit"):
-                    pass
-                return cached
+                perf_record("pdf.parse_blocks.cache_hit")
+                # Deep-clone so a future caller that mutates the block tree
+                # (filter, merge, downstream transform) can't corrupt the
+                # entry. Block trees are bounded by `limits` (5k blocks /
+                # 50k spans per page) so the copy is fast relative to the
+                # hundreds of ms a re-parse would cost.
+                return copy.deepcopy(cached)
 
     pages_out: list[dict[str, Any]] = []
     with perf_timed(
@@ -192,7 +198,10 @@ def parse_pdf_blocks(
 
     if cache_key is not None:
         with _PDF_CACHE_LOCK:
-            _PDF_CACHE[cache_key] = result
+            # Cache an independent copy so the returned `result` (which the
+            # caller may freely mutate) and the cache entry are decoupled
+            # from insertion onward.
+            _PDF_CACHE[cache_key] = copy.deepcopy(result)
             _PDF_CACHE.move_to_end(cache_key)
             while len(_PDF_CACHE) > _PDF_CACHE_MAX:
                 _PDF_CACHE.popitem(last=False)

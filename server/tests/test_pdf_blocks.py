@@ -188,3 +188,71 @@ def test_endpoint_filters_by_page_indexes(sync_client: Any) -> None:
     assert response.status_code == 200
     body = response.json()
     assert [p["pageIndex"] for p in body["pages"]] == [1]
+
+
+# ---------------------------------------------------------------------- cache
+
+
+def test_parse_cache_hit_returns_clone_so_caller_mutation_doesnt_leak() -> None:
+    from services.pdf_blocks import _clear_pdf_cache
+
+    _clear_pdf_cache()
+    pdf = _build_pdf([[("Hello", (72, 72))]])
+
+    first = parse_pdf_blocks(pdf)
+    first["pages"][0]["blocks"] = []  # simulate a downstream caller mutating
+
+    second = parse_pdf_blocks(pdf)
+    assert len(second["pages"][0]["blocks"]) > 0, "cache was corrupted by caller mutation"
+
+
+def test_parse_cache_invalidated_by_byte_flip() -> None:
+    from services.pdf_blocks import _clear_pdf_cache
+
+    _clear_pdf_cache()
+    pdf_a = _build_pdf([[("Alpha", (72, 72))]])
+    pdf_b = _build_pdf([[("Beta", (72, 72))]])
+
+    result_a = parse_pdf_blocks(pdf_a)
+    result_b = parse_pdf_blocks(pdf_b)
+
+    a_text = result_a["pages"][0]["blocks"][0]["lines"][0]["spans"][0]["text"]
+    b_text = result_b["pages"][0]["blocks"][0]["lines"][0]["spans"][0]["text"]
+    assert a_text == "Alpha"
+    assert b_text == "Beta"
+
+
+def test_parse_cache_invalidated_by_page_indexes_subset() -> None:
+    """Same bytes but different page_indexes must miss the cache so the
+    caller gets the subset they asked for, not a stale full-document tree."""
+    from services.pdf_blocks import _clear_pdf_cache
+
+    _clear_pdf_cache()
+    pdf = _build_pdf(
+        [
+            [("Page1", (72, 72))],
+            [("Page2", (72, 72))],
+            [("Page3", (72, 72))],
+        ]
+    )
+
+    full = parse_pdf_blocks(pdf)
+    subset = parse_pdf_blocks(pdf, page_indexes=[1])
+
+    assert len(full["pages"]) == 3
+    assert len(subset["pages"]) == 1
+    assert subset["pages"][0]["pageIndex"] == 1
+
+
+def test_parse_cache_disabled_via_env(monkeypatch) -> None:
+    from services.pdf_blocks import _clear_pdf_cache
+
+    monkeypatch.setenv("DOXMIND_DISABLE_PDF_CACHE", "1")
+    _clear_pdf_cache()
+    pdf = _build_pdf([[("Hello", (72, 72))]])
+
+    first = parse_pdf_blocks(pdf)
+    first["pages"][0]["blocks"] = []
+    second = parse_pdf_blocks(pdf)
+    # With cache off, mutation can't leak — second is a fresh parse.
+    assert len(second["pages"][0]["blocks"]) > 0

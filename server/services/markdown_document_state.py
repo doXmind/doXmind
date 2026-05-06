@@ -15,6 +15,7 @@ no correlator is configured.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 from collections import OrderedDict
@@ -23,6 +24,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Protocol
 
+from lib.timing import record as perf_record
 from lib.timing import timed as perf_timed
 from services.block_correlation import CorrelationReport, CorrelationResult
 from services.sidecar_io import (
@@ -76,13 +78,35 @@ def _read_cache_key(path: Path) -> tuple | None:
     except OSError:
         sidecar_mtime = None
         sidecar_size = None
+    # Resolve before stringifying so `/foo/bar.md`, `/foo/./bar.md` and a
+    # symlinked path don't fan out into separate cache entries (and, more
+    # importantly, don't appear cache-hot then mysteriously cache-miss
+    # depending on which form a future caller passes in). resolve() does a
+    # stat itself but we already paid for stat above; this is microseconds.
+    try:
+        canonical = str(path.resolve())
+    except OSError:
+        canonical = str(path)
     return (
-        str(path),
+        canonical,
         st.st_mtime_ns,
         st.st_size,
         sidecar_mtime,
         sidecar_size,
     )
+
+
+def _clone_outcome(outcome: ReadOutcome) -> ReadOutcome:
+    """Return a deep copy so callers can mutate `meta` / `extras` safely.
+
+    The ReadOutcome dataclasses are frozen, but their `meta` and `extras`
+    fields are plain dicts. Without this, two `read()` calls on the same
+    cache key would hand back the same dict instance, and any mutation by
+    one caller would corrupt every subsequent cache hit. The dicts are
+    small (frontmatter + a handful of extras slots) so deepcopy cost is
+    negligible relative to skipping the markdown_to_html parse.
+    """
+    return copy.deepcopy(outcome)
 
 
 def _clear_read_cache() -> None:
@@ -186,15 +210,19 @@ class MarkdownDocumentState:
                 cached = _READ_CACHE.get(cache_key)
                 if cached is not None:
                     _READ_CACHE.move_to_end(cache_key)
-                    with perf_timed("doc_read.cache_hit", path=str(path)):
-                        pass
-                    return cached
+                    perf_record("doc_read.cache_hit", path=str(path))
+                    # Deep-clone so caller mutations of `meta` / `extras`
+                    # don't leak back into the cache. See _clone_outcome.
+                    return _clone_outcome(cached)
 
         result = self._read_uncached(path)
 
         if cache_key is not None:
             with _READ_CACHE_LOCK:
-                _READ_CACHE[cache_key] = result
+                # Store a clone too so the returned `result` (which the
+                # caller might mutate in-place) and the cached copy are
+                # decoupled from the moment of insertion onward.
+                _READ_CACHE[cache_key] = _clone_outcome(result)
                 _READ_CACHE.move_to_end(cache_key)
                 while len(_READ_CACHE) > _READ_CACHE_MAX:
                     _READ_CACHE.popitem(last=False)

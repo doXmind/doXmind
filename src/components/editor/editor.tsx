@@ -541,17 +541,17 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
         // Close the user-visible "switch start → first paint" measure that
         // editor-client opens on currentFileId change. The start mark is
         // cleared so the second sync effect (lateContent) doesn't double-stamp.
+        // Globals are typed via the Window augmentation in src/lib/perf.ts.
         if (typeof window !== "undefined") {
-          const w = window as unknown as Record<string, unknown>;
-          const startMark = w.__doxmindSwitchStartMark as string | undefined;
-          const fileIdAtStart = w.__doxmindSwitchFileId as string | undefined;
+          const startMark = window.__doxmindSwitchStartMark;
+          const fileIdAtStart = window.__doxmindSwitchFileId;
           if (startMark && fileIdAtStart === file.id) {
             perfMeasure("doxmind.switch.firstPaint", startMark, undefined, {
               fileId: file.id,
               documentType: "markdown",
             });
-            w.__doxmindSwitchStartMark = undefined;
-            w.__doxmindSwitchFileId = undefined;
+            window.__doxmindSwitchStartMark = undefined;
+            window.__doxmindSwitchFileId = undefined;
           }
         }
       });

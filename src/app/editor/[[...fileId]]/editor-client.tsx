@@ -125,8 +125,9 @@ export function EditorClient() {
       if (typeof window !== "undefined") {
         // Stash the mark name so the editor-side first-paint listener can
         // close the measure on the next animation frame after setContent.
-        (window as unknown as Record<string, unknown>).__doxmindSwitchStartMark = startMark;
-        (window as unknown as Record<string, unknown>).__doxmindSwitchFileId = currentFileId;
+        // Typed via the augmented Window interface in src/lib/perf.ts.
+        window.__doxmindSwitchStartMark = startMark;
+        window.__doxmindSwitchFileId = currentFileId;
       }
       if (!useFileStore.getState().loadedContentIds.has(currentFileId)) {
         loadFileContent(currentFileId);

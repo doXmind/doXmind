@@ -161,13 +161,21 @@ import { perfAsync, perfMeasure, perfSync } from "@/lib/perf";
 // switching back to a 8 MB workbook still cost ~1.2 s end-to-end. Holding
 // the parsed DTO and the source bytes in memory eliminates that.
 //
-// Key by fileId: doxmind doesn't reuse fileIds across files. If a user
-// edits inside doxmind, only the sidecar editor state changes; the source
-// .xlsx stays put on disk and the cached bytes/parsed DTO remain valid.
+// Key by fileId, but revalidate against (mtimeNs, size) on every hit via a
+// `statBinary` probe. A hit serves the cached entry only when the source
+// file on disk hasn't changed since we cached it — external edits (the
+// user opens the .xlsx in Excel proper, saves, comes back) invalidate the
+// entry and fall through to the cache-miss path. The stat costs ~µs.
+//
+// Memory note: each entry holds the source bytes (up to ~8 MB on a real
+// workbook) plus the parsed DTO (can run 18 MB on the same input), so
+// MAX=4 caps total memory at roughly 100 MB. Tune down if it bites.
 type ExcelSwitchCacheEntry = {
   bytes: Uint8Array;
   parsed: ExcelWorkbookDto;
   sourceHash: string;
+  mtimeNs: string | null;
+  size: number | null;
 };
 const EXCEL_SWITCH_CACHE_MAX = 4;
 const excelSwitchCache = new Map<string, ExcelSwitchCacheEntry>();
@@ -469,7 +477,21 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
                 )
               : Promise.resolve(null);
 
-        const switchCached = excelSwitchCacheGet(file.id);
+        // Switch-cache lookup is two-step: get the entry, then revalidate
+        // against the on-disk (mtime, size). If stat doesn't match, drop
+        // the entry and fall through to the cache-miss path so external
+        // edits to the source workbook don't get silently masked.
+        let switchCached = excelSwitchCacheGet(file.id);
+        if (switchCached) {
+          const stat = adapter.statBinary
+            ? await adapter.statBinary(handle).catch(() => null)
+            : null;
+          if (cancelled) return;
+          if (stat && (stat.mtimeNs !== switchCached.mtimeNs || stat.size !== switchCached.size)) {
+            excelSwitchCache.delete(file.id);
+            switchCached = null;
+          }
+        }
         let bytes: Uint8Array;
         let parsed: ExcelWorkbookDto;
         let docState: Awaited<ReturnType<typeof readEditorOnly>>;
@@ -483,12 +505,21 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
           parsed = switchCached.parsed;
         } else {
           perfSync("doxmind.excel.switchCacheMiss", () => undefined, { fileId: file.id });
-          // Cold path: binary read + editor-only sidecar read in parallel,
-          // then openpyxl parse via the FastAPI sidecar (which has its own
-          // process-local cache).
-          const [readBytes, readDocState] = await perfAsync(
+          // Cold path: binary read + editor-only sidecar read + stat probe
+          // in parallel. The stat is needed to populate the cache key for
+          // future hot switches; if it fails (HTTP fallback) we cache with
+          // null mtime/size and any future hit will treat that as
+          // "unknown" and serve regardless. That's acceptable in dev.
+          const [readBytes, readDocState, statResult] = await perfAsync(
             "doxmind.excel.readBinaryAndSidecar",
-            () => Promise.all([adapter.readBinary!(handle), readEditorOnly()])
+            () =>
+              Promise.all([
+                adapter.readBinary!(handle),
+                readEditorOnly(),
+                adapter.statBinary
+                  ? adapter.statBinary(handle).catch(() => null)
+                  : Promise.resolve(null),
+              ])
           );
           if (cancelled) return;
 
@@ -503,7 +534,13 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
           if (cancelled) return;
           bytes = readBytes;
           docState = readDocState;
-          excelSwitchCacheSet(file.id, { bytes, parsed, sourceHash });
+          excelSwitchCacheSet(file.id, {
+            bytes,
+            parsed,
+            sourceHash,
+            mtimeNs: statResult?.mtimeNs ?? null,
+            size: statResult?.size ?? null,
+          });
         }
 
         xlsxBytesRef.current = bytes;
@@ -514,18 +551,18 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
         setSelection(singleCellRange(0, 0));
         setStatus("ready");
         // Close the firstPaint measure once and clear the start mark so it
-        // doesn't get stamped repeatedly on subsequent re-renders.
+        // doesn't get stamped repeatedly on subsequent re-renders. Globals
+        // are typed via the Window augmentation in src/lib/perf.ts.
         if (typeof window !== "undefined") {
-          const w = window as unknown as Record<string, unknown>;
-          const startMark = w.__doxmindSwitchStartMark as string | undefined;
-          const fileIdAtStart = w.__doxmindSwitchFileId as string | undefined;
+          const startMark = window.__doxmindSwitchStartMark;
+          const fileIdAtStart = window.__doxmindSwitchFileId;
           if (startMark && fileIdAtStart) {
             perfMeasure("doxmind.switch.firstPaint", startMark, undefined, {
               fileId: fileIdAtStart,
               documentType: "excel",
             });
-            w.__doxmindSwitchStartMark = undefined;
-            w.__doxmindSwitchFileId = undefined;
+            window.__doxmindSwitchStartMark = undefined;
+            window.__doxmindSwitchFileId = undefined;
           }
         }
         // The truncation is reflected in the visible sheet tabs; further
@@ -630,6 +667,18 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     // the user saw in their last save anyway. The first edit they make
     // will land in editorState.cells; when the deferred build picks up,
     // it includes that patch via the existing editorStateRef threading.
+    //
+    // State-machine invariant: only the most recent uncancelled timeout
+    // ever commits an engine to engineRef. The four cases:
+    //   1. Effect re-runs before timer fires → cleanup sets cancelled=true,
+    //      clearTimeout aborts; nothing was built.
+    //   2. Effect re-runs while createExcelEngine is mid-build → the build
+    //      finishes but the post-build `if (cancelled)` branch destroys
+    //      its engine without touching engineRef. (Only one timer body
+    //      runs at a time on the JS thread, so this can't race itself.)
+    //   3. Build commits, then effect re-runs → cleanup destroys via the
+    //      `committed` reference and clears engineRef if it still matches.
+    //   4. Component unmounts → same as 3.
     let cancelled = false;
     let committed: ExcelEngine | null = null;
     const handle = setTimeout(() => {

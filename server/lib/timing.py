@@ -10,13 +10,23 @@ frame.
 
 Usage:
 
-    from lib.timing import timed
+    from lib.timing import timed, record
 
     with timed("doc_read.hash_markdown", path=str(path), bytes=size):
         digest = hash_markdown(raw)
 
+    # Zero-duration event for "this happened" markers (e.g. cache hits):
+    record("excel.parse_workbook.cache_hit", path=str(path))
+
 Extra kwargs are emitted as fields alongside the duration so we can group
 results by file size, page count, etc., without adding more span names.
+
+Note on log growth: every HTTP request gets a `request.total` line via the
+FastAPI middleware, plus all explicit spans. A few hundred KB per minute
+of heavy use is typical. The file is unbounded — leaving DOXMIND_PERF=1
+on for a multi-hour session can produce many MB. Truncate manually
+(`> ~/.doxmind/perf.log`) between bench runs if needed; rotation is
+deliberately not implemented since this is a debug-only path.
 """
 
 from __future__ import annotations
@@ -99,6 +109,24 @@ def timed(name: str, **fields: Any) -> Iterator[dict[str, Any]]:
             **span,
         }
         _emit(record)
+
+
+def record(name: str, **fields: Any) -> None:
+    """Emit a single zero-duration span. Use for cache-hit / event markers.
+
+    Equivalent to `with timed(name, **fields): pass`, but without the empty
+    `with` block (which reads as if the work was supposed to go inside).
+    """
+    if not _ENABLED:
+        return
+    _emit(
+        {
+            "ts": time.time(),
+            "name": name,
+            "ms": 0.0,
+            **fields,
+        }
+    )
 
 
 def is_enabled() -> bool:

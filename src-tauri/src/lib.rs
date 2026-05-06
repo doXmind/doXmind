@@ -577,6 +577,29 @@ async fn doc_write_workspace(
 }
 
 #[tauri::command]
+fn workspace_stat_binary(root: String, path: String) -> Result<serde_json::Value, String> {
+    // Cheap (mtime, size) probe used by the frontend switch caches to detect
+    // external edits. Bytes are NOT read; this is microseconds. mtime is
+    // serialised as a decimal string because Number can't hold ns precision.
+    let root = canonical_workspace_root(&root)?;
+    let path = resolve_existing_workspace_path(&root, &path)?;
+    if !is_pdf_file(&path) && !is_excel_file(&path) {
+        return Err("binary workspace stat is only enabled for PDF and Excel files".to_string());
+    }
+    let meta = fs::metadata(&path).map_err(|err| format!("failed to stat workspace file: {err}"))?;
+    let mtime_ns: u128 = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    Ok(serde_json::json!({
+        "mtimeNs": mtime_ns.to_string(),
+        "size": meta.len(),
+    }))
+}
+
+#[tauri::command]
 fn workspace_read_binary(root: String, path: String) -> Result<tauri::ipc::Response, String> {
     // Returning `tauri::ipc::Response` instead of `Vec<u8>` opts into Tauri's
     // raw-binary IPC channel: the bytes go over the bridge as an ArrayBuffer
@@ -743,10 +766,38 @@ fn workspace_read_excel_editor_state(
         .unwrap_or(false);
     if stripped {
         if let Ok(bytes) = serde_json::to_vec_pretty(&sidecar) {
-            let _ = fs::write(&sidecar_path, bytes);
+            // Atomic write: stale parsedCache strip used to use plain
+            // fs::write, which truncates the file before writing. A crash
+            // (or a kill -9 from a debugger) mid-write would leave the
+            // user's editor state truncated. Slim-on-read is invoked on
+            // every cold open of a legacy sidecar, so the exposure window
+            // is much wider than for explicit save paths.
+            let _ = atomic_write_bytes(&sidecar_path, &bytes);
         }
     }
     Ok(sidecar.get("excel_editor").cloned())
+}
+
+fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path has no parent")
+    })?;
+    let stem = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("doxmind");
+    let tmp = parent.join(format!(".{stem}.tmp.{}", uuid::Uuid::new_v4()));
+    {
+        use std::io::Write;
+        let mut f = fs::File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()?;
+    }
+    if let Err(err) = fs::rename(&tmp, path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(err);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -2047,6 +2098,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
             doc_write,
             doc_write_workspace,
             workspace_read_binary,
+            workspace_stat_binary,
             workspace_read_pdf_editor_state,
             workspace_write_pdf_editor_state,
             workspace_read_pdf_doc_state,

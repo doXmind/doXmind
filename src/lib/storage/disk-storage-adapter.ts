@@ -119,6 +119,19 @@ export class DiskStorageAdapter implements StorageAdapter {
     };
   }
 
+  async statBinary(handle: DocumentHandle): Promise<{ mtimeNs: string; size: number } | null> {
+    try {
+      return await this.invoke<{ mtimeNs: string; size: number }>("workspace_stat_binary", {
+        root: this.requireRoot(),
+        path: requireHandlePath(handle),
+      });
+    } catch {
+      // The HTTP fallback (browser dev) may not implement stat. Returning
+      // null means "can't tell, assume cache is valid"; cache hit proceeds.
+      return null;
+    }
+  }
+
   async readBinary(handle: DocumentHandle): Promise<Uint8Array> {
     // The Tauri command returns `tauri::ipc::Response` which surfaces here
     // as an `ArrayBuffer` — that's the fast path (raw binary IPC, no JSON).

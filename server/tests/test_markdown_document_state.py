@@ -642,3 +642,143 @@ def test_write_slot_against_corrupt_sidecar_raises_and_preserves_original(
     assert sidecar_path.read_bytes() == corrupt_bytes
     assert excinfo.value.forensic_path.exists()
     assert excinfo.value.forensic_path.read_bytes() == corrupt_bytes
+
+
+# ---------------------------------------------------------------------- cache
+
+
+def test_read_cache_hit_returns_clone_so_caller_mutation_doesnt_leak(
+    tmp_path: Path,
+) -> None:
+    """Mutating the meta/extras of one read() return value must not bleed
+    into the next read() of the same file. Without the deep-clone in
+    `_clone_outcome`, callers would share the cache's interior state."""
+    from services.markdown_document_state import _clear_read_cache
+
+    _clear_read_cache()
+    state = MarkdownDocumentState()
+    path = tmp_path / "Plan.md"
+    state.write_full(
+        path,
+        DocumentSnapshot(
+            html="<p>x</p>",
+            markdown="x",
+            meta={"id": "doc-1", "title": "Plan"},
+            extras={"databases": {"d1": {"rows": []}}},
+        ),
+    )
+
+    first = state.read(path)
+    assert isinstance(first, UsedSidecar)
+
+    # Caller mutates returned meta + extras.
+    first.meta["id"] = "WAS-MUTATED"
+    assert first.extras is not None
+    first.extras["databases"]["d1"]["rows"].append({"injected": True})
+
+    second = state.read(path)
+    assert isinstance(second, UsedSidecar)
+    assert second.meta["id"] == "doc-1", "cache was corrupted by caller mutation"
+    assert second.extras == {"databases": {"d1": {"rows": []}}}
+
+
+def test_read_cache_invalidated_when_md_mtime_changes(tmp_path: Path) -> None:
+    """Editing the .md file (changing mtime+size) must bust the cache."""
+    from services.markdown_document_state import _clear_read_cache
+
+    _clear_read_cache()
+    state = MarkdownDocumentState()
+    path = tmp_path / "Plan.md"
+    state.write_full(
+        path,
+        DocumentSnapshot(
+            html="<p>v1</p>",
+            markdown="v1",
+            meta={"id": "doc-1", "title": "Plan"},
+            extras={},
+        ),
+    )
+
+    first = state.read(path)
+    assert isinstance(first, UsedSidecar)
+    assert "v1" in first.markdown
+
+    # Rewrite the .md with new content. write_full bumps file mtime; the
+    # cache key includes mtime so the next read recomputes.
+    state.write_full(
+        path,
+        DocumentSnapshot(
+            html="<p>v2</p>",
+            markdown="v2",
+            meta={"id": "doc-1", "title": "Plan"},
+            extras={},
+        ),
+    )
+
+    second = state.read(path)
+    assert isinstance(second, UsedSidecar)
+    assert "v2" in second.markdown
+
+
+def test_read_cache_invalidated_when_sidecar_mtime_changes(tmp_path: Path) -> None:
+    """Replacing only the sidecar (.doxmind) without touching the .md file
+    must still bust the cache: a new sidecar means new editor HTML."""
+    from services.markdown_document_state import _clear_read_cache
+
+    _clear_read_cache()
+    state = MarkdownDocumentState()
+    path = tmp_path / "Plan.md"
+    body = "body content\n"
+    _write_md(path, body, meta_lines=["id: doc-1"])
+
+    # First read: NoSidecar branch (no .doxmind yet).
+    first = state.read(path)
+    assert isinstance(first, NoSidecar)
+
+    # Now write a sidecar matching the body's hash. Cache key includes
+    # sidecar mtime+size; a freshly-written sidecar must invalidate.
+    sidecar_path = sidecar_path_for(path)
+    from services.sidecar_io import SIDECAR_VERSION, hash_markdown
+
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "version": SIDECAR_VERSION,
+                "id": "doc-1",
+                "html": "<p>from-sidecar</p>",
+                "markdown_hash": hash_markdown(path.read_text()),
+                "extras": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    second = state.read(path)
+    assert isinstance(second, UsedSidecar)
+    assert second.html == "<p>from-sidecar</p>"
+
+
+def test_read_cache_disabled_via_env(tmp_path: Path, monkeypatch) -> None:
+    from services.markdown_document_state import _clear_read_cache
+
+    monkeypatch.setenv("DOXMIND_DISABLE_DOC_CACHE", "1")
+    _clear_read_cache()
+    state = MarkdownDocumentState()
+    path = tmp_path / "Plan.md"
+    state.write_full(
+        path,
+        DocumentSnapshot(
+            html="<p>x</p>",
+            markdown="x",
+            meta={"id": "doc-1"},
+            extras={},
+        ),
+    )
+    first = state.read(path)
+    second = state.read(path)
+    assert isinstance(first, UsedSidecar)
+    assert isinstance(second, UsedSidecar)
+    # With cache disabled, mutating one return doesn't affect the other
+    # (they're freshly computed each time, not clones of a cached entry).
+    first.meta["id"] = "MUTATED"
+    assert second.meta["id"] == "doc-1"

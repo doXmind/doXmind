@@ -11,6 +11,7 @@ formatting, named ranges).
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import io
 import logging
@@ -37,6 +38,7 @@ from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 
+from lib.timing import record as perf_record
 from lib.timing import timed as perf_timed
 
 logger = logging.getLogger(__name__)
@@ -131,9 +133,15 @@ def parse_workbook(
             cached = _XLSX_CACHE.get(cache_key)
             if cached is not None:
                 _XLSX_CACHE.move_to_end(cache_key)
-                with perf_timed("excel.parse_workbook.cache_hit"):
-                    pass
-                return cached
+                perf_record("excel.parse_workbook.cache_hit")
+                # Deep-clone so a future caller mutating cells / styles /
+                # truncated flags can't corrupt the entry. Cost is
+                # significant on large workbooks (tens of thousands of
+                # cell-dict copies translates to hundreds of ms in
+                # CPython) but still an order of magnitude faster than the
+                # multi-second openpyxl re-parse it replaces, and the LRU
+                # is capped at MAX_SHEETS-class memory either way.
+                return copy.deepcopy(cached)
 
     with perf_timed("excel.parse_workbook.total", bytes=len(xlsx_bytes)) as total_span:
         try:
@@ -196,7 +204,10 @@ def parse_workbook(
 
     if cache_key is not None:
         with _XLSX_CACHE_LOCK:
-            _XLSX_CACHE[cache_key] = result
+            # Cache an independent copy so the returned `result` (which
+            # the caller may mutate before sending) and the cache entry
+            # are decoupled.
+            _XLSX_CACHE[cache_key] = copy.deepcopy(result)
             _XLSX_CACHE.move_to_end(cache_key)
             while len(_XLSX_CACHE) > _XLSX_CACHE_MAX:
                 _XLSX_CACHE.popitem(last=False)

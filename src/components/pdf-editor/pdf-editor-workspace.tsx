@@ -53,14 +53,16 @@ import { perfAsync, perfMeasure, perfSync } from "@/lib/perf";
 // state is *not* cached — it's small to read and we want the freshest
 // annotations on every mount in case another window edited them.
 //
-// Keying by fileId is enough in practice: doxmind doesn't reuse fileIds
-// across files, and if the source PDF is replaced externally the next
-// readBinary in the cache-miss path will pick up new bytes (if a user edits
-// inside doxmind, only the sidecar changes, the binary stays put).
+// Key by fileId, but revalidate (mtimeNs, size) on every hit via a
+// `statBinary` probe. Without that an external rewrite of the source PDF
+// would be silently masked by the cache until eviction or process restart.
+// The stat costs ~µs.
 type PdfSwitchCacheEntry = {
   bytes: Uint8Array;
   blocks: PdfBlocksResponse | null;
   sourceHash: string;
+  mtimeNs: string | null;
+  size: number | null;
 };
 const PDF_SWITCH_CACHE_MAX = 4;
 const pdfSwitchCache = new Map<string, PdfSwitchCacheEntry>();
@@ -426,9 +428,19 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
 
         // Acquire bytes + blocks (the costly pieces) either from the
         // module-level switch cache or via the full read + parse pipeline.
-        // Editor state always comes from the sidecar so cross-window edits
-        // are visible.
-        const switchCached = pdfSwitchCacheGet(file.id);
+        // The cache hit path validates against (mtime, size) first so an
+        // external rewrite of the PDF surfaces on next open.
+        let switchCached = pdfSwitchCacheGet(file.id);
+        if (switchCached) {
+          const stat = adapter.statBinary
+            ? await adapter.statBinary(handle).catch(() => null)
+            : null;
+          if (cancelled) return;
+          if (stat && (stat.mtimeNs !== switchCached.mtimeNs || stat.size !== switchCached.size)) {
+            pdfSwitchCache.delete(file.id);
+            switchCached = null;
+          }
+        }
         let bytes: Uint8Array;
         let blocks: PdfBlocksResponse | null;
         let sourceHash: string;
@@ -445,10 +457,18 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
           editorState = docState;
         } else {
           perfSync("doxmind.pdf.switchCacheMiss", () => undefined, { fileId: file.id });
-          // Binary read + sidecar read (editor state + parsed-blocks cache)
-          // run in parallel; pdfjs decoding starts as soon as bytes arrive.
-          const [readBytes, docState] = await perfAsync("doxmind.pdf.readBinaryAndSidecar", () =>
-            Promise.all([adapter.readBinary!(handle), readDocStateFull()])
+          // Binary read + sidecar read + stat probe in parallel. Stat is
+          // needed to populate the cache key for future hot switches.
+          const [readBytes, docState, statResult] = await perfAsync(
+            "doxmind.pdf.readBinaryAndSidecar",
+            () =>
+              Promise.all([
+                adapter.readBinary!(handle),
+                readDocStateFull(),
+                adapter.statBinary
+                  ? adapter.statBinary(handle).catch(() => null)
+                  : Promise.resolve(null),
+              ])
           );
           if (cancelled) return;
           // Phase 2: try the PyMuPDF sidecar for paragraph-aware blocks.
@@ -475,8 +495,15 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
           bytes = readBytes;
           editorState = docState;
           // Populate the switch cache so future re-opens skip readBinary +
-          // fetchPdfBlocks entirely.
-          pdfSwitchCacheSet(file.id, { bytes, blocks, sourceHash });
+          // fetchPdfBlocks entirely. mtime/size may be null in HTTP fallback;
+          // a future cache hit treats null as "unknown" and serves anyway.
+          pdfSwitchCacheSet(file.id, {
+            bytes,
+            blocks,
+            sourceHash,
+            mtimeNs: statResult?.mtimeNs ?? null,
+            size: statResult?.size ?? null,
+          });
         }
 
         const pdf = await perfAsync(
@@ -652,18 +679,18 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
         setStatus("ready");
         // Close the switch.firstPaint measure once per file open. The start
         // mark is cleared so subsequent page renders (this effect re-fires on
-        // every page change) don't keep stamping new measures.
+        // every page change) don't keep stamping new measures. Globals are
+        // typed via the Window augmentation in src/lib/perf.ts.
         if (typeof window !== "undefined") {
-          const w = window as unknown as Record<string, unknown>;
-          const startMark = w.__doxmindSwitchStartMark as string | undefined;
-          const fileIdAtStart = w.__doxmindSwitchFileId as string | undefined;
+          const startMark = window.__doxmindSwitchStartMark;
+          const fileIdAtStart = window.__doxmindSwitchFileId;
           if (startMark && fileIdAtStart) {
             perfMeasure("doxmind.switch.firstPaint", startMark, undefined, {
               fileId: fileIdAtStart,
               documentType: "pdf",
             });
-            w.__doxmindSwitchStartMark = undefined;
-            w.__doxmindSwitchFileId = undefined;
+            window.__doxmindSwitchStartMark = undefined;
+            window.__doxmindSwitchFileId = undefined;
           }
         }
       } catch (error) {
