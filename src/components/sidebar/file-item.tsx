@@ -62,6 +62,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
   const toggleFileSelection = useFileStore((s) => s.toggleFileSelection);
   const selectFileRange = useFileStore((s) => s.selectFileRange);
   const clearSelection = useFileStore((s) => s.clearSelection);
+  const loadFileContent = useFileStore((s) => s.loadFileContent);
   const [isRenaming, setIsRenaming] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [contextMenuFocusIndex, setContextMenuFocusIndex] = useState(-1);
@@ -381,6 +382,35 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     handleExport(format);
   };
 
+  // Hover-prefetch: when the cursor settles on a file row for ~100ms (the
+  // instant.page-validated click-intent threshold), kick off loadFileContent
+  // in the background. By the time the user clicks, the read path has
+  // already populated loadedContentIds and the click takes the warm path —
+  // no LoadingPlaceholder flashes. loadFileContent dedupes concurrent calls
+  // via pendingContentLoads; PDF/Excel branches early-return cheaply and
+  // still pre-fill loadedContentIds to skip the first-mount race.
+  const HOVER_PREFETCH_MS = 100;
+  const hoverPrefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelHoverPrefetch = useCallback(() => {
+    if (hoverPrefetchTimerRef.current !== null) {
+      clearTimeout(hoverPrefetchTimerRef.current);
+      hoverPrefetchTimerRef.current = null;
+    }
+  }, []);
+
+  const handleMouseEnterPrefetch = useCallback(() => {
+    if (isRenaming) return;
+    cancelHoverPrefetch();
+    const id = file.id;
+    hoverPrefetchTimerRef.current = setTimeout(() => {
+      hoverPrefetchTimerRef.current = null;
+      void loadFileContent(id);
+    }, HOVER_PREFETCH_MS);
+  }, [cancelHoverPrefetch, file.id, isRenaming, loadFileContent]);
+
+  useEffect(() => cancelHoverPrefetch, [cancelHoverPrefetch]);
+
   return (
     <div
       draggable={!isRenaming && !isSelectionMode}
@@ -388,6 +418,8 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
+      onMouseEnter={handleMouseEnterPrefetch}
+      onMouseLeave={cancelHoverPrefetch}
       className={cn(
         "group/file relative flex cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-3 py-2.5 transition-colors duration-150 ease-out md:h-7 md:px-2.5 md:py-1",
         "select-none active:scale-[0.98] md:active:scale-100", // Touch feedback on mobile, prevent text selection
