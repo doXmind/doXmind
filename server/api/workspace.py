@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import time
 import uuid
 from pathlib import Path
@@ -115,6 +116,14 @@ async def invoke_workspace(request: WorkspaceInvokeRequest):
                 "recovery": "investigate the forensic copy; restore over the sidecar manually if appropriate",
             },
         )
+    except FileExistsError as exc:
+        # External-import collisions raise this; #69 will replace the toast
+        # with a Replace / Keep both / Skip modal driven by the same backend
+        # error code.
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "destination_exists", "message": str(exc)},
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -204,6 +213,15 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
             str(payload.get("root") or ""),
             str(payload.get("path") or ""),
             payload.get("bytes") or [],
+        )
+    if command == "doc_import_external":
+        return doc_import_external(
+            str(payload.get("root") or ""),
+            payload.get("srcPath"),
+            payload.get("bytes"),
+            str(payload.get("destFolder") or ""),
+            str(payload.get("name") or ""),
+            str(payload.get("mode") or "create"),
         )
     if command == "doc_rename":
         return move_document_pair(
@@ -674,6 +692,81 @@ def doc_create_excel(root: str, rel_path: str, byte_list: Any) -> dict[str, Any]
     atomic_write(path, data)
     _invalidate_scan_cache(workspace)
     return document_dto_for_path(workspace, path)
+
+
+# Import-supported extensions for external DnD. Mirrors the frontend D2 module's
+# whitelist (`src/lib/external-import-resolver.ts`). Keep the two in sync — the
+# frontend rejects out-of-whitelist files before they reach this handler, but
+# we re-validate on the backend boundary so a misbehaving caller (or browser
+# DataTransfer feeding a `.txt` straight through) can't smuggle a non-document
+# file into the workspace.
+IMPORT_SUPPORTED_EXTENSIONS = {".md", ".pdf", ".xlsx"}
+
+
+def doc_import_external(
+    root: str,
+    src_path: Any,
+    byte_list: Any,
+    dest_folder: str,
+    name: str,
+    mode: str,
+) -> dict[str, Any]:
+    """Copy an external `.md`/`.pdf`/`.xlsx` into the workspace.
+
+    Always-copy semantics: the source on disk (e.g. user's Downloads) is left
+    untouched. Collision handling is deferred to #69 — for now `mode` must be
+    `"create"` and a name clash at the destination raises `ValueError`, which
+    the frontend translates into a "File already exists; collision handling
+    ships in #69" toast.
+    """
+    if mode != "create":
+        # `replace` mode is the #69 deliverable; explicitly reject so a stray
+        # caller can't accidentally exercise an unimplemented branch.
+        raise ValueError(f"unsupported import mode: {mode}")
+    if not name.strip():
+        raise ValueError("import name is required")
+
+    workspace = canonical_workspace_root(root)
+
+    # Build the destination path. `dest_folder` is a workspace-relative folder
+    # (empty string for root); the resolver below catches any escape attempts.
+    dest_folder_clean = dest_folder.strip()
+    rel_path = f"{dest_folder_clean}/{name}" if dest_folder_clean else name
+
+    suffix = Path(name).suffix.lower()
+    if suffix not in IMPORT_SUPPORTED_EXTENSIONS:
+        raise ValueError(
+            f"only .md, .pdf, .xlsx are supported for external import: {name}"
+        )
+
+    destination = resolve_workspace_path_for_write(workspace, rel_path)
+    if destination.exists():
+        # The frontend toast in #67 reads "File already exists; collision
+        # handling ships in #69". Keep the message machine-friendly so the
+        # frontend can pattern-match if it wants to render a richer toast.
+        raise FileExistsError(f"destination already exists: {rel_path}")
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    if isinstance(byte_list, (list, tuple)):
+        try:
+            data = bytes(int(b) & 0xFF for b in byte_list)
+        except (TypeError, ValueError) as err:
+            raise ValueError(f"invalid bytes payload: {err}") from err
+        atomic_write(destination, data)
+    elif isinstance(src_path, str) and src_path.strip():
+        source = Path(src_path).expanduser()
+        if not source.is_file():
+            raise ValueError(f"source file does not exist: {src_path}")
+        # `shutil.copyfile` is the always-copy primitive: it preserves the
+        # source on disk byte-for-byte. We deliberately don't call `copy2` —
+        # carrying mtime / metadata across is a UX call we haven't made yet.
+        shutil.copyfile(source, destination)
+    else:
+        raise ValueError("doc_import_external requires either srcPath or bytes")
+
+    _invalidate_scan_cache(workspace)
+    return document_dto_for_path(workspace, destination)
 
 
 def write_doc(path: Path, payload: dict[str, Any]) -> None:

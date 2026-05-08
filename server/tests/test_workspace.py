@@ -194,6 +194,153 @@ def test_doc_create_pdf_writes_binary_and_appears_in_scan(sync_client, tmp_path)
     assert pdf_doc["documentType"] == "pdf"
 
 
+def test_doc_import_external_copies_md_from_src_path_and_leaves_source_intact(
+    sync_client, tmp_path
+):
+    """Always-copy invariant — the source file in the simulated Downloads
+    folder must be byte-identical after the import."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+    downloads = tmp_path / "Downloads"
+    downloads.mkdir()
+    src = downloads / "Plan.md"
+    payload = b"# Plan\n\nbody\n"
+    src.write_bytes(payload)
+    src_hash_before = src.stat().st_size
+
+    created = invoke(
+        sync_client,
+        "doc_import_external",
+        {
+            "root": str(root),
+            "srcPath": str(src),
+            "destFolder": "",
+            "name": "Plan.md",
+            "mode": "create",
+        },
+    )
+
+    assert created["path"] == "Plan.md"
+    assert (root / "Plan.md").read_bytes() == payload
+    # Source untouched — both presence and bytes.
+    assert src.exists()
+    assert src.read_bytes() == payload
+    assert src.stat().st_size == src_hash_before
+
+
+def test_doc_import_external_copies_into_dest_folder(sync_client, tmp_path):
+    root = tmp_path / "workspace"
+    (root / "Notes").mkdir(parents=True)
+    src = tmp_path / "Spec.pdf"
+    src.write_bytes(b"%PDF-1.4\nbody\n")
+
+    created = invoke(
+        sync_client,
+        "doc_import_external",
+        {
+            "root": str(root),
+            "srcPath": str(src),
+            "destFolder": "Notes",
+            "name": "Spec.pdf",
+            "mode": "create",
+        },
+    )
+
+    assert created["path"] == "Notes/Spec.pdf"
+    assert (root / "Notes" / "Spec.pdf").exists()
+    assert src.read_bytes() == b"%PDF-1.4\nbody\n"
+
+
+def test_doc_import_external_accepts_byte_payload_for_browser_dev(sync_client, tmp_path):
+    root = tmp_path
+    payload = b"PK\x03\x04 dummy xlsx"
+
+    created = invoke(
+        sync_client,
+        "doc_import_external",
+        {
+            "root": str(root),
+            "bytes": list(payload),
+            "destFolder": "",
+            "name": "Q3.xlsx",
+            "mode": "create",
+        },
+    )
+
+    assert created["path"] == "Q3.xlsx"
+    assert (root / "Q3.xlsx").read_bytes() == payload
+
+
+def test_doc_import_external_collision_returns_409(sync_client, tmp_path):
+    root = tmp_path
+    (root / "Plan.md").write_text("existing", encoding="utf-8")
+    src = tmp_path / "src" / "Plan.md"
+    src.parent.mkdir()
+    src.write_text("incoming", encoding="utf-8")
+
+    response = sync_client.post(
+        "/api/workspace/invoke",
+        json={
+            "command": "doc_import_external",
+            "payload": {
+                "root": str(root),
+                "srcPath": str(src),
+                "destFolder": "",
+                "name": "Plan.md",
+                "mode": "create",
+            },
+        },
+    )
+    assert response.status_code == 409
+    body = response.json()
+    assert body["detail"]["code"] == "destination_exists"
+    # Source untouched on collision.
+    assert src.read_text(encoding="utf-8") == "incoming"
+    assert (root / "Plan.md").read_text(encoding="utf-8") == "existing"
+
+
+def test_doc_import_external_rejects_non_whitelisted_extension(sync_client, tmp_path):
+    src = tmp_path / "notes.txt"
+    src.write_text("nope", encoding="utf-8")
+
+    response = sync_client.post(
+        "/api/workspace/invoke",
+        json={
+            "command": "doc_import_external",
+            "payload": {
+                "root": str(tmp_path),
+                "srcPath": str(src),
+                "destFolder": "",
+                "name": "notes.txt",
+                "mode": "create",
+            },
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_doc_import_external_rejects_unknown_mode(sync_client, tmp_path):
+    src = tmp_path / "Plan.md"
+    src.write_text("# Plan\n", encoding="utf-8")
+
+    response = sync_client.post(
+        "/api/workspace/invoke",
+        json={
+            "command": "doc_import_external",
+            "payload": {
+                "root": str(tmp_path),
+                "srcPath": str(src),
+                "destFolder": "",
+                "name": "Plan.md",
+                "mode": "replace",
+            },
+        },
+    )
+    # `replace` mode is the #69 deliverable — explicit reject avoids silent
+    # path execution.
+    assert response.status_code == 400
+
+
 def test_doc_create_pdf_rejects_non_pdf_payload(sync_client, tmp_path):
     response = sync_client.post(
         "/api/workspace/invoke",

@@ -390,6 +390,29 @@ export interface StorageCreateInput {
   binary?: Uint8Array;
 }
 
+export interface StorageImportInput {
+  /** Filename including extension. Must end in `.md`, `.pdf`, or `.xlsx`. */
+  name: string;
+  /** Destination folder (or null for workspace root). */
+  parent: DocumentHandle | null;
+  /** Absolute source path on disk. Tauri provides this; preferred over bytes. */
+  srcPath?: string;
+  /** Raw bytes — used in browser dev mode where HTML5 DnD only exposes File objects. */
+  bytes?: Uint8Array;
+}
+
+/** Discriminator for `ImportError.code` so callers can react without string-matching. */
+export type ImportErrorCode = "destination-exists" | "bad-extension" | "no-source" | "unknown";
+
+export class ImportError extends Error {
+  readonly code: ImportErrorCode;
+  constructor(code: ImportErrorCode, message: string) {
+    super(message);
+    this.code = code;
+    this.name = "ImportError";
+  }
+}
+
 export interface WorkspaceIndexQuery {
   query?: string;
   limit?: number;
@@ -473,6 +496,13 @@ export interface StorageAdapter {
     parsed: unknown
   ): Promise<void>;
   create(input: StorageCreateInput): Promise<WorkspaceEntry>;
+  /**
+   * Copy a file from outside the workspace into it, always-copy semantics —
+   * the source on disk is left intact. Used by sidebar external DnD (#67).
+   * Collisions surface as a typed error; collision RESOLUTION (Replace /
+   * Keep both / Skip) is the #69 deliverable, not implemented here.
+   */
+  importExternal?(input: StorageImportInput): Promise<WorkspaceEntry>;
   rename(handle: DocumentHandle, name: string): Promise<WorkspaceEntry>;
   move(handle: DocumentHandle, parent: DocumentHandle | null): Promise<WorkspaceEntry>;
   delete(handle: DocumentHandle): Promise<void>;

@@ -413,6 +413,10 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
 
   return (
     <div
+      // Hit-test target for sidebar external DnD (#67) — the FolderTree's
+      // Tauri drag-drop listener resolves a drop on a file row to that
+      // file's parent folder.
+      data-drop-target-id={file.id}
       draggable={!isRenaming && !isSelectionMode}
       onDragStart={handleDragStart}
       onClick={handleClick}

@@ -12,11 +12,13 @@ import type {
   MarkdownSearchResults,
   StorageAdapter,
   StorageCreateInput,
+  StorageImportInput,
   StorageWriteInput,
   WorkspaceEntry,
   WorkspaceIndexEntry,
   WorkspaceIndexQuery,
 } from "./types";
+import { ImportError } from "./types";
 import { entriesToWorkspaceIndex } from "./search";
 import { apiUrl } from "@/lib/api/base";
 import { perfAsync } from "@/lib/perf";
@@ -330,6 +332,40 @@ export class DiskStorageAdapter implements StorageAdapter {
       },
     });
     return entryFromDocument(document);
+  }
+
+  async importExternal(input: StorageImportInput): Promise<WorkspaceEntry> {
+    if (!input.srcPath && !input.bytes) {
+      throw new ImportError("no-source", "importExternal requires either srcPath or bytes");
+    }
+    if (!/\.(md|pdf|xlsx)$/i.test(input.name)) {
+      throw new ImportError(
+        "bad-extension",
+        `only .md, .pdf, .xlsx are supported for external import: ${input.name}`
+      );
+    }
+    const destFolder = input.parent ? requireHandlePath(input.parent) : "";
+    const payload: Record<string, unknown> = {
+      root: this.requireRoot(),
+      name: input.name,
+      destFolder,
+      mode: "create",
+    };
+    if (input.srcPath) payload.srcPath = input.srcPath;
+    if (input.bytes) payload.bytes = Array.from(input.bytes);
+    try {
+      const document = await this.invoke<WorkspaceDocumentDto>("doc_import_external", payload);
+      return entryFromDocument(document);
+    } catch (error) {
+      // Translate the backend collision error into a typed ImportError so the
+      // sidebar layer can render the right toast (and #69 can later branch on
+      // the code to open the conflict modal).
+      const message = error instanceof Error ? error.message : String(error);
+      if (/already exists/i.test(message) || /destination_exists/i.test(message)) {
+        throw new ImportError("destination-exists", message);
+      }
+      throw new ImportError("unknown", message);
+    }
   }
 
   async rename(handle: DocumentHandle, name: string): Promise<WorkspaceEntry> {

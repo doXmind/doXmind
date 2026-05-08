@@ -158,6 +158,18 @@ interface FileState {
     options?: { silent?: boolean }
   ) => Promise<string>;
   moveFileToFolder: (fileId: string, folderId: string | null) => Promise<void>;
+  /**
+   * External-import entry point used by sidebar DnD (#67). Always copies; the
+   * source file (e.g. from Downloads) is left untouched. Throws `ImportError`
+   * with `code: "destination-exists"` on collision so the caller can render
+   * the right toast — collision RESOLUTION lands in #69.
+   */
+  importExternalFile: (input: {
+    name: string;
+    parentId: string | null;
+    srcPath?: string;
+    bytes?: Uint8Array;
+  }) => Promise<string>;
   setCurrentFolder: (folderId: string | null) => void;
   getFilesInFolder: (folderId: string | null) => FileItem[];
   getSubPages: (fileId: string) => FileItem[];
@@ -1082,6 +1094,28 @@ export const useFileStore = create<FileState>()(
           // Revert optimistic update on error
           await get().loadFiles();
         }
+      },
+
+      importExternalFile: async ({ name, parentId, srcPath, bytes }) => {
+        const adapter = getAdapter(get());
+        if (!adapter.importExternal) {
+          throw new Error("Storage adapter does not support importExternal");
+        }
+        const validParentId =
+          parentId && get().files.some((f) => f.id === parentId && f.isFolder) ? parentId : null;
+        const entry = await adapter.importExternal({
+          name,
+          parent: parentHandleForId(get().files, validParentId),
+          srcPath,
+          bytes,
+        });
+        const newFile = fileFromEntry(entry, "");
+        set((state) => ({
+          files: [newFile, ...state.files],
+          justCreatedFileId: newFile.id,
+        }));
+        eventBus.emit("storage:changed");
+        return newFile.id;
       },
 
       setCurrentFolder: (folderId: string | null) => {
