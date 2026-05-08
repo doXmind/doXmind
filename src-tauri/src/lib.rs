@@ -1140,9 +1140,14 @@ fn doc_import_external(
     name: String,
     mode: String,
 ) -> Result<WorkspaceDocumentDto, String> {
-    // `replace` mode is the #69 deliverable; explicit reject avoids accidentally
-    // exercising an unimplemented branch.
-    if mode != "create" {
+    // `mode`:
+    //  - "create"  — refuse to overwrite (collision returns "already exists").
+    //  - "replace" — overwrite the user file. The pre-existing `.doxmind`
+    //                sidecar is **deliberately left untouched** so the next
+    //                open trips the Stale-sidecar / Salvage path. At the FS
+    //                level a Replace is indistinguishable from an external
+    //                edit (CONTEXT.md "Stale sidecar" + ADR 0002).
+    if mode != "create" && mode != "replace" {
         return Err(format!("unsupported import mode: {mode}"));
     }
     if name.trim().is_empty() {
@@ -1160,11 +1165,18 @@ fn doc_import_external(
     };
 
     let destination = resolve_workspace_path_for_write(&root, &rel_path)?;
-    if destination.exists() {
+    if mode == "create" && destination.exists() {
         // Frontend translates this into a "File already exists; collision
         // handling ships in #69" toast. The string is matched on substring,
         // so keep "already exists" stable.
         return Err(format!("destination already exists: {rel_path}"));
+    }
+    if mode == "replace" && !destination.exists() {
+        // Replace presupposes a pre-existing destination. If the file
+        // vanished between plan and resolve, surface a clear error rather
+        // than silently degrading to create — that would mask a race with
+        // an external delete.
+        return Err(format!("destination does not exist for replace: {rel_path}"));
     }
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent)
@@ -1173,7 +1185,9 @@ fn doc_import_external(
 
     if let Some(byte_payload) = bytes {
         // Browser dev fallback path: HTML5 DataTransfer.files reaches us as
-        // a byte buffer rather than a real OS path.
+        // a byte buffer rather than a real OS path. atomic_write_bytes only
+        // touches the destination file; the hidden sidecar next to it is
+        // left untouched in replace mode.
         atomic_write_bytes(&destination, &byte_payload)
             .map_err(|err| format!("failed to write imported file: {err}"))?;
     } else if let Some(src) = src_path {
@@ -1182,8 +1196,9 @@ fn doc_import_external(
             return Err(format!("source file does not exist: {src}"));
         }
         // `fs::copy` is the always-copy primitive: source on disk is left
-        // byte-for-byte intact. We deliberately don't preserve mtime — that
-        // can be revisited when collision-resolution lands.
+        // byte-for-byte intact. In replace mode it overwrites only the user
+        // file at `destination`; the hidden sidecar living next to it is
+        // intentionally NOT touched.
         fs::copy(&source, &destination)
             .map_err(|err| format!("failed to copy imported file: {err}"))?;
     } else {
@@ -3046,8 +3061,8 @@ mod tests {
 
     #[test]
     fn doc_import_external_rejects_unknown_mode() {
-        let workspace = TempWorkspace::new("import-replace-mode");
-        let src_dir = TempWorkspace::new("import-replace-mode-src");
+        let workspace = TempWorkspace::new("import-unknown-mode");
+        let src_dir = TempWorkspace::new("import-unknown-mode-src");
         let src = src_dir.path.join("Plan.md");
         write_file(&src, "x");
 
@@ -3057,10 +3072,112 @@ mod tests {
             None,
             Some(String::new()),
             "Plan.md".into(),
+            "rename-and-pray".into(),
+        )
+        .expect_err("unknown mode should error");
+        assert!(err.contains("unsupported import mode"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn doc_import_external_replace_overwrites_user_file_and_leaves_sidecar_untouched() {
+        // Sidecar-untouched invariant: `mode: "replace"` rewrites the user
+        // file (.md/.pdf/.xlsx) but the pre-existing `.doxmind` sidecar must
+        // be byte-identical afterwards. The next open will trip the
+        // Stale-sidecar / Salvage path because the markdown_hash no longer
+        // matches — that's the right behavior since at the FS level a
+        // Replace is indistinguishable from an external edit.
+        let workspace = TempWorkspace::new("import-replace-md");
+        // Pre-existing destination pair.
+        let dest_md = workspace.path.join("Plan.md");
+        write_file(&dest_md, "# Old\n");
+        let sidecar_path = workspace.path.join(".Plan.doxmind");
+        let sidecar_payload =
+            br#"{"version":1,"id":"fixed-id","html":"<p>old</p>","markdown_hash":"sha256:dead","extras":{"databases":{"x":1}}}"#;
+        fs::write(&sidecar_path, sidecar_payload).expect("write sidecar");
+
+        // Source file from a "Downloads" temp dir.
+        let downloads = TempWorkspace::new("import-replace-md-src");
+        let src = downloads.path.join("Plan.md");
+        let new_payload = b"# New\n\nfresh body\n";
+        write_file(&src, std::str::from_utf8(new_payload).unwrap());
+
+        let doc = doc_import_external(
+            workspace.root(),
+            Some(src.to_string_lossy().into_owned()),
+            None,
+            Some(String::new()),
+            "Plan.md".into(),
             "replace".into(),
         )
-        .expect_err("replace mode should error in #67");
-        assert!(err.contains("unsupported import mode"), "unexpected: {err}");
+        .expect("replace import");
+
+        assert_eq!(doc.path, "Plan.md");
+        // User file overwritten with the source bytes.
+        assert_eq!(fs::read(&dest_md).expect("dest"), new_payload);
+        // Always-copy: source untouched.
+        assert_eq!(fs::read(&src).expect("src"), new_payload);
+        // SIDECAR INVARIANT: byte-identical. This is the load-bearing assertion.
+        assert_eq!(
+            fs::read(&sidecar_path).expect("sidecar"),
+            sidecar_payload,
+            "the .doxmind sidecar must be byte-identical after replace"
+        );
+    }
+
+    #[test]
+    fn doc_import_external_replace_via_bytes_leaves_sidecar_untouched() {
+        // Same invariant via the browser-dev `bytes` payload path.
+        let workspace = TempWorkspace::new("import-replace-bytes");
+        let dest = workspace.path.join("Q3.xlsx");
+        write_file(&dest, "old");
+        let sidecar_path = workspace.path.join(".Q3.doxmind");
+        let sidecar_payload = br#"{"version":1,"id":"x","html":""}"#;
+        fs::write(&sidecar_path, sidecar_payload).expect("write sidecar");
+
+        let new_payload = b"PK\x03\x04new bytes";
+        let doc = doc_import_external(
+            workspace.root(),
+            None,
+            Some(new_payload.to_vec()),
+            Some(String::new()),
+            "Q3.xlsx".into(),
+            "replace".into(),
+        )
+        .expect("replace via bytes");
+
+        assert_eq!(doc.path, "Q3.xlsx");
+        assert_eq!(fs::read(&dest).expect("dest"), new_payload);
+        assert_eq!(
+            fs::read(&sidecar_path).expect("sidecar"),
+            sidecar_payload,
+            "sidecar must survive byte-identical across a bytes-mode replace"
+        );
+    }
+
+    #[test]
+    fn doc_import_external_replace_requires_existing_destination() {
+        // Replace presupposes a pre-existing file. If the destination
+        // vanished between plan and resolve, surface a clear error rather
+        // than silently degrading to create — that would mask a race with
+        // an external delete.
+        let workspace = TempWorkspace::new("import-replace-missing");
+        let src_dir = TempWorkspace::new("import-replace-missing-src");
+        let src = src_dir.path.join("Missing.md");
+        write_file(&src, "x");
+
+        let err = doc_import_external(
+            workspace.root(),
+            Some(src.to_string_lossy().into_owned()),
+            None,
+            Some(String::new()),
+            "Missing.md".into(),
+            "replace".into(),
+        )
+        .expect_err("missing destination should error in replace mode");
+        assert!(
+            err.contains("does not exist"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

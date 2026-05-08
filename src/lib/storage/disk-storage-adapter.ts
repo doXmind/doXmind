@@ -349,7 +349,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       root: this.requireRoot(),
       name: input.name,
       destFolder,
-      mode: "create",
+      mode: input.mode ?? "create",
     };
     if (input.srcPath) payload.srcPath = input.srcPath;
     if (input.bytes) payload.bytes = Array.from(input.bytes);

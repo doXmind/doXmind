@@ -160,15 +160,24 @@ interface FileState {
   moveFileToFolder: (fileId: string, folderId: string | null) => Promise<void>;
   /**
    * External-import entry point used by sidebar DnD (#67). Always copies; the
-   * source file (e.g. from Downloads) is left untouched. Throws `ImportError`
-   * with `code: "destination-exists"` on collision so the caller can render
-   * the right toast — collision RESOLUTION lands in #69.
+   * source file (e.g. from Downloads) is left untouched.
+   *
+   * `mode` defaults to `"create"`. `"replace"` (added in #69) overwrites the
+   * user file at the destination but leaves the hidden `.doxmind` sidecar
+   * untouched — the next open trips the Stale-sidecar / Salvage path
+   * (ADR 0002), which is the right behavior because at the FS level a
+   * Replace is indistinguishable from an external edit.
+   *
+   * Throws `ImportError` with `code: "destination-exists"` if `mode === "create"`
+   * and a name clash is detected on the backend (race window between the D2
+   * plan-phase resolver and the actual copy).
    */
   importExternalFile: (input: {
     name: string;
     parentId: string | null;
     srcPath?: string;
     bytes?: Uint8Array;
+    mode?: "create" | "replace";
   }) => Promise<string>;
   setCurrentFolder: (folderId: string | null) => void;
   getFilesInFolder: (folderId: string | null) => FileItem[];
@@ -1096,7 +1105,7 @@ export const useFileStore = create<FileState>()(
         }
       },
 
-      importExternalFile: async ({ name, parentId, srcPath, bytes }) => {
+      importExternalFile: async ({ name, parentId, srcPath, bytes, mode }) => {
         const adapter = getAdapter(get());
         if (!adapter.importExternal) {
           throw new Error("Storage adapter does not support importExternal");
@@ -1108,7 +1117,27 @@ export const useFileStore = create<FileState>()(
           parent: parentHandleForId(get().files, validParentId),
           srcPath,
           bytes,
+          mode,
         });
+        // Replace mode overwrites a file that already exists in the workspace.
+        // Surface that as a refreshed entry rather than a fresh insertion so
+        // the sidebar doesn't end up with two rows for the same path.
+        if (mode === "replace") {
+          const existing = get().files.find(
+            (f) => !f.isFolder && f.parentId === validParentId && f.name === name
+          );
+          if (existing) {
+            // Touch updatedAt by replacing the entry in place; the sidecar is
+            // intentionally left alone on disk so the next open trips Salvage.
+            set((state) => ({
+              files: state.files.map((f) =>
+                f.id === existing.id ? { ...f, content: "" } : f
+              ),
+            }));
+            eventBus.emit("storage:changed");
+            return existing.id;
+          }
+        }
         const newFile = fileFromEntry(entry, "");
         set((state) => ({
           files: [newFile, ...state.files],

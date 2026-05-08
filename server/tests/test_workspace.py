@@ -332,12 +332,120 @@ def test_doc_import_external_rejects_unknown_mode(sync_client, tmp_path):
                 "srcPath": str(src),
                 "destFolder": "",
                 "name": "Plan.md",
+                "mode": "rename-and-pray",
+            },
+        },
+    )
+    # Only `create` and `replace` are accepted; anything else surfaces as 400.
+    assert response.status_code == 400
+
+
+def test_doc_import_external_replace_overwrites_user_file_and_leaves_sidecar_intact(
+    sync_client, tmp_path
+):
+    """Sidecar-untouched invariant — `mode: "replace"` rewrites the `.md`/`.pdf`/`.xlsx`
+    but the pre-existing `.doxmind` sidecar must be byte-identical afterwards.
+
+    The next open will trip the Stale-sidecar / Salvage path (ADR 0002)
+    because the markdown_hash no longer matches; that's the right behavior
+    since at the FS level a Replace is indistinguishable from an external edit.
+    """
+    root = tmp_path / "workspace"
+    root.mkdir()
+    # Pre-existing destination pair: user file + hidden sidecar.
+    dest_md = root / "Plan.md"
+    dest_md.write_bytes(b"# Old\n\nold body\n")
+    sidecar = root / ".Plan.doxmind"
+    sidecar_payload = (
+        b'{"version": 1, "id": "fixed-id-123", '
+        b'"html": "<p>old html</p>", '
+        b'"markdown_hash": "sha256:deadbeef", '
+        b'"updated_at": "2026-01-01T00:00:00Z", '
+        b'"extras": {"databases": {"x": 1}}}'
+    )
+    sidecar.write_bytes(sidecar_payload)
+    sidecar_mtime_before = sidecar.stat().st_mtime_ns
+
+    # Source file from the user's Downloads.
+    downloads = tmp_path / "Downloads"
+    downloads.mkdir()
+    src = downloads / "Plan.md"
+    src_payload = b"# New\n\nfresh body\n"
+    src.write_bytes(src_payload)
+
+    created = invoke(
+        sync_client,
+        "doc_import_external",
+        {
+            "root": str(root),
+            "srcPath": str(src),
+            "destFolder": "",
+            "name": "Plan.md",
+            "mode": "replace",
+        },
+    )
+
+    assert created["path"] == "Plan.md"
+    # User file overwritten with the source bytes.
+    assert dest_md.read_bytes() == src_payload
+    # Always-copy: source untouched.
+    assert src.read_bytes() == src_payload
+    # SIDECAR INVARIANT: byte-identical and (best-effort) mtime unchanged.
+    # The byte equality is the load-bearing assertion — it's what guarantees
+    # the next open hits the Stale-sidecar / Salvage path with the original
+    # html/markdown_hash/extras intact.
+    assert sidecar.read_bytes() == sidecar_payload
+    assert sidecar.stat().st_mtime_ns == sidecar_mtime_before
+
+
+def test_doc_import_external_replace_via_bytes_leaves_sidecar_intact(sync_client, tmp_path):
+    """Replace via the browser-dev `bytes` path; same sidecar invariant."""
+    root = tmp_path
+    dest = root / "Q3.xlsx"
+    dest.write_bytes(b"PK\x03\x04old")
+    sidecar = root / ".Q3.doxmind"
+    sidecar_payload = b'{"version": 1, "id": "x", "html": ""}'
+    sidecar.write_bytes(sidecar_payload)
+
+    new_payload = b"PK\x03\x04new bytes"
+
+    created = invoke(
+        sync_client,
+        "doc_import_external",
+        {
+            "root": str(root),
+            "bytes": list(new_payload),
+            "destFolder": "",
+            "name": "Q3.xlsx",
+            "mode": "replace",
+        },
+    )
+
+    assert created["path"] == "Q3.xlsx"
+    assert dest.read_bytes() == new_payload
+    assert sidecar.read_bytes() == sidecar_payload
+
+
+def test_doc_import_external_replace_requires_existing_destination(sync_client, tmp_path):
+    """Replace presupposes a pre-existing file. If the destination vanished
+    between plan and resolve we surface a 400 rather than silently creating —
+    that would hide a race with an external delete."""
+    src = tmp_path / "Plan.md"
+    src.write_text("# Plan\n", encoding="utf-8")
+
+    response = sync_client.post(
+        "/api/workspace/invoke",
+        json={
+            "command": "doc_import_external",
+            "payload": {
+                "root": str(tmp_path),
+                "srcPath": str(src),
+                "destFolder": "",
+                "name": "Missing.md",
                 "mode": "replace",
             },
         },
     )
-    # `replace` mode is the #69 deliverable — explicit reject avoids silent
-    # path execution.
     assert response.status_code == 400
 
 

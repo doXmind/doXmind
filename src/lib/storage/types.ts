@@ -399,6 +399,14 @@ export interface StorageImportInput {
   srcPath?: string;
   /** Raw bytes — used in browser dev mode where HTML5 DnD only exposes File objects. */
   bytes?: Uint8Array;
+  /**
+   * Import mode. `"create"` (the default) refuses to overwrite. `"replace"`
+   * (added in #69) overwrites the user file at the destination but leaves the
+   * hidden `.doxmind` sidecar untouched — the next open trips the Salvage
+   * path, which is the right behavior because at the FS level a Replace is
+   * indistinguishable from an external edit.
+   */
+  mode?: "create" | "replace";
 }
 
 /** Discriminator for `ImportError.code` so callers can react without string-matching. */
