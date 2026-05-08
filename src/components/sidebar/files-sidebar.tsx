@@ -166,6 +166,7 @@ export function FilesSidebar() {
               ref={folderTreeRef}
               onCreateFile={handleCreateFile}
               onCreatePdf={handleCreatePdf}
+              onCreateExcel={handleCreateExcel}
               onCreateFolder={handleCreateFolder}
             />
           )}

@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useTranslations } from "next-intl";
 import { Check, FilePlus2, Folder, FolderOpen, FolderPlus, Pencil, Trash2, X } from "lucide-react";
+import { PdfGlyph, SpreadsheetGlyph } from "@/components/icons/document-glyphs";
 import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import { FileItem } from "./file-item";
@@ -25,7 +26,7 @@ import { ConfirmModal } from "@/components/ui/confirm-modal";
 const log = storeLogger.child("FolderTree");
 
 type FolderMenuItem = {
-  id: "new-file" | "new-folder" | "rename" | "reveal" | "delete";
+  id: "new-file" | "new-pdf" | "new-excel" | "new-folder" | "rename" | "reveal" | "delete";
   label: string;
   icon: React.ReactNode;
   onClick: () => void;
@@ -33,7 +34,7 @@ type FolderMenuItem = {
 };
 
 type EmptyMenuItem = {
-  id: "new-file" | "new-folder";
+  id: "new-file" | "new-pdf" | "new-excel" | "new-folder";
   label: string;
   icon: React.ReactNode;
   onClick: () => void;
@@ -42,6 +43,7 @@ type EmptyMenuItem = {
 interface FolderTreeProps {
   onCreateFile: (parentId?: string | null) => void;
   onCreatePdf: (parentId?: string | null) => void;
+  onCreateExcel: (parentId?: string | null) => void;
   onCreateFolder: (parentId?: string | null) => void;
 }
 
@@ -51,7 +53,7 @@ export interface FolderTreeHandle {
 }
 
 export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function FolderTree(
-  { onCreateFile, onCreateFolder },
+  { onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder },
   ref
 ) {
   const t = useTranslations("sidebar");
@@ -238,6 +240,18 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         onClick: () => onCreateFile(folder.id),
       },
       {
+        id: "new-pdf",
+        label: t("newPdfDocument"),
+        icon: <PdfGlyph className="mr-2 h-4 w-4" />,
+        onClick: () => onCreatePdf(folder.id),
+      },
+      {
+        id: "new-excel",
+        label: t("newExcelDocument"),
+        icon: <SpreadsheetGlyph className="mr-2 h-4 w-4" />,
+        onClick: () => onCreateExcel(folder.id),
+      },
+      {
         id: "new-folder",
         label: t("newFolder"),
         icon: <FolderPlus className="mr-2 h-4 w-4" />,
@@ -274,7 +288,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         destructive: true,
       },
     ],
-    [t, onCreateFile, onCreateFolder]
+    [t, onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder]
   );
 
   const buildEmptyMenu = useCallback(
@@ -286,13 +300,25 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         onClick: () => onCreateFile(null),
       },
       {
+        id: "new-pdf",
+        label: t("newPdfDocument"),
+        icon: <PdfGlyph className="mr-2 h-4 w-4" />,
+        onClick: () => onCreatePdf(null),
+      },
+      {
+        id: "new-excel",
+        label: t("newExcelDocument"),
+        icon: <SpreadsheetGlyph className="mr-2 h-4 w-4" />,
+        onClick: () => onCreateExcel(null),
+      },
+      {
         id: "new-folder",
         label: t("newFolder"),
         icon: <FolderPlus className="mr-2 h-4 w-4" />,
         onClick: () => onCreateFolder(null),
       },
     ],
-    [t, onCreateFile, onCreateFolder]
+    [t, onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder]
   );
 
   // Position helpers — clamp to viewport so menus don't overflow.
