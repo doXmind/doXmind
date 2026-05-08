@@ -714,14 +714,19 @@ def doc_import_external(
     """Copy an external `.md`/`.pdf`/`.xlsx` into the workspace.
 
     Always-copy semantics: the source on disk (e.g. user's Downloads) is left
-    untouched. Collision handling is deferred to #69 — for now `mode` must be
-    `"create"` and a name clash at the destination raises `ValueError`, which
-    the frontend translates into a "File already exists; collision handling
-    ships in #69" toast.
+    untouched.
+
+    `mode`:
+    - ``"create"`` — refuse to overwrite. A name clash raises ``FileExistsError``
+      and the FastAPI layer translates it to a 409.
+    - ``"replace"`` — overwrite the user file at the destination. The
+      pre-existing ``.doxmind`` sidecar is **deliberately left untouched** so
+      the next open trips the Stale-sidecar / Salvage path (CONTEXT.md
+      "Stale sidecar" definition + ADR 0002). At the FS level a Replace is
+      indistinguishable from an external edit, so reusing the same recovery
+      path keeps the sidecar contract consistent.
     """
-    if mode != "create":
-        # `replace` mode is the #69 deliverable; explicitly reject so a stray
-        # caller can't accidentally exercise an unimplemented branch.
+    if mode not in {"create", "replace"}:
         raise ValueError(f"unsupported import mode: {mode}")
     if not name.strip():
         raise ValueError("import name is required")
@@ -740,11 +745,17 @@ def doc_import_external(
         )
 
     destination = resolve_workspace_path_for_write(workspace, rel_path)
-    if destination.exists():
+    if mode == "create" and destination.exists():
         # The frontend toast in #67 reads "File already exists; collision
         # handling ships in #69". Keep the message machine-friendly so the
         # frontend can pattern-match if it wants to render a richer toast.
         raise FileExistsError(f"destination already exists: {rel_path}")
+    if mode == "replace" and not destination.exists():
+        # Replace presupposes a pre-existing destination; if the user file
+        # vanished between plan and resolve we surface a recoverable error
+        # instead of silently degrading to create — that would mask a race
+        # with an external delete.
+        raise FileNotFoundError(f"destination does not exist for replace: {rel_path}")
 
     destination.parent.mkdir(parents=True, exist_ok=True)
 
@@ -761,6 +772,8 @@ def doc_import_external(
         # `shutil.copyfile` is the always-copy primitive: it preserves the
         # source on disk byte-for-byte. We deliberately don't call `copy2` —
         # carrying mtime / metadata across is a UX call we haven't made yet.
+        # In replace mode this overwrites only the user file; the hidden
+        # sidecar next to it is intentionally NOT touched.
         shutil.copyfile(source, destination)
     else:
         raise ValueError("doc_import_external requires either srcPath or bytes")

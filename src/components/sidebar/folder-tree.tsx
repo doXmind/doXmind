@@ -24,8 +24,15 @@ import { revealFileInFinder } from "@/lib/storage/reveal";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { evaluateSidebarDrop, type DnDNode } from "@/lib/sidebar-dnd-policy";
 import { useHoverExpand } from "./use-hover-expand";
-import { planExternalImport } from "@/lib/external-import-resolver";
+import {
+  planExternalImport,
+  resolveImportPlan,
+  type CollisionItem,
+  type CollisionResolution,
+  type ImportAction,
+} from "@/lib/external-import-resolver";
 import { ImportError } from "@/lib/storage";
+import { ImportConflictModal } from "./import-conflict-modal";
 
 const log = storeLogger.child("FolderTree");
 
@@ -160,11 +167,54 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     });
   });
 
+  // Pending collisions surface in the conflict modal. We hold the raw items
+  // alongside the plan so a Replace / Keep both decision can map back to the
+  // original srcPath / bytes payload at Apply time.
+  const [pendingConflict, setPendingConflict] = useState<{
+    folderId: string | null;
+    collisions: CollisionItem[];
+    /** Existing names at the destination — captured at plan time so successive
+     *  `keep-both` renames are deterministic even if the file store changes
+     *  underneath us while the modal is open. */
+    existingNames: string[];
+  } | null>(null);
+
+  // Execute a list of resolved actions against the storage adapter. Pulled
+  // out so both the accepted-bucket dispatch and the post-modal Apply share
+  // the same error handling.
+  const runActions = useCallback(
+    async (actions: ImportAction[], folderId: string | null) => {
+      for (const action of actions) {
+        try {
+          await importExternalFile({
+            name: action.name,
+            parentId: folderId,
+            srcPath: action.item.srcPath,
+            bytes: action.item.bytes,
+            mode: action.mode,
+          });
+        } catch (error) {
+          if (error instanceof ImportError && error.code === "destination-exists") {
+            // Race window: an external edit / process landed a same-named
+            // file between plan and copy. Surface the collision toast — we
+            // don't re-open the modal because that would loop indefinitely
+            // if a watcher keeps adding the file back.
+            notify.error(t("externalImportCollision"));
+            continue;
+          }
+          log.error("Failed to import external file", error);
+          notify.error(t("externalImportFailed"));
+        }
+      }
+    },
+    [importExternalFile, t]
+  );
+
+
   // External imports go through the D2 plan-phase resolver
   // (`src/lib/external-import-resolver.ts`) for whitelist + collision
-  // detection, then through `importExternalFile` for the always-copy backend
-  // command. Collision RESOLUTION (Replace / Keep both / Skip) is the #69
-  // deliverable; this slice only emits the holding-pattern toast.
+  // detection. Accepted items are copied immediately; collisions surface
+  // in the ImportConflictModal (#69) for per-row Replace / Keep both / Skip.
   const importItems = useCallback(
     async (
       items: Array<{ name: string; srcPath?: string; bytes?: Uint8Array }>,
@@ -188,37 +238,64 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         notify.error(t("externalImportUnsupported"));
       }
 
-      // TODO #69: collisions currently surface as a toast pointing at the
-      // follow-up issue. The modal (Replace / Keep both / Skip) lands there;
-      // when it does, replace this branch with a dispatch into the modal
-      // store and feed `plan.collisions` to it.
-      if (plan.collisions.length > 0) {
-        notify.error(t("externalImportCollision"));
+      // Accepted items run immediately; the user shouldn't have to click
+      // through a modal for files that don't conflict.
+      if (plan.accepted.length > 0) {
+        const acceptedActions: ImportAction[] = plan.accepted.map((entry) => ({
+          item: entry.item,
+          extension: entry.extension,
+          name: entry.item.name,
+          mode: "create",
+        }));
+        await runActions(acceptedActions, folderId);
       }
 
-      for (const accepted of plan.accepted) {
-        try {
-          await importExternalFile({
-            name: accepted.item.name,
-            parentId: folderId,
-            srcPath: accepted.item.srcPath,
-            bytes: accepted.item.bytes,
-          });
-        } catch (error) {
-          if (error instanceof ImportError && error.code === "destination-exists") {
-            // TODO #69: race window — another process / external edit landed
-            // a same-named file between plan and copy. Until the modal lands
-            // we share the holding-pattern toast.
-            notify.error(t("externalImportCollision"));
-            continue;
-          }
-          log.error("Failed to import external file", error);
-          notify.error(t("externalImportFailed"));
-        }
+      // Collisions go through the modal. Capture `existingNames` at this
+      // point — `keep-both` rename arithmetic should be stable even if the
+      // file store changes while the modal is open.
+      if (plan.collisions.length > 0) {
+        setPendingConflict({
+          folderId,
+          collisions: plan.collisions,
+          existingNames,
+        });
       }
     },
-    [importExternalFile, t]
+    [runActions, t]
   );
+
+  const handleConflictApply = useCallback(
+    async (decisions: Record<string, CollisionResolution>) => {
+      const conflict = pendingConflict;
+      if (!conflict) return;
+      setPendingConflict(null);
+      // Re-run the resolve step now that we have decisions. We rebuild a
+      // synthetic ImportPlan so resolveImportPlan's accepted/rejected
+      // bookkeeping stays consistent — we pass an empty accepted list since
+      // those items already ran above; the resolver only needs to walk
+      // `collisions` here.
+      const resolved = resolveImportPlan({
+        plan: {
+          destFolderId: conflict.folderId,
+          accepted: [],
+          rejected: [],
+          collisions: conflict.collisions,
+        },
+        existingNames: conflict.existingNames,
+        decisions,
+      });
+      if (resolved.actions.length === 0) return;
+      await runActions(resolved.actions, conflict.folderId);
+    },
+    [pendingConflict, runActions]
+  );
+
+  const handleConflictCancelAll = useCallback(() => {
+    // Cancel-all drops the entire collision sub-batch. Items already
+    // accepted earlier in the same drop are unaffected — the modal only
+    // controls the collision sub-batch, never the accepted one.
+    setPendingConflict(null);
+  }, []);
 
   // Drag & drop. Two distinct flows share the same drop targets:
   //   1. Internal moves (text/plain payload = a file id from `FileItem`),
@@ -227,6 +304,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   //   2. External imports (HTML5 `DataTransfer.files` in browser dev mode;
   //      Tauri `tauri://drag-drop` window events in the desktop shell —
   //      subscribed in the effect below).
+
   const handleDragOver = (e: React.DragEvent, folderId: string) => {
     e.preventDefault();
     e.stopPropagation();
@@ -921,6 +999,13 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
           count: countDocsUnderFolder(folderPendingDelete),
         })}
         confirmLabel={t("moveToTrash")}
+      />
+
+      <ImportConflictModal
+        open={pendingConflict !== null}
+        collisions={pendingConflict?.collisions ?? []}
+        onApply={handleConflictApply}
+        onCancelAll={handleConflictCancelAll}
       />
     </div>
   );
