@@ -23,6 +23,7 @@ import { storeLogger } from "@/lib/logger";
 import { revealFileInFinder } from "@/lib/storage/reveal";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { evaluateSidebarDrop, type DnDNode } from "@/lib/sidebar-dnd-policy";
+import { useHoverExpand } from "./use-hover-expand";
 
 const log = storeLogger.child("FolderTree");
 
@@ -138,6 +139,20 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     [files]
   );
 
+  // D3: hover-expand. Dragging over a collapsed folder for ~500ms expands it
+  // so the user can drop into a deeper subfolder without first interrupting
+  // the drag. We only schedule the timer when the row is actually collapsed —
+  // an already-open folder doesn't need expanding, and skipping the schedule
+  // avoids a no-op setState round-trip mid-drag.
+  const { onFolderDragOver: scheduleHoverExpand, onFolderDragLeave: cancelHoverExpand, cancel: cancelHoverExpandTimer } = useHoverExpand((folderId) => {
+    setCollapsedFolderIds((prev) => {
+      if (!prev.has(folderId)) return prev;
+      const next = new Set(prev);
+      next.delete(folderId);
+      return next;
+    });
+  });
+
   // Drag & drop: move files and folders between folders. External file drops
   // are intentionally ignored — the workspace folder is the source of truth.
   // (External-DnD acceptance is tracked separately in #67.)
@@ -163,23 +178,37 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
       if (decision.verdict === "cycle" || decision.verdict === "would-be-self") {
         e.dataTransfer.dropEffect = "none";
         setDragOverFolderId(null);
+        // Don't schedule hover-expand for an invalid drop — there's no point
+        // expanding a folder the user can't actually drop into.
+        cancelHoverExpandTimer();
         return;
       }
     }
     e.dataTransfer.dropEffect = "move";
     setDragOverFolderId(folderId);
+    // Only collapsed folders need expanding; the hook itself no-ops if the
+    // expand callback finds the folder already open, but skipping the
+    // schedule avoids a useless setState while the user drags inside an
+    // already-expanded folder.
+    if (collapsedFolderIds.has(folderId)) {
+      scheduleHoverExpand(folderId);
+    } else {
+      cancelHoverExpandTimer();
+    }
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragOverFolderId(null);
+    cancelHoverExpand();
   };
 
   const handleDrop = async (e: React.DragEvent, folderId: string | null) => {
     e.preventDefault();
     e.stopPropagation();
     setDragOverFolderId(null);
+    cancelHoverExpandTimer();
 
     const draggedId = e.dataTransfer.getData("text/plain");
     if (!draggedId) return;
@@ -218,7 +247,10 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     e.dataTransfer.setData("text/plain", folderId);
     setDraggingSourceId(folderId);
   };
-  const handleDragEnd = () => setDraggingSourceId(null);
+  const handleDragEnd = () => {
+    setDraggingSourceId(null);
+    cancelHoverExpandTimer();
+  };
 
   // Folder rename
   const handleFolderRename = async () => {
