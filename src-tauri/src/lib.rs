@@ -1111,6 +1111,88 @@ fn doc_create_excel(
     document_dto_for_path(&resolved, relative_path_string(&root, &resolved)?)
 }
 
+/// External-import whitelist (extensions, lowercase, with leading dot).
+/// Mirrors the frontend D2 module (`src/lib/external-import-resolver.ts`) and
+/// the backend `doc_import_external` handler. The frontend rejects out-of-list
+/// files before the IPC call, but we re-validate here so a misbehaving caller
+/// can't smuggle a non-document file through Tauri's permission boundary.
+const IMPORT_SUPPORTED_EXTENSIONS: &[&str] = &["md", "pdf", "xlsx"];
+
+fn ensure_import_extension(name: &str) -> Result<(), String> {
+    let ext = Path::new(name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase());
+    match ext.as_deref() {
+        Some(value) if IMPORT_SUPPORTED_EXTENSIONS.contains(&value) => Ok(()),
+        _ => Err(format!(
+            "only .md, .pdf, .xlsx are supported for external import: {name}"
+        )),
+    }
+}
+
+#[tauri::command]
+fn doc_import_external(
+    root: String,
+    src_path: Option<String>,
+    bytes: Option<Vec<u8>>,
+    dest_folder: Option<String>,
+    name: String,
+    mode: String,
+) -> Result<WorkspaceDocumentDto, String> {
+    // `replace` mode is the #69 deliverable; explicit reject avoids accidentally
+    // exercising an unimplemented branch.
+    if mode != "create" {
+        return Err(format!("unsupported import mode: {mode}"));
+    }
+    if name.trim().is_empty() {
+        return Err("import name is required".into());
+    }
+    ensure_import_extension(&name)?;
+
+    let root = canonical_workspace_root(&root)?;
+    let dest_folder = dest_folder.unwrap_or_default();
+    let dest_folder_clean = dest_folder.trim();
+    let rel_path = if dest_folder_clean.is_empty() {
+        name.clone()
+    } else {
+        format!("{dest_folder_clean}/{name}")
+    };
+
+    let destination = resolve_workspace_path_for_write(&root, &rel_path)?;
+    if destination.exists() {
+        // Frontend translates this into a "File already exists; collision
+        // handling ships in #69" toast. The string is matched on substring,
+        // so keep "already exists" stable.
+        return Err(format!("destination already exists: {rel_path}"));
+    }
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create destination directory: {err}"))?;
+    }
+
+    if let Some(byte_payload) = bytes {
+        // Browser dev fallback path: HTML5 DataTransfer.files reaches us as
+        // a byte buffer rather than a real OS path.
+        atomic_write_bytes(&destination, &byte_payload)
+            .map_err(|err| format!("failed to write imported file: {err}"))?;
+    } else if let Some(src) = src_path {
+        let source = PathBuf::from(&src);
+        if !source.is_file() {
+            return Err(format!("source file does not exist: {src}"));
+        }
+        // `fs::copy` is the always-copy primitive: source on disk is left
+        // byte-for-byte intact. We deliberately don't preserve mtime — that
+        // can be revisited when collision-resolution lands.
+        fs::copy(&source, &destination)
+            .map_err(|err| format!("failed to copy imported file: {err}"))?;
+    } else {
+        return Err("doc_import_external requires either srcPath or bytes".into());
+    }
+
+    document_dto_for_path(&destination, relative_path_string(&root, &destination)?)
+}
+
 #[tauri::command]
 fn doc_rename(
     root: String,
@@ -2253,6 +2335,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
             doc_create,
             doc_create_pdf,
             doc_create_excel,
+            doc_import_external,
             doc_rename,
             doc_move,
             doc_delete,
@@ -2820,6 +2903,164 @@ mod tests {
 
             assert!(resolve_workspace_path_for_write(&root, "link/doc.md").is_err());
         }
+    }
+
+    #[test]
+    fn doc_import_external_copies_md_and_leaves_source_untouched() {
+        let workspace = TempWorkspace::new("import-create-md");
+        // Simulate the user's Downloads folder with a separate temp dir so we
+        // exercise the cross-directory copy path the real OS DnD takes.
+        let downloads = TempWorkspace::new("import-downloads");
+        let src = downloads.path.join("Plan.md");
+        let payload = b"# Plan\n\nbody\n";
+        write_file(&src, std::str::from_utf8(payload).unwrap());
+
+        let doc = doc_import_external(
+            workspace.root(),
+            Some(src.to_string_lossy().into_owned()),
+            None,
+            Some(String::new()),
+            "Plan.md".into(),
+            "create".into(),
+        )
+        .expect("import md");
+
+        assert_eq!(doc.path, "Plan.md");
+        assert_eq!(
+            fs::read(workspace.path.join("Plan.md")).expect("read copied"),
+            payload
+        );
+        // Source file untouched — both presence and bytes are byte-identical.
+        // This is the always-copy invariant: doXmind never moves user files
+        // out from under them on external DnD.
+        assert!(src.exists(), "source must remain in place after copy");
+        assert_eq!(
+            fs::read(&src).expect("read source"),
+            payload,
+            "source bytes must be unchanged after import"
+        );
+    }
+
+    #[test]
+    fn doc_import_external_copies_into_dest_folder() {
+        let workspace = TempWorkspace::new("import-create-folder");
+        std::fs::create_dir_all(workspace.path.join("Notes")).expect("create Notes");
+        let src_dir = TempWorkspace::new("import-src-pdf");
+        let src = src_dir.path.join("Spec.pdf");
+        let payload = b"%PDF-1.4\nspec\n";
+        write_file(&src, std::str::from_utf8(payload).unwrap());
+
+        let doc = doc_import_external(
+            workspace.root(),
+            Some(src.to_string_lossy().into_owned()),
+            None,
+            Some("Notes".into()),
+            "Spec.pdf".into(),
+            "create".into(),
+        )
+        .expect("import pdf");
+
+        assert_eq!(doc.path, "Notes/Spec.pdf");
+        assert!(workspace.path.join("Notes/Spec.pdf").exists());
+        assert_eq!(fs::read(&src).expect("source bytes"), payload);
+    }
+
+    #[test]
+    fn doc_import_external_accepts_bytes_for_browser_dev() {
+        let workspace = TempWorkspace::new("import-bytes");
+        let payload = b"PK\x03\x04dummy";
+
+        let doc = doc_import_external(
+            workspace.root(),
+            None,
+            Some(payload.to_vec()),
+            Some(String::new()),
+            "Q3.xlsx".into(),
+            "create".into(),
+        )
+        .expect("import xlsx");
+
+        assert_eq!(doc.path, "Q3.xlsx");
+        assert_eq!(
+            fs::read(workspace.path.join("Q3.xlsx")).expect("read xlsx"),
+            payload
+        );
+    }
+
+    #[test]
+    fn doc_import_external_rejects_collision() {
+        let workspace = TempWorkspace::new("import-collision");
+        write_file(&workspace.path.join("Plan.md"), "existing");
+        let src_dir = TempWorkspace::new("import-collision-src");
+        let src = src_dir.path.join("Plan.md");
+        write_file(&src, "incoming");
+
+        let err = doc_import_external(
+            workspace.root(),
+            Some(src.to_string_lossy().into_owned()),
+            None,
+            Some(String::new()),
+            "Plan.md".into(),
+            "create".into(),
+        )
+        .expect_err("collision should error");
+
+        assert!(
+            err.contains("already exists"),
+            "unexpected collision error: {err}"
+        );
+        // Always-copy semantics survive the error path: source is untouched
+        // AND the existing destination keeps its content.
+        assert_eq!(fs::read_to_string(&src).expect("source"), "incoming");
+        assert_eq!(
+            fs::read_to_string(workspace.path.join("Plan.md")).expect("dest"),
+            "existing"
+        );
+    }
+
+    #[test]
+    fn doc_import_external_rejects_non_whitelisted_extension() {
+        let workspace = TempWorkspace::new("import-bad-ext");
+        let src_dir = TempWorkspace::new("import-bad-ext-src");
+        let src = src_dir.path.join("notes.txt");
+        write_file(&src, "hi");
+
+        let err = doc_import_external(
+            workspace.root(),
+            Some(src.to_string_lossy().into_owned()),
+            None,
+            Some(String::new()),
+            "notes.txt".into(),
+            "create".into(),
+        )
+        .expect_err("non-whitelisted should error");
+        assert!(
+            err.contains("only .md, .pdf, .xlsx are supported"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            !workspace.path.join("notes.txt").exists(),
+            "no copy should land on disk"
+        );
+    }
+
+    #[test]
+    fn doc_import_external_rejects_unknown_mode() {
+        let workspace = TempWorkspace::new("import-replace-mode");
+        let src_dir = TempWorkspace::new("import-replace-mode-src");
+        let src = src_dir.path.join("Plan.md");
+        write_file(&src, "x");
+
+        let err = doc_import_external(
+            workspace.root(),
+            Some(src.to_string_lossy().into_owned()),
+            None,
+            Some(String::new()),
+            "Plan.md".into(),
+            "replace".into(),
+        )
+        .expect_err("replace mode should error in #67");
+        assert!(err.contains("unsupported import mode"), "unexpected: {err}");
     }
 
     #[test]

@@ -24,6 +24,8 @@ import { revealFileInFinder } from "@/lib/storage/reveal";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { evaluateSidebarDrop, type DnDNode } from "@/lib/sidebar-dnd-policy";
 import { useHoverExpand } from "./use-hover-expand";
+import { planExternalImport } from "@/lib/external-import-resolver";
+import { ImportError } from "@/lib/storage";
 
 const log = storeLogger.child("FolderTree");
 
@@ -70,6 +72,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   const getSubPages = useFileStore((s) => s.getSubPages);
   const setCurrentFolder = useFileStore((s) => s.setCurrentFolder);
   const moveFileToFolder = useFileStore((s) => s.moveFileToFolder);
+  const importExternalFile = useFileStore((s) => s.importExternalFile);
   const renameFile = useFileStore((s) => s.renameFile);
   const deleteFile = useFileStore((s) => s.deleteFile);
   const justCreatedFileId = useFileStore((s) => s.justCreatedFileId);
@@ -144,7 +147,11 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   // the drag. We only schedule the timer when the row is actually collapsed —
   // an already-open folder doesn't need expanding, and skipping the schedule
   // avoids a no-op setState round-trip mid-drag.
-  const { onFolderDragOver: scheduleHoverExpand, onFolderDragLeave: cancelHoverExpand, cancel: cancelHoverExpandTimer } = useHoverExpand((folderId) => {
+  const {
+    onFolderDragOver: scheduleHoverExpand,
+    onFolderDragLeave: cancelHoverExpand,
+    cancel: cancelHoverExpandTimer,
+  } = useHoverExpand((folderId) => {
     setCollapsedFolderIds((prev) => {
       if (!prev.has(folderId)) return prev;
       const next = new Set(prev);
@@ -153,22 +160,88 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     });
   });
 
-  // Drag & drop: move files and folders between folders. External file drops
-  // are intentionally ignored — the workspace folder is the source of truth.
-  // (External-DnD acceptance is tracked separately in #67.)
-  //
-  // The verdict from D1 governs both the cursor (cycle / would-be-self →
-  // not-allowed) and the action on drop (name-collision → toast,
-  // no-op-same-parent → silent skip, ok → dispatch the move).
+  // External imports go through the D2 plan-phase resolver
+  // (`src/lib/external-import-resolver.ts`) for whitelist + collision
+  // detection, then through `importExternalFile` for the always-copy backend
+  // command. Collision RESOLUTION (Replace / Keep both / Skip) is the #69
+  // deliverable; this slice only emits the holding-pattern toast.
+  const importItems = useCallback(
+    async (
+      items: Array<{ name: string; srcPath?: string; bytes?: Uint8Array }>,
+      folderId: string | null
+    ) => {
+      // Resolve dest folder id → existing names at that destination so the
+      // resolver can detect same-name collisions before we hit the backend.
+      const filesAtDest = useFileStore
+        .getState()
+        .files.filter((file) => (file.parentId ?? null) === folderId);
+      const existingNames = filesAtDest.map((file) => file.name);
+      const plan = planExternalImport({
+        items,
+        destFolderId: folderId,
+        existingNames,
+      });
+
+      // Whitelist rejection — single combined toast keeps a multi-file batch
+      // from spamming the user with one banner per bad file.
+      if (plan.rejected.length > 0) {
+        notify.error(t("externalImportUnsupported"));
+      }
+
+      // TODO #69: collisions currently surface as a toast pointing at the
+      // follow-up issue. The modal (Replace / Keep both / Skip) lands there;
+      // when it does, replace this branch with a dispatch into the modal
+      // store and feed `plan.collisions` to it.
+      if (plan.collisions.length > 0) {
+        notify.error(t("externalImportCollision"));
+      }
+
+      for (const accepted of plan.accepted) {
+        try {
+          await importExternalFile({
+            name: accepted.item.name,
+            parentId: folderId,
+            srcPath: accepted.item.srcPath,
+            bytes: accepted.item.bytes,
+          });
+        } catch (error) {
+          if (error instanceof ImportError && error.code === "destination-exists") {
+            // TODO #69: race window — another process / external edit landed
+            // a same-named file between plan and copy. Until the modal lands
+            // we share the holding-pattern toast.
+            notify.error(t("externalImportCollision"));
+            continue;
+          }
+          log.error("Failed to import external file", error);
+          notify.error(t("externalImportFailed"));
+        }
+      }
+    },
+    [importExternalFile, t]
+  );
+
+  // Drag & drop. Two distinct flows share the same drop targets:
+  //   1. Internal moves (text/plain payload = a file id from `FileItem`),
+  //      gated by D1 policy (cycle / would-be-self → not-allowed cursor;
+  //      name-collision → toast on drop).
+  //   2. External imports (HTML5 `DataTransfer.files` in browser dev mode;
+  //      Tauri `tauri://drag-drop` window events in the desktop shell —
+  //      subscribed in the effect below).
   const handleDragOver = (e: React.DragEvent, folderId: string) => {
     e.preventDefault();
     e.stopPropagation();
-    // `getData` is restricted during dragover in most browsers, so we read
-    // the in-flight folder source from local state (set on folder dragstart
-    // below). File drags don't populate this state, but they can never
-    // trigger cycle / would-be-self — only folder drags can. So the cursor
-    // feedback for cycle / would-be-self is precise; everything else falls
-    // through to "move" and the drop handler reconfirms with D1.
+    // External (OS) drag: `kind === "file"` on at least one item. Show the
+    // copy cursor and skip the D1 verdict — folder cycle/self only applies
+    // to internal moves.
+    const isExternal = Array.from(e.dataTransfer.items ?? []).some((item) => item.kind === "file");
+    if (isExternal) {
+      e.dataTransfer.dropEffect = "copy";
+      setDragOverFolderId(folderId);
+      return;
+    }
+    // Internal folder drag: read the in-flight source from local state
+    // (set on folder dragstart). File drags don't populate this state, but
+    // they can never trigger cycle / would-be-self — only folder drags can.
     if (draggingSourceId) {
       const decision = evaluateSidebarDrop({
         sourceId: draggingSourceId,
@@ -204,12 +277,41 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     cancelHoverExpand();
   };
 
+  const resolveDropFolderId = (rawTarget: string | null): string | null => {
+    // file-row → file's parent. Folder-row → that folder. Empty area → root.
+    if (!rawTarget) return null;
+    const file = useFileStore.getState().files.find((f) => f.id === rawTarget);
+    if (!file) return null;
+    if (file.isFolder) return file.id;
+    return file.parentId ?? null;
+  };
+
   const handleDrop = async (e: React.DragEvent, folderId: string | null) => {
     e.preventDefault();
     e.stopPropagation();
     setDragOverFolderId(null);
     cancelHoverExpandTimer();
 
+    // External file drop (browser dev mode): HTML5 DataTransfer.files. Each
+    // File comes through as bytes — the disk adapter forwards them to
+    // `doc_import_external`. In the Tauri shell this branch is unreachable
+    // for OS DnD because the webview intercepts the event; only internal
+    // drags reach here. The Tauri path is wired through the useEffect below.
+    const droppedFiles = Array.from(e.dataTransfer.files ?? []);
+    if (droppedFiles.length > 0) {
+      const items = await Promise.all(
+        droppedFiles.map(async (file) => ({
+          name: file.name,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        }))
+      );
+      await importItems(items, folderId);
+      return;
+    }
+
+    // Internal drag: file or folder id in the text/plain payload. Run D1
+    // policy to filter cycles, self-drops, no-op same-parent moves, and
+    // folder name collisions before dispatching the move.
     const draggedId = e.dataTransfer.getData("text/plain");
     if (!draggedId) return;
 
@@ -251,6 +353,57 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     setDraggingSourceId(null);
     cancelHoverExpandTimer();
   };
+
+  // Tauri drag-drop integration. The webview consumes OS DnD events before
+  // they reach the DOM, so we listen at the window level and hit-test the
+  // reported pointer position against `data-drop-target-*` attributes that
+  // the folder-row / file-row JSX advertises. The event is fire-once per
+  // drop, batched across all paths the user dragged.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+
+    void import("@tauri-apps/api/webview")
+      .then(({ getCurrentWebview }) =>
+        getCurrentWebview().onDragDropEvent(async (event) => {
+          if (cancelled) return;
+          if (event.payload.type !== "drop") return;
+          const paths = event.payload.paths ?? [];
+          if (paths.length === 0) return;
+
+          const { x, y } = event.payload.position;
+          // PhysicalPosition is in device pixels; CSS pixels are scaled by DPR.
+          const cssX = x / window.devicePixelRatio;
+          const cssY = y / window.devicePixelRatio;
+          const element = document.elementFromPoint(cssX, cssY);
+          const targetId =
+            element?.closest<HTMLElement>("[data-drop-target-id]")?.dataset.dropTargetId ?? null;
+          const folderId = resolveDropFolderId(targetId);
+
+          const items = paths.map((srcPath) => ({
+            name: srcPath.split(/[\\/]/).pop() || srcPath,
+            srcPath,
+          }));
+          await importItems(items, folderId);
+        })
+      )
+      .then((u) => {
+        if (cancelled) {
+          u();
+        } else {
+          unlisten = u;
+        }
+      })
+      .catch(() => {
+        // Browser dev mode (no Tauri runtime). The HTML5 onDrop handler on
+        // the JSX below covers this case.
+      });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [importItems]);
 
   // Folder rename
   const handleFolderRename = async () => {
@@ -537,6 +690,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     return (
       <div key={folder.id} className="space-y-0.5">
         <div
+          data-drop-target-id={folder.id}
           onDragOver={(e) => handleDragOver(e, folder.id)}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, folder.id)}
@@ -628,7 +782,10 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
       onContextMenu={handleEmptyAreaContextMenu}
       onDragOver={(e) => {
         e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
+        const isExternal = Array.from(e.dataTransfer.items ?? []).some(
+          (item) => item.kind === "file"
+        );
+        e.dataTransfer.dropEffect = isExternal ? "copy" : "move";
       }}
       onDrop={(e) => handleDrop(e, null)}
     >

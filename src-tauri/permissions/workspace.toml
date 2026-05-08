@@ -28,6 +28,7 @@ commands.allow = [
   "doc_create",
   "doc_create_pdf",
   "doc_create_excel",
+  "doc_import_external",
   "doc_rename",
   "doc_move",
   "doc_delete",
