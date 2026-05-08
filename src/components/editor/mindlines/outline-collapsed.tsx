@@ -25,8 +25,14 @@ const LEVEL_LINE_WIDTH_PX: Record<number, number> = {
 
 const POPOVER_BASE_LEFT_PX = 14;
 const POPOVER_INDENT_PER_LEVEL_PX = 16;
-const POPOVER_OPEN_DELAY_MS = 120;
-const POPOVER_CLOSE_DELAY_MS = 180;
+// Hover-intent delays. `OPEN = 0` makes the popover feel instant on hover —
+// we previously had 120ms of "primed" buffer to filter incidental cursor
+// passes, but on a real document users perceive that as outline lag and the
+// safe-area pointer logic already prevents flicker. Close delay is kept
+// short (60ms) as a small buffer when the cursor crosses the gap between
+// rail and popover, before the safe-area check kicks in.
+const POPOVER_OPEN_DELAY_MS = 0;
+const POPOVER_CLOSE_DELAY_MS = 60;
 const POPOVER_WIDTH_PX = 260;
 const POPOVER_MAX_HEIGHT_PX = 640;
 const POPOVER_VERTICAL_VIEWPORT_GUTTER_PX = 160;
@@ -98,6 +104,11 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
 
   const schedulePopoverOpen = useCallback(() => {
     cancelClose();
+    if (POPOVER_OPEN_DELAY_MS <= 0) {
+      cancelOpen();
+      setPhase("open");
+      return;
+    }
     setPhase((currentPhase) =>
       currentPhase === "open" || currentPhase === "closing" ? "open" : "primed"
     );
@@ -106,7 +117,7 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
       setPhase("open");
       openTimer.current = null;
     }, POPOVER_OPEN_DELAY_MS);
-  }, [cancelClose]);
+  }, [cancelClose, cancelOpen]);
 
   const schedulePopoverClose = useCallback(() => {
     cancelOpen();

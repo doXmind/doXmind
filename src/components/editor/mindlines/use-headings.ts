@@ -9,6 +9,13 @@ import { getScrollParent } from "./utils/heading-utils";
 const SCROLLSPY_THRESHOLD = 0.2;
 const OUTLINE_MAX_LEVEL = 3;
 const MIN_OUTLINE_HEADINGS = 2;
+/**
+ * Trailing-edge debounce on heading extraction. Keeps the outline fresh
+ * but stops `doc.forEach` from running on every keystroke — on a 1k-line
+ * doc this dominates outline UX cost (parent re-renders cascade into the
+ * popover).
+ */
+const HEADINGS_DEBOUNCE_MS = 200;
 
 function getEditorScrollParent(editor: Editor) {
   const editorDom = editor.view.dom as HTMLElement;
@@ -45,7 +52,10 @@ export function useHeadings(editor: Editor | null) {
       return;
     }
 
-    const updateHeadings = () => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const computeHeadings = () => {
+      debounceTimer = null;
       const found: Heading[] = [];
 
       editor.state.doc.forEach((node, offset) => {
@@ -63,10 +73,16 @@ export function useHeadings(editor: Editor | null) {
       setHeadings((prev) => (headingsEqual(prev, outlineHeadings) ? prev : outlineHeadings));
     };
 
-    updateHeadings();
-    editor.on("update", updateHeadings);
+    const scheduleUpdate = () => {
+      if (debounceTimer !== null) return;
+      debounceTimer = setTimeout(computeHeadings, HEADINGS_DEBOUNCE_MS);
+    };
+
+    computeHeadings();
+    editor.on("update", scheduleUpdate);
     return () => {
-      editor.off("update", updateHeadings);
+      editor.off("update", scheduleUpdate);
+      if (debounceTimer !== null) clearTimeout(debounceTimer);
     };
   }, [editor]);
 
