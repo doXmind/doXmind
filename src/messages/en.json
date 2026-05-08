@@ -395,6 +395,8 @@
     "newMarkdown": "Markdown",
     "newPdf": "PDF",
     "newExcel": "Excel",
+    "newPdfDocument": "New PDF",
+    "newExcelDocument": "New Excel",
     "newFolder": "New folder",
     "collapseAll": "Collapse all",
     "fromTemplate": "From Template",

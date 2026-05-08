@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronsDownUp, FolderPlus } from "lucide-react";
+import { ChevronsDownUp } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Tooltip } from "@/components/ui/tooltip";
 import { NewButton } from "@/components/home/new-button";
@@ -55,17 +55,7 @@ export function WorkspaceHeader({
             onCreateExcel={onCreateExcel}
             onCreateFolder={onCreateFolder}
             onOpenTemplatePicker={onOpenTemplatePicker}
-            hideFolder
           />
-          <Tooltip content={t("newFolder")} side="bottom">
-            <button
-              onClick={onCreateFolder}
-              className="sidebar-action-button flex h-7 w-7 items-center justify-center rounded-lg transition-colors"
-              aria-label={t("newFolder")}
-            >
-              <FolderPlus className="h-4 w-4" />
-            </button>
-          </Tooltip>
           {canCollapseAll && (
             <Tooltip content={t("collapseAll")} side="bottom">
               <button
