@@ -21,6 +21,7 @@ import { getErrorMessage, cn } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
 import { revealFileInFinder } from "@/lib/storage/reveal";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
+import { evaluateSidebarDrop, type DnDNode } from "@/lib/sidebar-dnd-policy";
 
 const log = storeLogger.child("FolderTree");
 
@@ -73,6 +74,9 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
 
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(new Set());
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  // Tracks the in-flight folder drag source so dragover handlers can compute
+  // D1 verdicts before the drop event (where `getData` becomes readable).
+  const [draggingSourceId, setDraggingSourceId] = useState<string | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [renamingFolderName, setRenamingFolderName] = useState("");
 
@@ -118,11 +122,48 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     [allFolders, hasExpandedFolders]
   );
 
-  // Drag & drop: move files between folders. External file drops are
-  // intentionally ignored — the workspace folder is the source of truth.
+  // Build a D1-shaped tree snapshot from the file store. The policy module
+  // only needs the four fields it asks for, so we strip out everything else
+  // — keeps the verdict path independent of FileItem evolution.
+  const dndTree: DnDNode[] = useMemo(
+    () =>
+      files.map((f) => ({
+        id: f.id,
+        name: f.name,
+        isFolder: f.isFolder,
+        parentId: f.parentId,
+      })),
+    [files]
+  );
+
+  // Drag & drop: move files and folders between folders. External file drops
+  // are intentionally ignored — the workspace folder is the source of truth.
+  // (External-DnD acceptance is tracked separately in #67.)
+  //
+  // The verdict from D1 governs both the cursor (cycle / would-be-self →
+  // not-allowed) and the action on drop (name-collision → toast,
+  // no-op-same-parent → silent skip, ok → dispatch the move).
   const handleDragOver = (e: React.DragEvent, folderId: string) => {
     e.preventDefault();
     e.stopPropagation();
+    // `getData` is restricted during dragover in most browsers, so we read
+    // the in-flight folder source from local state (set on folder dragstart
+    // below). File drags don't populate this state, but they can never
+    // trigger cycle / would-be-self — only folder drags can. So the cursor
+    // feedback for cycle / would-be-self is precise; everything else falls
+    // through to "move" and the drop handler reconfirms with D1.
+    if (draggingSourceId) {
+      const decision = evaluateSidebarDrop({
+        sourceId: draggingSourceId,
+        targetId: folderId,
+        tree: dndTree,
+      });
+      if (decision.verdict === "cycle" || decision.verdict === "would-be-self") {
+        e.dataTransfer.dropEffect = "none";
+        setDragOverFolderId(null);
+        return;
+      }
+    }
     e.dataTransfer.dropEffect = "move";
     setDragOverFolderId(folderId);
   };
@@ -138,16 +179,44 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     e.stopPropagation();
     setDragOverFolderId(null);
 
-    const draggedFileId = e.dataTransfer.getData("text/plain");
-    if (draggedFileId && draggedFileId !== folderId) {
-      try {
-        await moveFileToFolder(draggedFileId, folderId);
-      } catch (error) {
-        log.error("Failed to move file", error);
-        notify.error(t("failedToMove"));
-      }
+    const draggedId = e.dataTransfer.getData("text/plain");
+    if (!draggedId) return;
+
+    const decision = evaluateSidebarDrop({
+      sourceId: draggedId,
+      targetId: folderId,
+      tree: dndTree,
+    });
+
+    switch (decision.verdict) {
+      case "cycle":
+      case "would-be-self":
+        // Cursor already showed not-allowed during the drag; nothing to do
+        // on drop beyond eating the event so the parent doesn't pick it up.
+        return;
+      case "no-op-same-parent":
+        return;
+      case "name-collision":
+        notify.error(t("folderExistsAtDestination"));
+        return;
+      case "ok":
+        try {
+          await moveFileToFolder(draggedId, decision.destinationParentId);
+        } catch (error) {
+          log.error("Failed to move file", error);
+          notify.error(t("failedToMove"));
+        }
+        return;
     }
   };
+
+  const handleFolderDragStart = (e: React.DragEvent, folderId: string) => {
+    e.stopPropagation();
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", folderId);
+    setDraggingSourceId(folderId);
+  };
+  const handleDragEnd = () => setDraggingSourceId(null);
 
   // Folder rename
   const handleFolderRename = async () => {
@@ -461,6 +530,9 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
             </div>
           ) : (
             <div
+              draggable={renamingFolderId !== folder.id}
+              onDragStart={(e) => handleFolderDragStart(e, folder.id)}
+              onDragEnd={handleDragEnd}
               onClick={() => {
                 setCollapsedFolderIds((prev) => {
                   const next = new Set(prev);

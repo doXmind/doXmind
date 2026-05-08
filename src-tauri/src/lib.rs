@@ -413,6 +413,20 @@ struct DeleteResultDto {
     sidecar_path: Option<String>,
 }
 
+// `doc_move` accepts either a Document path or a Folder path. The two cases
+// return slightly different shapes — documents carry the full DTO so the
+// frontend can refresh metadata in-place; folders only need to confirm the
+// new path. The discriminator field keeps callers honest about which payload
+// they're deserialising.
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum MoveResultDto {
+    #[serde(rename = "document")]
+    Document(WorkspaceDocumentDto),
+    #[serde(rename = "folder")]
+    Folder { path: String },
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AssetImportResultDto {
@@ -1106,13 +1120,50 @@ fn doc_rename(
     move_document_pair(&root, &old_path, &new_path)
 }
 
+// Polymorphic move: today's frontend calls this with either a document path
+// (extension-checked, pair-atomic via `move_document_pair`) or a folder path
+// (validated as a directory, atomic via a single `fs::rename` of the subtree
+// — every nested `.md` + `.doxmind` pair travels with the parent inode).
+//
+// The folder path was previously only reachable via `workspace_rename_folder`;
+// consolidating both into `doc_move` so the sidebar's drag-and-drop dispatch
+// is a single command regardless of source kind. ADR 0005's pair-atomicity
+// invariant is preserved by relying on the OS's directory rename semantics:
+// either the whole subtree moves, or none of it does.
 #[tauri::command]
 fn doc_move(
     root: String,
     old_path: String,
     new_path: String,
-) -> Result<WorkspaceDocumentDto, String> {
-    move_document_pair(&root, &old_path, &new_path)
+) -> Result<MoveResultDto, String> {
+    let canonical_root = canonical_workspace_root(&root)?;
+    let source = resolve_existing_workspace_path(&canonical_root, &old_path)?;
+    if source.is_dir() {
+        move_folder(&canonical_root, &old_path, &new_path)?;
+        Ok(MoveResultDto::Folder { path: new_path })
+    } else {
+        move_document_pair(&root, &old_path, &new_path).map(MoveResultDto::Document)
+    }
+}
+
+fn move_folder(
+    canonical_root: &Path,
+    old_path: &str,
+    new_path: &str,
+) -> Result<(), String> {
+    let source = resolve_existing_workspace_path(canonical_root, old_path)?;
+    if !source.is_dir() {
+        return Err(format!("folder is not a directory: {old_path}"));
+    }
+    let destination = resolve_workspace_path_for_write(canonical_root, new_path)?;
+    if destination.exists() {
+        return Err(format!("destination already exists: {new_path}"));
+    }
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create destination directory: {err}"))?;
+    }
+    fs::rename(&source, &destination).map_err(|err| format!("failed to move folder: {err}"))
 }
 
 #[tauri::command]
@@ -1180,19 +1231,7 @@ fn workspace_create_folder(root: String, path: String) -> Result<(), String> {
 #[tauri::command]
 fn workspace_rename_folder(root: String, old_path: String, new_path: String) -> Result<(), String> {
     let root = canonical_workspace_root(&root)?;
-    let source = resolve_existing_workspace_path(&root, &old_path)?;
-    if !source.is_dir() {
-        return Err(format!("folder is not a directory: {old_path}"));
-    }
-    let destination = resolve_workspace_path_for_write(&root, &new_path)?;
-    if destination.exists() {
-        return Err(format!("destination already exists: {new_path}"));
-    }
-    if let Some(parent) = destination.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("failed to create destination directory: {err}"))?;
-    }
-    fs::rename(&source, &destination).map_err(|err| format!("failed to move folder: {err}"))
+    move_folder(&root, &old_path, &new_path)
 }
 
 #[tauri::command]
@@ -2796,6 +2835,58 @@ mod tests {
         assert!(workspace.path.join("folder/.b.doxmind").exists());
         assert!(!workspace.path.join("a.md").exists());
         assert!(!workspace.path.join(".a.doxmind").exists());
+    }
+
+    #[test]
+    fn doc_move_moves_folder_with_nested_pairs_atomically() {
+        // Mirrors `doc_move_moves_markdown_and_sidecar_pair` but for the
+        // folder branch added in #66. The OS-level directory rename moves
+        // every nested `.md` + `.doxmind` pair as part of the same operation;
+        // this test guards the contract surfaced through `doc_move`.
+        let workspace = TempWorkspace::new("move-folder");
+        std::fs::create_dir_all(workspace.path.join("notes/inbox")).expect("create subfolders");
+        write_file(&workspace.path.join("notes/a.md"), "# A\n");
+        write_file(&workspace.path.join("notes/.a.doxmind"), r#"{"id":"a"}"#);
+        write_file(&workspace.path.join("notes/inbox/b.md"), "# B\n");
+        write_file(
+            &workspace.path.join("notes/inbox/.b.doxmind"),
+            r#"{"id":"b"}"#,
+        );
+
+        let result = doc_move(workspace.root(), "notes".into(), "archive/notes".into())
+            .expect("move folder");
+
+        match result {
+            MoveResultDto::Folder { path } => assert_eq!(path, "archive/notes"),
+            MoveResultDto::Document(_) => panic!("expected Folder result"),
+        }
+
+        // Old subtree gone.
+        assert!(!workspace.path.join("notes").exists());
+
+        // New subtree has every nested document AND its sidecar — pair atomicity per ADR 0005.
+        assert!(workspace.path.join("archive/notes/a.md").exists());
+        assert!(workspace.path.join("archive/notes/.a.doxmind").exists());
+        assert!(workspace.path.join("archive/notes/inbox/b.md").exists());
+        assert!(workspace.path.join("archive/notes/inbox/.b.doxmind").exists());
+    }
+
+    #[test]
+    fn doc_move_rejects_folder_destination_collision() {
+        let workspace = TempWorkspace::new("move-folder-collision");
+        std::fs::create_dir_all(workspace.path.join("a")).expect("create a");
+        std::fs::create_dir_all(workspace.path.join("b")).expect("create b");
+
+        let err = doc_move(workspace.root(), "a".into(), "b".into())
+            .expect_err("destination collision must reject");
+
+        assert!(
+            err.contains("destination already exists"),
+            "unexpected error: {err}"
+        );
+        // Both folders still present — no partial state.
+        assert!(workspace.path.join("a").is_dir());
+        assert!(workspace.path.join("b").is_dir());
     }
 
     #[test]

@@ -428,6 +428,7 @@
     "movedToFolder": "File moved to folder",
     "movedToRoot": "File moved to root",
     "failedToMove": "Failed to move file",
+    "folderExistsAtDestination": "Folder already exists at destination",
     "folderRenamed": "Folder renamed",
     "createFirstFile": "Create your first file or import existing documents",
     "fileSelected": "{count} file selected",
