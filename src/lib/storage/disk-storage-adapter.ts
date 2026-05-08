@@ -48,6 +48,13 @@ interface WorkspaceDocumentDto {
   favorite?: boolean | null;
 }
 
+// Polymorphic return shape for `doc_move`. The Tauri command and the
+// browser-dev fallback both tag the result with `kind` so the frontend
+// narrows correctly per source type — see #66 for the consolidation.
+type MoveResultDto =
+  | ({ kind: "document" } & WorkspaceDocumentDto)
+  | { kind: "folder"; path: string };
+
 interface DocReadResultDto {
   html: string;
   markdown: string;
@@ -375,21 +382,35 @@ export class DiskStorageAdapter implements StorageAdapter {
             hasSidecar: false,
           });
     }
+    // `doc_move` is polymorphic — it handles both documents (returns a doc
+    // DTO with metadata for in-place refresh) and folders (returns just the
+    // new path; metadata is rebuilt by the next scan). Renames keep using the
+    // dedicated rename commands because in-place rename has different
+    // semantics from cross-parent move at the UI layer.
     if (handle.kind === "folder") {
-      await this.invoke<void>("workspace_rename_folder", {
+      const result = await this.invoke<MoveResultDto>("doc_move", {
         root: this.requireRoot(),
         oldPath: currentPath,
         newPath,
       });
-      return folderEntryFromPath(newPath);
+      // The Tauri/server backend may return either shape; we only care that
+      // the destination path matches what we asked for.
+      const destinationPath = result.kind === "folder" ? result.path : result.path;
+      return folderEntryFromPath(destinationPath);
     }
 
-    const document = await this.invoke<WorkspaceDocumentDto>("doc_move", {
+    const result = await this.invoke<MoveResultDto>("doc_move", {
       root: this.requireRoot(),
       oldPath: currentPath,
       newPath,
     });
-    return entryFromDocument(document);
+    if (result.kind === "folder") {
+      // Defensive: should never happen for document handles, but guard the
+      // narrowing so a backend regression surfaces here rather than breaking
+      // entry refresh downstream.
+      throw new Error(`doc_move returned folder result for document handle: ${currentPath}`);
+    }
+    return entryFromDocument(result);
   }
 
   async delete(handle: DocumentHandle): Promise<void> {

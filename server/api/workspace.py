@@ -212,7 +212,7 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
             str(payload.get("newPath") or ""),
         )
     if command == "doc_move":
-        return move_document_pair(
+        return doc_move(
             str(payload.get("root") or ""),
             str(payload.get("oldPath") or ""),
             str(payload.get("newPath") or ""),
@@ -705,6 +705,38 @@ def move_document_pair(root: str, old_path: str, new_path: str) -> dict[str, Any
         source_sidecar.rename(destination_sidecar)
     _invalidate_scan_cache(workspace)
     return document_dto_for_path(workspace, destination)
+
+
+def move_folder(root: str, old_path: str, new_path: str) -> dict[str, Any]:
+    """Move a folder atomically. Pair atomicity (ADR 0005) is preserved by
+    relying on the OS's directory rename: every nested `.md` + `.doxmind`
+    pair travels with the parent inode, so either the whole subtree moves or
+    none of it does."""
+    workspace = canonical_workspace_root(root)
+    source = resolve_existing_workspace_path(workspace, old_path)
+    if not source.is_dir():
+        raise ValueError(f"folder is not a directory: {old_path}")
+    destination = resolve_workspace_path_for_write(workspace, new_path)
+    if destination.exists():
+        raise ValueError(f"destination already exists: {new_path}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    source.rename(destination)
+    _invalidate_scan_cache(workspace)
+    return {"kind": "folder", "path": new_path}
+
+
+def doc_move(root: str, old_path: str, new_path: str) -> dict[str, Any]:
+    """Polymorphic move: delegates to `move_document_pair` for documents and
+    to `move_folder` for directories. Mirrors the Tauri `doc_move` command so
+    the browser-dev fallback honours the same contract."""
+    workspace = canonical_workspace_root(root)
+    source = resolve_existing_workspace_path(workspace, old_path)
+    if source.is_dir():
+        return move_folder(root, old_path, new_path)
+    payload = move_document_pair(root, old_path, new_path)
+    payload = dict(payload)
+    payload["kind"] = "document"
+    return payload
 
 
 def doc_delete(root: str, rel_path: str) -> dict[str, Any]:
