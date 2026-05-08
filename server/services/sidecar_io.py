@@ -22,7 +22,15 @@ from typing import Any
 
 import markdown
 
-SIDECAR_VERSION = 1
+SIDECAR_VERSION = 2
+"""
+Bumped 1 → 2 alongside the CJK math-content gate (ADR 0006). v1 sidecars
+have a `html` field that may contain `<inline-math>` / `<block-math>` nodes
+whose latex is CJK — false positives produced before the gate existed. We
+treat any v1 sidecar as stale and rebuild HTML from the .md file (extras are
+salvaged per Custom Block rules). Future schema changes that need to
+invalidate the cached HTML follow the same lever.
+"""
 
 TASK_ITEM_RE = re.compile(r"^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$")
 
