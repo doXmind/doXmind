@@ -8,6 +8,7 @@ import { Node, mergeAttributes, InputRule, PasteRule } from "@tiptap/core";
 import type { NodeType } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { MathNodeView } from "@/components/editor/math/math-node-view";
+import { containsCjk } from "./cjk";
 
 export interface BlockMathOptions {
   HTMLAttributes: Record<string, unknown>;
@@ -51,6 +52,7 @@ const blockMathInputRule = (type: NodeType) => {
 
       const latex = match[1] || "";
       const trailingSpace = match[2];
+      if (containsCjk(latex)) return null;
       const { tr } = state;
       const start = range.from;
       const end = range.to;
@@ -77,6 +79,7 @@ const blockMathPasteRule = (type: NodeType) => {
       if (isInsideTableCell(state.doc, range.from)) return null;
 
       const latex = match[1] || "";
+      if (containsCjk(latex)) return null;
       const { tr } = state;
 
       tr.replaceWith(range.from, range.to, type.create({ latex: latex.trim() }));

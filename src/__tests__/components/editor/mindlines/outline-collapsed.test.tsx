@@ -103,15 +103,16 @@ describe("OutlineCollapsed", () => {
     vi.useRealTimers();
   });
 
-  it("opens a floating outline on hover and closes after delay", () => {
+  it("opens a floating outline instantly on hover and closes after a short delay", () => {
     render(<OutlineCollapsed headings={headings} activeId="h-10" onNavigate={vi.fn()} />);
 
     expect(screen.queryByRole("navigation", { name: "Document outline" })).not.toBeInTheDocument();
 
     const railSensor = screen.getByTestId("outline-rail-hover-sensor");
 
+    // Open is instant — the previous 120ms primed delay was perceived as
+    // outline lag on big docs; we now mount the popover on the same tick.
     fireEvent.mouseEnter(railSensor);
-    act(() => vi.advanceTimersByTime(120));
 
     expect(screen.getByRole("navigation", { name: "Document outline" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Navigate to: Overview" })).not.toBeInTheDocument();
@@ -121,30 +122,29 @@ describe("OutlineCollapsed", () => {
     );
 
     fireEvent.mouseLeave(railSensor, { clientX: 500, clientY: 500 });
-    act(() => vi.advanceTimersByTime(179));
+    act(() => vi.advanceTimersByTime(59));
     expect(screen.getByRole("navigation", { name: "Document outline" })).toBeInTheDocument();
 
     act(() => vi.advanceTimersByTime(1));
     expect(screen.queryByRole("navigation", { name: "Document outline" })).not.toBeInTheDocument();
   });
 
-  it("keeps hit testing scoped to the rail until the popover mounts", () => {
+  it("keeps the rail trigger full width while the popover is open", () => {
     render(<OutlineCollapsed headings={headings} activeId="h-10" onNavigate={vi.fn()} />);
 
     const railRoot = screen.getByTestId("outline-rail-root");
     const railTrigger = screen.getByTestId("outline-rail-trigger");
     const railSensor = screen.getByTestId("outline-rail-hover-sensor");
 
-    fireEvent.mouseEnter(railSensor);
-
     expect(railRoot).toHaveStyle({ width: "100%" });
     expect(railTrigger).toHaveStyle({ width: "100%" });
     expect(screen.queryByRole("navigation", { name: "Document outline" })).not.toBeInTheDocument();
 
-    act(() => vi.advanceTimersByTime(120));
+    fireEvent.mouseEnter(railSensor);
 
     expect(screen.getByRole("navigation", { name: "Document outline" })).toBeInTheDocument();
     expect(railRoot).toHaveStyle({ width: "100%" });
+    expect(railTrigger).toHaveStyle({ width: "100%" });
   });
 
   it("keeps the primed open alive while the pointer remains in the rail hit area", () => {

@@ -20,7 +20,7 @@ import type {
 import { entriesToWorkspaceIndex } from "./search";
 import { apiUrl } from "@/lib/api/base";
 import { perfAsync } from "@/lib/perf";
-import { unwrapMathInTableCells } from "@/lib/markdown";
+import { unwrapCjkMath, unwrapMathInTableCells } from "@/lib/markdown";
 
 type TauriInvoker = <T>(command: string, payload: Record<string, unknown>) => Promise<T>;
 
@@ -109,7 +109,7 @@ export class DiskStorageAdapter implements StorageAdapter {
     return {
       handle: this.handleFromRead(handle, result),
       name: basename(handle.path || handle.relPath || result.meta.title || "Untitled.md"),
-      html: unwrapMathInTableCells(result.html),
+      html: unwrapCjkMath(unwrapMathInTableCells(result.html)),
       markdown: result.markdown,
       meta: result.meta,
       extras: result.extras,

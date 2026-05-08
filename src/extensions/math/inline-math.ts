@@ -8,6 +8,7 @@ import { Node, mergeAttributes, InputRule, PasteRule } from "@tiptap/core";
 import type { NodeType } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { MathNodeView } from "@/components/editor/math/math-node-view";
+import { containsCjk } from "./cjk";
 import { createMathMigrationPlugin } from "./math-migration-plugin";
 
 export interface InlineMathOptions {
@@ -54,6 +55,7 @@ const inlineMathInputRule = (type: NodeType) => {
       const latex = match[1];
       const trailingSpace = match[2];
       if (!latex?.trim()) return null;
+      if (containsCjk(latex)) return null;
 
       const { tr } = state;
       const start = range.from;
@@ -83,6 +85,7 @@ const inlineMathPasteRule = (type: NodeType) => {
 
       const latex = match[1];
       if (!latex?.trim()) return null;
+      if (containsCjk(latex)) return null;
 
       const { tr } = state;
       tr.replaceWith(range.from, range.to, type.create({ latex: latex.trim() }));

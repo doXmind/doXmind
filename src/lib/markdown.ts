@@ -5,6 +5,8 @@
 
 import { marked } from "marked";
 
+import { containsCjk } from "@/extensions/math/cjk";
+
 // Configure marked to handle mermaid code fences
 marked.use({
   renderer: {
@@ -120,12 +122,46 @@ export function unwrapMathInTableCells(html: string): string {
   return template.innerHTML;
 }
 
+/**
+ * Reverts `$...$` / `$$...$$` math spans whose `data-latex` contains CJK
+ * back to their literal markdown form. Math auto-recognition is gated on
+ * content (see docs/adr/0006-feature-scope-typora-notion.md): CJK paragraphs
+ * use `$X$` as quoting/emphasis, not LaTeX, and converting them produces
+ * broken KaTeX output and a flood of strict-mode warnings. The marked tokenizer
+ * has no language gate, so we strip after parse — the editor-side InputRule /
+ * PasteRule / migration plugin gate independently.
+ */
+export function unwrapCjkMath(html: string): string {
+  if (typeof document === "undefined") return html; // SSR fallback
+  if (!html.includes("data-type=")) return html;
+
+  const template = document.createElement("template");
+  template.innerHTML = html;
+
+  const mathNodes = template.content.querySelectorAll(
+    '[data-type="inline-math"], [data-type="block-math"]'
+  );
+  if (mathNodes.length === 0) return html;
+
+  let touched = false;
+  for (const node of Array.from(mathNodes)) {
+    const latex = node.getAttribute("data-latex") || "";
+    if (!containsCjk(latex)) continue;
+    const isBlock = node.getAttribute("data-type") === "block-math";
+    const literal = isBlock ? `$$${latex}$$` : `$${latex}$`;
+    node.replaceWith(document.createTextNode(literal));
+    touched = true;
+  }
+
+  return touched ? template.innerHTML : html;
+}
+
 export function markdownToHtml(markdown: string): string {
   if (!markdown || markdown.trim() === "") return "<p></p>";
 
   try {
     const html = marked.parse(markdown, { async: false }) as string;
-    return unwrapMathInTableCells(html);
+    return unwrapCjkMath(unwrapMathInTableCells(html));
   } catch (e) {
     console.error("Markdown to HTML conversion error:", e);
     return `<p>${markdown}</p>`;

@@ -26,6 +26,8 @@ commands.allow = [
   "workspace_index_read",
   "workspace_markdown_search",
   "doc_create",
+  "doc_create_pdf",
+  "doc_create_excel",
   "doc_rename",
   "doc_move",
   "doc_delete",
@@ -38,6 +40,9 @@ commands.allow = [
   "force_open_new_window_for_target",
   "register_window_target",
   "unregister_window_target",
+  "current_window_open_target",
+  "get_backend_url",
   "dock_set_recents",
   "save_window_pdf",
+  "take_pending_open_paths",
 ]

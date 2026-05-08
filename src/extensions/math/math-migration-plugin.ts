@@ -7,6 +7,7 @@
 
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
+import { containsCjk } from "./cjk";
 
 export const MathMigrationPluginKey = new PluginKey("mathMigration");
 
@@ -17,12 +18,22 @@ const BLOCK_MATH_PATTERN = /\$\$([\s\S]*?)\$\$/g;
 const INLINE_MATH_PATTERN = /(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g;
 
 /**
- * Check if a text string contains math delimiters
+ * Check if a text string contains at least one math delimiter pair whose
+ * content does NOT contain CJK. CJK-only matches are gated out by ADR 0006
+ * so they aren't migration targets — counting them would make the plugin
+ * loop forever (replace → no-op → re-trigger).
  */
 function containsMathDelimiters(text: string): boolean {
-  BLOCK_MATH_PATTERN.lastIndex = 0;
-  INLINE_MATH_PATTERN.lastIndex = 0;
-  return BLOCK_MATH_PATTERN.test(text) || INLINE_MATH_PATTERN.test(text);
+  return hasNonCjkMatch(text, BLOCK_MATH_PATTERN) || hasNonCjkMatch(text, INLINE_MATH_PATTERN);
+}
+
+function hasNonCjkMatch(text: string, re: RegExp): boolean {
+  re.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (!containsCjk(m[1] ?? "")) return true;
+  }
+  return false;
 }
 
 /**
@@ -32,11 +43,14 @@ function processTextWithMath(text: string, schema: Schema): PMNode[] {
   const nodes: PMNode[] = [];
   let lastIndex = 0;
 
-  // First pass: find all block math ($$...$$)
+  // First pass: find all block math ($$...$$). CJK-content matches are
+  // skipped per ADR 0006 — they fall through to be emitted verbatim as
+  // text alongside the surrounding paragraph.
   const blockMatches: Array<{ start: number; end: number; latex: string }> = [];
   let blockMatch;
   BLOCK_MATH_PATTERN.lastIndex = 0;
   while ((blockMatch = BLOCK_MATH_PATTERN.exec(text)) !== null) {
+    if (containsCjk(blockMatch[1] ?? "")) continue;
     blockMatches.push({
       start: blockMatch.index,
       end: blockMatch.index + blockMatch[0].length,
@@ -84,6 +98,11 @@ function processInlineMath(text: string, schema: Schema): PMNode[] {
 
   INLINE_MATH_PATTERN.lastIndex = 0;
   while ((inlineMatch = INLINE_MATH_PATTERN.exec(text)) !== null) {
+    // CJK-content `$...$` is gated per ADR 0006: leave it as text. We don't
+    // advance `lastIndex`, so the literal `$市值$` will be folded into the
+    // next slice that gets emitted as a text node.
+    if (containsCjk(inlineMatch[1] ?? "")) continue;
+
     // Text before this inline math
     if (inlineMatch.index > lastIndex) {
       const beforeText = text.slice(lastIndex, inlineMatch.index);
