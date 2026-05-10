@@ -38,6 +38,8 @@ declare global {
      */
     __doxmindSwitchStartMark?: string;
     __doxmindSwitchFileId?: string;
+    __doxmindEditorActivationStartMark?: string;
+    __doxmindEditorActivationFileId?: string;
   }
 }
 

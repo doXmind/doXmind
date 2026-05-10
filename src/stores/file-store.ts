@@ -9,6 +9,7 @@ import { documentTypeFromName } from "@/lib/document-types";
 import {
   createStorageAdapter,
   type DocumentHandle,
+  type DocumentContent,
   type StorageAdapter,
   type WorkspaceEntry,
 } from "@/lib/storage";
@@ -223,11 +224,55 @@ function handleForFile(file: FileItem): DocumentHandle {
   );
 }
 
-function fileFromEntry(entry: WorkspaceEntry, existingContent?: string): FileItem {
+type LoadedReadModel = Pick<
+  FileItem,
+  | "content"
+  | "editorHtml"
+  | "browsingHtml"
+  | "contentMarkdown"
+  | "sourceState"
+  | "outline"
+  | "browsingRendererVersion"
+>;
+
+function readModelFromContent(content: DocumentContent): LoadedReadModel {
+  const editorHtml = content.editorHtml ?? content.html ?? "";
+  const browsingHtml = content.browsingHtml ?? editorHtml;
+  return {
+    content: editorHtml,
+    editorHtml,
+    browsingHtml,
+    contentMarkdown: content.markdown ?? null,
+    sourceState: content.sourceState,
+    outline: content.outline ?? [],
+    browsingRendererVersion: content.browsingRendererVersion,
+  };
+}
+
+function readModelFromFile(file: FileItem): LoadedReadModel {
+  const editorHtml = file.editorHtml ?? file.content ?? "";
+  return {
+    content: file.content ?? editorHtml,
+    editorHtml,
+    browsingHtml: file.browsingHtml ?? editorHtml,
+    contentMarkdown: file.contentMarkdown ?? null,
+    sourceState: file.sourceState,
+    outline: file.outline,
+    browsingRendererVersion: file.browsingRendererVersion,
+  };
+}
+
+function fileFromEntry(entry: WorkspaceEntry, existingReadModel?: LoadedReadModel): FileItem {
   return {
     id: entry.handle.id,
     name: entry.name,
-    content: existingContent ?? "",
+    content: existingReadModel?.content ?? "",
+    editorHtml: existingReadModel?.editorHtml,
+    browsingHtml: existingReadModel?.browsingHtml,
+    contentMarkdown: existingReadModel?.contentMarkdown,
+    sourceState: existingReadModel?.sourceState,
+    outline: existingReadModel?.outline,
+    browsingRendererVersion: existingReadModel?.browsingRendererVersion,
     isFolder: entry.kind === "folder",
     parentId: entry.parent?.id ?? null,
     position: entry.position || 0,
@@ -311,17 +356,17 @@ export const useFileStore = create<FileState>()(
             );
 
             // Build a map of previously loaded content to merge into new file list
-            const prevContentMap = new Map<string, string>();
+            const prevReadModelMap = new Map<string, LoadedReadModel>();
             if (preservedContentIds.size > 0) {
               for (const f of state.files) {
                 if (preservedContentIds.has(f.id) && f.content) {
-                  prevContentMap.set(f.id, f.content);
+                  prevReadModelMap.set(f.id, readModelFromFile(f));
                 }
               }
             }
 
             const files: FileItem[] = entries.map((entry) =>
-              fileFromEntry(entry, prevContentMap.get(entry.handle.id))
+              fileFromEntry(entry, prevReadModelMap.get(entry.handle.id))
             );
 
             // Clear currentFileId / currentFolderId if they no longer exist
@@ -406,9 +451,20 @@ export const useFileStore = create<FileState>()(
                   // string, the editor's [file.content] effect re-runs setContent
                   // and resets scroll/selection. Compare HTML byte-for-byte and
                   // skip the slice update when unchanged.
-                  const htmlUnchanged = existing.content === fullFile.html;
+                  const nextReadModel = readModelFromContent(fullFile);
+                  const htmlUnchanged = existing.content === nextReadModel.content;
+                  const browsingHtmlUnchanged =
+                    (existing.browsingHtml ?? existing.content) === nextReadModel.browsingHtml;
+                  const outlineUnchanged =
+                    JSON.stringify(existing.outline ?? []) ===
+                    JSON.stringify(nextReadModel.outline ?? []);
                   const handleIdUnchanged = existing.id === fullFile.handle.id;
-                  if (htmlUnchanged && handleIdUnchanged) {
+                  if (
+                    htmlUnchanged &&
+                    browsingHtmlUnchanged &&
+                    outlineUnchanged &&
+                    handleIdUnchanged
+                  ) {
                     return {
                       loadedContentIds: new Set([...state.loadedContentIds, fullFile.handle.id]),
                     };
@@ -420,8 +476,7 @@ export const useFileStore = create<FileState>()(
                         ? {
                             ...f,
                             id: fullFile.handle.id,
-                            content: fullFile.html,
-                            contentMarkdown: fullFile.markdown ?? null,
+                            ...nextReadModel,
                             storageHandle: fullFile.handle,
                           }
                         : f
@@ -490,9 +545,9 @@ export const useFileStore = create<FileState>()(
         const now = new Date().toISOString();
         let looseFile: FileItem;
 
-        if (documentType === "pdf") {
-          // PDF binary is loaded on demand by the editor; we just need a
-          // stable FileItem so the editor can resolve the current file.
+        if (documentType === "pdf" || documentType === "excel") {
+          // Binary documents are loaded on demand by their workspaces; we just
+          // need a stable FileItem so the editor can resolve the current file.
           looseFile = {
             id: handle.id,
             name: fileBase,
@@ -508,17 +563,17 @@ export const useFileStore = create<FileState>()(
             updatedAt: now,
             wordCount: 0,
             preview: "",
-            documentType: "pdf",
+            documentType,
             storageHandle: handle,
           };
         } else {
           const content = await adapter.read(handle);
           syncDatabasesForDocument(content.extras, content.html, content.markdown);
+          const readModel = readModelFromContent(content);
           looseFile = {
             id: content.handle.id || handle.id,
             name: fileBase,
-            content: content.html,
-            contentMarkdown: content.markdown ?? null,
+            ...readModel,
             isFolder: false,
             parentId: null,
             position: 0,
@@ -619,7 +674,16 @@ export const useFileStore = create<FileState>()(
               content: { html: content, markdown: "" },
             });
           }
-          const newFile = { ...fileFromEntry(entry, storedContent), content: storedContent };
+          const newFile = {
+            ...fileFromEntry(entry, {
+              content: storedContent,
+              editorHtml: storedContent,
+              browsingHtml: storedContent,
+              contentMarkdown: "",
+              outline: [],
+            }),
+            content: storedContent,
+          };
 
           set((state) => ({
             files: [newFile, ...state.files],
@@ -678,8 +742,7 @@ export const useFileStore = create<FileState>()(
                       ...item,
                       id: content.handle.id,
                       name: updates.name ?? content.name,
-                      content: content.html,
-                      contentMarkdown: content.markdown,
+                      ...readModelFromContent(content),
                       storageHandle: content.handle,
                       updatedAt: content.updatedAt,
                     }
@@ -694,8 +757,7 @@ export const useFileStore = create<FileState>()(
                 item.id === id
                   ? {
                       ...item,
-                      ...fileFromEntry(updatedEntry!, item.content),
-                      content: item.content,
+                      ...fileFromEntry(updatedEntry!, readModelFromFile(item)),
                     }
                   : item
               ),
@@ -819,6 +881,9 @@ export const useFileStore = create<FileState>()(
           name,
           content: "",
           contentMarkdown: "",
+          editorHtml: "",
+          browsingHtml: "",
+          outline: [],
           isFolder: false,
           parentId: null,
           position: 0,
@@ -858,7 +923,14 @@ export const useFileStore = create<FileState>()(
           transientFile: updated,
           files: state.files.map((f) =>
             f.id === transient.id
-              ? { ...f, content, contentMarkdown, updatedAt: new Date().toISOString() }
+              ? {
+                  ...f,
+                  content,
+                  editorHtml: content,
+                  browsingHtml: content,
+                  contentMarkdown,
+                  updatedAt: new Date().toISOString(),
+                }
               : f
           ),
         }));
@@ -1094,7 +1166,7 @@ export const useFileStore = create<FileState>()(
           set((state) => ({
             files: state.files.map((file) =>
               file.id === fileId
-                ? { ...file, ...fileFromEntry(moved, file.content), content: file.content }
+                ? { ...file, ...fileFromEntry(moved, readModelFromFile(file)) }
                 : file
             ),
           }));
@@ -1130,15 +1202,13 @@ export const useFileStore = create<FileState>()(
             // Touch updatedAt by replacing the entry in place; the sidecar is
             // intentionally left alone on disk so the next open trips Salvage.
             set((state) => ({
-              files: state.files.map((f) =>
-                f.id === existing.id ? { ...f, content: "" } : f
-              ),
+              files: state.files.map((f) => (f.id === existing.id ? { ...f, content: "" } : f)),
             }));
             eventBus.emit("storage:changed");
             return existing.id;
           }
         }
-        const newFile = fileFromEntry(entry, "");
+        const newFile = fileFromEntry(entry);
         set((state) => ({
           files: [newFile, ...state.files],
           justCreatedFileId: newFile.id,

@@ -2796,7 +2796,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   const canRedo = future.length > 0;
 
   return (
-    <div className="flex h-full w-full flex-col bg-background">
+    <div data-testid="excel-runtime" className="flex h-full w-full flex-col bg-background">
       {/* Top toolbar — split into two rows by frequency. Row 1 holds the
           high-frequency cell-formatting cluster (font, B/I/U, colors,
           alignment, borders, merge, clear). Row 2 holds the

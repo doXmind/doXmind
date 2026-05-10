@@ -15,11 +15,17 @@ export interface DocumentHandle {
 export interface DocumentContent {
   handle: DocumentHandle;
   name: string;
+  /** Backward-compatible alias for editorHtml. */
   html: string;
+  editorHtml: string;
+  browsingHtml: string;
   markdown: string | null;
   meta?: DocumentMeta;
   extras?: unknown;
   source?: "sidecar" | "markdown" | "empty";
+  sourceState?: DocumentSourceState;
+  outline?: DocumentOutlineItem[];
+  browsingRendererVersion?: string;
   documentType?: WorkspaceDocumentType;
   updatedAt: string;
   /**
@@ -30,6 +36,19 @@ export interface DocumentContent {
    * it. See `docs/adr/0004-custom-block-registry-split-and-correlation.md`.
    */
   correlation?: CorrelationReport | null;
+}
+
+export type DocumentSourceState =
+  | "sidecar_fresh"
+  | "sidecar_stale"
+  | "sidecar_missing"
+  | "sidecar_corrupt"
+  | "empty";
+
+export interface DocumentOutlineItem {
+  id: string;
+  depth: 1 | 2 | 3 | 4 | 5 | 6;
+  text: string;
 }
 
 export type CorrelationEventKind = "orphan" | "duplicate" | "new";

@@ -1,11 +1,20 @@
 import type { DocumentHandle } from "@/lib/storage";
-import type { WorkspaceDocumentType } from "@/lib/storage/types";
+import type {
+  DocumentOutlineItem,
+  DocumentSourceState,
+  WorkspaceDocumentType,
+} from "@/lib/storage/types";
 
 export interface FileItem {
   id: string;
   name: string;
   content: string;
+  editorHtml?: string;
+  browsingHtml?: string;
   contentMarkdown?: string | null;
+  sourceState?: DocumentSourceState;
+  outline?: DocumentOutlineItem[];
+  browsingRendererVersion?: string;
   storageHandle?: DocumentHandle;
   documentType?: WorkspaceDocumentType;
   isFolder: boolean;

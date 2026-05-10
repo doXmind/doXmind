@@ -3,6 +3,8 @@ import type {
   DocumentContent,
   DocumentHandle,
   DocumentMeta,
+  DocumentOutlineItem,
+  DocumentSourceState,
   ExcelDocStateRead,
   ExcelEditorState,
   PdfDocStateRead,
@@ -59,10 +61,15 @@ type MoveResultDto =
 
 interface DocReadResultDto {
   html: string;
+  editorHtml?: string;
+  browsingHtml?: string;
   markdown: string;
   meta: DocumentMeta;
   extras?: unknown;
   source: "sidecar" | "markdown" | "empty";
+  sourceState?: DocumentSourceState;
+  outline?: DocumentOutlineItem[];
+  browsingRendererVersion?: string;
   correlation?: CorrelationReport | null;
 }
 
@@ -115,14 +122,21 @@ export class DiskStorageAdapter implements StorageAdapter {
         }),
       { path: requireHandlePath(handle) }
     );
+    const editorHtml = unwrapCjkMath(unwrapMathInTableCells(result.editorHtml ?? result.html));
+    const browsingHtml = result.browsingHtml ?? editorHtml;
     return {
       handle: this.handleFromRead(handle, result),
       name: basename(handle.path || handle.relPath || result.meta.title || "Untitled.md"),
-      html: unwrapCjkMath(unwrapMathInTableCells(result.html)),
+      html: editorHtml,
+      editorHtml,
+      browsingHtml,
       markdown: result.markdown,
       meta: result.meta,
       extras: result.extras,
       source: result.source,
+      sourceState: result.sourceState ?? legacySourceToState(result.source),
+      outline: result.outline ?? [],
+      browsingRendererVersion: result.browsingRendererVersion,
       documentType: "markdown",
       updatedAt: result.meta.updated || new Date().toISOString(),
       correlation: result.correlation ?? null,
@@ -249,14 +263,21 @@ export class DiskStorageAdapter implements StorageAdapter {
     });
 
     const nextHandle = this.handleFromRead(handle, result);
+    const editorHtml = result.editorHtml ?? result.html;
+    const browsingHtml = result.browsingHtml ?? editorHtml;
     return {
       handle: nextHandle,
       name: basename(handle.path || handle.relPath || result.meta.title || "Untitled.md"),
-      html: result.html,
+      html: editorHtml,
+      editorHtml,
+      browsingHtml,
       markdown: result.markdown,
       meta: result.meta,
       extras: result.extras,
       source: result.source,
+      sourceState: result.sourceState ?? legacySourceToState(result.source),
+      outline: result.outline ?? [],
+      browsingRendererVersion: result.browsingRendererVersion,
       documentType: "markdown",
       updatedAt: result.meta.updated || new Date().toISOString(),
       correlation: result.correlation ?? null,
@@ -715,4 +736,10 @@ function documentTypeFromPath(path: string): WorkspaceDocumentType {
   if (/\.pdf$/i.test(path)) return "pdf";
   if (/\.(xlsx|xlsm)$/i.test(path)) return "excel";
   return "markdown";
+}
+
+function legacySourceToState(source: DocReadResultDto["source"]): DocumentSourceState {
+  if (source === "sidecar") return "sidecar_fresh";
+  if (source === "empty") return "empty";
+  return "sidecar_missing";
 }

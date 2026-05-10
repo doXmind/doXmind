@@ -144,9 +144,14 @@ function exitTextBlockContainerAtEnd(
 interface EditorProps {
   file: FileItem;
   reservedRightInset?: number;
+  initialScrollTop?: number;
 }
 
-export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProps) {
+export function Editor({
+  file: initialFile,
+  reservedRightInset = 0,
+  initialScrollTop = 0,
+}: EditorProps) {
   // Subscribe to specific file via selector — avoids re-render when OTHER files change
   const updateFile = useFileStore((s) => s.updateFile);
   const storeFile = useFileStore((s) => s.files.find((f) => f.id === initialFile.id));
@@ -170,6 +175,7 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
   const lineHeight = useLayoutStore((s) => s.lineHeight);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const restoredInitialScrollRef = useRef(false);
   const lastContentRef = useRef(file.content);
   const isFileSwitchingRef = useRef(false);
   // Track database block IDs in the document to detect removals on save
@@ -603,9 +609,20 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
       domObserver?.start();
 
       if (scrollAreaRef.current) {
+        const shouldRestoreActivationScroll =
+          initialScrollTop > 0 && !restoredInitialScrollRef.current;
         // isEmpty: content arrived after navigation, land at the top.
+        // Activation from browsing mode carries the browsing scroll offset
+        // into the first full-editor mount; preserve that instead of treating
+        // it like a cold document open.
         // Otherwise: external edit reconcile, keep the user's viewport.
-        scrollAreaRef.current.scrollTop = isEmpty ? 0 : preservedScrollTop;
+        if (shouldRestoreActivationScroll) {
+          scrollAreaRef.current.scrollTop = initialScrollTop > 0 ? initialScrollTop : 0;
+        } else if (isEmpty) {
+          scrollAreaRef.current.scrollTop = 0;
+        } else {
+          scrollAreaRef.current.scrollTop = preservedScrollTop;
+        }
       }
 
       requestAnimationFrame(() => {
@@ -616,7 +633,40 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
       clearTimeout(timeoutId);
       isFileSwitchingRef.current = false;
     };
-  }, [file.content, editor]);
+  }, [file.content, editor, initialScrollTop]);
+
+  useEffect(() => {
+    if (!editor || initialScrollTop <= 0 || restoredInitialScrollRef.current) return;
+    const delays = [0, 16, 50, 100, 250, 500];
+    const timers = delays.map((delay, index) =>
+      window.setTimeout(() => {
+        if (scrollAreaRef.current) {
+          scrollAreaRef.current.scrollTop = initialScrollTop;
+        }
+        if (index === delays.length - 1) {
+          restoredInitialScrollRef.current = true;
+        }
+      }, delay)
+    );
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [editor, initialScrollTop]);
+
+  useEffect(() => {
+    if (!editor || typeof window === "undefined") return;
+    const startMark = window.__doxmindEditorActivationStartMark;
+    const fileIdAtStart = window.__doxmindEditorActivationFileId;
+    if (!startMark || fileIdAtStart !== file.id) return;
+    const frame = requestAnimationFrame(() => {
+      perfMeasure("doxmind.editor.activation.firstPaint", startMark, undefined, {
+        fileId: file.id,
+        documentType: "markdown",
+        runtime: "full-editor",
+      });
+      window.__doxmindEditorActivationStartMark = undefined;
+      window.__doxmindEditorActivationFileId = undefined;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [editor, file.id]);
 
   useBlockKeyboardShortcuts(editor);
 

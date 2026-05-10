@@ -12,6 +12,33 @@ const baseHandle = {
 const meta = { id: "doc-1", title: "Notes", updated: "2026-05-04T12:00:00Z" };
 
 describe("DiskStorageAdapter correlation plumbing", () => {
+  it("preserves the DocumentStore browsing read model while keeping html compatible", async () => {
+    const invoke = (async () => ({
+      html: "<p>editor legacy</p>",
+      editorHtml: "<p>editor</p>",
+      browsingHtml: '<h1 id="intro">Intro</h1>',
+      markdown: "# Intro",
+      meta,
+      extras: null,
+      source: "sidecar",
+      sourceState: "sidecar_fresh",
+      outline: [{ id: "intro", depth: 1, text: "Intro" }],
+      browsingRendererVersion: "browsing-html/v1",
+      correlation: { events: [], blocking: false },
+    })) as unknown as <T>(command: string, payload: Record<string, unknown>) => Promise<T>;
+
+    const adapter = new DiskStorageAdapter({ root: "/workspace", invoke });
+    const content = await adapter.read(baseHandle);
+
+    expect(content.html).toBe("<p>editor</p>");
+    expect(content.editorHtml).toBe("<p>editor</p>");
+    expect(content.browsingHtml).toBe('<h1 id="intro">Intro</h1>');
+    expect(content.source).toBe("sidecar");
+    expect(content.sourceState).toBe("sidecar_fresh");
+    expect(content.outline).toEqual([{ id: "intro", depth: 1, text: "Intro" }]);
+    expect(content.browsingRendererVersion).toBe("browsing-html/v1");
+  });
+
   it("preserves a populated correlation report on read", async () => {
     const correlation: CorrelationReport = {
       events: [

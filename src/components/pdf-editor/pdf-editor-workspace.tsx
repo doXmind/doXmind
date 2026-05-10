@@ -1271,6 +1271,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
 
   return (
     <div
+      data-testid="pdf-runtime"
       className="relative flex min-h-0 flex-1 bg-muted/40 text-foreground"
       onPointerDown={() => {
         // background click clears selection
