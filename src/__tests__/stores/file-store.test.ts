@@ -36,10 +36,15 @@ function mockRead(path = "Doc.md", html = "<p>Hello</p>", markdown = "Hello") {
       expect(payload).toEqual({ path: `/workspace/${path}` });
       return {
         html,
+        editorHtml: html,
+        browsingHtml: '<h1 id="hello">Hello</h1>',
         markdown,
         meta: { id: "doc-1", title: "Doc", created: now, updated: now },
         extras: { databases: {} },
         source: "sidecar",
+        sourceState: "sidecar_fresh",
+        outline: [{ id: "hello", depth: 1, text: "Hello" }],
+        browsingRendererVersion: "browsing-html/v1",
       };
     }
     throw new Error(`Unexpected command: ${command}`);
@@ -114,7 +119,12 @@ describe("useFileStore disk workspace", () => {
 
     const file = useFileStore.getState().getFile("doc-1");
     expect(file?.content).toBe("<p>Hello</p>");
+    expect(file?.editorHtml).toBe("<p>Hello</p>");
+    expect(file?.browsingHtml).toBe('<h1 id="hello">Hello</h1>');
     expect(file?.contentMarkdown).toBe("Hello");
+    expect(file?.sourceState).toBe("sidecar_fresh");
+    expect(file?.outline).toEqual([{ id: "hello", depth: 1, text: "Hello" }]);
+    expect(file?.browsingRendererVersion).toBe("browsing-html/v1");
     expect(useFileStore.getState().loadedContentIds.has("doc-1")).toBe(true);
   });
 

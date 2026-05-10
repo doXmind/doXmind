@@ -24,10 +24,14 @@ mod error;
 
 pub use error::{Error, Result};
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use gray_matter::{engine::YAML, Matter};
-use pulldown_cmark::{html as cmark_html, Options as CmarkOptions, Parser as CmarkParser};
+use pulldown_cmark::{
+    html as cmark_html, CowStr, Event as CmarkEvent, HeadingLevel, Options as CmarkOptions,
+    Parser as CmarkParser, Tag as CmarkTag,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -74,11 +78,17 @@ impl DocMeta {
 /// What the editor needs to display a document.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReadResult {
+    /// Backward-compatible alias for `editor_html`.
     pub html: String,
+    pub editor_html: String,
+    pub browsing_html: String,
     pub markdown: String,
     pub meta: DocMeta,
     pub extras: Option<serde_json::Value>,
     pub source: Source,
+    pub source_state: SourceState,
+    pub outline: Vec<DocumentOutlineItem>,
+    pub browsing_renderer_version: String,
 }
 
 /// Where the HTML in [`ReadResult`] came from.
@@ -92,6 +102,26 @@ pub enum Source {
     /// File body was empty; both `html` and `markdown` are empty strings.
     Empty,
 }
+
+/// Precise storage state for the read model.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceState {
+    SidecarFresh,
+    SidecarStale,
+    SidecarMissing,
+    SidecarCorrupt,
+    Empty,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocumentOutlineItem {
+    pub id: String,
+    pub depth: u8,
+    pub text: String,
+}
+
+pub const BROWSING_RENDERER_VERSION: &str = "browsing-html/v1";
 
 /// Payload accepted by [`write_doc`]. Caller has already converted the editor
 /// state to both HTML and markdown.
@@ -186,6 +216,169 @@ pub fn markdown_to_html(body: &str) -> String {
     html
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct BrowsingRender {
+    pub html: String,
+    pub outline: Vec<DocumentOutlineItem>,
+    pub renderer_version: String,
+}
+
+/// Render the current Markdown body for the Browsing Runtime.
+///
+/// This deliberately does not use Sidecar HTML. Raw HTML events are dropped so
+/// the output can be injected as a static read view without executing scripts or
+/// event handler attributes. Later slices can deepen Custom Block placeholders
+/// without changing the read-model contract.
+pub fn render_browsing_markdown(body: &str) -> BrowsingRender {
+    if body.trim().is_empty() {
+        return BrowsingRender {
+            html: String::new(),
+            outline: Vec::new(),
+            renderer_version: BROWSING_RENDERER_VERSION.to_string(),
+        };
+    }
+
+    let outline = extract_outline(body);
+    let mut heading_index = 0usize;
+    let events = markdown_parser(body).filter_map(|event| match event {
+        CmarkEvent::Start(CmarkTag::Heading {
+            level,
+            id: _,
+            classes,
+            attrs,
+        }) => {
+            let id = outline.get(heading_index).map(|item| item.id.clone());
+            heading_index += 1;
+            Some(CmarkEvent::Start(CmarkTag::Heading {
+                level,
+                id: id.map(|id| CowStr::Boxed(id.into_boxed_str())),
+                classes,
+                attrs,
+            }))
+        }
+        CmarkEvent::Html(_) | CmarkEvent::InlineHtml(_) => None,
+        other => Some(other),
+    });
+
+    let mut html = String::with_capacity(body.len());
+    cmark_html::push_html(&mut html, events);
+    BrowsingRender {
+        html,
+        outline,
+        renderer_version: BROWSING_RENDERER_VERSION.to_string(),
+    }
+}
+
+fn markdown_parser(body: &str) -> CmarkParser<'_> {
+    let mut opts = CmarkOptions::empty();
+    opts.insert(CmarkOptions::ENABLE_TABLES);
+    opts.insert(CmarkOptions::ENABLE_STRIKETHROUGH);
+    opts.insert(CmarkOptions::ENABLE_TASKLISTS);
+    opts.insert(CmarkOptions::ENABLE_HEADING_ATTRIBUTES);
+    CmarkParser::new_ext(body, opts)
+}
+
+fn extract_outline(body: &str) -> Vec<DocumentOutlineItem> {
+    #[derive(Default)]
+    struct PendingHeading {
+        depth: u8,
+        explicit_id: Option<String>,
+        text: String,
+    }
+
+    let mut outline = Vec::new();
+    let mut seen_ids: HashMap<String, usize> = HashMap::new();
+    let mut current: Option<PendingHeading> = None;
+
+    for event in markdown_parser(body) {
+        match event {
+            CmarkEvent::Start(CmarkTag::Heading { level, id, .. }) => {
+                current = Some(PendingHeading {
+                    depth: heading_depth(level),
+                    explicit_id: id
+                        .map(|id| id.to_string())
+                        .filter(|id| !id.trim().is_empty()),
+                    text: String::new(),
+                });
+            }
+            CmarkEvent::Text(text)
+            | CmarkEvent::Code(text)
+            | CmarkEvent::InlineMath(text)
+            | CmarkEvent::DisplayMath(text) => {
+                if let Some(heading) = current.as_mut() {
+                    heading.text.push_str(&text);
+                }
+            }
+            CmarkEvent::End(pulldown_cmark::TagEnd::Heading(_)) => {
+                if let Some(heading) = current.take() {
+                    let text = heading.text.trim().to_string();
+                    let base_id = heading
+                        .explicit_id
+                        .unwrap_or_else(|| slugify_heading(&text));
+                    let id = unique_id(base_id, &mut seen_ids);
+                    outline.push(DocumentOutlineItem {
+                        id,
+                        depth: heading.depth,
+                        text,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    outline
+}
+
+fn heading_depth(level: HeadingLevel) -> u8 {
+    match level {
+        HeadingLevel::H1 => 1,
+        HeadingLevel::H2 => 2,
+        HeadingLevel::H3 => 3,
+        HeadingLevel::H4 => 4,
+        HeadingLevel::H5 => 5,
+        HeadingLevel::H6 => 6,
+    }
+}
+
+fn slugify_heading(text: &str) -> String {
+    let mut slug = String::new();
+    let mut last_was_dash = false;
+
+    for ch in text.chars().flat_map(char::to_lowercase) {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch);
+            last_was_dash = false;
+        } else if (ch.is_whitespace() || ch == '-' || ch == '_')
+            && !slug.is_empty()
+            && !last_was_dash
+        {
+            slug.push('-');
+            last_was_dash = true;
+        }
+    }
+
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+
+    if slug.is_empty() {
+        "section".to_string()
+    } else {
+        slug
+    }
+}
+
+fn unique_id(base: String, seen_ids: &mut HashMap<String, usize>) -> String {
+    let count = seen_ids.entry(base.clone()).or_insert(0);
+    *count += 1;
+    if *count == 1 {
+        base
+    } else {
+        format!("{base}-{}", *count)
+    }
+}
+
 /// Read a `.md` file plus optional sibling sidecar; return what the editor
 /// should display.
 pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
@@ -199,41 +392,117 @@ pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
     let current_hash = hash_markdown(&raw);
     let sidecar_path = sidecar_path_for(md_path);
 
-    if let Some(side) = read_sidecar(&sidecar_path).await? {
-        if side.version == SIDECAR_VERSION && side.markdown_hash == current_hash {
+    let browsing = render_browsing_markdown(&body);
+
+    match read_sidecar(&sidecar_path).await? {
+        SidecarRead::Loaded(side)
+            if side.version == SIDECAR_VERSION && side.markdown_hash == current_hash =>
+        {
             // Trust the sidecar id over a missing/mismatched frontmatter id —
             // the sidecar was written by us and is authoritative for this pairing.
             if meta.id != side.id {
                 meta.id = side.id.clone();
             }
+            let editor_html = side.html;
             return Ok(ReadResult {
-                html: side.html,
+                html: editor_html.clone(),
+                editor_html,
+                browsing_html: browsing.html,
                 markdown: body,
                 meta,
                 extras: side.extras,
                 source: Source::Sidecar,
+                source_state: SourceState::SidecarFresh,
+                outline: browsing.outline,
+                browsing_renderer_version: browsing.renderer_version,
             });
         }
-        // Stale sidecar: ignore and fall through to markdown path.
+        SidecarRead::Loaded(_) => {
+            let editor_html = markdown_to_html(&body);
+            let is_empty = browsing.html.is_empty();
+            return Ok(ReadResult {
+                html: editor_html.clone(),
+                editor_html,
+                browsing_html: browsing.html,
+                markdown: if body.trim().is_empty() {
+                    String::new()
+                } else {
+                    body
+                },
+                meta,
+                extras: None,
+                source: if is_empty {
+                    Source::Empty
+                } else {
+                    Source::Markdown
+                },
+                source_state: if is_empty {
+                    SourceState::Empty
+                } else {
+                    SourceState::SidecarStale
+                },
+                outline: browsing.outline,
+                browsing_renderer_version: browsing.renderer_version,
+            });
+        }
+        SidecarRead::Corrupt => {
+            let editor_html = markdown_to_html(&body);
+            let is_empty = browsing.html.is_empty();
+            return Ok(ReadResult {
+                html: editor_html.clone(),
+                editor_html,
+                browsing_html: browsing.html,
+                markdown: if body.trim().is_empty() {
+                    String::new()
+                } else {
+                    body
+                },
+                meta,
+                extras: None,
+                source: if is_empty {
+                    Source::Empty
+                } else {
+                    Source::Markdown
+                },
+                source_state: if is_empty {
+                    SourceState::Empty
+                } else {
+                    SourceState::SidecarCorrupt
+                },
+                outline: browsing.outline,
+                browsing_renderer_version: browsing.renderer_version,
+            });
+        }
+        SidecarRead::Missing => {}
     }
 
     if body.trim().is_empty() {
         return Ok(ReadResult {
             html: String::new(),
+            editor_html: String::new(),
+            browsing_html: String::new(),
             markdown: String::new(),
             meta,
             extras: None,
             source: Source::Empty,
+            source_state: SourceState::Empty,
+            outline: Vec::new(),
+            browsing_renderer_version: BROWSING_RENDERER_VERSION.to_string(),
         });
     }
 
     let html = markdown_to_html(&body);
     Ok(ReadResult {
-        html,
+        html: html.clone(),
+        editor_html: html,
+        browsing_html: browsing.html,
         markdown: body,
         meta,
         extras: None,
         source: Source::Markdown,
+        source_state: SourceState::SidecarMissing,
+        outline: browsing.outline,
+        browsing_renderer_version: browsing.renderer_version,
     })
 }
 
@@ -308,14 +577,20 @@ fn build_md_with_frontmatter(meta: &DocMeta, body: &str) -> Result<String> {
     Ok(format!("---\n{yaml}\n---\n\n{trimmed_body}\n"))
 }
 
-async fn read_sidecar(path: &Path) -> Result<Option<SidecarFile>> {
+enum SidecarRead {
+    Missing,
+    Corrupt,
+    Loaded(SidecarFile),
+}
+
+async fn read_sidecar(path: &Path) -> Result<SidecarRead> {
     match tokio::fs::read(path).await {
         Ok(bytes) => match serde_json::from_slice::<SidecarFile>(&bytes) {
-            Ok(s) => Ok(Some(s)),
+            Ok(s) => Ok(SidecarRead::Loaded(s)),
             // Corrupt sidecar: treat as absent so reads don't break the user.
-            Err(_) => Ok(None),
+            Err(_) => Ok(SidecarRead::Corrupt),
         },
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(SidecarRead::Missing),
         Err(e) => Err(Error::ReadFailed(path.to_path_buf(), e)),
     }
 }
@@ -495,7 +770,17 @@ mod tests {
         );
         let r = read_doc(&p).await.unwrap();
         assert_eq!(r.source, Source::Markdown);
+        assert_eq!(r.source_state, SourceState::SidecarMissing);
         assert!(r.html.contains("<h1>Hello</h1>"));
+        assert!(r.browsing_html.contains("<h1 id=\"hello\">Hello</h1>"));
+        assert_eq!(
+            r.outline,
+            vec![DocumentOutlineItem {
+                id: "hello".into(),
+                depth: 1,
+                text: "Hello".into(),
+            }]
+        );
         assert_eq!(r.meta.id, "abc");
     }
 
@@ -517,7 +802,10 @@ mod tests {
         let p = write_md(dir.path(), "empty.md", "");
         let r = read_doc(&p).await.unwrap();
         assert_eq!(r.source, Source::Empty);
+        assert_eq!(r.source_state, SourceState::Empty);
         assert!(r.html.is_empty());
+        assert!(r.editor_html.is_empty());
+        assert!(r.browsing_html.is_empty());
         assert!(r.markdown.is_empty());
     }
 
@@ -547,7 +835,9 @@ mod tests {
 
         let r = read_doc(&p).await.unwrap();
         assert_eq!(r.source, Source::Sidecar);
+        assert_eq!(r.source_state, SourceState::SidecarFresh);
         assert!(r.html.contains("database-block"));
+        assert_eq!(r.html, r.editor_html);
         assert_eq!(
             r.extras.unwrap()["databases"]["d1"]["rows"],
             serde_json::json!([])
@@ -572,7 +862,10 @@ mod tests {
 
         let r = read_doc(&p).await.unwrap();
         assert_eq!(r.source, Source::Sidecar);
+        assert_eq!(r.source_state, SourceState::SidecarFresh);
         assert_eq!(r.html, "<p>rich <strong>html</strong></p>");
+        assert_eq!(r.editor_html, "<p>rich <strong>html</strong></p>");
+        assert_eq!(r.browsing_html.trim(), "<p>rich <strong>html</strong></p>");
         assert_eq!(r.markdown.trim(), "rich **html**");
         assert_eq!(r.meta.id, "doc-1");
         assert_eq!(r.meta.title.as_deref(), Some("Doc 1"));
@@ -598,7 +891,11 @@ mod tests {
 
         let r = read_doc(&p).await.unwrap();
         assert_eq!(r.source, Source::Markdown);
+        assert_eq!(r.source_state, SourceState::SidecarStale);
         assert!(r.html.contains("<h1>Edited externally</h1>"));
+        assert!(r
+            .browsing_html
+            .contains("<h1 id=\"edited-externally\">Edited externally</h1>"));
     }
 
     #[tokio::test]
@@ -610,6 +907,64 @@ mod tests {
 
         let r = read_doc(&p).await.unwrap();
         assert_eq!(r.source, Source::Markdown);
+        assert_eq!(r.source_state, SourceState::SidecarCorrupt);
+    }
+
+    #[tokio::test]
+    async fn browsing_html_is_derived_from_markdown_not_sidecar_html() {
+        let dir = td();
+        let p = dir.path().join("doc.md");
+        write_doc(
+            &p,
+            &DocPayload {
+                html: "<h1>Editor Only</h1>".into(),
+                markdown: "# Markdown Source".into(),
+                meta: DocMeta::new("doc-1"),
+                extras: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let r = read_doc(&p).await.unwrap();
+        assert_eq!(r.source_state, SourceState::SidecarFresh);
+        assert_eq!(r.editor_html, "<h1>Editor Only</h1>");
+        assert!(r
+            .browsing_html
+            .contains("<h1 id=\"markdown-source\">Markdown Source</h1>"));
+        assert!(!r.browsing_html.contains("Editor Only"));
+    }
+
+    #[tokio::test]
+    async fn browsing_renderer_strips_raw_html_and_uniquifies_outline_ids() {
+        let rendered = render_browsing_markdown(
+            "# Intro\n\n<script>alert(1)</script>\n\n## Intro\n\n# Intro!\n",
+        );
+
+        assert!(!rendered.html.contains("<script>"));
+        assert!(rendered.html.contains("<h1 id=\"intro\">Intro</h1>"));
+        assert!(rendered.html.contains("<h2 id=\"intro-2\">Intro</h2>"));
+        assert!(rendered.html.contains("<h1 id=\"intro-3\">Intro!</h1>"));
+        assert_eq!(
+            rendered.outline,
+            vec![
+                DocumentOutlineItem {
+                    id: "intro".into(),
+                    depth: 1,
+                    text: "Intro".into(),
+                },
+                DocumentOutlineItem {
+                    id: "intro-2".into(),
+                    depth: 2,
+                    text: "Intro".into(),
+                },
+                DocumentOutlineItem {
+                    id: "intro-3".into(),
+                    depth: 1,
+                    text: "Intro!".into(),
+                },
+            ]
+        );
     }
 
     #[tokio::test]

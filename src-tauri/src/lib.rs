@@ -19,7 +19,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{cmp, collections::BTreeMap, collections::HashMap};
 
-use doxmind_sidecar::{DocMeta, DocPayload, ReadResult, Source};
+use doxmind_sidecar::{DocMeta, DocPayload, DocumentOutlineItem, ReadResult, Source, SourceState};
 use serde::{Deserialize, Serialize};
 use tauri::{
     AppHandle, Emitter, Manager, RunEvent, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
@@ -271,27 +271,51 @@ struct BackendUrl(String);
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ReadResultDto {
+    /// Backward-compatible editor HTML field for existing callers.
     html: String,
+    editor_html: String,
+    browsing_html: String,
     markdown: String,
     meta: DocMeta,
     extras: Option<serde_json::Value>,
     source: String,
+    source_state: String,
+    outline: Vec<DocumentOutlineItem>,
+    browsing_renderer_version: String,
 }
 
 impl From<ReadResult> for ReadResultDto {
     fn from(result: ReadResult) -> Self {
         Self {
             html: result.html,
+            editor_html: result.editor_html,
+            browsing_html: result.browsing_html,
             markdown: result.markdown,
             meta: result.meta,
             extras: result.extras,
-            source: match result.source {
-                Source::Sidecar => "sidecar",
-                Source::Markdown => "markdown",
-                Source::Empty => "empty",
-            }
-            .to_string(),
+            source: legacy_source_name(result.source).to_string(),
+            source_state: source_state_name(result.source_state).to_string(),
+            outline: result.outline,
+            browsing_renderer_version: result.browsing_renderer_version,
         }
+    }
+}
+
+fn legacy_source_name(source: Source) -> &'static str {
+    match source {
+        Source::Sidecar => "sidecar",
+        Source::Markdown => "markdown",
+        Source::Empty => "empty",
+    }
+}
+
+fn source_state_name(source_state: SourceState) -> &'static str {
+    match source_state {
+        SourceState::SidecarFresh => "sidecar_fresh",
+        SourceState::SidecarStale => "sidecar_stale",
+        SourceState::SidecarMissing => "sidecar_missing",
+        SourceState::SidecarCorrupt => "sidecar_corrupt",
+        SourceState::Empty => "empty",
     }
 }
 
@@ -648,12 +672,18 @@ async fn doc_write_workspace(
         .await
         .map_err(|err| err.to_string())?;
 
+    let browsing = doxmind_sidecar::render_browsing_markdown(&markdown);
     Ok(ReadResultDto {
-        html,
+        html: html.clone(),
+        editor_html: html.clone(),
+        browsing_html: browsing.html,
         markdown,
         meta,
         extras,
         source: "sidecar".to_string(),
+        source_state: "sidecar_fresh".to_string(),
+        outline: browsing.outline,
+        browsing_renderer_version: browsing.renderer_version,
     })
 }
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import time
 import uuid
@@ -24,6 +25,7 @@ from services.sidecar_io import (
     CorruptSidecarError,
     Loaded,
     atomic_write,
+    markdown_to_html,
     now_iso,
     parse_frontmatter,
     parse_yaml_scalar,
@@ -49,6 +51,7 @@ IGNORED_SCAN_DIRS = {".git", "node_modules", "target", ".next", "out", "dist", "
 # below explicitly invalidate the entry for their root.
 _SCAN_CACHE_TTL_SECONDS = 1.5
 _scan_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+BROWSING_RENDERER_VERSION = "browsing-html/v1"
 
 
 def _invalidate_scan_cache(root: str | Path) -> None:
@@ -340,50 +343,108 @@ def read_doc(path: Path) -> dict[str, Any]:
     outcome = state.read(path)
     correlation: CorrelationReport | None = outcome.correlation
     if isinstance(outcome, UsedSidecar):
-        return {
-            "html": outcome.html,
-            "markdown": outcome.markdown,
-            "meta": outcome.meta,
-            "extras": outcome.extras,
-            "source": "sidecar",
-            "correlation": _serialize_correlation_report(correlation),
-        }
+        return _document_read_response(
+            editor_html=outcome.html,
+            markdown=outcome.markdown,
+            meta=outcome.meta,
+            extras=outcome.extras,
+            legacy_source="sidecar",
+            source_state="sidecar_fresh",
+            correlation=correlation,
+        )
     if isinstance(outcome, EmptyDocument):
-        return {
-            "html": "",
-            "markdown": "",
-            "meta": outcome.meta,
-            "extras": None,
-            "source": "empty",
-            "correlation": _serialize_correlation_report(correlation),
-        }
+        return _document_read_response(
+            editor_html="",
+            markdown="",
+            meta=outcome.meta,
+            extras=None,
+            legacy_source="empty",
+            source_state="empty",
+            correlation=correlation,
+        )
     if isinstance(outcome, SidecarStale):
         if not outcome.markdown.strip():
-            return {
-                "html": "",
-                "markdown": "",
-                "meta": outcome.meta,
-                "extras": outcome.salvaged_extras or None,
-                "source": "empty",
-                "correlation": _serialize_correlation_report(correlation),
-            }
-        return {
-            "html": outcome.fresh_html,
-            "markdown": outcome.markdown,
-            "meta": outcome.meta,
-            "extras": outcome.salvaged_extras or None,
-            "source": "markdown",
-            "correlation": _serialize_correlation_report(correlation),
-        }
+            return _document_read_response(
+                editor_html="",
+                markdown="",
+                meta=outcome.meta,
+                extras=outcome.salvaged_extras or None,
+                legacy_source="empty",
+                source_state="empty",
+                correlation=correlation,
+            )
+        return _document_read_response(
+            editor_html=outcome.fresh_html,
+            markdown=outcome.markdown,
+            meta=outcome.meta,
+            extras=outcome.salvaged_extras or None,
+            legacy_source="markdown",
+            source_state="sidecar_stale",
+            correlation=correlation,
+        )
     assert isinstance(outcome, NoSidecar)
+    return _document_read_response(
+        editor_html=outcome.html,
+        markdown=outcome.markdown,
+        meta=outcome.meta,
+        extras=None,
+        legacy_source="markdown",
+        source_state="sidecar_missing",
+        correlation=correlation,
+    )
+
+
+def _document_read_response(
+    *,
+    editor_html: str,
+    markdown: str,
+    meta: dict[str, Any],
+    extras: Any,
+    legacy_source: str,
+    source_state: str,
+    correlation: Any,
+) -> dict[str, Any]:
+    browsing_html = "" if not markdown.strip() else markdown_to_html(markdown)
     return {
-        "html": outcome.html,
-        "markdown": outcome.markdown,
-        "meta": outcome.meta,
-        "extras": None,
-        "source": "markdown",
+        "html": editor_html,
+        "editorHtml": editor_html,
+        "browsingHtml": browsing_html,
+        "markdown": markdown,
+        "meta": meta,
+        "extras": extras,
+        "source": legacy_source,
+        "sourceState": source_state,
+        "outline": _outline_from_markdown(markdown),
+        "browsingRendererVersion": BROWSING_RENDERER_VERSION,
         "correlation": _serialize_correlation_report(correlation),
     }
+
+
+def _outline_from_markdown(markdown: str) -> list[dict[str, Any]]:
+    seen: dict[str, int] = {}
+    outline: list[dict[str, Any]] = []
+    for line in markdown.splitlines():
+        match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
+        if not match:
+            continue
+        depth = len(match.group(1))
+        text = re.sub(r"\s+\{#.*?\}\s*$", "", match.group(2)).strip()
+        base = _slugify_heading(text)
+        count = seen.get(base, 0) + 1
+        seen[base] = count
+        outline.append(
+            {
+                "id": base if count == 1 else f"{base}-{count}",
+                "depth": depth,
+                "text": text,
+            }
+        )
+    return outline
+
+
+def _slugify_heading(text: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return slug or "section"
 
 
 def _serialize_correlation_report(report: Any) -> dict[str, Any] | None:
@@ -633,13 +694,15 @@ def write_doc_workspace(root: str, rel_path: str, payload: dict[str, Any]) -> di
     write_doc(path, final_payload)
     _invalidate_scan_cache(workspace)
 
-    return {
-        "html": final_payload["html"],
-        "markdown": final_payload["markdown"],
-        "meta": merged_meta,
-        "extras": extras,
-        "source": "sidecar",
-    }
+    return _document_read_response(
+        editor_html=final_payload["html"],
+        markdown=final_payload["markdown"],
+        meta=merged_meta,
+        extras=extras,
+        legacy_source="sidecar",
+        source_state="sidecar_fresh",
+        correlation=None,
+    )
 
 
 def doc_create(root: str, payload: dict[str, Any]) -> dict[str, Any]:

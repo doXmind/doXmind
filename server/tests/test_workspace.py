@@ -97,7 +97,12 @@ def test_workspace_create_read_and_scan(sync_client, tmp_path):
 
     read = invoke(sync_client, "doc_read", {"path": str(tmp_path / "Notes" / "Plan.md")})
     assert read["source"] == "sidecar"
+    assert read["sourceState"] == "sidecar_fresh"
     assert read["html"] == "<p>Hello <strong>world</strong></p>"
+    assert read["editorHtml"] == "<p>Hello <strong>world</strong></p>"
+    assert read["browsingHtml"] == "<p>Hello <strong>world</strong></p>"
+    assert read["outline"] == []
+    assert read["browsingRendererVersion"] == "browsing-html/v1"
     assert read["extras"] == {"databases": {}}
 
 
@@ -121,7 +126,11 @@ def test_external_markdown_edit_invalidates_sidecar(sync_client, tmp_path):
 
     read = invoke(sync_client, "doc_read", {"path": str(tmp_path / "Doc.md")})
     assert read["source"] == "markdown"
+    assert read["sourceState"] == "sidecar_stale"
     assert "<h1>External</h1>" in read["html"]
+    assert "<h1>External</h1>" in read["editorHtml"]
+    assert "<h1>External</h1>" in read["browsingHtml"]
+    assert read["outline"] == [{"id": "external", "depth": 1, "text": "External"}]
     assert read["extras"] is None
 
 
@@ -135,6 +144,7 @@ def test_markdown_read_preserves_distinct_list_types(sync_client, tmp_path):
     read = invoke(sync_client, "doc_read", {"path": str(doc)})
 
     assert read["source"] == "markdown"
+    assert read["sourceState"] == "sidecar_missing"
     assert "<ul>" in read["html"]
     assert "<ol>" in read["html"]
     assert '<ul data-type="taskList">' in read["html"]

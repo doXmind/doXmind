@@ -132,6 +132,21 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   color: inherit;
 }
 
+.doxmind-browsing-prose {
+  user-select: text;
+}
+
+.doxmind-browsing-prose mark[data-browsing-search-result="true"] {
+  border-radius: 2px;
+  background: rgba(245, 196, 66, 0.35);
+  color: inherit;
+}
+
+.doxmind-browsing-prose mark[data-browsing-search-current="true"] {
+  background: rgba(245, 158, 11, 0.58);
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35);
+}
+
 .ProseMirror blockquote {
   @apply border-l-[3px] border-foreground/15 pl-4 italic text-muted-foreground;
 }

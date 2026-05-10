@@ -126,6 +126,12 @@ Anything outside this crate that touches `.doxmind` files directly is a
 bug. The Tauri shell and FastAPI server are required to call into this
 crate (or its mirror) for all document I/O.
 
+ADR-0008 defines the next read-model contract for this crate: the storage
+boundary should expose explicit `editorHtml` and `browsingHtml` fields instead
+of overloading one generic `html` field. Sidecar `html` remains the on-disk
+editor HTML cache; `browsingHtml` is a versioned, sanitized read view generated
+from the current Markdown body.
+
 ### `src-tauri` — the desktop shell
 
 The Tauri app (`src-tauri/src/lib.rs`) exposes the storage core to the
