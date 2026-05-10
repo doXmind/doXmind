@@ -134,6 +134,33 @@ def test_external_markdown_edit_invalidates_sidecar(sync_client, tmp_path):
     assert read["extras"] is None
 
 
+def test_browsing_html_strips_unsafe_raw_html_in_http_fallback(sync_client, tmp_path):
+    doc = tmp_path / "Unsafe.md"
+    doc.write_text(
+        "\n".join(
+            [
+                "# Unsafe",
+                "",
+                '<script>alert("x")</script>',
+                '<img src="x" onerror="alert(1)" alt="unsafe">',
+                "[bad](javascript:alert(1))",
+                "[good](https://example.com)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    read = invoke(sync_client, "doc_read", {"path": str(doc)})
+
+    assert "<script" not in read["browsingHtml"]
+    assert "alert(" not in read["browsingHtml"]
+    assert "onerror" not in read["browsingHtml"]
+    assert 'href="javascript:' not in read["browsingHtml"]
+    assert '<img src="x" alt="unsafe">' in read["browsingHtml"]
+    assert "<a>bad</a>" in read["browsingHtml"]
+    assert '<a href="https://example.com">good</a>' in read["browsingHtml"]
+
+
 def test_markdown_read_preserves_distinct_list_types(sync_client, tmp_path):
     doc = tmp_path / "Lists.md"
     doc.write_text(

@@ -13,8 +13,10 @@ import re
 import shutil
 import time
 import uuid
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -52,6 +54,54 @@ IGNORED_SCAN_DIRS = {".git", "node_modules", "target", ".next", "out", "dist", "
 _SCAN_CACHE_TTL_SECONDS = 1.5
 _scan_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 BROWSING_RENDERER_VERSION = "browsing-html/v1"
+VOID_HTML_TAGS = {
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "source",
+    "track",
+    "wbr",
+}
+SKIP_HTML_TAGS = {"script", "style", "iframe", "object", "embed"}
+SAFE_URL_SCHEMES = {"", "http", "https", "mailto", "tel"}
+SAFE_IMAGE_URL_SCHEMES = {"", "http", "https"}
+ALLOWED_BROWSING_TAGS: dict[str, set[str]] = {
+    "a": {"href", "title"},
+    "blockquote": set(),
+    "br": set(),
+    "code": {"class"},
+    "del": set(),
+    "div": {"class", "data-code", "data-latex", "data-type"},
+    "em": set(),
+    "h1": {"id"},
+    "h2": {"id"},
+    "h3": {"id"},
+    "h4": {"id"},
+    "h5": {"id"},
+    "h6": {"id"},
+    "hr": set(),
+    "img": {"alt", "height", "src", "title", "width"},
+    "li": {"data-checked", "data-type"},
+    "ol": set(),
+    "p": set(),
+    "pre": {"class"},
+    "span": {"class", "data-latex", "data-type"},
+    "strong": set(),
+    "table": set(),
+    "tbody": set(),
+    "td": set(),
+    "th": set(),
+    "thead": set(),
+    "tr": set(),
+    "ul": {"data-type"},
+}
 
 
 def _invalidate_scan_cache(root: str | Path) -> None:
@@ -404,7 +454,7 @@ def _document_read_response(
     source_state: str,
     correlation: Any,
 ) -> dict[str, Any]:
-    browsing_html = "" if not markdown.strip() else markdown_to_html(markdown)
+    browsing_html = "" if not markdown.strip() else _render_browsing_markdown(markdown)
     return {
         "html": editor_html,
         "editorHtml": editor_html,
@@ -418,6 +468,92 @@ def _document_read_response(
         "browsingRendererVersion": BROWSING_RENDERER_VERSION,
         "correlation": _serialize_correlation_report(correlation),
     }
+
+
+class BrowsingHtmlSanitizer(HTMLParser):
+    """Small allowlist sanitizer for localhost browser fallback browsing HTML."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        clean_tag = tag.lower()
+        if clean_tag in SKIP_HTML_TAGS:
+            self.skip_depth += 1
+            return
+        if self.skip_depth or clean_tag not in ALLOWED_BROWSING_TAGS:
+            return
+        rendered_attrs = self._render_attrs(clean_tag, attrs)
+        self.parts.append(f"<{clean_tag}{rendered_attrs}>")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag: str) -> None:
+        clean_tag = tag.lower()
+        if clean_tag in SKIP_HTML_TAGS and self.skip_depth:
+            self.skip_depth -= 1
+            return
+        if self.skip_depth or clean_tag not in ALLOWED_BROWSING_TAGS or clean_tag in VOID_HTML_TAGS:
+            return
+        self.parts.append(f"</{clean_tag}>")
+
+    def handle_data(self, data: str) -> None:
+        if not self.skip_depth:
+            self.parts.append(_escape_html(data))
+
+    def handle_entityref(self, name: str) -> None:
+        if not self.skip_depth:
+            self.parts.append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        if not self.skip_depth:
+            self.parts.append(f"&#{name};")
+
+    def _render_attrs(self, tag: str, attrs: list[tuple[str, str | None]]) -> str:
+        allowed = ALLOWED_BROWSING_TAGS[tag]
+        rendered: list[str] = []
+        for raw_name, raw_value in attrs:
+            name = raw_name.lower()
+            value = raw_value or ""
+            if name not in allowed and not name.startswith("aria-"):
+                continue
+            if name in {"href", "src"} and not _is_safe_browsing_url(name, value):
+                continue
+            rendered.append(f' {name}="{_escape_html(value)}"')
+        return "".join(rendered)
+
+    def html(self) -> str:
+        return "".join(self.parts)
+
+
+def _render_browsing_markdown(markdown: str) -> str:
+    sanitizer = BrowsingHtmlSanitizer()
+    sanitizer.feed(markdown_to_html(markdown))
+    sanitizer.close()
+    return sanitizer.html()
+
+
+def _is_safe_browsing_url(attr_name: str, value: str) -> bool:
+    trimmed = value.strip()
+    if not trimmed:
+        return False
+    if attr_name == "src" and trimmed.lower().startswith("data:image/"):
+        return True
+    try:
+        scheme = urlsplit(trimmed).scheme.lower()
+    except ValueError:
+        return False
+    allowed = SAFE_IMAGE_URL_SCHEMES if attr_name == "src" else SAFE_URL_SCHEMES
+    return scheme in allowed
+
+
+def _escape_html(value: str) -> str:
+    return (
+        value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    )
 
 
 def _outline_from_markdown(markdown: str) -> list[dict[str, Any]]:
