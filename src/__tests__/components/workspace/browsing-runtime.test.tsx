@@ -7,9 +7,24 @@ import { useLayoutStore } from "@/stores/layout-store";
 import type { FileItem } from "@/types";
 
 const { editorMock, pdfMock, excelMock, perfMarkMock, perfMeasureMock } = vi.hoisted(() => ({
-  editorMock: vi.fn(({ initialScrollTop }: { initialScrollTop?: number }) => (
-    <div data-testid="full-editor-runtime" data-initial-scroll-top={initialScrollTop ?? 0} />
-  )),
+  editorMock: vi.fn(
+    ({
+      initialScrollTop,
+      activationIntent,
+    }: {
+      initialScrollTop?: number;
+      activationIntent?: { type: string; key?: string; clientX?: number; clientY?: number };
+    }) => (
+      <div
+        data-testid="full-editor-runtime"
+        data-initial-scroll-top={initialScrollTop ?? 0}
+        data-activation-type={activationIntent?.type ?? ""}
+        data-activation-key={activationIntent?.key ?? ""}
+        data-activation-client-x={activationIntent?.clientX ?? ""}
+        data-activation-client-y={activationIntent?.clientY ?? ""}
+      />
+    )
+  ),
   pdfMock: vi.fn(() => <div data-testid="pdf-runtime" />),
   excelMock: vi.fn(() => <div data-testid="excel-runtime" />),
   perfMarkMock: vi.fn(),
@@ -336,18 +351,30 @@ describe("BrowsingRuntime", () => {
     expect(editorMock).not.toHaveBeenCalled();
   });
 
-  it("activates the full editor once on document click and preserves scroll", () => {
+  it("activates the full editor once on document click and preserves scroll and pointer context", () => {
     render(<DocumentWorkspace file={markdownFile()} />);
     const scrollArea = document.querySelector<HTMLElement>("[data-browsing-scroll]");
     expect(scrollArea).not.toBeNull();
     scrollArea!.scrollTop = 128;
 
-    fireEvent.mouseDown(screen.getByTestId("browsing-document"));
+    fireEvent.mouseDown(screen.getByTestId("browsing-document"), { clientX: 88, clientY: 144 });
     fireEvent.mouseDown(screen.getByTestId("full-editor-runtime"));
 
     expect(screen.getByTestId("full-editor-runtime")).toHaveAttribute(
       "data-initial-scroll-top",
       "128"
+    );
+    expect(screen.getByTestId("full-editor-runtime")).toHaveAttribute(
+      "data-activation-type",
+      "pointer"
+    );
+    expect(screen.getByTestId("full-editor-runtime")).toHaveAttribute(
+      "data-activation-client-x",
+      "88"
+    );
+    expect(screen.getByTestId("full-editor-runtime")).toHaveAttribute(
+      "data-activation-client-y",
+      "144"
     );
     expect(editorMock).toHaveBeenCalledOnce();
     expect(perfMarkMock).toHaveBeenCalledWith(
@@ -356,12 +383,55 @@ describe("BrowsingRuntime", () => {
     expect(window.__doxmindEditorActivationFileId).toBe("doc-1");
   });
 
-  it("activates the full editor on keyboard edit intent", () => {
+  it("activates the full editor once on printable keyboard edit intent", () => {
     render(<DocumentWorkspace file={markdownFile()} />);
+    const scrollArea = document.querySelector<HTMLElement>("[data-browsing-scroll]");
+    expect(scrollArea).not.toBeNull();
+    scrollArea!.scrollTop = 96;
 
     fireEvent.keyDown(window, { key: "a" });
+    fireEvent.keyDown(window, { key: "b" });
 
     expect(screen.getByTestId("full-editor-runtime")).toBeInTheDocument();
+    expect(screen.getByTestId("full-editor-runtime")).toHaveAttribute(
+      "data-initial-scroll-top",
+      "96"
+    );
+    expect(screen.getByTestId("full-editor-runtime")).toHaveAttribute(
+      "data-activation-type",
+      "keyboard"
+    );
+    expect(screen.getByTestId("full-editor-runtime")).toHaveAttribute("data-activation-key", "a");
     expect(editorMock).toHaveBeenCalledOnce();
+  });
+
+  it("preserves slash edit intent for the full editor", () => {
+    render(<DocumentWorkspace file={markdownFile()} />);
+
+    fireEvent.keyDown(window, { key: "/" });
+
+    expect(screen.getByTestId("full-editor-runtime")).toHaveAttribute(
+      "data-activation-type",
+      "keyboard"
+    );
+    expect(screen.getByTestId("full-editor-runtime")).toHaveAttribute("data-activation-key", "/");
+    expect(editorMock).toHaveBeenCalledOnce();
+  });
+
+  it("deduplicates repeated keyboard activation before the workspace swaps runtimes", () => {
+    const onActivateEdit = vi.fn();
+    render(<BrowsingRuntime file={markdownFile()} onActivateEdit={onActivateEdit} />);
+    const scrollArea = document.querySelector<HTMLElement>("[data-browsing-scroll]");
+    expect(scrollArea).not.toBeNull();
+    scrollArea!.scrollTop = 72;
+
+    fireEvent.keyDown(window, { key: "/" });
+    fireEvent.keyDown(window, { key: "a" });
+
+    expect(onActivateEdit).toHaveBeenCalledOnce();
+    expect(onActivateEdit).toHaveBeenCalledWith({
+      scrollTop: 72,
+      intent: { type: "keyboard", key: "/" },
+    });
   });
 });

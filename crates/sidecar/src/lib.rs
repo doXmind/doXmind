@@ -85,6 +85,7 @@ pub struct ReadResult {
     pub markdown: String,
     pub meta: DocMeta,
     pub extras: Option<serde_json::Value>,
+    pub correlation: Option<serde_json::Value>,
     pub source: Source,
     pub source_state: SourceState,
     pub outline: Vec<DocumentOutlineItem>,
@@ -411,6 +412,7 @@ pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
                 markdown: body,
                 meta,
                 extras: side.extras,
+                correlation: None,
                 source: Source::Sidecar,
                 source_state: SourceState::SidecarFresh,
                 outline: browsing.outline,
@@ -431,6 +433,7 @@ pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
                 },
                 meta,
                 extras: None,
+                correlation: None,
                 source: if is_empty {
                     Source::Empty
                 } else {
@@ -459,6 +462,7 @@ pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
                 },
                 meta,
                 extras: None,
+                correlation: None,
                 source: if is_empty {
                     Source::Empty
                 } else {
@@ -484,6 +488,7 @@ pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
             markdown: String::new(),
             meta,
             extras: None,
+            correlation: None,
             source: Source::Empty,
             source_state: SourceState::Empty,
             outline: Vec::new(),
@@ -499,6 +504,7 @@ pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
         markdown: body,
         meta,
         extras: None,
+        correlation: None,
         source: Source::Markdown,
         source_state: SourceState::SidecarMissing,
         outline: browsing.outline,
@@ -782,6 +788,7 @@ mod tests {
             }]
         );
         assert_eq!(r.meta.id, "abc");
+        assert_eq!(r.correlation, None);
     }
 
     #[tokio::test]
