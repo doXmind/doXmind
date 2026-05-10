@@ -37,6 +37,7 @@ import { rangeToMarkdown } from "@/lib/markdown-selection";
 import { useDatabaseStore } from "@/stores/database-store";
 import { eventBus } from "@/lib/events";
 import { perfMeasure, perfSync } from "@/lib/perf";
+import type { EditActivationIntent } from "@/components/workspace/browsing-runtime";
 
 /** Extract database block IDs from HTML (data-database-id) or markdown (<!-- database:uuid -->) */
 function extractDatabaseIdsRaw(content: string): Set<string> {
@@ -78,6 +79,49 @@ function focusTrailingParagraph(view: EditorView): boolean {
   dispatch(tr.setSelection(TextSelection.create(tr.doc, selectionPos)).scrollIntoView());
   view.focus();
   return true;
+}
+
+function applyActivationIntent(
+  view: EditorView,
+  intent: EditActivationIntent,
+  scrollParent: HTMLElement | null
+) {
+  if (intent.type === "pointer") {
+    const pos = view.posAtCoords({ left: intent.clientX, top: intent.clientY });
+    if (pos) {
+      setTextSelectionNear(view, pos.pos);
+    }
+    view.focus();
+    return;
+  }
+
+  const replayText = getReplayableKeyboardText(intent.key);
+  const pos = getVisibleCaretPosition(view, scrollParent) ?? view.state.selection.from;
+  setTextSelectionNear(view, pos);
+
+  if (replayText) {
+    const { state, dispatch } = view;
+    dispatch(state.tr.insertText(replayText));
+  }
+  view.focus();
+}
+
+function setTextSelectionNear(view: EditorView, pos: number) {
+  const { state, dispatch } = view;
+  const clamped = Math.max(0, Math.min(pos, state.doc.content.size));
+  dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(clamped))));
+}
+
+function getVisibleCaretPosition(view: EditorView, scrollParent: HTMLElement | null) {
+  const scrollRect = scrollParent?.getBoundingClientRect();
+  const editorRect = view.dom.getBoundingClientRect();
+  const top = scrollRect ? scrollRect.top + Math.min(140, scrollRect.height / 3) : editorRect.top;
+  const left = editorRect.left + 12;
+  return view.posAtCoords({ left, top })?.pos;
+}
+
+function getReplayableKeyboardText(key: string) {
+  return key.length === 1 ? key : null;
 }
 
 function exitTextBlockContainerAtEnd(
@@ -145,12 +189,14 @@ interface EditorProps {
   file: FileItem;
   reservedRightInset?: number;
   initialScrollTop?: number;
+  activationIntent?: EditActivationIntent;
 }
 
 export function Editor({
   file: initialFile,
   reservedRightInset = 0,
   initialScrollTop = 0,
+  activationIntent,
 }: EditorProps) {
   // Subscribe to specific file via selector — avoids re-render when OTHER files change
   const updateFile = useFileStore((s) => s.updateFile);
@@ -176,6 +222,7 @@ export function Editor({
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const restoredInitialScrollRef = useRef(false);
+  const appliedActivationIntentRef = useRef<EditActivationIntent | undefined>(undefined);
   const lastContentRef = useRef(file.content);
   const isFileSwitchingRef = useRef(false);
   // Track database block IDs in the document to detect removals on save
@@ -650,6 +697,25 @@ export function Editor({
     );
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [editor, initialScrollTop]);
+
+  useEffect(() => {
+    if (!editor || !activationIntent || appliedActivationIntentRef.current === activationIntent) {
+      return;
+    }
+
+    const timers = [0, 16].map((delay) =>
+      window.setTimeout(() => {
+        if (appliedActivationIntentRef.current === activationIntent) return;
+        appliedActivationIntentRef.current = activationIntent;
+        applyActivationIntent(editor.view, activationIntent, scrollAreaRef.current);
+        if (scrollAreaRef.current && initialScrollTop > 0) {
+          scrollAreaRef.current.scrollTop = initialScrollTop;
+        }
+      }, delay)
+    );
+
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [activationIntent, editor, initialScrollTop]);
 
   useEffect(() => {
     if (!editor || typeof window === "undefined") return;

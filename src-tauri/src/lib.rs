@@ -278,6 +278,7 @@ struct ReadResultDto {
     markdown: String,
     meta: DocMeta,
     extras: Option<serde_json::Value>,
+    correlation: Option<serde_json::Value>,
     source: String,
     source_state: String,
     outline: Vec<DocumentOutlineItem>,
@@ -293,6 +294,7 @@ impl From<ReadResult> for ReadResultDto {
             markdown: result.markdown,
             meta: result.meta,
             extras: result.extras,
+            correlation: result.correlation,
             source: legacy_source_name(result.source).to_string(),
             source_state: source_state_name(result.source_state).to_string(),
             outline: result.outline,
@@ -680,6 +682,7 @@ async fn doc_write_workspace(
         markdown,
         meta,
         extras,
+        correlation: None,
         source: "sidecar".to_string(),
         source_state: "sidecar_fresh".to_string(),
         outline: browsing.outline,
@@ -2777,6 +2780,56 @@ mod tests {
             fs::create_dir_all(parent).expect("create parent");
         }
         fs::write(path, content).expect("write file");
+    }
+
+    #[test]
+    fn read_result_dto_serializes_null_correlation() {
+        let dto = ReadResultDto::from(ReadResult {
+            html: "<p>Hello</p>".into(),
+            editor_html: "<p>Hello</p>".into(),
+            browsing_html: "<p>Hello</p>".into(),
+            markdown: "Hello".into(),
+            meta: DocMeta::new("doc-1"),
+            extras: None,
+            correlation: None,
+            source: Source::Markdown,
+            source_state: SourceState::SidecarMissing,
+            outline: Vec::new(),
+            browsing_renderer_version: doxmind_sidecar::BROWSING_RENDERER_VERSION.to_string(),
+        });
+
+        let value = serde_json::to_value(dto).expect("serialize dto");
+
+        assert!(
+            value.as_object().unwrap().contains_key("correlation"),
+            "correlation must be explicit on the Tauri wire DTO"
+        );
+        assert_eq!(value["correlation"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn doc_write_workspace_response_shape_serializes_null_correlation() {
+        let dto = ReadResultDto {
+            html: "<p>Hello</p>".into(),
+            editor_html: "<p>Hello</p>".into(),
+            browsing_html: "<p>Hello</p>".into(),
+            markdown: "Hello".into(),
+            meta: DocMeta::new("doc-1"),
+            extras: None,
+            correlation: None,
+            source: "sidecar".into(),
+            source_state: "sidecar_fresh".into(),
+            outline: Vec::new(),
+            browsing_renderer_version: doxmind_sidecar::BROWSING_RENDERER_VERSION.to_string(),
+        };
+
+        let value = serde_json::to_value(dto).expect("serialize dto");
+
+        assert!(
+            value.as_object().unwrap().contains_key("correlation"),
+            "workspace writes must return explicit null until Rust correlation exists"
+        );
+        assert_eq!(value["correlation"], serde_json::Value::Null);
     }
 
     #[test]

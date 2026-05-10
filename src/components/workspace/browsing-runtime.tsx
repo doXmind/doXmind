@@ -17,12 +17,21 @@ const MIN_OUTLINE_HEADINGS = 2;
 interface BrowsingRuntimeProps {
   file: FileItem;
   reservedRightInset?: number;
-  onActivateEdit?: (context: { scrollTop: number }) => void;
+  onActivateEdit?: (context: EditActivationContext) => void;
 }
 
 interface SearchRender {
   html: string;
   count: number;
+}
+
+export type EditActivationIntent =
+  | { type: "pointer"; clientX: number; clientY: number }
+  | { type: "keyboard"; key: string };
+
+export interface EditActivationContext {
+  scrollTop: number;
+  intent?: EditActivationIntent;
 }
 
 export function BrowsingRuntime({
@@ -194,17 +203,20 @@ export function BrowsingRuntime({
     });
   }, []);
 
-  const activateEdit = useCallback(() => {
-    if (!onActivateEdit || activatedRef.current) return;
-    activatedRef.current = true;
-    const startMark = `doxmind.editor.activation.start:${file.id}:${performance.now()}`;
-    perfMark(startMark);
-    if (typeof window !== "undefined") {
-      window.__doxmindEditorActivationStartMark = startMark;
-      window.__doxmindEditorActivationFileId = file.id;
-    }
-    onActivateEdit({ scrollTop: scrollAreaRef.current?.scrollTop ?? 0 });
-  }, [file.id, onActivateEdit]);
+  const activateEdit = useCallback(
+    (intent?: EditActivationIntent) => {
+      if (!onActivateEdit || activatedRef.current) return;
+      activatedRef.current = true;
+      const startMark = `doxmind.editor.activation.start:${file.id}:${performance.now()}`;
+      perfMark(startMark);
+      if (typeof window !== "undefined") {
+        window.__doxmindEditorActivationStartMark = startMark;
+        window.__doxmindEditorActivationFileId = file.id;
+      }
+      onActivateEdit({ scrollTop: scrollAreaRef.current?.scrollTop ?? 0, intent });
+    },
+    [file.id, onActivateEdit]
+  );
 
   useEffect(() => {
     activatedRef.current = false;
@@ -212,8 +224,11 @@ export function BrowsingRuntime({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (isEventFromEditableElement(event.target) || !isKeyboardEditIntent(event)) return;
-      activateEdit();
+      if (isEventFromEditableElement(event.target)) return;
+      const intent = getKeyboardEditIntent(event);
+      if (!intent) return;
+      event.preventDefault();
+      activateEdit(intent);
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -234,9 +249,12 @@ export function BrowsingRuntime({
       data-testid="browsing-runtime"
       tabIndex={-1}
       onKeyDown={(event) => {
-        if (isKeyboardEditIntent(event.nativeEvent)) {
-          activateEdit();
-        }
+        if (isEventFromEditableElement(event.target)) return;
+        const intent = getKeyboardEditIntent(event.nativeEvent);
+        if (!intent) return;
+        event.preventDefault();
+        event.stopPropagation();
+        activateEdit(intent);
       }}
     >
       <div className="flex min-h-0 min-w-0 flex-1 overflow-x-hidden">
@@ -272,8 +290,13 @@ export function BrowsingRuntime({
                 data-testid="browsing-document"
                 onMouseDown={(event) => {
                   if (isEventFromInteractiveElement(event.target)) return;
+                  event.preventDefault();
                   hydrateClickedHeavyBlock(event.target);
-                  activateEdit();
+                  activateEdit({
+                    type: "pointer",
+                    clientX: event.clientX,
+                    clientY: event.clientY,
+                  });
                 }}
                 dangerouslySetInnerHTML={{ __html: searchRender.html }}
               />
@@ -592,11 +615,21 @@ function escapeCssId(id: string) {
   return id.replace(/["\\#.;?+*~':!^$[\]()=>|/@]/g, "\\$&");
 }
 
-function isKeyboardEditIntent(event: KeyboardEvent) {
-  if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return false;
-  if (event.key === "Enter" || event.key === "Backspace" || event.key === "Delete") return true;
-  if (event.key === "/" || event.key === " ") return true;
-  return event.key.length === 1;
+function getKeyboardEditIntent(event: KeyboardEvent): EditActivationIntent | null {
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.altKey
+  ) {
+    return null;
+  }
+  if (event.key === "Enter" || event.key === "Backspace" || event.key === "Delete") {
+    return { type: "keyboard", key: event.key };
+  }
+  if (event.key === "/" || event.key === " ") return { type: "keyboard", key: event.key };
+  return event.key.length === 1 ? { type: "keyboard", key: event.key } : null;
 }
 
 function isEventFromEditableElement(target: EventTarget | null) {
