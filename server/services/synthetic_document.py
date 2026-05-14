@@ -308,6 +308,10 @@ class SyntheticDocumentFactory:
         )
 
     def _synthesize_new(self, path: Path, block_type: str) -> Document:
+        # Read paths must not touch disk: return an in-memory Document and let
+        # the first explicit `write_full` create the sidecar. This keeps
+        # read-only filesystems readable (the prior `self.write_full(...)`
+        # call here turned a read into a write-permission error).
         definition = self._registry.by_block_type(block_type)
         block_id = str(uuid.uuid4())
         rel_src = path.name
@@ -319,17 +323,21 @@ class SyntheticDocumentFactory:
             meta=meta,
             extras={"blocks": {block_id: {}}},
         )
-        document = Document(
+        return Document(
             path=path, block_id=block_id, block_type=definition.block_type, snapshot=snapshot
         )
-        return self.write_full(document, snapshot)
 
     def _read_markdown_shape(
         self, path: Path, block_type: str, sidecar: dict[str, Any]
     ) -> Document:
-        if sidecar.get("version") != SIDECAR_VERSION:
+        version = sidecar.get("version")
+        # Tolerate v1 markdown-shape sidecars emitted by older Rust runtimes
+        # (the original markdown-document version constant) on read; the next
+        # explicit save through `_write_sidecar` will rewrite the file as v2.
+        # Future versions are still rejected.
+        if version not in (1, SIDECAR_VERSION):
             raise ValueError(
-                f"sidecar version {sidecar.get('version')!r} for {path} does not match "
+                f"sidecar version {version!r} for {path} does not match "
                 f"current SIDECAR_VERSION={SIDECAR_VERSION}"
             )
         extras = sidecar.get("extras")

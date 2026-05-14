@@ -821,9 +821,12 @@ fn load_pdf_synthetic_sidecar(root: &Path, path: &Path) -> Result<PdfSyntheticSi
     let raw = match fs::read(&sidecar_path) {
         Ok(raw) => raw,
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            let state = new_pdf_synthetic_sidecar(root, path, None, None, None, None)?;
-            write_json_sidecar(&sidecar_path, &state.sidecar)?;
-            return Ok(state);
+            // Read paths return the synthesized sidecar in-memory only; the
+            // first explicit write through `update_pdf_block_slot` (or the
+            // editor/parsed-cache writers) materializes it on disk. Writing
+            // here would turn a read into a write-permission error on
+            // read-only filesystems.
+            return new_pdf_synthetic_sidecar(root, path, None, None, None, None);
         }
         Err(err) => return Err(format!("failed to read PDF sidecar: {err}")),
     };
@@ -993,7 +996,13 @@ fn ensure_pdf_block_slot(
 ) -> Result<String, String> {
     let block_id =
         pdf_block_id_from_sidecar(sidecar)?.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    if sidecar.get("version").is_none() {
+    // Tolerate v1 markdown-shape sidecars emitted by older Python runtimes
+    // and bring them up to the current version on the next explicit write.
+    let needs_version_bump = match sidecar.get("version").and_then(|value| value.as_u64()) {
+        None => true,
+        Some(v) => v < doxmind_sidecar::SIDECAR_VERSION as u64,
+    };
+    if needs_version_bump {
         sidecar
             .as_object_mut()
             .expect("sidecar is an object")
@@ -1351,10 +1360,14 @@ fn load_excel_sidecar(path: &Path) -> Result<ExcelSidecar, String> {
     let raw = match fs::read(&sidecar_path) {
         Ok(raw) => raw,
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            // Read paths return the synthesized sidecar in-memory only; the
+            // first explicit write through `write_excel_slot` (or the editor/
+            // parsed-cache writers) materializes it on disk. Writing here
+            // would turn a read into a write-permission error on read-only
+            // filesystems.
             let block_id = uuid::Uuid::new_v4().to_string();
             let sidecar =
                 canonical_excel_sidecar(path, None, &block_id, empty_excel_extras(&block_id));
-            write_excel_sidecar_value(&sidecar_path, &sidecar)?;
             return Ok(ExcelSidecar {
                 sidecar_path,
                 sidecar,
@@ -3483,19 +3496,33 @@ mod tests {
         let pdf_path = workspace.path.join("Spec.pdf");
         let source_bytes = b"%PDF-1.4\nmissing sidecar\n%%EOF\n";
         fs::write(&pdf_path, source_bytes).expect("write pdf");
+        let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
 
         let state = workspace_read_pdf_doc_state(workspace.root(), "Spec.pdf".into())
             .expect("read pdf state")
             .expect("synthetic state");
 
+        // Read paths must NOT touch disk; the sidecar only materializes on
+        // the first explicit write.
         assert_eq!(state["editor"], serde_json::Value::Null);
         assert_eq!(state["parsedCache"], serde_json::Value::Null);
         assert_eq!(fs::read(&pdf_path).expect("pdf bytes"), source_bytes);
+        assert!(
+            !sidecar_path.exists(),
+            "missing-sidecar read must not write to disk"
+        );
 
-        let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
+        // First explicit editor write materializes the sidecar in v2 shape.
+        workspace_write_pdf_editor_state(
+            workspace.root(),
+            "Spec.pdf".into(),
+            serde_json::json!({ "freeTextBoxes": [] }),
+        )
+        .expect("write editor state");
+
+        assert!(sidecar_path.exists(), "explicit write creates the sidecar");
         let sidecar = read_json(&sidecar_path);
-        let (_block_id, slot) = only_pdf_block(&sidecar);
-        assert_eq!(slot.as_object().expect("slot object").len(), 0);
+        let (_block_id, _slot) = only_pdf_block(&sidecar);
         assert_eq!(
             sidecar["version"],
             serde_json::json!(doxmind_sidecar::SIDECAR_VERSION)
@@ -3578,6 +3605,8 @@ mod tests {
     fn pdf_sidecar_already_migrated_reads_editor_slot() {
         let workspace = TempWorkspace::new("pdf-sidecar-migrated");
         fs::write(workspace.path.join("Spec.pdf"), b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        // v1 markdown-shape sidecar emitted by an older Python runtime; read
+        // must tolerate it, and the next explicit write must rewrite to v2.
         write_file(
             &workspace.path.join(".Spec.pdf.doxmind"),
             r#"{
@@ -3601,7 +3630,20 @@ mod tests {
             workspace_read_pdf_editor_state(workspace.root(), "Spec.pdf".into()).expect("read");
 
         assert_eq!(editor.expect("editor")["freeTextBoxes"][0]["id"], "box-1");
+
+        // Explicit editor write rewrites the sidecar in v2 shape.
+        workspace_write_pdf_editor_state(
+            workspace.root(),
+            "Spec.pdf".into(),
+            serde_json::json!({"freeTextBoxes": [{"id": "box-2"}]}),
+        )
+        .expect("write editor");
+
         let sidecar = read_json(&workspace.path.join(".Spec.pdf.doxmind"));
+        assert_eq!(
+            sidecar["version"],
+            serde_json::json!(doxmind_sidecar::SIDECAR_VERSION)
+        );
         assert!(sidecar.get(PDF_LEGACY_EDITOR_KEY).is_none());
         assert!(sidecar.get(PDF_LEGACY_PARSED_CACHE_KEY).is_none());
     }
@@ -4499,6 +4541,8 @@ mod tests {
         let workbook_path = workspace.path.join("Budget.xlsx");
         write_file(&workbook_path, "PK\x03\x04");
         let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        // v1 markdown-shape sidecar emitted by an older Python runtime; read
+        // must tolerate it, and the next explicit write must rewrite to v2.
         fs::write(
             &sidecar_path,
             serde_json::to_vec_pretty(&serde_json::json!({
@@ -4525,6 +4569,20 @@ mod tests {
 
         assert_eq!(editor["activeSheetId"], "Sheet2");
         assert!(!sidecar_bak_path(&sidecar_path).exists());
+
+        // Explicit editor write rewrites the sidecar in v2 shape.
+        workspace_write_excel_editor_state(
+            workspace.root(),
+            "Budget.xlsx".into(),
+            serde_json::json!({ "version": 1, "activeSheetId": "Sheet3" }),
+        )
+        .expect("write editor");
+
+        let sidecar = read_json_file(&sidecar_path);
+        assert_eq!(
+            sidecar["version"],
+            serde_json::json!(doxmind_sidecar::SIDECAR_VERSION)
+        );
     }
 
     #[test]
@@ -4580,8 +4638,24 @@ mod tests {
         let editor = workspace_read_excel_editor_state(workspace.root(), "Budget.xlsx".into())
             .expect("read synthesized sidecar");
 
+        // Read paths must NOT touch disk; the sidecar only materializes on
+        // the first explicit write.
         assert!(editor.is_none());
         assert_eq!(fs::read(&workbook_path).expect("workbook"), workbook_bytes);
+        assert!(
+            !sidecar_path.exists(),
+            "missing-sidecar read must not write to disk"
+        );
+
+        // First explicit editor write materializes the sidecar in v2 shape.
+        workspace_write_excel_editor_state(
+            workspace.root(),
+            "Budget.xlsx".into(),
+            serde_json::json!({ "activeSheetId": "Sheet1" }),
+        )
+        .expect("write editor state");
+
+        assert!(sidecar_path.exists(), "explicit write creates the sidecar");
         let sidecar = read_json_file(&sidecar_path);
         assert_eq!(
             sidecar["version"],
@@ -4589,8 +4663,7 @@ mod tests {
         );
         assert!(sidecar.get(EXCEL_LEGACY_EDITOR_KEY).is_none());
         assert!(sidecar.get(EXCEL_LEGACY_PARSED_CACHE_KEY).is_none());
-        let (_block_id, slot) = only_excel_slot(&sidecar);
-        assert!(slot.as_object().expect("slot object").is_empty());
+        let (_block_id, _slot) = only_excel_slot(&sidecar);
     }
 
     #[test]
