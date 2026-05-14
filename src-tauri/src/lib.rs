@@ -5149,13 +5149,15 @@ mod tests {
         let pdf_path = workspace.path.join("app.pdf");
         fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf stub");
 
-        // Python synthesizes-and-persists the v2 sidecar via the
-        // factory's open path (which calls write_full internally for
-        // a missing sidecar).
+        // Python synthesizes the v2 sidecar in memory (open returns a
+        // Document without touching disk after T1), then persists it
+        // with an explicit write_full call.
         let snippet = format!(
             "from pathlib import Path\n\
              from services.synthetic_document import SyntheticDocumentFactory\n\
-             SyntheticDocumentFactory().open_pdf(Path({path:?}))\n",
+             factory = SyntheticDocumentFactory()\n\
+             doc = factory.open_pdf(Path({path:?}))\n\
+             factory.write_full(doc, doc.snapshot)\n",
             path = pdf_path.to_string_lossy().to_string(),
         );
         let output = run_python_snippet(&snippet);
@@ -5189,7 +5191,9 @@ mod tests {
         let snippet = format!(
             "from pathlib import Path\n\
              from services.synthetic_document import SyntheticDocumentFactory\n\
-             SyntheticDocumentFactory().open_excel(Path({path:?}))\n",
+             factory = SyntheticDocumentFactory()\n\
+             doc = factory.open_excel(Path({path:?}))\n\
+             factory.write_full(doc, doc.snapshot)\n",
             path = xlsx_path.to_string_lossy().to_string(),
         );
         let output = run_python_snippet(&snippet);
@@ -5247,7 +5251,6 @@ mod tests {
     /// — which is not what we are testing here.
     #[test]
     #[cfg_attr(not(feature = "cross-runtime-tests"), ignore)]
-    #[ignore = "expected to fail until T1 (sidecar-version-fixer) lands; remove this #[ignore] after T1 merges to re-enable the regression net"]
     fn v1_markdown_shape_on_disk_opens_cross_runtime_after_t1() {
         run_v1_markdown_shape_pdf();
         run_v1_markdown_shape_excel();
