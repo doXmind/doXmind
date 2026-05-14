@@ -31,6 +31,13 @@ window-vibrancy = "0.6"
 uuid = { version = "1", features = ["v4"] }
 trash = "5"
 
+[features]
+# Enables tests that spawn `python3` to verify byte-identical sidecar
+# round-trips between the Rust desktop runtime and the Python sidecar
+# service. Off by default so plain `cargo test` does not depend on
+# `python3` being on PATH or `server/` being reachable.
+cross-runtime-tests = []
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = [

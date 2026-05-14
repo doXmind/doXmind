@@ -4953,6 +4953,448 @@ mod tests {
         assert!(sidecar_bak_path(&sidecar_path).exists());
     }
 
+    /// Round-trip a freshly-emitted sidecar between the Rust workspace
+    /// commands and the Python `SyntheticDocumentFactory` and assert
+    /// neither runtime silently rewrites the other's output.
+    ///
+    /// Existing cross-runtime tests load *hand-crafted* fixtures from
+    /// `tests/fixtures/sidecar_compat/`; they never observe what one
+    /// runtime actually emits being parsed by the other. That gap is
+    /// what allowed the v1 markdown-shape mismatch (Blocker #1) to
+    /// ship in commit 32a2fd2: Python writes `version: 2` but the
+    /// Rust read path tolerated v1 only as a legacy/migration trigger,
+    /// so the very first Python-written sidecar would have been
+    /// treated as legacy and rewritten — burning a `.bak` and
+    /// mutating bytes on every cross-runtime open.
+    ///
+    /// This test asserts four invariants per direction (Rust→Python
+    /// and Python→Rust) for both PDF and Excel:
+    ///
+    ///   1. Subprocess exits 0 (the reading runtime accepts the
+    ///      sidecar without raising).
+    ///   2. No `<sidecar>.bak` is created (the reader did not trigger
+    ///      legacy migration).
+    ///   3. Sidecar bytes are byte-identical before vs after the
+    ///      cross-runtime open (no write-on-read).
+    ///   4. The sidecar declares `"version": SIDECAR_VERSION` (2).
+    ///
+    /// Expected failure mode on commit 32a2fd2 (pre-T1): Direction B
+    /// fails invariant (3) — Python emits a v2 sidecar, Rust opens
+    /// it, and (depending on which Blocker is still live) Rust either
+    /// rewrites it via the legacy-migration path or via the
+    /// synthesize-on-missing write-back path. Once T1 lands this test
+    /// must pass cleanly.
+    ///
+    /// Gated behind the `cross-runtime-tests` feature so the
+    /// default `cargo test` keeps passing without `python3` on PATH
+    /// and without the `server/` checkout being reachable.
+    #[test]
+    #[cfg_attr(not(feature = "cross-runtime-tests"), ignore)]
+    fn cross_runtime_emitted_sidecars_open_without_remigration() {
+        // --- Direction A: Rust emits → Python opens ----------------
+        run_direction_a_pdf();
+        run_direction_a_excel();
+
+        // --- Direction B: Python emits → Rust opens ----------------
+        run_direction_b_pdf();
+        run_direction_b_excel();
+    }
+
+    fn resolve_python_executable() -> String {
+        if let Ok(explicit) = std::env::var("DOXMIND_PYTHON") {
+            if !explicit.trim().is_empty() {
+                return explicit;
+            }
+        }
+        "python3".to_string()
+    }
+
+    fn server_dir() -> PathBuf {
+        // CARGO_MANIFEST_DIR points at src-tauri/; server/ is the
+        // sibling that hosts the Python sidecar service.
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        manifest
+            .parent()
+            .expect("src-tauri has a parent")
+            .join("server")
+    }
+
+    fn run_python_snippet(snippet: &str) -> std::process::Output {
+        let python = resolve_python_executable();
+        let server = server_dir();
+        assert!(
+            server.is_dir(),
+            "expected server/ directory at {server:?} — set DOXMIND_PYTHON or run from a checkout that has server/"
+        );
+        std::process::Command::new(&python)
+            .arg("-c")
+            .arg(snippet)
+            .env("PYTHONPATH", &server)
+            // Migration must remain enabled (default) so any legacy
+            // shape would in fact get migrated — that is precisely the
+            // wrong-version path we want to catch.
+            .env_remove("DOXMIND_SIDECAR_MIGRATE")
+            .output()
+            .unwrap_or_else(|err| {
+                panic!(
+                    "failed to spawn python interpreter {python:?}: {err}; \
+                     set DOXMIND_PYTHON or install python3 on PATH"
+                )
+            })
+    }
+
+    fn assert_python_ok(output: &std::process::Output, context: &str) {
+        if !output.status.success() {
+            panic!(
+                "python subprocess failed during {context}:\n--- stdout ---\n{}\n--- stderr ---\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+        }
+    }
+
+    fn assert_v2_sidecar_invariants(
+        sidecar_path: &Path,
+        before: &[u8],
+        after: &[u8],
+        context: &str,
+    ) {
+        assert!(
+            !sidecar_bak_path(sidecar_path).exists(),
+            "{context}: .bak file appeared at {:?} — reader triggered legacy migration on a freshly emitted sidecar",
+            sidecar_bak_path(sidecar_path),
+        );
+        assert_eq!(
+            before, after,
+            "{context}: sidecar bytes changed across the cross-runtime open at {:?}",
+            sidecar_path,
+        );
+        let parsed: serde_json::Value = serde_json::from_slice(after)
+            .unwrap_or_else(|err| panic!("{context}: sidecar at {sidecar_path:?} is not JSON: {err}"));
+        assert_eq!(
+            parsed["version"],
+            serde_json::json!(doxmind_sidecar::SIDECAR_VERSION),
+            "{context}: emitted sidecar must declare version={}",
+            doxmind_sidecar::SIDECAR_VERSION,
+        );
+    }
+
+    fn run_direction_a_pdf() {
+        let workspace = TempWorkspace::new("xrt-rust-emits-pdf");
+        let pdf_path = workspace.path.join("app.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf stub");
+
+        let editor =
+            serde_json::json!({"version": 1, "edits": {"1:0": {"text": "from-rust"}}});
+        workspace_write_pdf_editor_state(workspace.root(), "app.pdf".into(), editor)
+            .expect("rust write pdf editor state");
+
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&pdf_path);
+        let before = fs::read(&sidecar_path).expect("read pdf sidecar after rust write");
+
+        let snippet = format!(
+            "from pathlib import Path\n\
+             from services.synthetic_document import SyntheticDocumentFactory\n\
+             SyntheticDocumentFactory().open_pdf(Path({path:?}))\n",
+            path = pdf_path.to_string_lossy().to_string(),
+        );
+        let output = run_python_snippet(&snippet);
+        assert_python_ok(&output, "direction A (Rust emits PDF → Python opens)");
+
+        let after = fs::read(&sidecar_path).expect("read pdf sidecar after python open");
+        assert_v2_sidecar_invariants(
+            &sidecar_path,
+            &before,
+            &after,
+            "direction A PDF (Rust→Python)",
+        );
+    }
+
+    fn run_direction_a_excel() {
+        let workspace = TempWorkspace::new("xrt-rust-emits-excel");
+        let xlsx_path = workspace.path.join("book.xlsx");
+        fs::write(&xlsx_path, b"PK\x03\x04\x00\x00\x00\x00").expect("write xlsx stub");
+
+        let editor = serde_json::json!({
+            "version": 1,
+            "activeSheetId": "Sheet1",
+            "sheets": [{"id": "Sheet1", "name": "From Rust"}]
+        });
+        workspace_write_excel_editor_state(workspace.root(), "book.xlsx".into(), editor)
+            .expect("rust write excel editor state");
+
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&xlsx_path);
+        let before = fs::read(&sidecar_path).expect("read excel sidecar after rust write");
+
+        let snippet = format!(
+            "from pathlib import Path\n\
+             from services.synthetic_document import SyntheticDocumentFactory\n\
+             SyntheticDocumentFactory().open_excel(Path({path:?}))\n",
+            path = xlsx_path.to_string_lossy().to_string(),
+        );
+        let output = run_python_snippet(&snippet);
+        assert_python_ok(&output, "direction A (Rust emits Excel → Python opens)");
+
+        let after = fs::read(&sidecar_path).expect("read excel sidecar after python open");
+        assert_v2_sidecar_invariants(
+            &sidecar_path,
+            &before,
+            &after,
+            "direction A Excel (Rust→Python)",
+        );
+    }
+
+    fn run_direction_b_pdf() {
+        let workspace = TempWorkspace::new("xrt-python-emits-pdf");
+        let pdf_path = workspace.path.join("app.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf stub");
+
+        // Python synthesizes-and-persists the v2 sidecar via the
+        // factory's open path (which calls write_full internally for
+        // a missing sidecar).
+        let snippet = format!(
+            "from pathlib import Path\n\
+             from services.synthetic_document import SyntheticDocumentFactory\n\
+             SyntheticDocumentFactory().open_pdf(Path({path:?}))\n",
+            path = pdf_path.to_string_lossy().to_string(),
+        );
+        let output = run_python_snippet(&snippet);
+        assert_python_ok(&output, "direction B (Python emits PDF)");
+
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&pdf_path);
+        let before = fs::read(&sidecar_path).expect("read pdf sidecar after python write");
+
+        let state = workspace_read_pdf_doc_state(workspace.root(), "app.pdf".into())
+            .expect("rust read pdf doc state from python-emitted sidecar")
+            .expect("doc state present");
+        // The slot may be empty (no editor saved yet); the contract is
+        // that the read succeeds and exposes editor/parsedCache keys.
+        assert!(state.get("editor").is_some());
+        assert!(state.get("parsedCache").is_some());
+
+        let after = fs::read(&sidecar_path).expect("read pdf sidecar after rust read");
+        assert_v2_sidecar_invariants(
+            &sidecar_path,
+            &before,
+            &after,
+            "direction B PDF (Python→Rust)",
+        );
+    }
+
+    fn run_direction_b_excel() {
+        let workspace = TempWorkspace::new("xrt-python-emits-excel");
+        let xlsx_path = workspace.path.join("book.xlsx");
+        fs::write(&xlsx_path, b"PK\x03\x04\x00\x00\x00\x00").expect("write xlsx stub");
+
+        let snippet = format!(
+            "from pathlib import Path\n\
+             from services.synthetic_document import SyntheticDocumentFactory\n\
+             SyntheticDocumentFactory().open_excel(Path({path:?}))\n",
+            path = xlsx_path.to_string_lossy().to_string(),
+        );
+        let output = run_python_snippet(&snippet);
+        assert_python_ok(&output, "direction B (Python emits Excel)");
+
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&xlsx_path);
+        let before = fs::read(&sidecar_path).expect("read excel sidecar after python write");
+
+        let state = workspace_read_excel_doc_state(workspace.root(), "book.xlsx".into())
+            .expect("rust read excel doc state from python-emitted sidecar")
+            .expect("doc state present");
+        assert!(state.get("editor").is_some());
+        assert!(state.get("parsedCache").is_some());
+
+        let after = fs::read(&sidecar_path).expect("read excel sidecar after rust read");
+        assert_v2_sidecar_invariants(
+            &sidecar_path,
+            &before,
+            &after,
+            "direction B Excel (Python→Rust)",
+        );
+    }
+
+    /// Regression net for Blocker #1: a `version: 1` markdown-shape
+    /// sidecar already on disk (left over from a pre-v2 install) must
+    /// open cross-runtime without crashing and must be upgraded to
+    /// v2 on the next explicit write through Rust.
+    ///
+    /// Today (commit `c6562f3` / `32a2fd2` base) this test FAILS in
+    /// two ways:
+    ///   * Direction A: Python's `_read_markdown_shape` does a strict
+    ///     `sidecar["version"] != SIDECAR_VERSION` check and raises
+    ///     `ValueError`, so the subprocess exits non-zero.
+    ///   * Direction B: Rust's `ensure_pdf_block_slot` /
+    ///     Excel-equivalent only inserts `version` when it is
+    ///     *absent*; it never upgrades a present-but-stale value. So
+    ///     after a v1-markdown-shape sidecar is read and re-written
+    ///     by a write path, `version` stays at 1 on disk.
+    ///
+    /// Both failure modes are exactly what T1 (sidecar-version-fixer)
+    /// fixes:
+    ///   * Python accepts `version in {1, SIDECAR_VERSION}`.
+    ///   * Rust rewrites `version` when absent OR below `SIDECAR_VERSION`.
+    ///
+    /// The test is `#[ignore]`'d on top of the feature gate so it
+    /// does not break CI today. The team lead removes the `#[ignore]`
+    /// after T1 merges to confirm the regression net catches a
+    /// future re-introduction. The `#[ignore]` reason is verbose on
+    /// purpose so the next reader knows exactly when to remove it.
+    ///
+    /// Critically: the seeded sidecar has NO legacy `pdf_editor` /
+    /// `excel_editor` top-level keys. It is a *v1 markdown-shape*
+    /// sidecar, not a legacy-shape one. If it had legacy keys, the
+    /// migration path would fire and a `.bak` file would be written
+    /// — which is not what we are testing here.
+    #[test]
+    #[cfg_attr(not(feature = "cross-runtime-tests"), ignore)]
+    #[ignore = "expected to fail until T1 (sidecar-version-fixer) lands; remove this #[ignore] after T1 merges to re-enable the regression net"]
+    fn v1_markdown_shape_on_disk_opens_cross_runtime_after_t1() {
+        run_v1_markdown_shape_pdf();
+        run_v1_markdown_shape_excel();
+    }
+
+    fn seed_v1_markdown_shape_pdf_sidecar(pdf_path: &Path, block_id: &str) -> PathBuf {
+        let src = pdf_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("pdf filename");
+        let html = format!("<!-- pdf-block id=\"{block_id}\" src=\"{src}\" -->");
+        let sidecar = serde_json::json!({
+            "version": 1,
+            "id": "v1-pdf-doc",
+            "html": html,
+            "markdown_hash": "v1-fixture-hash-pdf",
+            "updated_at": "2026-05-14T00:00:00Z",
+            "extras": { "blocks": { block_id: {} } }
+        });
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(pdf_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&sidecar).expect("serialize seeded pdf sidecar"),
+        )
+        .expect("write seeded v1 pdf sidecar");
+        sidecar_path
+    }
+
+    fn seed_v1_markdown_shape_excel_sidecar(xlsx_path: &Path, block_id: &str) -> PathBuf {
+        let src = xlsx_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("xlsx filename");
+        let html = format!("<!-- excel-block id=\"{block_id}\" src=\"{src}\" -->");
+        let sidecar = serde_json::json!({
+            "version": 1,
+            "id": "v1-excel-doc",
+            "html": html,
+            "markdown_hash": "v1-fixture-hash-excel",
+            "updated_at": "2026-05-14T00:00:00Z",
+            "extras": { "blocks": { block_id: {} } }
+        });
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(xlsx_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&sidecar).expect("serialize seeded excel sidecar"),
+        )
+        .expect("write seeded v1 excel sidecar");
+        sidecar_path
+    }
+
+    fn run_v1_markdown_shape_pdf() {
+        let workspace = TempWorkspace::new("xrt-v1-pdf");
+        let pdf_path = workspace.path.join("app.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf stub");
+        let sidecar_path =
+            seed_v1_markdown_shape_pdf_sidecar(&pdf_path, "v1-pdf-block");
+
+        // Direction A: Python must accept v1 markdown-shape after T1.
+        let snippet = format!(
+            "from pathlib import Path\n\
+             from services.synthetic_document import SyntheticDocumentFactory\n\
+             SyntheticDocumentFactory().open_pdf(Path({path:?}))\n",
+            path = pdf_path.to_string_lossy().to_string(),
+        );
+        let output = run_python_snippet(&snippet);
+        assert_python_ok(
+            &output,
+            "v1 markdown-shape PDF (Python must tolerate version=1 after T1)",
+        );
+        // No legacy fields → no `.bak` should ever be written by the
+        // Python read path.
+        assert!(
+            !sidecar_bak_path(&sidecar_path).exists(),
+            "Python read of v1 markdown-shape PDF sidecar must not write a .bak (no legacy fields present)"
+        );
+
+        // Direction B: Rust must upgrade `version` to SIDECAR_VERSION
+        // on the next explicit write.
+        let editor =
+            serde_json::json!({"version": 1, "edits": {"1:0": {"text": "after-t1"}}});
+        workspace_write_pdf_editor_state(workspace.root(), "app.pdf".into(), editor)
+            .expect("rust write pdf editor state against v1 sidecar");
+
+        let on_disk: serde_json::Value =
+            serde_json::from_slice(&fs::read(&sidecar_path).expect("read sidecar after rust write"))
+                .expect("parse sidecar after rust write");
+        assert_eq!(
+            on_disk["version"],
+            serde_json::json!(doxmind_sidecar::SIDECAR_VERSION),
+            "Rust must rewrite v1 markdown-shape PDF sidecar version to SIDECAR_VERSION on explicit write; got {:?}",
+            on_disk["version"],
+        );
+        // Still no `.bak` — there were no legacy fields, so no
+        // migration should have run.
+        assert!(
+            !sidecar_bak_path(&sidecar_path).exists(),
+            "Rust write of v1 markdown-shape PDF sidecar must not write a .bak (no legacy fields present)"
+        );
+    }
+
+    fn run_v1_markdown_shape_excel() {
+        let workspace = TempWorkspace::new("xrt-v1-excel");
+        let xlsx_path = workspace.path.join("book.xlsx");
+        fs::write(&xlsx_path, b"PK\x03\x04\x00\x00\x00\x00").expect("write xlsx stub");
+        let sidecar_path =
+            seed_v1_markdown_shape_excel_sidecar(&xlsx_path, "v1-excel-block");
+
+        let snippet = format!(
+            "from pathlib import Path\n\
+             from services.synthetic_document import SyntheticDocumentFactory\n\
+             SyntheticDocumentFactory().open_excel(Path({path:?}))\n",
+            path = xlsx_path.to_string_lossy().to_string(),
+        );
+        let output = run_python_snippet(&snippet);
+        assert_python_ok(
+            &output,
+            "v1 markdown-shape Excel (Python must tolerate version=1 after T1)",
+        );
+        assert!(
+            !sidecar_bak_path(&sidecar_path).exists(),
+            "Python read of v1 markdown-shape Excel sidecar must not write a .bak (no legacy fields present)"
+        );
+
+        let editor = serde_json::json!({
+            "version": 1,
+            "activeSheetId": "Sheet1",
+            "sheets": [{"id": "Sheet1", "name": "After T1"}]
+        });
+        workspace_write_excel_editor_state(workspace.root(), "book.xlsx".into(), editor)
+            .expect("rust write excel editor state against v1 sidecar");
+
+        let on_disk: serde_json::Value =
+            serde_json::from_slice(&fs::read(&sidecar_path).expect("read sidecar after rust write"))
+                .expect("parse sidecar after rust write");
+        assert_eq!(
+            on_disk["version"],
+            serde_json::json!(doxmind_sidecar::SIDECAR_VERSION),
+            "Rust must rewrite v1 markdown-shape Excel sidecar version to SIDECAR_VERSION on explicit write; got {:?}",
+            on_disk["version"],
+        );
+        assert!(
+            !sidecar_bak_path(&sidecar_path).exists(),
+            "Rust write of v1 markdown-shape Excel sidecar must not write a .bak (no legacy fields present)"
+        );
+    }
+
     #[test]
     fn doc_delete_rejects_unknown_extension() {
         let workspace = TempWorkspace::new("delete-unknown");
