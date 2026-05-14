@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "id": "fixture-pdf-doc",
+  "html": "<!-- pdf-block id=\"fixture-pdf-block\" src=\"Spec.pdf\" -->",
+  "markdown_hash": "fixture-stale-ok-for-synthetic-documents",
+  "updated_at": "2026-05-12T00:00:00Z",
+  "extras": {
+    "unrelated": {
+      "keep": true,
+      "nested": {
+        "value": 7
+      }
+    },
+    "blocks": {
+      "fixture-pdf-block": {
+        "editor": {
+          "version": 1,
+          "edits": {
+            "1:0": {
+              "text": "fixture pdf"
+            }
+          }
+        },
+        "parsedCache": {
+          "sourceHash": "valid-pdf-hash",
+          "parsed": {
+            "pages": [
+              {
+                "index": 0,
+                "text": "hello"
+              }
+            ]
+          }
+        },
+        "slotExtra": {
+          "keep": "pdf"
+        }
+      }
+    }
+  }
+}

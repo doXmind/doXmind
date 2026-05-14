@@ -27,6 +27,10 @@ use tauri::{
 };
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
+const PDF_BLOCK_TYPE: &str = "pdf-block";
+const PDF_LEGACY_EDITOR_KEY: &str = "pdf_editor";
+const PDF_LEGACY_PARSED_CACHE_KEY: &str = "pdf_parsed_cache";
+
 #[cfg(target_os = "macos")]
 mod dock_menu;
 #[cfg(target_os = "macos")]
@@ -700,7 +704,8 @@ fn workspace_stat_binary(root: String, path: String) -> Result<serde_json::Value
     if !is_pdf_file(&path) && !is_excel_file(&path) {
         return Err("binary workspace stat is only enabled for PDF and Excel files".to_string());
     }
-    let meta = fs::metadata(&path).map_err(|err| format!("failed to stat workspace file: {err}"))?;
+    let meta =
+        fs::metadata(&path).map_err(|err| format!("failed to stat workspace file: {err}"))?;
     let mtime_ns: u128 = meta
         .modified()
         .ok()
@@ -741,15 +746,11 @@ fn workspace_read_pdf_editor_state(
     if !is_pdf_file(&path) {
         return Err("PDF editor state is only enabled for PDFs".to_string());
     }
-    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
-    let raw = match fs::read_to_string(sidecar_path) {
-        Ok(raw) => raw,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(err) => return Err(format!("failed to read PDF sidecar: {err}")),
-    };
-    let sidecar: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|err| format!("invalid PDF sidecar JSON: {err}"))?;
-    Ok(sidecar.get("pdf_editor").cloned())
+    let state = load_pdf_synthetic_sidecar(&root, &path)?;
+    Ok(
+        pdf_block_slot(&state.sidecar, &state.block_id)
+            .and_then(|slot| slot.get("editor").cloned()),
+    )
 }
 
 #[tauri::command]
@@ -763,28 +764,9 @@ fn workspace_write_pdf_editor_state(
     if !is_pdf_file(&path) {
         return Err("PDF editor state is only enabled for PDFs".to_string());
     }
-    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
-    let rel_path = relative_path_string(&root, &path)?;
-    let existing_cache = read_sidecar_field(&sidecar_path, "pdf_parsed_cache");
-    let mut sidecar = serde_json::json!({
-        "version": 1,
-        "id": stable_path_id(&rel_path),
-        "source_path": rel_path,
-        "updated_at_unix_nanos": unix_nanos().to_string(),
-        "pdf_editor": payload,
-    });
-    if let Some(cache) = existing_cache {
-        sidecar
-            .as_object_mut()
-            .unwrap()
-            .insert("pdf_parsed_cache".to_string(), cache);
-    }
-    fs::write(
-        sidecar_path,
-        serde_json::to_vec_pretty(&sidecar)
-            .map_err(|err| format!("failed to encode PDF sidecar: {err}"))?,
-    )
-    .map_err(|err| format!("failed to write PDF sidecar: {err}"))
+    update_pdf_block_slot(&root, &path, |slot| {
+        slot.insert("editor".to_string(), payload);
+    })
 }
 
 #[tauri::command]
@@ -797,17 +779,11 @@ fn workspace_read_pdf_doc_state(
     if !is_pdf_file(&path) {
         return Err("PDF document state is only enabled for PDFs".to_string());
     }
-    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
-    let raw = match fs::read_to_string(&sidecar_path) {
-        Ok(raw) => raw,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(err) => return Err(format!("failed to read PDF sidecar: {err}")),
-    };
-    let sidecar: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|err| format!("invalid PDF sidecar JSON: {err}"))?;
+    let state = load_pdf_synthetic_sidecar(&root, &path)?;
+    let slot = pdf_block_slot(&state.sidecar, &state.block_id);
     Ok(Some(serde_json::json!({
-        "editor": sidecar.get("pdf_editor").cloned().unwrap_or(serde_json::Value::Null),
-        "parsedCache": sidecar.get("pdf_parsed_cache").cloned().unwrap_or(serde_json::Value::Null),
+        "editor": slot.and_then(|slot| slot.get("editor").cloned()).unwrap_or(serde_json::Value::Null),
+        "parsedCache": slot.and_then(|slot| slot.get("parsedCache").cloned()).unwrap_or(serde_json::Value::Null),
     })))
 }
 
@@ -826,28 +802,424 @@ fn workspace_write_pdf_parsed_cache(
     if source_hash.trim().is_empty() {
         return Err("sourceHash is required".to_string());
     }
-    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
-    let rel_path = relative_path_string(&root, &path)?;
-    let existing_editor = read_sidecar_field(&sidecar_path, "pdf_editor");
-    let mut sidecar = serde_json::json!({
-        "version": 1,
-        "id": stable_path_id(&rel_path),
-        "source_path": rel_path,
-        "updated_at_unix_nanos": unix_nanos().to_string(),
-        "pdf_parsed_cache": { "sourceHash": source_hash, "parsed": parsed },
+    update_pdf_block_slot(&root, &path, |slot| {
+        slot.insert(
+            "parsedCache".to_string(),
+            serde_json::json!({ "sourceHash": source_hash, "parsed": parsed }),
+        );
+    })
+}
+
+struct PdfSyntheticSidecar {
+    sidecar_path: PathBuf,
+    sidecar: serde_json::Value,
+    block_id: String,
+}
+
+fn load_pdf_synthetic_sidecar(root: &Path, path: &Path) -> Result<PdfSyntheticSidecar, String> {
+    let sidecar_path = doxmind_sidecar::sidecar_path_for(path);
+    let raw = match fs::read(&sidecar_path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            let state = new_pdf_synthetic_sidecar(root, path, None, None, None, None)?;
+            write_json_sidecar(&sidecar_path, &state.sidecar)?;
+            return Ok(state);
+        }
+        Err(err) => return Err(format!("failed to read PDF sidecar: {err}")),
+    };
+
+    let mut sidecar = parse_pdf_sidecar_json(&sidecar_path, &raw)?;
+    if pdf_sidecar_has_legacy_top_level(&sidecar) {
+        sidecar = migrate_pdf_legacy_sidecar(root, path, &sidecar_path, &raw, sidecar)?;
+    }
+
+    let block_id = ensure_pdf_block_slot(root, path, &mut sidecar)?;
+    Ok(PdfSyntheticSidecar {
+        sidecar_path,
+        sidecar,
+        block_id,
+    })
+}
+
+fn update_pdf_block_slot<F>(root: &Path, path: &Path, mutate: F) -> Result<(), String>
+where
+    F: FnOnce(&mut serde_json::Map<String, serde_json::Value>),
+{
+    let mut state = load_pdf_synthetic_sidecar(root, path)?;
+    let slot = pdf_block_slot_mut(&mut state.sidecar, &state.block_id)?;
+    mutate(slot);
+    remove_pdf_legacy_top_level(&mut state.sidecar);
+    refresh_pdf_synthetic_sidecar(root, path, &mut state.sidecar)?;
+    write_json_sidecar(&state.sidecar_path, &state.sidecar)
+}
+
+fn parse_pdf_sidecar_json(sidecar_path: &Path, raw: &[u8]) -> Result<serde_json::Value, String> {
+    let value: serde_json::Value = match serde_json::from_slice(raw) {
+        Ok(value) => value,
+        Err(err) => {
+            let forensic = write_pdf_forensic_copy(sidecar_path, raw)?;
+            return Err(format!(
+                "corrupt PDF sidecar at {}: {err}; forensic copy: {}",
+                sidecar_path.display(),
+                forensic.display()
+            ));
+        }
+    };
+    if !value.is_object() {
+        let forensic = write_pdf_forensic_copy(sidecar_path, raw)?;
+        return Err(format!(
+            "corrupt PDF sidecar at {}: JSON top level is not an object; forensic copy: {}",
+            sidecar_path.display(),
+            forensic.display()
+        ));
+    }
+    Ok(value)
+}
+
+fn migrate_pdf_legacy_sidecar(
+    root: &Path,
+    path: &Path,
+    sidecar_path: &Path,
+    raw: &[u8],
+    legacy: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let bak_path = sidecar_path.with_file_name(format!(
+        "{}.bak",
+        sidecar_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(".pdf.doxmind")
+    ));
+    if bak_path.exists() {
+        return Err(format!(
+            "legacy PDF sidecar migration blocked because backup already exists: {}",
+            bak_path.display()
+        ));
+    }
+    atomic_write_bytes(&bak_path, raw)
+        .map_err(|err| format!("failed to back up legacy PDF sidecar: {err}"))?;
+
+    let legacy_editor = legacy.get(PDF_LEGACY_EDITOR_KEY).cloned();
+    let legacy_cache = legacy.get(PDF_LEGACY_PARSED_CACHE_KEY).cloned();
+    let legacy_id = legacy
+        .get("id")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string);
+    let legacy_block_id = pdf_block_id_from_sidecar(&legacy)?;
+    let mut migrated = new_pdf_synthetic_sidecar(
+        root,
+        path,
+        legacy_id,
+        legacy_block_id,
+        legacy_editor,
+        legacy_cache,
+    )?;
+
+    if let Some(extras) = legacy.get("extras").and_then(|value| value.as_object()) {
+        let mut preserved_extras = serde_json::Value::Object(extras.clone());
+        let slot = pdf_block_slot_mut_in_extras(&mut preserved_extras, &migrated.block_id)?;
+        if !slot.contains_key("editor") {
+            if let Some(editor) = pdf_block_slot(&migrated.sidecar, &migrated.block_id)
+                .and_then(|slot| slot.get("editor").cloned())
+            {
+                slot.insert("editor".to_string(), editor);
+            }
+        }
+        if !slot.contains_key("parsedCache") {
+            if let Some(cache) = pdf_block_slot(&migrated.sidecar, &migrated.block_id)
+                .and_then(|slot| slot.get("parsedCache").cloned())
+            {
+                slot.insert("parsedCache".to_string(), cache);
+            }
+        }
+        migrated
+            .sidecar
+            .as_object_mut()
+            .expect("new sidecar is an object")
+            .insert("extras".to_string(), preserved_extras);
+    }
+
+    write_json_sidecar(sidecar_path, &migrated.sidecar)?;
+    Ok(migrated.sidecar)
+}
+
+fn new_pdf_synthetic_sidecar(
+    _root: &Path,
+    path: &Path,
+    id_override: Option<String>,
+    block_id_override: Option<String>,
+    editor: Option<serde_json::Value>,
+    parsed_cache: Option<serde_json::Value>,
+) -> Result<PdfSyntheticSidecar, String> {
+    let id = id_override.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let block_id = block_id_override.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let mut slot = serde_json::Map::new();
+    if let Some(editor) = editor.filter(|value| value.is_object()) {
+        slot.insert("editor".to_string(), editor);
+    }
+    if let Some(parsed_cache) = parsed_cache.filter(|value| value.is_object()) {
+        slot.insert("parsedCache".to_string(), parsed_cache);
+    }
+    let src = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("document.pdf");
+    let html = pdf_placeholder_line(&block_id, src);
+    let markdown = format!("{html}\n");
+    let sidecar = serde_json::json!({
+        "version": doxmind_sidecar::SIDECAR_VERSION,
+        "id": id,
+        "html": html,
+        "markdown_hash": synthetic_markdown_hash(&id, path, &markdown),
+        "updated_at": doxmind_sidecar::now_iso8601(),
+        "extras": {
+            "blocks": {
+                block_id.clone(): serde_json::Value::Object(slot),
+            },
+        },
     });
-    if let Some(editor) = existing_editor {
+    Ok(PdfSyntheticSidecar {
+        sidecar_path: doxmind_sidecar::sidecar_path_for(path),
+        sidecar,
+        block_id,
+    })
+}
+
+fn ensure_pdf_block_slot(
+    _root: &Path,
+    path: &Path,
+    sidecar: &mut serde_json::Value,
+) -> Result<String, String> {
+    let block_id =
+        pdf_block_id_from_sidecar(sidecar)?.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    if sidecar.get("version").is_none() {
         sidecar
             .as_object_mut()
-            .unwrap()
-            .insert("pdf_editor".to_string(), editor);
+            .expect("sidecar is an object")
+            .insert(
+                "version".to_string(),
+                serde_json::json!(doxmind_sidecar::SIDECAR_VERSION),
+            );
     }
-    fs::write(
-        sidecar_path,
-        serde_json::to_vec_pretty(&sidecar)
-            .map_err(|err| format!("failed to encode PDF sidecar: {err}"))?,
-    )
-    .map_err(|err| format!("failed to write PDF sidecar: {err}"))
+    let src = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("document.pdf");
+    if sidecar
+        .get("html")
+        .and_then(|value| value.as_str())
+        .is_none()
+    {
+        sidecar
+            .as_object_mut()
+            .expect("sidecar is an object")
+            .insert(
+                "html".to_string(),
+                serde_json::json!(pdf_placeholder_line(&block_id, src)),
+            );
+    }
+    if sidecar.get("id").and_then(|value| value.as_str()).is_none() {
+        sidecar
+            .as_object_mut()
+            .expect("sidecar is an object")
+            .insert(
+                "id".to_string(),
+                serde_json::json!(uuid::Uuid::new_v4().to_string()),
+            );
+    }
+    let _ = pdf_block_slot_mut(sidecar, &block_id)?;
+    refresh_pdf_synthetic_sidecar(_root, path, sidecar)?;
+    Ok(block_id)
+}
+
+fn refresh_pdf_synthetic_sidecar(
+    _root: &Path,
+    path: &Path,
+    sidecar: &mut serde_json::Value,
+) -> Result<(), String> {
+    let id = sidecar
+        .get("id")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "PDF sidecar document id is required".to_string())?
+        .to_string();
+    let html = sidecar
+        .get("html")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    let markdown = format!("{html}\n");
+    let obj = sidecar
+        .as_object_mut()
+        .ok_or_else(|| "PDF sidecar JSON top level is not an object".to_string())?;
+    obj.insert(
+        "markdown_hash".to_string(),
+        serde_json::json!(synthetic_markdown_hash(&id, path, &markdown)),
+    );
+    obj.insert(
+        "updated_at".to_string(),
+        serde_json::json!(doxmind_sidecar::now_iso8601()),
+    );
+    Ok(())
+}
+
+fn pdf_block_slot<'a>(
+    sidecar: &'a serde_json::Value,
+    block_id: &str,
+) -> Option<&'a serde_json::Map<String, serde_json::Value>> {
+    sidecar
+        .get("extras")?
+        .get("blocks")?
+        .get(block_id)?
+        .as_object()
+}
+
+fn pdf_block_slot_mut<'a>(
+    sidecar: &'a mut serde_json::Value,
+    block_id: &str,
+) -> Result<&'a mut serde_json::Map<String, serde_json::Value>, String> {
+    let obj = sidecar
+        .as_object_mut()
+        .ok_or_else(|| "PDF sidecar JSON top level is not an object".to_string())?;
+    let extras = obj
+        .entry("extras".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !extras.is_object() {
+        *extras = serde_json::json!({});
+    }
+    let extras_obj = extras.as_object_mut().expect("extras is an object");
+    let blocks = extras_obj
+        .entry("blocks".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !blocks.is_object() {
+        *blocks = serde_json::json!({});
+    }
+    let blocks_obj = blocks.as_object_mut().expect("blocks is an object");
+    let slot = blocks_obj
+        .entry(block_id.to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !slot.is_object() {
+        *slot = serde_json::json!({});
+    }
+    Ok(slot.as_object_mut().expect("slot is an object"))
+}
+
+fn pdf_block_slot_mut_in_extras<'a>(
+    extras: &'a mut serde_json::Value,
+    block_id: &str,
+) -> Result<&'a mut serde_json::Map<String, serde_json::Value>, String> {
+    if !extras.is_object() {
+        *extras = serde_json::json!({});
+    }
+    let extras_obj = extras.as_object_mut().expect("extras is an object");
+    let blocks = extras_obj
+        .entry("blocks".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !blocks.is_object() {
+        *blocks = serde_json::json!({});
+    }
+    let blocks_obj = blocks.as_object_mut().expect("blocks is an object");
+    let slot = blocks_obj
+        .entry(block_id.to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !slot.is_object() {
+        *slot = serde_json::json!({});
+    }
+    Ok(slot.as_object_mut().expect("slot is an object"))
+}
+
+fn pdf_block_id_from_sidecar(sidecar: &serde_json::Value) -> Result<Option<String>, String> {
+    if let Some(html) = sidecar.get("html").and_then(|value| value.as_str()) {
+        let ids = pdf_block_ids_in_html(html);
+        if ids.len() > 1 {
+            return Err(format!(
+                "markdown-shape PDF sidecar has multiple {PDF_BLOCK_TYPE} placeholders; Synthetic Documents require exactly one"
+            ));
+        }
+        if let Some(id) = ids.into_iter().next() {
+            return Ok(Some(id));
+        }
+    }
+    Ok(sidecar
+        .get("extras")
+        .and_then(|value| value.get("blocks"))
+        .and_then(|value| value.as_object())
+        .and_then(|blocks| blocks.keys().next().cloned()))
+}
+
+fn pdf_block_ids_in_html(html: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    let marker = format!("<!-- {PDF_BLOCK_TYPE} ");
+    let mut rest = html;
+    while let Some(start) = rest.find(&marker) {
+        let after_marker = &rest[start + marker.len()..];
+        if let Some(id_start) = after_marker.find("id=\"") {
+            let after_id = &after_marker[id_start + 4..];
+            if let Some(id_end) = after_id.find('"') {
+                let id = &after_id[..id_end];
+                if !id.is_empty() {
+                    ids.push(id.to_string());
+                }
+            }
+        }
+        rest = after_marker;
+    }
+    ids
+}
+
+fn pdf_placeholder_line(block_id: &str, src: &str) -> String {
+    format!(r#"<!-- {PDF_BLOCK_TYPE} id="{block_id}" src="{src}" -->"#)
+}
+
+fn synthetic_markdown_hash(id: &str, path: &Path, markdown: &str) -> String {
+    let title = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Untitled");
+    let md_content = format!(
+        "---\nid: {}\ntitle: {}\n---\n\n{}",
+        yaml_json_string(id),
+        yaml_json_string(title),
+        markdown
+    );
+    doxmind_sidecar::hash_markdown(&md_content)
+}
+
+fn yaml_json_string(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
+}
+
+fn pdf_sidecar_has_legacy_top_level(sidecar: &serde_json::Value) -> bool {
+    sidecar.get(PDF_LEGACY_EDITOR_KEY).is_some()
+        || sidecar.get(PDF_LEGACY_PARSED_CACHE_KEY).is_some()
+}
+
+fn remove_pdf_legacy_top_level(sidecar: &mut serde_json::Value) {
+    if let Some(obj) = sidecar.as_object_mut() {
+        obj.remove(PDF_LEGACY_EDITOR_KEY);
+        obj.remove(PDF_LEGACY_PARSED_CACHE_KEY);
+    }
+}
+
+fn write_pdf_forensic_copy(sidecar_path: &Path, raw: &[u8]) -> Result<PathBuf, String> {
+    let forensic_path = sidecar_path.with_file_name(format!(
+        "{}.corrupt-{}",
+        sidecar_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(".pdf.doxmind"),
+        unix_nanos()
+    ));
+    atomic_write_bytes(&forensic_path, raw)
+        .map_err(|err| format!("failed to preserve corrupt PDF sidecar: {err}"))?;
+    Ok(forensic_path)
+}
+
+fn write_json_sidecar(path: &Path, sidecar: &serde_json::Value) -> Result<(), String> {
+    let bytes = serde_json::to_vec_pretty(sidecar)
+        .map_err(|err| format!("failed to encode PDF sidecar: {err}"))?;
+    atomic_write_bytes(path, &bytes).map_err(|err| format!("failed to write PDF sidecar: {err}"))
 }
 
 #[tauri::command]
@@ -860,36 +1232,12 @@ fn workspace_read_excel_editor_state(
     if !is_excel_file(&path) {
         return Err("Excel editor state is only enabled for .xlsx/.xlsm files".to_string());
     }
-    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
-    let raw = match fs::read_to_string(&sidecar_path) {
-        Ok(raw) => raw,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(err) => return Err(format!("failed to read Excel sidecar: {err}")),
-    };
-    let mut sidecar: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|err| format!("invalid Excel sidecar JSON: {err}"))?;
-    // Opportunistic migration: if this sidecar still carries the legacy
-    // `excel_parsed_cache` field (no longer written by us), strip it and
-    // rewrite the sidecar slim. The first cold read of an old workbook
-    // pays the full JSON parse once; every subsequent read sees a small
-    // editor-only sidecar. Failure to write back is non-fatal — we still
-    // return the editor state, the next read will just retry the strip.
-    let stripped = sidecar
-        .as_object_mut()
-        .map(|obj| obj.remove("excel_parsed_cache").is_some())
-        .unwrap_or(false);
-    if stripped {
-        if let Ok(bytes) = serde_json::to_vec_pretty(&sidecar) {
-            // Atomic write: stale parsedCache strip used to use plain
-            // fs::write, which truncates the file before writing. A crash
-            // (or a kill -9 from a debugger) mid-write would leave the
-            // user's editor state truncated. Slim-on-read is invoked on
-            // every cold open of a legacy sidecar, so the exposure window
-            // is much wider than for explicit save paths.
-            let _ = atomic_write_bytes(&sidecar_path, &bytes);
-        }
-    }
-    Ok(sidecar.get("excel_editor").cloned())
+    let sidecar = load_excel_sidecar(&path)?;
+    Ok(excel_slot_field(
+        &sidecar.sidecar,
+        &sidecar.block_id,
+        "editor",
+    ))
 }
 
 /// Write `bytes` to `path` atomically via temp-file + rename.
@@ -943,28 +1291,9 @@ fn workspace_write_excel_editor_state(
     if !is_excel_file(&path) {
         return Err("Excel editor state is only enabled for .xlsx/.xlsm files".to_string());
     }
-    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
-    let rel_path = relative_path_string(&root, &path)?;
-    // Deliberately drop any pre-existing `excel_parsed_cache` field. The
-    // backend has its own process-local LRU and the frontend has a switch
-    // cache; the on-disk parsedCache (which can run to ~18 MB for a single
-    // workbook) was just bloat that slowed every cold read of this sidecar
-    // by a second. The next `excel_parsed_cache` write would re-create it
-    // if we ever decide to bring the on-disk shortcut back, so this is a
-    // soft drop, not a schema deprecation.
-    let sidecar = serde_json::json!({
-        "version": 1,
-        "id": stable_path_id(&rel_path),
-        "source_path": rel_path,
-        "updated_at_unix_nanos": unix_nanos().to_string(),
-        "excel_editor": payload,
-    });
-    fs::write(
-        sidecar_path,
-        serde_json::to_vec_pretty(&sidecar)
-            .map_err(|err| format!("failed to encode Excel sidecar: {err}"))?,
-    )
-    .map_err(|err| format!("failed to write Excel sidecar: {err}"))
+    write_excel_slot(&path, |slot| {
+        slot.insert("editor".to_string(), payload);
+    })
 }
 
 #[tauri::command]
@@ -977,17 +1306,10 @@ fn workspace_read_excel_doc_state(
     if !is_excel_file(&path) {
         return Err("Excel document state is only enabled for .xlsx/.xlsm files".to_string());
     }
-    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
-    let raw = match fs::read_to_string(&sidecar_path) {
-        Ok(raw) => raw,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(err) => return Err(format!("failed to read Excel sidecar: {err}")),
-    };
-    let sidecar: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|err| format!("invalid Excel sidecar JSON: {err}"))?;
+    let sidecar = load_excel_sidecar(&path)?;
     Ok(Some(serde_json::json!({
-        "editor": sidecar.get("excel_editor").cloned().unwrap_or(serde_json::Value::Null),
-        "parsedCache": sidecar.get("excel_parsed_cache").cloned().unwrap_or(serde_json::Value::Null),
+        "editor": excel_slot_field(&sidecar.sidecar, &sidecar.block_id, "editor").unwrap_or(serde_json::Value::Null),
+        "parsedCache": excel_slot_field(&sidecar.sidecar, &sidecar.block_id, "parsedCache").unwrap_or(serde_json::Value::Null),
     })))
 }
 
@@ -1006,34 +1328,348 @@ fn workspace_write_excel_parsed_cache(
     if source_hash.trim().is_empty() {
         return Err("sourceHash is required".to_string());
     }
-    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
-    let rel_path = relative_path_string(&root, &path)?;
-    let existing_editor = read_sidecar_field(&sidecar_path, "excel_editor");
-    let mut sidecar = serde_json::json!({
-        "version": 1,
-        "id": stable_path_id(&rel_path),
-        "source_path": rel_path,
-        "updated_at_unix_nanos": unix_nanos().to_string(),
-        "excel_parsed_cache": { "sourceHash": source_hash, "parsed": parsed },
-    });
-    if let Some(editor) = existing_editor {
-        sidecar
-            .as_object_mut()
-            .unwrap()
-            .insert("excel_editor".to_string(), editor);
-    }
-    fs::write(
-        sidecar_path,
-        serde_json::to_vec_pretty(&sidecar)
-            .map_err(|err| format!("failed to encode Excel sidecar: {err}"))?,
-    )
-    .map_err(|err| format!("failed to write Excel sidecar: {err}"))
+    write_excel_slot(&path, |slot| {
+        slot.insert(
+            "parsedCache".to_string(),
+            serde_json::json!({ "sourceHash": source_hash, "parsed": parsed }),
+        );
+    })
 }
 
-fn read_sidecar_field(sidecar_path: &Path, key: &str) -> Option<serde_json::Value> {
-    let raw = fs::read_to_string(sidecar_path).ok()?;
-    let sidecar: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    sidecar.get(key).cloned()
+const EXCEL_BLOCK_TYPE: &str = "excel-block";
+const EXCEL_LEGACY_EDITOR_KEY: &str = "excel_editor";
+const EXCEL_LEGACY_PARSED_CACHE_KEY: &str = "excel_parsed_cache";
+
+struct ExcelSidecar {
+    sidecar_path: PathBuf,
+    sidecar: serde_json::Value,
+    block_id: String,
+}
+
+fn load_excel_sidecar(path: &Path) -> Result<ExcelSidecar, String> {
+    let sidecar_path = doxmind_sidecar::sidecar_path_for(path);
+    let raw = match fs::read(&sidecar_path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            let block_id = uuid::Uuid::new_v4().to_string();
+            let sidecar =
+                canonical_excel_sidecar(path, None, &block_id, empty_excel_extras(&block_id));
+            write_excel_sidecar_value(&sidecar_path, &sidecar)?;
+            return Ok(ExcelSidecar {
+                sidecar_path,
+                sidecar,
+                block_id,
+            });
+        }
+        Err(err) => return Err(format!("failed to read Excel sidecar: {err}")),
+    };
+
+    let sidecar = parse_excel_sidecar_or_forensic(&sidecar_path, &raw)?;
+    if sidecar.get(EXCEL_LEGACY_EDITOR_KEY).is_some()
+        || sidecar.get(EXCEL_LEGACY_PARSED_CACHE_KEY).is_some()
+    {
+        return migrate_legacy_excel_sidecar(path, sidecar_path, sidecar, raw);
+    }
+
+    let block_id = excel_block_id_from_sidecar(&sidecar)?.ok_or_else(|| {
+        format!(
+            "markdown-shape Excel sidecar at {} has no {EXCEL_BLOCK_TYPE} placeholder",
+            sidecar_path.display()
+        )
+    })?;
+    Ok(ExcelSidecar {
+        sidecar_path,
+        sidecar,
+        block_id,
+    })
+}
+
+fn migrate_legacy_excel_sidecar(
+    path: &Path,
+    sidecar_path: PathBuf,
+    legacy: serde_json::Value,
+    raw: Vec<u8>,
+) -> Result<ExcelSidecar, String> {
+    let bak_path = sidecar_path.with_file_name(format!(
+        "{}.bak",
+        sidecar_path
+            .file_name()
+            .map(|name| name.to_string_lossy())
+            .unwrap_or_default()
+    ));
+    if bak_path.exists() {
+        return Err(format!(
+            "legacy Excel sidecar migration is blocked because a backup already exists: {}",
+            bak_path.display()
+        ));
+    }
+    atomic_write_bytes(&bak_path, &raw)
+        .map_err(|err| format!("failed to write Excel sidecar migration backup: {err}"))?;
+
+    let block_id =
+        excel_block_id_from_sidecar(&legacy)?.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let mut extras = extras_object(&legacy);
+    let mut blocks = blocks_object_from_extras(&extras);
+    let mut slot = blocks
+        .remove(&block_id)
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+
+    if !slot.contains_key("editor") {
+        if let Some(editor) = legacy
+            .get(EXCEL_LEGACY_EDITOR_KEY)
+            .filter(|value| !value.is_null())
+        {
+            slot.insert("editor".to_string(), editor.clone());
+        }
+    }
+    if !slot.contains_key("parsedCache") {
+        if let Some(cache) = legacy
+            .get(EXCEL_LEGACY_PARSED_CACHE_KEY)
+            .filter(|value| !value.is_null())
+        {
+            slot.insert("parsedCache".to_string(), cache.clone());
+        }
+    }
+
+    blocks.insert(block_id.clone(), serde_json::Value::Object(slot));
+    extras.insert("blocks".to_string(), serde_json::Value::Object(blocks));
+
+    let migrated = canonical_excel_sidecar(
+        path,
+        Some(&legacy),
+        &block_id,
+        serde_json::Value::Object(extras),
+    );
+    write_excel_sidecar_value(&sidecar_path, &migrated).map_err(|err| {
+        format!(
+            "failed to migrate Excel sidecar after writing backup {}: {err}",
+            bak_path.display()
+        )
+    })?;
+
+    Ok(ExcelSidecar {
+        sidecar_path,
+        sidecar: migrated,
+        block_id,
+    })
+}
+
+fn write_excel_slot<F>(path: &Path, update: F) -> Result<(), String>
+where
+    F: FnOnce(&mut serde_json::Map<String, serde_json::Value>),
+{
+    let loaded = load_excel_sidecar(path)?;
+    let mut extras = extras_object(&loaded.sidecar);
+    let mut blocks = blocks_object_from_extras(&extras);
+    let mut slot = blocks
+        .remove(&loaded.block_id)
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+
+    update(&mut slot);
+
+    blocks.insert(loaded.block_id.clone(), serde_json::Value::Object(slot));
+    extras.insert("blocks".to_string(), serde_json::Value::Object(blocks));
+    let next = canonical_excel_sidecar(
+        path,
+        Some(&loaded.sidecar),
+        &loaded.block_id,
+        serde_json::Value::Object(extras),
+    );
+    write_excel_sidecar_value(&loaded.sidecar_path, &next)
+}
+
+fn parse_excel_sidecar_or_forensic(
+    sidecar_path: &Path,
+    raw: &[u8],
+) -> Result<serde_json::Value, String> {
+    let parsed: serde_json::Value = match serde_json::from_slice(raw) {
+        Ok(value) => value,
+        Err(err) => {
+            let forensic = write_excel_forensic_copy(sidecar_path, raw)?;
+            return Err(format!(
+                "invalid Excel sidecar JSON: {err}; forensic copy: {}",
+                forensic.display()
+            ));
+        }
+    };
+    if !parsed.is_object() {
+        let forensic = write_excel_forensic_copy(sidecar_path, raw)?;
+        return Err(format!(
+            "invalid Excel sidecar JSON: top level is not an object; forensic copy: {}",
+            forensic.display()
+        ));
+    }
+    Ok(parsed)
+}
+
+fn write_excel_forensic_copy(sidecar_path: &Path, raw: &[u8]) -> Result<PathBuf, String> {
+    let forensic_path = sidecar_path.with_file_name(format!(
+        "{}.corrupt-{}",
+        sidecar_path
+            .file_name()
+            .map(|name| name.to_string_lossy())
+            .unwrap_or_default(),
+        unix_nanos()
+    ));
+    atomic_write_bytes(&forensic_path, raw)
+        .map_err(|err| format!("failed to write Excel sidecar forensic copy: {err}"))?;
+    Ok(forensic_path)
+}
+
+fn write_excel_sidecar_value(
+    sidecar_path: &Path,
+    sidecar: &serde_json::Value,
+) -> Result<(), String> {
+    let bytes = serde_json::to_vec_pretty(sidecar)
+        .map_err(|err| format!("failed to encode Excel sidecar: {err}"))?;
+    atomic_write_bytes(sidecar_path, &bytes)
+        .map_err(|err| format!("failed to write Excel sidecar: {err}"))
+}
+
+fn canonical_excel_sidecar(
+    path: &Path,
+    existing: Option<&serde_json::Value>,
+    block_id: &str,
+    extras: serde_json::Value,
+) -> serde_json::Value {
+    let id = existing
+        .and_then(|sidecar| sidecar.get("id"))
+        .and_then(|id| id.as_str())
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let rel_src = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "workbook.xlsx".to_string());
+    let placeholder = excel_placeholder(block_id, &rel_src);
+    let html = existing
+        .and_then(|sidecar| sidecar.get("html"))
+        .and_then(|html| html.as_str())
+        .filter(|html| first_excel_block_id_in_html(html).as_deref() == Some(block_id))
+        .unwrap_or(&placeholder)
+        .to_string();
+    let title = path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Workbook".to_string());
+    let markdown = synthetic_excel_markdown(&id, &title, &placeholder);
+
+    serde_json::json!({
+        "version": doxmind_sidecar::SIDECAR_VERSION,
+        "id": id,
+        "html": html,
+        "markdown_hash": doxmind_sidecar::hash_markdown(&markdown),
+        "updated_at": doxmind_sidecar::now_iso8601(),
+        "extras": extras,
+    })
+}
+
+fn synthetic_excel_markdown(id: &str, title: &str, placeholder: &str) -> String {
+    format!(
+        "---\nid: {}\ntitle: {}\n---\n\n{}\n",
+        serde_json::to_string(id).unwrap_or_else(|_| "\"\"".to_string()),
+        serde_json::to_string(title).unwrap_or_else(|_| "\"\"".to_string()),
+        placeholder
+    )
+}
+
+fn empty_excel_extras(block_id: &str) -> serde_json::Value {
+    serde_json::json!({ "blocks": { block_id: {} } })
+}
+
+fn excel_placeholder(block_id: &str, rel_src: &str) -> String {
+    format!(r#"<!-- {EXCEL_BLOCK_TYPE} id="{block_id}" src="{rel_src}" -->"#)
+}
+
+fn excel_block_id_from_sidecar(sidecar: &serde_json::Value) -> Result<Option<String>, String> {
+    if let Some(html) = sidecar.get("html").and_then(|html| html.as_str()) {
+        let ids = excel_block_ids_in_html(html);
+        if ids.len() > 1 {
+            return Err(format!(
+                "markdown-shape Excel sidecar has multiple {EXCEL_BLOCK_TYPE} placeholders; Synthetic Documents require exactly one"
+            ));
+        }
+        if let Some(id) = ids.into_iter().next() {
+            return Ok(Some(id));
+        }
+    }
+    Ok(sidecar
+        .get("extras")
+        .and_then(|extras| extras.get("blocks"))
+        .and_then(|blocks| blocks.as_object())
+        .and_then(|blocks| blocks.keys().next().cloned()))
+}
+
+fn first_excel_block_id_in_html(html: &str) -> Option<String> {
+    excel_block_ids_in_html(html).into_iter().next()
+}
+
+fn excel_block_ids_in_html(html: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    let mut rest = html;
+    while let Some(start) = rest.find("<!--") {
+        let after_start = &rest[start + 4..];
+        let Some(end) = after_start.find("-->") else {
+            return ids;
+        };
+        let comment = after_start[..end].trim();
+        if comment.starts_with(EXCEL_BLOCK_TYPE) {
+            if let Some(id) = html_attr(comment, "id") {
+                ids.push(id);
+            }
+        }
+        rest = &after_start[end + 3..];
+    }
+    ids
+}
+
+fn html_attr(input: &str, attr: &str) -> Option<String> {
+    let pattern = format!(r#"{attr}=""#);
+    let start = input.find(&pattern)? + pattern.len();
+    let end = input[start..].find('"')?;
+    let value = &input[start..start + end];
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+fn excel_slot_field(
+    sidecar: &serde_json::Value,
+    block_id: &str,
+    key: &str,
+) -> Option<serde_json::Value> {
+    sidecar
+        .get("extras")
+        .and_then(|extras| extras.get("blocks"))
+        .and_then(|blocks| blocks.get(block_id))
+        .and_then(|slot| slot.as_object())
+        .and_then(|slot| slot.get(key))
+        .filter(|value| !value.is_null())
+        .cloned()
+}
+
+fn extras_object(sidecar: &serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    sidecar
+        .get("extras")
+        .and_then(|extras| extras.as_object())
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn blocks_object_from_extras(
+    extras: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Map<String, serde_json::Value> {
+    extras
+        .get("blocks")
+        .and_then(|blocks| blocks.as_object())
+        .cloned()
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -1209,7 +1845,9 @@ fn doc_import_external(
         // vanished between plan and resolve, surface a clear error rather
         // than silently degrading to create — that would mask a race with
         // an external delete.
-        return Err(format!("destination does not exist for replace: {rel_path}"));
+        return Err(format!(
+            "destination does not exist for replace: {rel_path}"
+        ));
     }
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent)
@@ -1261,11 +1899,7 @@ fn doc_rename(
 // invariant is preserved by relying on the OS's directory rename semantics:
 // either the whole subtree moves, or none of it does.
 #[tauri::command]
-fn doc_move(
-    root: String,
-    old_path: String,
-    new_path: String,
-) -> Result<MoveResultDto, String> {
+fn doc_move(root: String, old_path: String, new_path: String) -> Result<MoveResultDto, String> {
     let canonical_root = canonical_workspace_root(&root)?;
     let source = resolve_existing_workspace_path(&canonical_root, &old_path)?;
     if source.is_dir() {
@@ -1276,11 +1910,7 @@ fn doc_move(
     }
 }
 
-fn move_folder(
-    canonical_root: &Path,
-    old_path: &str,
-    new_path: &str,
-) -> Result<(), String> {
+fn move_folder(canonical_root: &Path, old_path: &str, new_path: &str) -> Result<(), String> {
     let source = resolve_existing_workspace_path(canonical_root, old_path)?;
     if !source.is_dir() {
         return Err(format!("folder is not a directory: {old_path}"));
@@ -2220,10 +2850,7 @@ fn register_window_target(
 }
 
 #[tauri::command]
-fn unregister_window_target(
-    window: WebviewWindow,
-    registry: tauri::State<'_, WindowRegistry>,
-) {
+fn unregister_window_target(window: WebviewWindow, registry: tauri::State<'_, WindowRegistry>) {
     registry.clear(window.label());
 }
 
@@ -2749,6 +3376,15 @@ fn shutdown_backend(app: &AppHandle) {
 mod tests {
     use super::*;
 
+    const PDF_MARKDOWN_SHAPE_FIXTURE: &str =
+        include_str!("../../tests/fixtures/sidecar_compat/pdf_markdown_shape.doxmind.json");
+    const EXCEL_MARKDOWN_SHAPE_FIXTURE: &str =
+        include_str!("../../tests/fixtures/sidecar_compat/excel_markdown_shape.doxmind.json");
+    const PDF_LEGACY_FIXTURE: &str =
+        include_str!("../../tests/fixtures/sidecar_compat/pdf_legacy.doxmind.json");
+    const EXCEL_LEGACY_FIXTURE: &str =
+        include_str!("../../tests/fixtures/sidecar_compat/excel_legacy.doxmind.json");
+
     struct TempWorkspace {
         path: PathBuf,
     }
@@ -2780,6 +3416,394 @@ mod tests {
             fs::create_dir_all(parent).expect("create parent");
         }
         fs::write(path, content).expect("write file");
+    }
+
+    fn read_json_file(path: &Path) -> serde_json::Value {
+        serde_json::from_slice(&fs::read(path).expect("read json file")).expect("parse json file")
+    }
+
+    fn install_compat_fixture(workspace: &TempWorkspace, filename: &str, fixture: &str) -> PathBuf {
+        let source_path = workspace.path.join(filename);
+        if filename.to_ascii_lowercase().ends_with(".pdf") {
+            fs::write(&source_path, b"%PDF-1.4\n% compat fixture\n%%EOF\n").expect("write pdf");
+        } else {
+            fs::write(&source_path, b"PK\x03\x04 compat fixture workbook").expect("write workbook");
+        }
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&source_path);
+        fs::write(&sidecar_path, fixture).expect("write fixture sidecar");
+        sidecar_path
+    }
+
+    fn assert_no_legacy_fields(sidecar: &serde_json::Value, keys: &[&str]) {
+        assert_eq!(
+            sidecar["version"],
+            serde_json::json!(doxmind_sidecar::SIDECAR_VERSION)
+        );
+        assert!(sidecar.get("source_path").is_none());
+        assert!(sidecar.get("updated_at_unix_nanos").is_none());
+        for key in keys {
+            assert!(sidecar.get(*key).is_none(), "{key} should not be durable");
+        }
+    }
+
+    fn sidecar_bak_path(sidecar_path: &Path) -> PathBuf {
+        sidecar_path.with_file_name(format!(
+            "{}.bak",
+            sidecar_path
+                .file_name()
+                .map(|name| name.to_string_lossy())
+                .unwrap_or_default()
+        ))
+    }
+
+    fn only_excel_slot(sidecar: &serde_json::Value) -> (&String, &serde_json::Value) {
+        let blocks = sidecar["extras"]["blocks"]
+            .as_object()
+            .expect("extras.blocks object");
+        assert_eq!(blocks.len(), 1, "synthetic Excel documents own one block");
+        blocks.iter().next().expect("one block")
+    }
+
+    fn read_json(path: &Path) -> serde_json::Value {
+        serde_json::from_slice(&fs::read(path).expect("read json")).expect("parse json")
+    }
+
+    fn only_pdf_block(sidecar: &serde_json::Value) -> (&str, &serde_json::Value) {
+        let blocks = sidecar["extras"]["blocks"]
+            .as_object()
+            .expect("extras.blocks object");
+        assert_eq!(blocks.len(), 1);
+        let (block_id, slot) = blocks.iter().next().expect("one block");
+        (block_id.as_str(), slot)
+    }
+
+    #[test]
+    fn pdf_sidecar_missing_read_synthesizes_markdown_shape_slot() {
+        let workspace = TempWorkspace::new("pdf-sidecar-missing");
+        let pdf_path = workspace.path.join("Spec.pdf");
+        let source_bytes = b"%PDF-1.4\nmissing sidecar\n%%EOF\n";
+        fs::write(&pdf_path, source_bytes).expect("write pdf");
+
+        let state = workspace_read_pdf_doc_state(workspace.root(), "Spec.pdf".into())
+            .expect("read pdf state")
+            .expect("synthetic state");
+
+        assert_eq!(state["editor"], serde_json::Value::Null);
+        assert_eq!(state["parsedCache"], serde_json::Value::Null);
+        assert_eq!(fs::read(&pdf_path).expect("pdf bytes"), source_bytes);
+
+        let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
+        let sidecar = read_json(&sidecar_path);
+        let (_block_id, slot) = only_pdf_block(&sidecar);
+        assert_eq!(slot.as_object().expect("slot object").len(), 0);
+        assert_eq!(
+            sidecar["version"],
+            serde_json::json!(doxmind_sidecar::SIDECAR_VERSION)
+        );
+        assert!(sidecar["html"]
+            .as_str()
+            .expect("html")
+            .contains("<!-- pdf-block"));
+        assert!(sidecar.get(PDF_LEGACY_EDITOR_KEY).is_none());
+        assert!(sidecar.get(PDF_LEGACY_PARSED_CACHE_KEY).is_none());
+    }
+
+    #[test]
+    fn pdf_sidecar_duplicate_placeholders_error_without_rewrite() {
+        let workspace = TempWorkspace::new("pdf-sidecar-duplicate-placeholder");
+        let pdf_path = workspace.path.join("Spec.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
+        write_file(
+            &sidecar_path,
+            r#"{
+  "version": 2,
+  "id": "doc-1",
+  "html": "<!-- pdf-block id=\"block-1\" src=\"Spec.pdf\" -->\n<!-- pdf-block id=\"block-1\" src=\"Spec.pdf\" -->",
+  "markdown_hash": "old",
+  "updated_at": "old",
+  "extras": {"blocks": {"block-1": {"editor": {"version": 1}}}}
+}"#,
+        );
+        let raw_before = fs::read(&sidecar_path).expect("read sidecar before");
+
+        let err = workspace_read_pdf_doc_state(workspace.root(), "Spec.pdf".into())
+            .expect_err("duplicate placeholders must fail visibly");
+
+        assert!(err.contains("multiple pdf-block placeholders"), "{err}");
+        assert_eq!(
+            fs::read(&sidecar_path).expect("read sidecar after"),
+            raw_before
+        );
+    }
+
+    #[test]
+    fn pdf_sidecar_legacy_read_migrates_once_with_backup_and_preserves_binary() {
+        let workspace = TempWorkspace::new("pdf-sidecar-legacy");
+        let pdf_path = workspace.path.join("Spec.pdf");
+        let source_bytes = b"%PDF-1.4\nlegacy source\n%%EOF\n";
+        fs::write(&pdf_path, source_bytes).expect("write pdf");
+        let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
+        let legacy = br#"{
+  "version": 1,
+  "id": "legacy-doc",
+  "pdf_editor": {"textEdits": [{"id": "t1"}]},
+  "pdf_parsed_cache": {"sourceHash": "abc", "parsed": {"pages": [1]}},
+  "extras": {"keep": {"x": 1}}
+}"#;
+        fs::write(&sidecar_path, legacy).expect("write legacy sidecar");
+
+        let state = workspace_read_pdf_doc_state(workspace.root(), "Spec.pdf".into())
+            .expect("read migrated")
+            .expect("state");
+
+        assert_eq!(state["editor"]["textEdits"][0]["id"], "t1");
+        assert_eq!(state["parsedCache"]["sourceHash"], "abc");
+        assert_eq!(fs::read(&pdf_path).expect("pdf bytes"), source_bytes);
+        assert_eq!(
+            fs::read(workspace.path.join(".Spec.pdf.doxmind.bak")).expect("backup"),
+            legacy
+        );
+
+        let migrated = read_json(&sidecar_path);
+        let (_block_id, slot) = only_pdf_block(&migrated);
+        assert_eq!(slot["editor"]["textEdits"][0]["id"], "t1");
+        assert_eq!(slot["parsedCache"]["parsed"]["pages"][0], 1);
+        assert_eq!(migrated["extras"]["keep"]["x"], 1);
+        assert!(migrated.get(PDF_LEGACY_EDITOR_KEY).is_none());
+        assert!(migrated.get(PDF_LEGACY_PARSED_CACHE_KEY).is_none());
+    }
+
+    #[test]
+    fn pdf_sidecar_already_migrated_reads_editor_slot() {
+        let workspace = TempWorkspace::new("pdf-sidecar-migrated");
+        fs::write(workspace.path.join("Spec.pdf"), b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        write_file(
+            &workspace.path.join(".Spec.pdf.doxmind"),
+            r#"{
+  "version": 1,
+  "id": "doc-1",
+  "html": "<!-- pdf-block id=\"block-1\" src=\"Spec.pdf\" -->",
+  "markdown_hash": "old",
+  "updated_at": "old",
+  "extras": {
+    "blocks": {
+      "block-1": {
+        "editor": {"freeTextBoxes": [{"id": "box-1"}]},
+        "parsedCache": {"sourceHash": "hash", "parsed": {"pages": []}}
+      }
+    }
+  }
+}"#,
+        );
+
+        let editor =
+            workspace_read_pdf_editor_state(workspace.root(), "Spec.pdf".into()).expect("read");
+
+        assert_eq!(editor.expect("editor")["freeTextBoxes"][0]["id"], "box-1");
+        let sidecar = read_json(&workspace.path.join(".Spec.pdf.doxmind"));
+        assert!(sidecar.get(PDF_LEGACY_EDITOR_KEY).is_none());
+        assert!(sidecar.get(PDF_LEGACY_PARSED_CACHE_KEY).is_none());
+    }
+
+    #[test]
+    fn pdf_sidecar_editor_write_preserves_parsed_cache_and_unrelated_extras() {
+        let workspace = TempWorkspace::new("pdf-sidecar-editor-merge");
+        fs::write(workspace.path.join("Spec.pdf"), b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        write_file(
+            &workspace.path.join(".Spec.pdf.doxmind"),
+            r#"{
+  "version": 1,
+  "id": "doc-1",
+  "html": "<!-- pdf-block id=\"block-1\" src=\"Spec.pdf\" -->",
+  "markdown_hash": "old",
+  "updated_at": "old",
+  "extras": {
+    "theme": {"dark": true},
+    "blocks": {
+      "block-1": {
+        "editor": {"textEdits": []},
+        "parsedCache": {"sourceHash": "hash", "parsed": {"pages": [1]}}
+      }
+    }
+  }
+}"#,
+        );
+
+        workspace_write_pdf_editor_state(
+            workspace.root(),
+            "Spec.pdf".into(),
+            serde_json::json!({"textEdits": [{"id": "new"}]}),
+        )
+        .expect("write editor");
+
+        let sidecar = read_json(&workspace.path.join(".Spec.pdf.doxmind"));
+        let (_block_id, slot) = only_pdf_block(&sidecar);
+        assert_eq!(slot["editor"]["textEdits"][0]["id"], "new");
+        assert_eq!(slot["parsedCache"]["sourceHash"], "hash");
+        assert_eq!(sidecar["extras"]["theme"]["dark"], true);
+        assert!(sidecar.get(PDF_LEGACY_EDITOR_KEY).is_none());
+        assert!(sidecar.get(PDF_LEGACY_PARSED_CACHE_KEY).is_none());
+    }
+
+    #[test]
+    fn pdf_sidecar_parsed_cache_write_preserves_editor_and_unrelated_extras() {
+        let workspace = TempWorkspace::new("pdf-sidecar-cache-merge");
+        fs::write(workspace.path.join("Spec.pdf"), b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        write_file(
+            &workspace.path.join(".Spec.pdf.doxmind"),
+            r#"{
+  "version": 1,
+  "id": "doc-1",
+  "html": "<!-- pdf-block id=\"block-1\" src=\"Spec.pdf\" -->",
+  "markdown_hash": "old",
+  "updated_at": "old",
+  "extras": {
+    "theme": {"dark": true},
+    "blocks": {
+      "block-1": {
+        "editor": {"highlightBoxes": [{"id": "h1"}]},
+        "parsedCache": {"sourceHash": "old", "parsed": {"pages": []}}
+      }
+    }
+  }
+}"#,
+        );
+
+        workspace_write_pdf_parsed_cache(
+            workspace.root(),
+            "Spec.pdf".into(),
+            "new-hash".into(),
+            serde_json::json!({"pages": [2]}),
+        )
+        .expect("write cache");
+
+        let sidecar = read_json(&workspace.path.join(".Spec.pdf.doxmind"));
+        let (_block_id, slot) = only_pdf_block(&sidecar);
+        assert_eq!(slot["editor"]["highlightBoxes"][0]["id"], "h1");
+        assert_eq!(slot["parsedCache"]["sourceHash"], "new-hash");
+        assert_eq!(slot["parsedCache"]["parsed"]["pages"][0], 2);
+        assert_eq!(sidecar["extras"]["theme"]["dark"], true);
+        assert!(sidecar.get(PDF_LEGACY_EDITOR_KEY).is_none());
+        assert!(sidecar.get(PDF_LEGACY_PARSED_CACHE_KEY).is_none());
+    }
+
+    #[test]
+    fn pdf_cross_runtime_fixture_editor_and_cache_writes_match_contract() {
+        let workspace = TempWorkspace::new("pdf-cross-runtime-shape");
+        let sidecar_path =
+            install_compat_fixture(&workspace, "Spec.pdf", PDF_MARKDOWN_SHAPE_FIXTURE);
+
+        let initial = workspace_read_pdf_doc_state(workspace.root(), "Spec.pdf".into())
+            .expect("read fixture")
+            .expect("state");
+        assert_eq!(initial["parsedCache"]["sourceHash"], "valid-pdf-hash");
+
+        let editor = serde_json::json!({"version": 1, "edits": {"9:0": {"text": "desktop pdf"}}});
+        workspace_write_pdf_editor_state(workspace.root(), "Spec.pdf".into(), editor.clone())
+            .expect("write editor");
+        let after_editor = workspace_read_pdf_doc_state(workspace.root(), "Spec.pdf".into())
+            .expect("read after editor")
+            .expect("state");
+        assert_eq!(after_editor["editor"], editor);
+        assert_eq!(after_editor["parsedCache"], initial["parsedCache"]);
+
+        let parsed = serde_json::json!({"pages": [{"index": 1, "text": "updated"}]});
+        workspace_write_pdf_parsed_cache(
+            workspace.root(),
+            "Spec.pdf".into(),
+            "valid-pdf-hash-2".into(),
+            parsed.clone(),
+        )
+        .expect("write cache");
+
+        let sidecar = read_json_file(&sidecar_path);
+        assert_no_legacy_fields(
+            &sidecar,
+            &[PDF_LEGACY_EDITOR_KEY, PDF_LEGACY_PARSED_CACHE_KEY],
+        );
+        assert!(sidecar["html"]
+            .as_str()
+            .expect("html")
+            .contains("id=\"fixture-pdf-block\""));
+        assert_eq!(sidecar["extras"]["unrelated"]["keep"], true);
+        let slot = sidecar["extras"]["blocks"]["fixture-pdf-block"]
+            .as_object()
+            .expect("slot");
+        assert_eq!(slot["editor"], editor);
+        assert_eq!(slot["parsedCache"]["sourceHash"], "valid-pdf-hash-2");
+        assert_eq!(slot["parsedCache"]["parsed"], parsed);
+        assert_eq!(slot["slotExtra"]["keep"], "pdf");
+    }
+
+    #[test]
+    fn pdf_cross_runtime_legacy_fixture_migrates_to_shared_shape() {
+        let workspace = TempWorkspace::new("pdf-cross-runtime-legacy");
+        let sidecar_path = install_compat_fixture(&workspace, "Spec.pdf", PDF_LEGACY_FIXTURE);
+
+        let migrated = workspace_read_pdf_doc_state(workspace.root(), "Spec.pdf".into())
+            .expect("read migrated")
+            .expect("state");
+        assert!(migrated["editor"]["edits"].get("2:0").is_some());
+        assert_eq!(migrated["parsedCache"]["sourceHash"], "legacy-pdf-hash");
+        assert!(sidecar_bak_path(&sidecar_path).exists());
+
+        let sidecar = read_json_file(&sidecar_path);
+        assert_no_legacy_fields(
+            &sidecar,
+            &[PDF_LEGACY_EDITOR_KEY, PDF_LEGACY_PARSED_CACHE_KEY],
+        );
+        assert_eq!(sidecar["id"], "legacy-pdf-doc");
+        assert!(sidecar["html"]
+            .as_str()
+            .expect("html")
+            .contains("id=\"legacy-pdf-block\""));
+        assert_eq!(sidecar["extras"]["unrelated"]["keep"], "legacy-pdf");
+        let slot = sidecar["extras"]["blocks"]["legacy-pdf-block"]
+            .as_object()
+            .expect("slot");
+        assert_eq!(slot["slotExtra"]["keep"], true);
+        assert_eq!(slot["parsedCache"]["sourceHash"], "legacy-pdf-hash");
+
+        let post_editor = serde_json::json!({"version": 1, "edits": {"3:0": {"text": "post"}}});
+        workspace_write_pdf_editor_state(workspace.root(), "Spec.pdf".into(), post_editor.clone())
+            .expect("post migration write");
+        let post_write = read_json_file(&sidecar_path);
+        assert_no_legacy_fields(
+            &post_write,
+            &[PDF_LEGACY_EDITOR_KEY, PDF_LEGACY_PARSED_CACHE_KEY],
+        );
+        assert_eq!(
+            post_write["extras"]["blocks"]["legacy-pdf-block"]["editor"],
+            post_editor
+        );
+    }
+
+    #[test]
+    fn pdf_sidecar_corrupt_read_errors_and_preserves_forensic_copy() {
+        let workspace = TempWorkspace::new("pdf-sidecar-corrupt");
+        fs::write(workspace.path.join("Spec.pdf"), b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
+        let corrupt = b"not json {{";
+        fs::write(&sidecar_path, corrupt).expect("write corrupt sidecar");
+
+        let err = workspace_read_pdf_doc_state(workspace.root(), "Spec.pdf".into())
+            .expect_err("corrupt sidecar should fail");
+
+        assert!(err.contains("corrupt PDF sidecar"), "unexpected: {err}");
+        assert_eq!(fs::read(&sidecar_path).expect("original corrupt"), corrupt);
+        let forensic = fs::read_dir(&workspace.path)
+            .expect("list workspace")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.starts_with(".Spec.pdf.doxmind.corrupt-"))
+                    .unwrap_or(false)
+            })
+            .expect("forensic copy");
+        assert_eq!(fs::read(forensic).expect("forensic bytes"), corrupt);
     }
 
     #[test]
@@ -3257,10 +4281,7 @@ mod tests {
             "replace".into(),
         )
         .expect_err("missing destination should error in replace mode");
-        assert!(
-            err.contains("does not exist"),
-            "unexpected error: {err}"
-        );
+        assert!(err.contains("does not exist"), "unexpected error: {err}");
     }
 
     #[test]
@@ -3309,7 +4330,10 @@ mod tests {
         assert!(workspace.path.join("archive/notes/a.md").exists());
         assert!(workspace.path.join("archive/notes/.a.doxmind").exists());
         assert!(workspace.path.join("archive/notes/inbox/b.md").exists());
-        assert!(workspace.path.join("archive/notes/inbox/.b.doxmind").exists());
+        assert!(workspace
+            .path
+            .join("archive/notes/inbox/.b.doxmind")
+            .exists());
     }
 
     #[test]
@@ -3382,10 +4406,7 @@ mod tests {
     fn doc_delete_pdf_removes_pair_from_workspace() {
         let workspace = TempWorkspace::new("delete-pdf");
         write_file(&workspace.path.join("Spec.pdf"), "%PDF-1.4\n%%EOF\n");
-        write_file(
-            &workspace.path.join(".Spec.pdf.doxmind"),
-            r#"{"id":"pdf"}"#,
-        );
+        write_file(&workspace.path.join(".Spec.pdf.doxmind"), r#"{"id":"pdf"}"#);
 
         let deleted = doc_delete(workspace.root(), "Spec.pdf".into()).expect("delete pdf");
 
@@ -3418,16 +4439,454 @@ mod tests {
     }
 
     #[test]
+    fn excel_read_migrates_legacy_sidecar_into_block_slot() {
+        let workspace = TempWorkspace::new("excel-migrate-legacy");
+        let workbook_path = workspace.path.join("Budget.xlsx");
+        let workbook_bytes = b"PK\x03\x04workbook";
+        fs::write(&workbook_path, workbook_bytes).expect("write workbook");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        let legacy = serde_json::json!({
+            "version": 1,
+            "id": "path:legacy-budget",
+            "source_path": "Budget.xlsx",
+            "updated_at_unix_nanos": "1",
+            "excel_editor": { "version": 1, "activeSheetId": "Sheet1" },
+            "excel_parsed_cache": {
+                "sourceHash": "abc",
+                "parsed": { "sheets": [] }
+            },
+            "extras": { "unrelated": { "kept": true } }
+        });
+        let legacy_bytes = serde_json::to_vec_pretty(&legacy).expect("legacy bytes");
+        fs::write(&sidecar_path, &legacy_bytes).expect("write legacy sidecar");
+
+        let editor = workspace_read_excel_editor_state(workspace.root(), "Budget.xlsx".into())
+            .expect("read migrated editor")
+            .expect("editor state");
+
+        assert_eq!(editor["activeSheetId"], "Sheet1");
+        assert_eq!(fs::read(&workbook_path).expect("workbook"), workbook_bytes);
+        assert_eq!(
+            fs::read(sidecar_bak_path(&sidecar_path)).expect("backup"),
+            legacy_bytes
+        );
+
+        let migrated = read_json_file(&sidecar_path);
+        assert!(migrated.get(EXCEL_LEGACY_EDITOR_KEY).is_none());
+        assert!(migrated.get(EXCEL_LEGACY_PARSED_CACHE_KEY).is_none());
+        assert!(migrated.get("source_path").is_none());
+        assert_eq!(migrated["id"], "path:legacy-budget");
+        assert_eq!(migrated["extras"]["unrelated"]["kept"], true);
+        let (_block_id, slot) = only_excel_slot(&migrated);
+        assert_eq!(slot["editor"]["activeSheetId"], "Sheet1");
+        assert_eq!(slot["parsedCache"]["sourceHash"], "abc");
+        assert!(migrated["html"]
+            .as_str()
+            .expect("html")
+            .contains(EXCEL_BLOCK_TYPE));
+        assert_eq!(
+            migrated["markdown_hash"]
+                .as_str()
+                .expect("markdown hash")
+                .len(),
+            64
+        );
+    }
+
+    #[test]
+    fn excel_read_uses_already_migrated_block_slot_without_backup() {
+        let workspace = TempWorkspace::new("excel-read-migrated");
+        let workbook_path = workspace.path.join("Budget.xlsx");
+        write_file(&workbook_path, "PK\x03\x04");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "version": 1,
+                "id": "doc-1",
+                "html": excel_placeholder("excel-1", "Budget.xlsx"),
+                "markdown_hash": "stale-but-not-checked-here",
+                "updated_at": "2026-05-12T00:00:00Z",
+                "extras": {
+                    "blocks": {
+                        "excel-1": {
+                            "editor": { "version": 1, "activeSheetId": "Sheet2" }
+                        }
+                    }
+                }
+            }))
+            .expect("sidecar bytes"),
+        )
+        .expect("write sidecar");
+
+        let editor = workspace_read_excel_editor_state(workspace.root(), "Budget.xlsx".into())
+            .expect("read editor")
+            .expect("editor");
+
+        assert_eq!(editor["activeSheetId"], "Sheet2");
+        assert!(!sidecar_bak_path(&sidecar_path).exists());
+    }
+
+    #[test]
+    fn excel_sidecar_duplicate_placeholders_error_without_rewrite() {
+        let workspace = TempWorkspace::new("excel-duplicate-placeholder");
+        let workbook_path = workspace.path.join("Budget.xlsx");
+        write_file(&workbook_path, "PK\x03\x04");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "version": doxmind_sidecar::SIDECAR_VERSION,
+                "id": "doc-1",
+                "html": format!(
+                    "{}\n{}",
+                    excel_placeholder("excel-1", "Budget.xlsx"),
+                    excel_placeholder("excel-1", "Budget.xlsx")
+                ),
+                "markdown_hash": "old",
+                "updated_at": "2026-05-12T00:00:00Z",
+                "extras": {
+                    "blocks": {
+                        "excel-1": {
+                            "editor": { "version": 1, "activeSheetId": "Sheet2" }
+                        }
+                    }
+                }
+            }))
+            .expect("sidecar bytes"),
+        )
+        .expect("write sidecar");
+        let raw_before = fs::read(&sidecar_path).expect("read sidecar before");
+
+        let err = workspace_read_excel_doc_state(workspace.root(), "Budget.xlsx".into())
+            .expect_err("duplicate placeholders must fail visibly");
+
+        assert!(err.contains("multiple excel-block placeholders"), "{err}");
+        assert_eq!(
+            fs::read(&sidecar_path).expect("read sidecar after"),
+            raw_before
+        );
+    }
+
+    #[test]
+    fn excel_missing_sidecar_is_synthesized_with_empty_slot() {
+        let workspace = TempWorkspace::new("excel-missing-sidecar");
+        let workbook_path = workspace.path.join("Budget.xlsx");
+        let workbook_bytes = b"PK\x03\x04missing";
+        fs::write(&workbook_path, workbook_bytes).expect("write workbook");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        assert!(!sidecar_path.exists());
+
+        let editor = workspace_read_excel_editor_state(workspace.root(), "Budget.xlsx".into())
+            .expect("read synthesized sidecar");
+
+        assert!(editor.is_none());
+        assert_eq!(fs::read(&workbook_path).expect("workbook"), workbook_bytes);
+        let sidecar = read_json_file(&sidecar_path);
+        assert_eq!(
+            sidecar["version"],
+            serde_json::json!(doxmind_sidecar::SIDECAR_VERSION)
+        );
+        assert!(sidecar.get(EXCEL_LEGACY_EDITOR_KEY).is_none());
+        assert!(sidecar.get(EXCEL_LEGACY_PARSED_CACHE_KEY).is_none());
+        let (_block_id, slot) = only_excel_slot(&sidecar);
+        assert!(slot.as_object().expect("slot object").is_empty());
+    }
+
+    #[test]
+    fn excel_corrupt_sidecar_errors_and_writes_forensic_copy() {
+        let workspace = TempWorkspace::new("excel-corrupt-sidecar");
+        let workbook_path = workspace.path.join("Broken.xlsx");
+        write_file(&workbook_path, "PK\x03\x04");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        let corrupt = b"{\"version\": 1";
+        fs::write(&sidecar_path, corrupt).expect("write corrupt sidecar");
+
+        let err = workspace_read_excel_editor_state(workspace.root(), "Broken.xlsx".into())
+            .expect_err("corrupt sidecar should fail");
+
+        assert!(err.contains("invalid Excel sidecar JSON"), "{err}");
+        assert!(err.contains("forensic copy"), "{err}");
+        assert_eq!(fs::read(&sidecar_path).expect("original sidecar"), corrupt);
+        let copies = fs::read_dir(&workspace.path)
+            .expect("read workspace")
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".Broken.xlsx.doxmind.corrupt-")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(copies.len(), 1);
+        assert_eq!(fs::read(copies[0].path()).expect("forensic copy"), corrupt);
+    }
+
+    #[test]
+    fn excel_editor_write_preserves_existing_cache_and_unrelated_extras() {
+        let workspace = TempWorkspace::new("excel-write-editor");
+        let workbook_path = workspace.path.join("Budget.xlsx");
+        write_file(&workbook_path, "PK\x03\x04");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "version": 1,
+                "id": "doc-1",
+                "html": excel_placeholder("excel-1", "Budget.xlsx"),
+                "markdown_hash": "old",
+                "updated_at": "2026-05-12T00:00:00Z",
+                "extras": {
+                    "theme": { "name": "quiet" },
+                    "blocks": {
+                        "excel-1": {
+                            "parsedCache": {
+                                "sourceHash": "abc",
+                                "parsed": { "sheets": [] }
+                            }
+                        }
+                    }
+                }
+            }))
+            .expect("sidecar bytes"),
+        )
+        .expect("write sidecar");
+
+        workspace_write_excel_editor_state(
+            workspace.root(),
+            "Budget.xlsx".into(),
+            serde_json::json!({ "version": 1, "activeSheetId": "Sheet3" }),
+        )
+        .expect("write editor");
+
+        let sidecar = read_json_file(&sidecar_path);
+        assert!(sidecar.get(EXCEL_LEGACY_EDITOR_KEY).is_none());
+        assert!(sidecar.get(EXCEL_LEGACY_PARSED_CACHE_KEY).is_none());
+        assert_eq!(sidecar["extras"]["theme"]["name"], "quiet");
+        let (_block_id, slot) = only_excel_slot(&sidecar);
+        assert_eq!(slot["editor"]["activeSheetId"], "Sheet3");
+        assert_eq!(slot["parsedCache"]["sourceHash"], "abc");
+    }
+
+    #[test]
+    fn excel_editor_write_does_not_create_parsed_cache() {
+        let workspace = TempWorkspace::new("excel-write-editor-no-cache");
+        let workbook_path = workspace.path.join("Budget.xlsx");
+        write_file(&workbook_path, "PK\x03\x04");
+
+        workspace_write_excel_editor_state(
+            workspace.root(),
+            "Budget.xlsx".into(),
+            serde_json::json!({ "version": 1, "activeSheetId": "Sheet1" }),
+        )
+        .expect("write editor");
+
+        let sidecar = read_json_file(&doxmind_sidecar::sidecar_path_for(&workbook_path));
+        let (_block_id, slot) = only_excel_slot(&sidecar);
+        assert_eq!(slot["editor"]["activeSheetId"], "Sheet1");
+        assert!(slot.get("parsedCache").is_none());
+    }
+
+    #[test]
+    fn excel_parsed_cache_write_preserves_editor_and_unrelated_extras() {
+        let workspace = TempWorkspace::new("excel-write-cache");
+        let workbook_path = workspace.path.join("Budget.xlsx");
+        write_file(&workbook_path, "PK\x03\x04");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "version": 1,
+                "id": "doc-1",
+                "html": excel_placeholder("excel-1", "Budget.xlsx"),
+                "markdown_hash": "old",
+                "updated_at": "2026-05-12T00:00:00Z",
+                "extras": {
+                    "view": { "zoom": 0.9 },
+                    "blocks": {
+                        "excel-1": {
+                            "editor": { "version": 1, "activeSheetId": "Sheet1" }
+                        }
+                    }
+                }
+            }))
+            .expect("sidecar bytes"),
+        )
+        .expect("write sidecar");
+
+        workspace_write_excel_parsed_cache(
+            workspace.root(),
+            "Budget.xlsx".into(),
+            "def".into(),
+            serde_json::json!({ "sheets": [{ "id": "Sheet1" }] }),
+        )
+        .expect("write parsed cache");
+
+        let sidecar = read_json_file(&sidecar_path);
+        assert!(sidecar.get(EXCEL_LEGACY_EDITOR_KEY).is_none());
+        assert!(sidecar.get(EXCEL_LEGACY_PARSED_CACHE_KEY).is_none());
+        assert_eq!(sidecar["extras"]["view"]["zoom"], 0.9);
+        let (_block_id, slot) = only_excel_slot(&sidecar);
+        assert_eq!(slot["editor"]["activeSheetId"], "Sheet1");
+        assert_eq!(slot["parsedCache"]["sourceHash"], "def");
+        assert_eq!(slot["parsedCache"]["parsed"]["sheets"][0]["id"], "Sheet1");
+    }
+
+    #[test]
+    fn excel_cross_runtime_fixture_editor_and_cache_writes_match_contract() {
+        let workspace = TempWorkspace::new("excel-cross-runtime-shape");
+        let sidecar_path =
+            install_compat_fixture(&workspace, "Budget.xlsx", EXCEL_MARKDOWN_SHAPE_FIXTURE);
+
+        let initial = workspace_read_excel_doc_state(workspace.root(), "Budget.xlsx".into())
+            .expect("read fixture")
+            .expect("state");
+        assert_eq!(initial["parsedCache"]["sourceHash"], "valid-excel-hash");
+
+        let editor = serde_json::json!({
+            "version": 1,
+            "activeSheetId": "Sheet2",
+            "sheets": [{"id": "Sheet2", "name": "Desktop"}]
+        });
+        workspace_write_excel_editor_state(workspace.root(), "Budget.xlsx".into(), editor.clone())
+            .expect("write editor");
+        let after_editor = workspace_read_excel_doc_state(workspace.root(), "Budget.xlsx".into())
+            .expect("read after editor")
+            .expect("state");
+        assert_eq!(after_editor["editor"], editor);
+        assert_eq!(after_editor["parsedCache"], initial["parsedCache"]);
+
+        let parsed = serde_json::json!({"sheets": [{"id": "Sheet2", "rows": 4}]});
+        workspace_write_excel_parsed_cache(
+            workspace.root(),
+            "Budget.xlsx".into(),
+            "valid-excel-hash-2".into(),
+            parsed.clone(),
+        )
+        .expect("write cache");
+
+        let sidecar = read_json_file(&sidecar_path);
+        assert_no_legacy_fields(
+            &sidecar,
+            &[EXCEL_LEGACY_EDITOR_KEY, EXCEL_LEGACY_PARSED_CACHE_KEY],
+        );
+        assert!(sidecar["html"]
+            .as_str()
+            .expect("html")
+            .contains("id=\"fixture-excel-block\""));
+        assert_eq!(sidecar["extras"]["unrelated"]["keep"], true);
+        let slot = sidecar["extras"]["blocks"]["fixture-excel-block"]
+            .as_object()
+            .expect("slot");
+        assert_eq!(slot["editor"], editor);
+        assert_eq!(slot["parsedCache"]["sourceHash"], "valid-excel-hash-2");
+        assert_eq!(slot["parsedCache"]["parsed"], parsed);
+        assert_eq!(slot["slotExtra"]["keep"], "excel");
+    }
+
+    #[test]
+    fn excel_cross_runtime_legacy_fixture_migrates_to_shared_shape() {
+        let workspace = TempWorkspace::new("excel-cross-runtime-legacy");
+        let sidecar_path = install_compat_fixture(&workspace, "Budget.xlsx", EXCEL_LEGACY_FIXTURE);
+
+        let migrated = workspace_read_excel_doc_state(workspace.root(), "Budget.xlsx".into())
+            .expect("read migrated")
+            .expect("state");
+        assert_eq!(migrated["editor"]["activeSheetId"], "LegacySheet");
+        assert_eq!(migrated["parsedCache"]["sourceHash"], "legacy-excel-hash");
+        assert!(sidecar_bak_path(&sidecar_path).exists());
+
+        let sidecar = read_json_file(&sidecar_path);
+        assert_no_legacy_fields(
+            &sidecar,
+            &[EXCEL_LEGACY_EDITOR_KEY, EXCEL_LEGACY_PARSED_CACHE_KEY],
+        );
+        assert_eq!(sidecar["id"], "legacy-excel-doc");
+        assert!(sidecar["html"]
+            .as_str()
+            .expect("html")
+            .contains("id=\"legacy-excel-block\""));
+        assert_eq!(sidecar["extras"]["unrelated"]["keep"], "legacy-excel");
+        let slot = sidecar["extras"]["blocks"]["legacy-excel-block"]
+            .as_object()
+            .expect("slot");
+        assert_eq!(slot["slotExtra"]["keep"], true);
+        assert_eq!(slot["parsedCache"]["sourceHash"], "legacy-excel-hash");
+
+        let post_editor = serde_json::json!({
+            "version": 1,
+            "activeSheetId": "PostSheet",
+            "sheets": [{"id": "PostSheet"}]
+        });
+        workspace_write_excel_editor_state(
+            workspace.root(),
+            "Budget.xlsx".into(),
+            post_editor.clone(),
+        )
+        .expect("post migration write");
+        let post_write = read_json_file(&sidecar_path);
+        assert_no_legacy_fields(
+            &post_write,
+            &[EXCEL_LEGACY_EDITOR_KEY, EXCEL_LEGACY_PARSED_CACHE_KEY],
+        );
+        assert_eq!(
+            post_write["extras"]["blocks"]["legacy-excel-block"]["editor"],
+            post_editor
+        );
+    }
+
+    #[test]
+    fn excel_legacy_migration_merges_top_level_cache_without_overwriting_slot_editor() {
+        let workspace = TempWorkspace::new("excel-migrate-merge");
+        let workbook_path = workspace.path.join("Budget.xlsx");
+        write_file(&workbook_path, "PK\x03\x04");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "version": 1,
+                "id": "doc-1",
+                "html": excel_placeholder("excel-1", "Budget.xlsx"),
+                "markdown_hash": "old",
+                "updated_at": "2026-05-12T00:00:00Z",
+                "excel_editor": { "version": 1, "activeSheetId": "LegacySheet" },
+                "excel_parsed_cache": {
+                    "sourceHash": "legacy-cache",
+                    "parsed": { "sheets": [] }
+                },
+                "extras": {
+                    "blocks": {
+                        "excel-1": {
+                            "editor": { "version": 1, "activeSheetId": "SlotSheet" }
+                        }
+                    }
+                }
+            }))
+            .expect("sidecar bytes"),
+        )
+        .expect("write mixed sidecar");
+
+        let editor = workspace_read_excel_editor_state(workspace.root(), "Budget.xlsx".into())
+            .expect("read migrated mixed sidecar")
+            .expect("editor");
+
+        assert_eq!(editor["activeSheetId"], "SlotSheet");
+        let sidecar = read_json_file(&sidecar_path);
+        assert!(sidecar.get(EXCEL_LEGACY_EDITOR_KEY).is_none());
+        assert!(sidecar.get(EXCEL_LEGACY_PARSED_CACHE_KEY).is_none());
+        let (_block_id, slot) = only_excel_slot(&sidecar);
+        assert_eq!(slot["editor"]["activeSheetId"], "SlotSheet");
+        assert_eq!(slot["parsedCache"]["sourceHash"], "legacy-cache");
+        assert!(sidecar_bak_path(&sidecar_path).exists());
+    }
+
+    #[test]
     fn doc_delete_rejects_unknown_extension() {
         let workspace = TempWorkspace::new("delete-unknown");
         write_file(&workspace.path.join("notes.txt"), "hi");
 
-        let err =
-            doc_delete(workspace.root(), "notes.txt".into()).expect_err("expected rejection");
-        assert!(
-            err.contains("must end in .md"),
-            "unexpected error: {err}"
-        );
+        let err = doc_delete(workspace.root(), "notes.txt".into()).expect_err("expected rejection");
+        assert!(err.contains("must end in .md"), "unexpected error: {err}");
         // Source untouched.
         assert!(workspace.path.join("notes.txt").exists());
     }

@@ -35,7 +35,7 @@ use pulldown_cmark::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-pub const SIDECAR_VERSION: u32 = 1;
+pub const SIDECAR_VERSION: u32 = 2;
 
 /// Document metadata, sourced from the markdown file's YAML frontmatter.
 ///

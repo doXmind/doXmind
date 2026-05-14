@@ -1,9 +1,16 @@
 # Sidecar Format
 
-This document is the wire-format contract for doXmind markdown Sidecars and
-External-reference Custom Block placeholders. Frontend `CustomBlockExtensions`
-and backend `ExternalRefBlockRegistry` implementations must derive equivalent
-parsers and serializers from this document.
+This document is the wire-format contract for doXmind markdown-shaped Sidecars
+and External-reference Custom Block placeholders. Frontend
+`CustomBlockExtensions`, backend `ExternalRefBlockRegistry`, browser-dev
+workspace routes, and desktop/Tauri commands must derive equivalent parsers and
+serializers from this document.
+
+Markdown is the only first-class Document type. PDF and Excel files are
+Second-class files represented as Synthetic Documents with exactly one
+External-reference Custom Block (`pdf-block` or `excel-block`). Those Synthetic
+Documents use this same Sidecar shape; they do not own a separate PDF or Excel
+Sidecar contract.
 
 ## Markdown Sidecar JSON Shape
 
@@ -23,7 +30,7 @@ Current full-write shape:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "id": "dfe24100-bb43-4f93-8553-2d9fdcc50172",
   "html": "<p>Rendered editor HTML</p>",
   "markdown_hash": "0000000000000000000000000000000000000000000000000000000000000000",
@@ -38,10 +45,10 @@ Current full-write shape:
 
 | Key             | Type    | Required            | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | --------------- | ------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `version`       | integer | Yes                 | Sidecar schema version. Current value is `1`.                                                                                                                                                                                                                                                                                                                                                                                             |
+| `version`       | integer | Yes                 | Sidecar schema version. Current value is `2`. Version `2` replaced `1` when cached editor HTML needed invalidation for ADR-0006; version checks are part of the release contract.                                                                                                                                                                                                                                                         |
 | `id`            | string  | Yes for full writes | Stable document identifier. UUID v4 for natively-created documents and Synthetic Documents. For Synthetic Documents migrated from a legacy PDF/Excel sidecar, the original stable_path_id (form: `path:<hash>`) is preserved and is NOT a UUID. If frontmatter disagrees, the Sidecar id wins during read backfill. `_snapshot_from_legacy` in [`synthetic_document.py`](../server/services/synthetic_document.py) produces non-UUID ids. |
 | `html`          | string  | Yes for full writes | Lossless editor HTML for fast reopen when `markdown_hash` matches the current markdown file. In the DocumentStore read model this field is exposed as `editorHtml`; it is not the Browsing Runtime's `browsingHtml`. See [ADR-0008](adr/0008-documentstore-browsing-read-model.md).                                                                                                                                                       |
-| `markdown_hash` | string  | Yes                 | SHA-256 hex digest of the complete `.md` file content, including frontmatter. A mismatch means the Sidecar is stale.                                                                                                                                                                                                                                                                                                                      |
+| `markdown_hash` | string  | Yes                 | SHA-256 hex digest of the complete markdown text, including frontmatter. For first-class Markdown Documents this is the real `.md` file. For Synthetic Documents this is the generated markdown body containing the one External-reference placeholder.                                                                                                                                                                                   |
 | `updated_at`    | string  | Yes                 | UTC timestamp in ISO-8601 form, for example `2026-04-29T17:38:00Z`.                                                                                                                                                                                                                                                                                                                                                                       |
 | `extras`        | object  | Optional            | doXmind-only Custom Block state. External-reference block state lives under `extras.blocks.<id>` by default.                                                                                                                                                                                                                                                                                                                              |
 
@@ -54,11 +61,20 @@ malformed.
 Any reader recomputing the hash to detect staleness must include frontmatter;
 body-only hashing produces false stale results.
 
-New markdown-shape Sidecars should use only these top-level keys. Legacy
-PDF/Excel sidecars may contain older top-level keys while they are awaiting
-Sidecar migration. Slot-only writes can create a partial Sidecar before the
-next full write — see "Partial Sidecar Shape" below for the exact field set
-and reader contract.
+New markdown-shape Sidecars MUST use only these top-level keys. Legacy PDF/Excel
+Sidecars may contain older top-level keys while they are awaiting Sidecar
+migration. Those legacy keys are migration input only and MUST NOT be written by
+new code:
+
+- `source_path`
+- `updated_at_unix_nanos`
+- `pdf_editor`
+- `pdf_parsed_cache`
+- `excel_editor`
+- `excel_parsed_cache`
+
+Slot-only writes can create a partial Sidecar before the next full write — see
+"Partial Sidecar Shape" below for the exact field set and reader contract.
 
 `extras` is reserved for doXmind-owned state that has no portable markdown
 representation. Portable document content belongs in the `.md` body, not in the
@@ -76,7 +92,7 @@ to record the slot value and link the Sidecar to the current `.md` body:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "markdown_hash": "0000000000000000000000000000000000000000000000000000000000000000",
   "extras": {
     "blocks": {
@@ -109,6 +125,123 @@ Reader contract for partial Sidecars:
 `SyntheticDocumentFactory._write_sidecar` always writes the full shape; the
 partial shape is exclusive to `MarkdownDocumentState.write_slot` against a
 previously-absent Sidecar.
+
+### Synthetic Document Shape for PDF and Excel
+
+A Synthetic Document Sidecar lives next to its source binary and keeps the
+binary filename in the sidecar name:
+
+```text
+Spec.pdf
+.Spec.pdf.doxmind
+Budget.xlsx
+.Budget.xlsx.doxmind
+```
+
+The Sidecar `html` field MUST contain exactly one External-reference placeholder
+for the matching block type:
+
+```json
+{
+  "version": 2,
+  "id": "fixture-pdf-doc",
+  "html": "<!-- pdf-block id=\"fixture-pdf-block\" src=\"Spec.pdf\" -->",
+  "markdown_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "updated_at": "2026-05-12T00:00:00Z",
+  "extras": {
+    "blocks": {
+      "fixture-pdf-block": {
+        "editor": {
+          "version": 1,
+          "edits": {}
+        },
+        "parsedCache": {
+          "sourceHash": "sha256-of-source-binary-or-parser-input",
+          "parsed": {}
+        }
+      }
+    }
+  }
+}
+```
+
+Synthetic Document reader/writer contract:
+
+- The only supported PDF/Excel state location is
+  `extras.blocks.<block_id>`, where `<block_id>` matches the single placeholder
+  in `html`.
+- `editor` stores user-facing editor state for that block. PDF editors use the
+  PDF editor payload; Excel editors use the workbook editor payload. The slot
+  may omit `editor` before the user has edited that file.
+- `parsedCache` stores parser output for the referenced source binary. It is an
+  object with `sourceHash` and `parsed`; writers that update parser output must
+  replace this slot field atomically and preserve `editor`.
+- Unknown sibling fields inside the block slot are pass-through state and must
+  be preserved, but release-facing compatibility only guarantees `editor` and
+  `parsedCache`.
+- The source `.pdf` / `.xlsx` file is authoritative input and is never mutated
+  by open, edit, save, migration, or cache refresh. Export flows may create a
+  new user-selected output file, but they do not silently rewrite the source
+  binary.
+- `markdown_hash` hashes the generated Synthetic Document markdown
+  (frontmatter plus the one placeholder), not the source PDF/XLSX bytes. Source
+  binary freshness belongs to `parsedCache.sourceHash`.
+
+Legacy top-level `pdf_editor`, `pdf_parsed_cache`, `excel_editor`, and
+`excel_parsed_cache` fields are accepted only as migration input. On first open
+with migration enabled, they are moved into the matching block slot and removed
+from the rewritten Sidecar.
+
+### Legacy Migration and Recovery
+
+Legacy PDF/Excel Sidecars migrate one way into the markdown-shaped Synthetic
+Document contract. The migration path is intentionally explicit on open, not a
+side effect of save:
+
+1. Acquire the sidecar lock.
+2. Read the legacy Sidecar.
+3. Write the original bytes to `<sidecar>.bak`.
+4. Rewrite `<sidecar>` with version `2`, one placeholder in `html`, and
+   migrated `editor` / `parsedCache` values under
+   `extras.blocks.<block_id>`.
+
+Recovery and failure rules:
+
+- If rewrite fails after `.bak` is written, restore by renaming
+  `<sidecar>.bak` back to `<sidecar>`.
+- If `<sidecar>.bak` already exists, migration is blocked so a maintainer can
+  inspect the previous backup instead of overwriting recovery evidence.
+- If the Sidecar is corrupt JSON, has non-UTF-8 bytes, or has a non-object JSON
+  top level, do not rewrite it. Write a timestamped forensic copy named
+  `<sidecar>.corrupt-*`, leave the original Sidecar bytes in place, and surface
+  the error.
+- `DOXMIND_SIDECAR_MIGRATE=0` disables the rewrite path for legacy Sidecars;
+  the app may synthesize a read-only in-memory document from legacy state, but
+  writes must be rejected until migration is enabled or the Sidecar is manually
+  restored.
+
+### Release Validation Fixtures
+
+The release compatibility fixtures live in
+[`tests/fixtures/sidecar_compat`](../tests/fixtures/sidecar_compat):
+
+- `pdf_legacy.doxmind.json`
+- `excel_legacy.doxmind.json`
+- `pdf_markdown_shape.doxmind.json`
+- `excel_markdown_shape.doxmind.json`
+
+Release validation MUST exercise both runtime paths against these fixtures:
+
+- Browser-dev/FastAPI path: `server/tests/test_sidecar_cross_runtime_compat.py`
+  verifies that workspace invoke reads, editor writes, parsed-cache writes, and
+  legacy migrations preserve the shared contract.
+- Desktop/Tauri path: `src-tauri/src/lib.rs` includes the same fixture files in
+  Rust tests so desktop commands and browser-dev routes cannot drift.
+
+Any Sidecar change that touches Synthetic Documents must update all four
+fixtures and both runtime validations together. A change that adds a separate
+PDF-only or Excel-only top-level Sidecar field is a contract regression unless a
+new ADR explicitly replaces the Markdown-first model.
 
 ## Block Placeholder Grammar
 

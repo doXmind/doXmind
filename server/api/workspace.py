@@ -722,8 +722,6 @@ def _read_block_slot_field(
     workspace = canonical_workspace_root(root)
     path = resolve_existing_workspace_path(workspace, rel_path)
     type_check(path)
-    if not sidecar_path_for(path).exists():
-        return None
     document = opener(path)
     value = _block_slot(document).get(slot_field)
     return value if isinstance(value, dict) else None
@@ -738,8 +736,6 @@ def _read_block_slot_combined(
     workspace = canonical_workspace_root(root)
     path = resolve_existing_workspace_path(workspace, rel_path)
     type_check(path)
-    if not sidecar_path_for(path).exists():
-        return None
     document = opener(path)
     slot = _block_slot(document)
     editor = slot.get("editor")

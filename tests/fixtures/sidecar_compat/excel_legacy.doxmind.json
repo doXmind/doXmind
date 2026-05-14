@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "id": "legacy-excel-doc",
+  "source_path": "Budget.xlsx",
+  "html": "<!-- excel-block id=\"legacy-excel-block\" src=\"Budget.xlsx\" -->",
+  "updated_at": "2026-05-12T00:00:00Z",
+  "excel_editor": {
+    "version": 1,
+    "activeSheetId": "LegacySheet",
+    "sheets": [
+      {
+        "id": "LegacySheet",
+        "name": "Legacy"
+      }
+    ]
+  },
+  "excel_parsed_cache": {
+    "sourceHash": "legacy-excel-hash",
+    "parsed": {
+      "sheets": [
+        {
+          "id": "LegacySheet"
+        }
+      ]
+    }
+  },
+  "extras": {
+    "unrelated": {
+      "keep": "legacy-excel"
+    },
+    "blocks": {
+      "legacy-excel-block": {
+        "slotExtra": {
+          "keep": true
+        }
+      }
+    }
+  }
+}

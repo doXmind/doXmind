@@ -22,11 +22,14 @@ The product surface is intentionally narrow:
 - The editor renders each `.md` as rich content via TipTap.
 - Editor-only state (block colors, embedded databases, cached HTML) is
   stored in a hidden `.doxmind` sidecar next to each `.md`.
+- PDF and Excel are Second-class files opened as Synthetic Documents with one
+  External-reference Custom Block whose state lives in the same markdown-shaped
+  sidecar contract next to the source binary.
 - Import, OCR, and export run locally with no network calls.
 
 ## Source of truth: the dual-file model
 
-Every document is two files on disk:
+Every first-class Markdown Document is two files on disk:
 
 ```text
 ~/Documents/notes/
@@ -42,18 +45,24 @@ The `.doxmind` sidecar is JSON and stores:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "id": "dfe24100-bb43-4f93-8553-2d9fdcc50172",
   "html": "<p>...</p>",
-  "markdown_hash": "sha256:abc123...",
+  "markdown_hash": "abc123...",
   "updated_at": "2026-04-29T17:38:00Z",
-  "extras": { "databases": {} }
+  "extras": {
+    "blocks": {},
+    "databases": {}
+  }
 }
 ```
 
-`extras.databases` is the target home for doXmind-only block data
-(database blocks, custom block extensions). Anything that does not round-trip
-through Markdown belongs here.
+`extras.blocks` is the target home for External-reference Custom Block state.
+PDF and Excel Synthetic Documents store their single block under
+`extras.blocks.<block_id>.editor` and
+`extras.blocks.<block_id>.parsedCache`. `extras.databases` remains the legacy
+database-block home while that block exists. Anything that does not round-trip
+through Markdown belongs in `extras`, not in top-level PDF/Excel fields.
 
 ### Open
 
@@ -73,6 +82,11 @@ through Markdown belongs here.
 The hash is the synchronization primitive. If a third party edits the `.md`
 out from under us, the next open detects the divergence and the user's
 view follows the file, not a stale sidecar.
+
+For Synthetic PDF/Excel Documents, `markdown_hash` hashes the generated
+frontmatter plus the single placeholder comment; source binary freshness belongs
+to `parsedCache.sourceHash`. Open, edit, save, migration, and cache refresh do
+not mutate the source `.pdf` or `.xlsx`.
 
 ## Three-layer architecture
 

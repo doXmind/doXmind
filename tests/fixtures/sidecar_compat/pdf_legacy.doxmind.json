@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "id": "legacy-pdf-doc",
+  "source_path": "Spec.pdf",
+  "html": "<!-- pdf-block id=\"legacy-pdf-block\" src=\"Spec.pdf\" -->",
+  "updated_at": "2026-05-12T00:00:00Z",
+  "pdf_editor": {
+    "version": 1,
+    "edits": {
+      "2:0": {
+        "text": "legacy pdf"
+      }
+    }
+  },
+  "pdf_parsed_cache": {
+    "sourceHash": "legacy-pdf-hash",
+    "parsed": {
+      "pages": [
+        {
+          "index": 0
+        }
+      ]
+    }
+  },
+  "extras": {
+    "unrelated": {
+      "keep": "legacy-pdf"
+    },
+    "blocks": {
+      "legacy-pdf-block": {
+        "slotExtra": {
+          "keep": true
+        }
+      }
+    }
+  }
+}

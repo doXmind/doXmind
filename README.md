@@ -14,10 +14,10 @@
   <img src="docs/readme/doxmind-workflow.gif" width="900" alt="doXmind local document workspace workflow" />
 </p>
 
-<h3 align="center">A fully-local desktop IDE for Markdown, PDF, and Excel.</h3>
+<h3 align="center">A fully-local desktop IDE for Markdown, with PDF and Excel sidecar editing.</h3>
 
 <p align="center">
-  Open a folder. Edit your <code>.md</code>, <code>.pdf</code>, and <code>.xlsx</code> files in a rich block-based editor. doXmind keeps editor-only fidelity in hidden sidecars next to each file, so the originals stay portable in any other tool.
+  Open a folder. Edit Markdown as the first-class document format, and work with <code>.pdf</code> and <code>.xlsx</code> files through Synthetic Documents that keep editor state in hidden sidecars while leaving the source binaries untouched.
 </p>
 
 ---
@@ -26,15 +26,15 @@
 
 doXmind is built for people who want a polished document editor without giving up control of their files.
 
-- **Your filesystem is the source of truth.** Every document is a normal `.md`, `.pdf`, or `.xlsx` file you can open in Finder, Git, VS Code, Obsidian, Acrobat, Excel, iCloud Drive, Dropbox, or anywhere else.
-- **Rich editing stays lossless.** A hidden same-name `.doxmind` sidecar preserves editor state — TipTap HTML for Markdown, block layout for PDF, formula/format/filter state for Excel — plus doXmind-only extras like database rows.
+- **Your filesystem is the source of truth.** Every first-class Document is a normal `.md` file you can open in Finder, Git, VS Code, Obsidian, iCloud Drive, Dropbox, or anywhere else. PDF and Excel remain normal source files that doXmind references without mutating.
+- **Rich editing stays lossless.** A hidden same-name `.doxmind` sidecar preserves editor state: TipTap HTML for Markdown, and one External-reference Custom Block for each Synthetic PDF or Excel Document. doXmind-only extras like database rows live there too.
 - **External edits are respected.** When the underlying file changes outside doXmind, the file on disk wins and the sidecar is refreshed on the next save.
 - **No account, no cloud, no AI runtime.** This branch has no login, no sync, no sharing links, no telemetry, no model providers, no hosted backend, and no billing.
 - **Designed for desktop work.** A Tauri 2 shell wraps a Next.js editor and a localhost FastAPI sidecar that handles parsing, export, and filesystem operations.
 
-## Three First-Class Document Types
+## Document Model
 
-doXmind treats Markdown, PDF, and Excel as peers. Each has its own editor surface, but they all share the same sidecar storage model.
+Markdown is the only first-class Document type. PDF and Excel are Second-class files: doXmind represents each one as a Synthetic Document containing exactly one External-reference Custom Block (`pdf-block` or `excel-block`) that points at the source file.
 
 ### Markdown
 
@@ -50,7 +50,7 @@ A rich TipTap editor with custom blocks: headings, lists, tasks, quotes, callout
 
 ### PDF
 
-A block-based annotation and editing surface backed by PyMuPDF block extraction. Edits live in a hidden `.doxmind` sidecar next to the original PDF; the original stays untouched until you explicitly export.
+A block-based annotation and editing surface backed by PyMuPDF block extraction. Edits live under the Synthetic Document's block slot in a hidden `.doxmind` sidecar next to the original PDF; the source PDF is never mutated by open, edit, save, or migration.
 
 <p align="center">
   <img src="docs/readme/doxmind-pdf.png" width="900" alt="doXmind PDF editor with local block extraction, highlights, and sidecar annotations" />
@@ -58,7 +58,7 @@ A block-based annotation and editing surface backed by PyMuPDF block extraction.
 
 ### Excel
 
-A workbook editor with formulas, filters, autofill, cell formatting, and structural row/column operations, backed by openpyxl. Editor state lives in a hidden `.doxmind` sidecar next to the `.xlsx`.
+A workbook editor with formulas, filters, autofill, cell formatting, and structural row/column operations, backed by openpyxl. Editor state lives under the Synthetic Document's block slot in a hidden `.doxmind` sidecar next to the `.xlsx`; the source workbook is never mutated by open, edit, save, or migration.
 
 <p align="center">
   <img src="docs/readme/doxmind-excel.png" width="900" alt="doXmind Excel editor with workbook grid, formulas, filters, and local sidecar state" />
@@ -74,38 +74,45 @@ Database blocks inside Markdown documents are local data, not a hosted workspace
 
 ## Storage Model
 
-doXmind uses a portable-file-plus-hidden-sidecar layout. The same pattern applies to all three document types:
+doXmind uses a portable-file-plus-hidden-sidecar layout. Markdown owns the first-class Document contract; PDF and Excel use the same markdown-shaped sidecar contract through Synthetic Documents:
 
 ```text
 ~/Documents/doXmind/
 ├── Project Plan.md
 ├── .Project Plan.doxmind          # markdown sidecar (HTML + extras)
 ├── Q3 Forecast.xlsx
-├── .Q3 Forecast.doxmind            # excel editor state
+├── .Q3 Forecast.xlsx.doxmind       # Synthetic Document sidecar
 ├── Spec.pdf
-├── .Spec.doxmind                   # pdf editor state
+├── .Spec.pdf.doxmind               # Synthetic Document sidecar
 └── assets/
     └── diagram.png
 ```
 
-Markdown sidecar shape:
+Sidecars share one markdown shape:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "id": "dfe24100-bb43-4f93-8553-2d9fdcc50172",
   "html": "<p>...</p>",
-  "markdown_hash": "sha256:abc123...",
+  "markdown_hash": "abc123...",
   "updated_at": "2026-04-29T17:38:00Z",
   "extras": {
-    "databases": {}
+    "blocks": {
+      "block-id": {
+        "editor": {},
+        "parsedCache": {}
+      }
+    }
   }
 }
 ```
 
-`markdown_hash` is the freshness check. When the current `.md` hash matches the sidecar, doXmind reopens the richer HTML. When the hash differs, the Markdown file was edited externally, so doXmind imports the Markdown and regenerates the sidecar on save. PDF and Excel sidecars follow the same hidden-sidecar pattern; their schemas are owned by `services/pdf_blocks.py` and `services/excel_workbook.py` respectively.
+For Markdown, `markdown_hash` is the freshness check. When the current `.md` hash matches the sidecar, doXmind reopens the richer HTML. When the hash differs, the Markdown file was edited externally, so doXmind imports the Markdown and regenerates the sidecar on save.
 
-A small `<sidecar>.lock` file may appear next to a sidecar during legacy-format migration. These files are tiny, persist after use, and must not be deleted manually. See [docs/adr/0003-explicit-sidecar-migration.md](docs/adr/0003-explicit-sidecar-migration.md) for the migration semantics and recovery path.
+For PDF and Excel, the sidecar's `html` is a single placeholder comment such as `<!-- pdf-block id="..." src="Spec.pdf" -->`. The block state lives at `extras.blocks.<block_id>.editor`, and parser output lives at `extras.blocks.<block_id>.parsedCache`. Legacy top-level fields such as `pdf_editor`, `pdf_parsed_cache`, `excel_editor`, and `excel_parsed_cache` are migration input only; new code must not write them.
+
+A small `<sidecar>.lock` file may appear next to a sidecar during legacy-format migration. These files are tiny, persist after use, and must not be deleted manually. Migration writes the original sidecar bytes to `<sidecar>.bak` before rewriting to markdown shape; corrupt sidecars are not rewritten and receive a timestamped `<sidecar>.corrupt-*` forensic copy for manual recovery. See [docs/adr/0003-explicit-sidecar-migration.md](docs/adr/0003-explicit-sidecar-migration.md) for the migration semantics and recovery path.
 
 ## Local Import
 
@@ -137,8 +144,8 @@ Themes, editor behavior, and per-workspace settings are stored on the device. Th
 
 Included:
 
-- Local Markdown, PDF, and Excel editors
-- Hidden `.doxmind` sidecars for all three document types
+- Local Markdown editor plus PDF and Excel editing through Synthetic Documents
+- Hidden `.doxmind` sidecars using one markdown-shaped contract
 - Rich TipTap blocks (callouts, tasks, math, Mermaid, code, tables, databases, …)
 - Local PDF block extraction and edit-export
 - Local Excel workbook editing with formulas, filters, formatting, and structural ops
@@ -258,7 +265,7 @@ Next.js editor UI  ── localhost HTTP ── FastAPI sidecar
         └──────────── local workspace folder + .doxmind sidecars
 ```
 
-The frontend owns the editing experience for all three document types. The backend sidecar owns local filesystem operations, parsing (PyMuPDF for PDF, openpyxl for Excel), export, image storage, and workspace commands. SQLite exists at `~/.doxmind/doxmind.db` only as an `app_metadata` key/value table; documents themselves never live in SQLite. Markdown files, PDFs, XLSX files, and their `.doxmind` sidecars are the durable document source.
+The frontend owns the editing experience for Markdown Documents and for Synthetic PDF/Excel Documents. The backend sidecar owns local filesystem operations, parsing (PyMuPDF for PDF, openpyxl for Excel), export, image storage, and workspace commands. SQLite exists at `~/.doxmind/doxmind.db` only as an `app_metadata` key/value table; documents themselves never live in SQLite. Markdown files are the durable first-class document source; PDFs and XLSX files remain durable source binaries referenced by their Synthetic Document sidecars.
 
 ## FAQ
 
@@ -279,7 +286,7 @@ Wherever you put them. doXmind opens any folder you pick. The default suggested 
 <details>
 <summary>Can I edit files outside doXmind?</summary>
 
-Yes. External edits are expected. For Markdown, when the file's hash no longer matches the sidecar, doXmind treats the `.md` file as newer and refreshes editor state from it. PDF and Excel sidecars follow the same precedence rule.
+Yes. External edits are expected. For Markdown, when the file's hash no longer matches the sidecar, doXmind treats the `.md` file as newer and refreshes editor state from it. For PDF and Excel, the source binary remains authoritative and doXmind never mutates it; cached parser output is refreshed from that source when needed.
 
 </details>
 
@@ -293,7 +300,7 @@ No. The editor, workspace files, imports, exports, sidecars, and metadata are al
 <details>
 <summary>Why keep a sidecar instead of only the original file?</summary>
 
-`.md`, `.pdf`, and `.xlsx` are portable, but they cannot represent every editor-only detail (TipTap block layout, PDF block ordering, Excel filter state, database rows) without becoming noisy or breaking compatibility with other tools. The sidecar keeps lossless state while leaving the visible file clean.
+Markdown is portable, and PDF/XLSX source binaries must stay compatible with Acrobat, Excel, and other tools. The sidecar keeps lossless doXmind state (TipTap HTML, External-reference block slots, database rows) while leaving user-facing files clean.
 
 </details>
 

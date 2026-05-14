@@ -9,6 +9,7 @@ import pytest
 from api import workspace as workspace_module
 from services.sidecar_io import SIDECAR_VERSION, hash_markdown, sidecar_path_for
 from services.synthetic_document import (
+    EXCEL_BLOCK_TYPE,
     PDF_BLOCK_TYPE,
     LegacySidecarError,
     SyntheticDocumentFactory,
@@ -53,6 +54,12 @@ def _make_pdf(tmp_path: Path, name: str = "Application.pdf") -> Path:
     return path
 
 
+def _make_excel(tmp_path: Path, name: str = "Budget.xlsx") -> Path:
+    path = tmp_path / name
+    path.write_bytes(b"PK\x03\x04 fake xlsx body")
+    return path
+
+
 def _legacy_pdf_payload(pdf_path: Path) -> dict:
     return {
         "version": SIDECAR_VERSION,
@@ -64,9 +71,49 @@ def _legacy_pdf_payload(pdf_path: Path) -> dict:
     }
 
 
+def _legacy_excel_payload(xlsx_path: Path) -> dict:
+    return {
+        "version": SIDECAR_VERSION,
+        "id": "legacy-excel",
+        "source_path": xlsx_path.name,
+        "updated_at": "2024-01-01T00:00:00Z",
+        "excel_editor": {"version": 1, "sheets": [{"name": "Q1"}]},
+        "excel_parsed_cache": {"sourceHash": "abc", "parsed": {"sheets": []}},
+    }
+
+
 def _write_legacy_pdf_sidecar(pdf_path: Path) -> Path:
     sidecar_path = sidecar_path_for(pdf_path)
     sidecar_path.write_text(json.dumps(_legacy_pdf_payload(pdf_path)), encoding="utf-8")
+    return sidecar_path
+
+
+def _write_legacy_excel_sidecar(xlsx_path: Path) -> Path:
+    sidecar_path = sidecar_path_for(xlsx_path)
+    sidecar_path.write_text(json.dumps(_legacy_excel_payload(xlsx_path)), encoding="utf-8")
+    return sidecar_path
+
+
+def _write_synthetic_sidecar(
+    path: Path,
+    *,
+    block_type: str,
+    block_id: str,
+    extras: dict,
+    html: str | None = None,
+) -> Path:
+    sidecar_path = sidecar_path_for(path)
+    sidecar = {
+        "version": SIDECAR_VERSION,
+        "id": f"doc-{block_id}",
+        "html": html
+        if html is not None
+        else f'<!-- {block_type} id="{block_id}" src="{path.name}" -->',
+        "markdown_hash": "browser-dev-test",
+        "updated_at": "2026-01-01T00:00:00Z",
+        "extras": extras,
+    }
+    sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
     return sidecar_path
 
 
@@ -532,6 +579,292 @@ def test_workspace_pdf_scan_binary_and_editor_state(sync_client, tmp_path):
         {"root": root, "path": "Application.pdf"},
     )
     assert restored == state
+
+
+def test_workspace_pdf_missing_sidecar_write_creates_markdown_shape_block_slot(
+    sync_client, tmp_path
+):
+    pdf_path = _make_pdf(tmp_path)
+    editor = {"version": 1, "edits": {"1:0": {"text": "Edited"}}}
+
+    invoke(
+        sync_client,
+        "workspace_write_pdf_editor_state",
+        {"root": str(tmp_path), "path": pdf_path.name, "payload": editor},
+    )
+
+    sidecar = json.loads(sidecar_path_for(pdf_path).read_text(encoding="utf-8"))
+    assert "pdf_editor" not in sidecar
+    assert "pdf_parsed_cache" not in sidecar
+    blocks = sidecar["extras"]["blocks"]
+    assert len(blocks) == 1
+    block_id, slot = next(iter(blocks.items()))
+    assert f'<!-- {PDF_BLOCK_TYPE} id="{block_id}" src="{pdf_path.name}" -->' in sidecar["html"]
+    assert slot == {"editor": editor}
+
+    restored = invoke(
+        sync_client,
+        "workspace_read_pdf_doc_state",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+    assert restored == {"editor": editor, "parsedCache": None}
+
+
+def test_workspace_pdf_missing_sidecar_read_synthesizes_markdown_shape_block_slot(
+    sync_client, tmp_path
+):
+    pdf_path = _make_pdf(tmp_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    assert not sidecar_path.exists()
+
+    restored = invoke(
+        sync_client,
+        "workspace_read_pdf_doc_state",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+
+    assert restored == {"editor": None, "parsedCache": None}
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert "pdf_editor" not in sidecar
+    assert "pdf_parsed_cache" not in sidecar
+    assert len(sidecar["extras"]["blocks"]) == 1
+
+
+def test_workspace_excel_missing_sidecar_write_creates_markdown_shape_block_slot(
+    sync_client, tmp_path
+):
+    xlsx_path = _make_excel(tmp_path)
+    editor = {"version": 1, "sheets": [{"name": "Q1", "activeCell": "A1"}]}
+
+    invoke(
+        sync_client,
+        "workspace_write_excel_editor_state",
+        {"root": str(tmp_path), "path": xlsx_path.name, "payload": editor},
+    )
+
+    sidecar = json.loads(sidecar_path_for(xlsx_path).read_text(encoding="utf-8"))
+    assert "excel_editor" not in sidecar
+    assert "excel_parsed_cache" not in sidecar
+    blocks = sidecar["extras"]["blocks"]
+    assert len(blocks) == 1
+    block_id, slot = next(iter(blocks.items()))
+    assert (
+        f'<!-- {EXCEL_BLOCK_TYPE} id="{block_id}" src="{xlsx_path.name}" -->'
+        in sidecar["html"]
+    )
+    assert slot == {"editor": editor}
+
+
+def test_workspace_excel_missing_sidecar_read_synthesizes_markdown_shape_block_slot(
+    sync_client, tmp_path
+):
+    xlsx_path = _make_excel(tmp_path)
+    sidecar_path = sidecar_path_for(xlsx_path)
+    assert not sidecar_path.exists()
+
+    restored = invoke(
+        sync_client,
+        "workspace_read_excel_doc_state",
+        {"root": str(tmp_path), "path": xlsx_path.name},
+    )
+
+    assert restored == {"editor": None, "parsedCache": None}
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert "excel_editor" not in sidecar
+    assert "excel_parsed_cache" not in sidecar
+    assert len(sidecar["extras"]["blocks"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("make_file", "write_legacy", "write_cache_command", "legacy_keys", "block_type"),
+    [
+        (
+            _make_pdf,
+            _write_legacy_pdf_sidecar,
+            "workspace_write_pdf_parsed_cache",
+            ("pdf_editor", "pdf_parsed_cache"),
+            PDF_BLOCK_TYPE,
+        ),
+        (
+            _make_excel,
+            _write_legacy_excel_sidecar,
+            "workspace_write_excel_parsed_cache",
+            ("excel_editor", "excel_parsed_cache"),
+            EXCEL_BLOCK_TYPE,
+        ),
+    ],
+)
+def test_workspace_legacy_second_class_sidecar_is_migration_input_only(
+    sync_client,
+    tmp_path,
+    make_file,
+    write_legacy,
+    write_cache_command,
+    legacy_keys,
+    block_type,
+):
+    file_path = make_file(tmp_path)
+    write_legacy(file_path)
+
+    invoke(
+        sync_client,
+        write_cache_command,
+        {
+            "root": str(tmp_path),
+            "path": file_path.name,
+            "sourceHash": "fresh",
+            "parsed": {"ok": True},
+        },
+    )
+
+    sidecar = json.loads(sidecar_path_for(file_path).read_text(encoding="utf-8"))
+    assert all(key not in sidecar for key in legacy_keys)
+    blocks = sidecar["extras"]["blocks"]
+    assert len(blocks) == 1
+    block_id, slot = next(iter(blocks.items()))
+    assert f'<!-- {block_type} id="{block_id}" src="{file_path.name}" -->' in sidecar["html"]
+    assert slot["parsedCache"] == {"sourceHash": "fresh", "parsed": {"ok": True}}
+    assert "editor" in slot
+
+
+def test_workspace_pdf_migrated_slot_writes_preserve_block_id_and_merge_extras(
+    sync_client, tmp_path
+):
+    pdf_path = _make_pdf(tmp_path)
+    block_id = "stable-pdf-block"
+    parsed_cache = {"sourceHash": "old", "parsed": {"pages": [1]}}
+    _write_synthetic_sidecar(
+        pdf_path,
+        block_type=PDF_BLOCK_TYPE,
+        block_id=block_id,
+        extras={
+            "blocks": {
+                block_id: {"parsedCache": parsed_cache, "note": "keep"},
+                "orphaned": {"editor": {"discard": True}},
+            },
+            "preferences": {"zoom": 1.5},
+        },
+    )
+    editor = {"version": 1, "edits": {"2:0": {"text": "Merged"}}}
+
+    invoke(
+        sync_client,
+        "workspace_write_pdf_editor_state",
+        {"root": str(tmp_path), "path": pdf_path.name, "payload": editor},
+    )
+
+    sidecar = json.loads(sidecar_path_for(pdf_path).read_text(encoding="utf-8"))
+    assert f'id="{block_id}"' in sidecar["html"]
+    assert sidecar["extras"]["preferences"] == {"zoom": 1.5}
+    assert sidecar["extras"]["blocks"] == {
+        block_id: {"parsedCache": parsed_cache, "note": "keep", "editor": editor}
+    }
+    assert "pdf_editor" not in sidecar
+    assert "pdf_parsed_cache" not in sidecar
+
+
+def test_workspace_excel_migrated_slot_writes_preserve_block_id_and_merge_extras(
+    sync_client, tmp_path
+):
+    xlsx_path = _make_excel(tmp_path)
+    block_id = "stable-excel-block"
+    editor = {"version": 1, "sheets": [{"name": "Q1"}]}
+    _write_synthetic_sidecar(
+        xlsx_path,
+        block_type=EXCEL_BLOCK_TYPE,
+        block_id=block_id,
+        extras={"blocks": {block_id: {"editor": editor}}, "preferences": {"grid": True}},
+    )
+
+    invoke(
+        sync_client,
+        "workspace_write_excel_parsed_cache",
+        {
+            "root": str(tmp_path),
+            "path": xlsx_path.name,
+            "sourceHash": "sheet-hash",
+            "parsed": {"sheets": [{"name": "Q1", "rows": 3}]},
+        },
+    )
+
+    sidecar = json.loads(sidecar_path_for(xlsx_path).read_text(encoding="utf-8"))
+    assert f'id="{block_id}"' in sidecar["html"]
+    assert sidecar["extras"]["preferences"] == {"grid": True}
+    assert sidecar["extras"]["blocks"][block_id] == {
+        "editor": editor,
+        "parsedCache": {
+            "sourceHash": "sheet-hash",
+            "parsed": {"sheets": [{"name": "Q1", "rows": 3}]},
+        },
+    }
+    assert "excel_editor" not in sidecar
+    assert "excel_parsed_cache" not in sidecar
+
+
+def test_workspace_pdf_missing_block_slot_is_created_on_next_slot_write(
+    sync_client, tmp_path
+):
+    pdf_path = _make_pdf(tmp_path)
+    block_id = "missing-slot-pdf"
+    _write_synthetic_sidecar(
+        pdf_path,
+        block_type=PDF_BLOCK_TYPE,
+        block_id=block_id,
+        extras={"blocks": {}, "preferences": {"zoom": 2}},
+    )
+
+    restored = invoke(
+        sync_client,
+        "workspace_read_pdf_doc_state",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+    assert restored == {"editor": None, "parsedCache": None}
+
+    invoke(
+        sync_client,
+        "workspace_write_pdf_parsed_cache",
+        {
+            "root": str(tmp_path),
+            "path": pdf_path.name,
+            "sourceHash": "parsed-hash",
+            "parsed": {"pages": [1, 2]},
+        },
+    )
+
+    sidecar = json.loads(sidecar_path_for(pdf_path).read_text(encoding="utf-8"))
+    assert sidecar["extras"]["preferences"] == {"zoom": 2}
+    assert sidecar["extras"]["blocks"] == {
+        block_id: {"parsedCache": {"sourceHash": "parsed-hash", "parsed": {"pages": [1, 2]}}}
+    }
+    assert "pdf_editor" not in sidecar
+    assert "pdf_parsed_cache" not in sidecar
+
+
+def test_workspace_pdf_duplicate_block_slot_surfaces_clear_command_error(
+    sync_client, tmp_path
+):
+    pdf_path = _make_pdf(tmp_path)
+    block_id = "duplicated-pdf-block"
+    html = (
+        f'<!-- {PDF_BLOCK_TYPE} id="{block_id}" src="{pdf_path.name}" -->\n'
+        f'<!-- {PDF_BLOCK_TYPE} id="{block_id}" src="{pdf_path.name}" -->'
+    )
+    _write_synthetic_sidecar(
+        pdf_path,
+        block_type=PDF_BLOCK_TYPE,
+        block_id=block_id,
+        html=html,
+        extras={"blocks": {block_id: {"editor": {"version": 1}}}},
+    )
+
+    response = error_response(
+        sync_client,
+        "workspace_read_pdf_doc_state",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+
+    assert response.status_code == 400
+    assert "duplicate pdf-block placeholder" in response.json()["detail"]
 
 
 def test_workspace_maps_sidecar_migration_error_to_structured_422(sync_client, tmp_path):

@@ -1,0 +1,43 @@
+{
+  "version": 2,
+  "id": "fixture-excel-doc",
+  "html": "<!-- excel-block id=\"fixture-excel-block\" src=\"Budget.xlsx\" -->",
+  "markdown_hash": "fixture-stale-ok-for-synthetic-documents",
+  "updated_at": "2026-05-12T00:00:00Z",
+  "extras": {
+    "unrelated": {
+      "keep": true,
+      "nested": {
+        "value": 11
+      }
+    },
+    "blocks": {
+      "fixture-excel-block": {
+        "editor": {
+          "version": 1,
+          "activeSheetId": "Sheet1",
+          "sheets": [
+            {
+              "id": "Sheet1",
+              "name": "Budget"
+            }
+          ]
+        },
+        "parsedCache": {
+          "sourceHash": "valid-excel-hash",
+          "parsed": {
+            "sheets": [
+              {
+                "id": "Sheet1",
+                "rows": 3
+              }
+            ]
+          }
+        },
+        "slotExtra": {
+          "keep": "excel"
+        }
+      }
+    }
+  }
+}

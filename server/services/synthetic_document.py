@@ -23,10 +23,12 @@ import json
 import logging
 import os
 import uuid
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from services.block_correlation import BlockCorrelation
 from services.external_ref_blocks import (
     ExternalRefBlockRegistry,
     default_external_ref_block_registry,
@@ -108,6 +110,10 @@ class ReadOnlyDocumentError(Exception):
             f"document at {path} is read-only ({_MIGRATE_ENV_VAR}=0 against legacy sidecar)"
         )
         self.path = path
+
+
+class SyntheticSidecarContractError(ValueError):
+    """Raised when a markdown-shape Synthetic Document sidecar is invalid."""
 
 
 @dataclass(frozen=True)
@@ -329,25 +335,74 @@ class SyntheticDocumentFactory:
         extras = sidecar.get("extras")
         if not isinstance(extras, dict):
             extras = {"blocks": {}}
-        blocks = extras.get("blocks") if isinstance(extras.get("blocks"), dict) else {}
-        block_id = _first_block_id_in_html(sidecar.get("html") or "", block_type)
-        if block_id is None:
-            block_id = next(iter(blocks), None)
-        if block_id is None:
-            raise ValueError(
-                f"markdown-shape sidecar at {sidecar_path_for(path)} has no {block_type} placeholder"
-            )
+        html = str(sidecar.get("html") or "")
+        block_id, resolved_extras = self._resolve_single_block_slot(
+            path=path,
+            block_type=block_type,
+            html=html,
+            extras=extras,
+        )
         meta: dict[str, Any] = {
-            "id": str(sidecar.get("id") or ""),
+            "id": str(sidecar.get("id") or "").strip() or str(uuid.uuid4()),
             "title": path.stem,
         }
         snapshot = DocumentSnapshot(
-            html=str(sidecar.get("html") or ""),
+            html=html,
             markdown=_placeholder_line(block_type, block_id, path.name) + "\n",
             meta=meta,
-            extras=extras,
+            extras=resolved_extras,
         )
         return Document(path=path, block_id=block_id, block_type=block_type, snapshot=snapshot)
+
+    def _resolve_single_block_slot(
+        self,
+        *,
+        path: Path,
+        block_type: str,
+        html: str,
+        extras: dict[str, Any],
+    ) -> tuple[str, dict[str, Any]]:
+        sidecar_path = sidecar_path_for(path)
+        placeholders = list(placeholder_re_for((block_type,)).finditer(html))
+        if not placeholders:
+            raise SyntheticSidecarContractError(
+                f"markdown-shape sidecar at {sidecar_path} has no {block_type} placeholder"
+            )
+        if len(placeholders) > 1:
+            duplicate_ids = sorted(
+                {
+                    match.group("id")
+                    for match in placeholders
+                    if sum(1 for other in placeholders if other.group("id") == match.group("id"))
+                    > 1
+                }
+            )
+            if duplicate_ids:
+                raise SyntheticSidecarContractError(
+                    f"markdown-shape sidecar at {sidecar_path} has duplicate "
+                    f"{block_type} placeholder id(s): {', '.join(duplicate_ids)}"
+                )
+            raise SyntheticSidecarContractError(
+                f"markdown-shape sidecar at {sidecar_path} has multiple "
+                f"{block_type} placeholders; Synthetic Documents require exactly one"
+            )
+
+        block_id = placeholders[0].group("id")
+        correlation = BlockCorrelation(self._registry).correlate(
+            markdown_body=_placeholder_line(block_type, block_id, placeholders[0].group("src")),
+            extras=extras,
+        )
+        if correlation.report.blocking:
+            details = [
+                f"{event.kind}:{event.block_type}:{event.id}:{event.how_handled.value}"
+                for event in correlation.report.events
+                if event.how_handled.value == "errored"
+            ]
+            raise SyntheticSidecarContractError(
+                f"markdown-shape sidecar at {sidecar_path} failed block correlation: "
+                + ", ".join(details)
+            )
+        return block_id, correlation.resolved_extras
 
     def _write_sidecar(self, path: Path, snapshot: DocumentSnapshot) -> None:
         md_content = build_md_with_frontmatter(snapshot.meta, snapshot.markdown)
@@ -408,24 +463,43 @@ def _path_for_sidecar(sidecar_path: Path) -> Path:
 
 
 def _snapshot_from_legacy(path: Path, block_type: str, sidecar: dict[str, Any]) -> DocumentSnapshot:
-    block_id = str(uuid.uuid4())
+    block_id = _legacy_block_id(block_type, sidecar) or str(uuid.uuid4())
     rel_src = path.name
     body = _placeholder_line(block_type, block_id, rel_src) + "\n"
     existing_id = str(sidecar.get("id") or "").strip() or str(uuid.uuid4())
     meta: dict[str, Any] = {"id": existing_id, "title": path.stem}
-    slot: dict[str, Any] = {}
+    extras_raw = sidecar.get("extras")
+    extras = deepcopy(extras_raw) if isinstance(extras_raw, dict) else {}
+    blocks_raw = extras.get("blocks")
+    blocks = blocks_raw if isinstance(blocks_raw, dict) else {}
+    slot_raw = blocks.get(block_id)
+    slot = slot_raw if isinstance(slot_raw, dict) else {}
     editor = sidecar.get(_LEGACY_EDITOR_KEY[block_type])
-    if isinstance(editor, dict):
+    if isinstance(editor, dict) and "editor" not in slot:
         slot["editor"] = editor
     parsed_cache = sidecar.get(_LEGACY_PARSED_CACHE_KEY[block_type])
-    if isinstance(parsed_cache, dict):
+    if isinstance(parsed_cache, dict) and "parsedCache" not in slot:
         slot["parsedCache"] = parsed_cache
+    blocks[block_id] = slot
+    extras["blocks"] = blocks
     return DocumentSnapshot(
         html=_placeholder_html(block_type, block_id, rel_src),
         markdown=body,
         meta=meta,
-        extras={"blocks": {block_id: slot}},
+        extras=extras,
     )
+
+
+def _legacy_block_id(block_type: str, sidecar: dict[str, Any]) -> str | None:
+    html = str(sidecar.get("html") or "")
+    match = placeholder_re_for((block_type,)).search(html)
+    if match:
+        return match.group("id")
+    extras = sidecar.get("extras")
+    blocks = extras.get("blocks") if isinstance(extras, dict) else None
+    if isinstance(blocks, dict):
+        return next(iter(blocks), None)
+    return None
 
 
 def _placeholder_line(block_type: str, block_id: str, rel_src: str) -> str:
@@ -434,8 +508,3 @@ def _placeholder_line(block_type: str, block_id: str, rel_src: str) -> str:
 
 def _placeholder_html(block_type: str, block_id: str, rel_src: str) -> str:
     return _placeholder_line(block_type, block_id, rel_src)
-
-
-def _first_block_id_in_html(html: str, block_type: str) -> str | None:
-    match = placeholder_re_for((block_type,)).search(html)
-    return match.group("id") if match else None

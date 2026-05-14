@@ -47,6 +47,7 @@ import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { perfAsync, perfMeasure, perfSync } from "@/lib/perf";
 import { isSwitchCacheStillValid } from "@/lib/switch-cache-validation";
+import { freshParsedCacheValue } from "@/lib/parsed-cache-freshness";
 
 // Module-level switch cache. Holds the cost-dominating pieces of a PDF open
 // so that flipping back to a recently-opened PDF avoids both the Tauri
@@ -480,10 +481,10 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
           // of the source bytes; an unchanged PDF skips PyMuPDF entirely.
           const blocksBytes = new Uint8Array(readBytes);
           sourceHash = await sha256Hex(blocksBytes);
-          const cachedBlocks =
-            docState?.parsedCache && docState.parsedCache.sourceHash === sourceHash
-              ? (docState.parsedCache.parsed as PdfBlocksResponse)
-              : null;
+          const cachedBlocks = freshParsedCacheValue<PdfBlocksResponse>(
+            docState?.parsedCache,
+            sourceHash
+          );
           if (cachedBlocks) {
             blocks = cachedBlocks;
           } else {
