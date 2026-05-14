@@ -29,6 +29,7 @@ const spies = vi.hoisted(() => {
     readExcelDocState: vi.fn(async () => null),
     writeExcelParsedCache: vi.fn(async () => undefined),
     writeExcelEditorState: vi.fn(async () => undefined),
+    notifyError: vi.fn(),
     readBinary: vi.fn(async () => new Uint8Array([0x50, 0x4b, 0x03, 0x04])),
     statBinary: vi.fn(async () => ({
       mtimeNs: "1700000000000000000",
@@ -109,6 +110,19 @@ vi.mock("@/lib/storage", async () => {
   };
 });
 
+// Mock the notification surface so we can assert read-only banner fires.
+vi.mock("@/lib/notifications", () => ({
+  notify: {
+    error: spies.notifyError,
+    promise: vi.fn(),
+    startProgress: vi.fn(),
+    updateProgress: vi.fn(),
+    resolveProgress: vi.fn(),
+    failProgress: vi.fn(),
+    removeProgress: vi.fn(),
+  },
+}));
+
 // Mock the openpyxl-backed parse so the test doesn't hit the network.
 vi.mock("@/lib/excel/parse-workbook", async () => {
   const actual =
@@ -169,10 +183,12 @@ describe("ExcelEditorWorkspace cold-open IPC path", () => {
     spies.readExcelDocState.mockClear();
     spies.writeExcelParsedCache.mockClear();
     spies.writeExcelEditorState.mockClear();
+    spies.notifyError.mockClear();
     spies.readBinary.mockClear();
     spies.statBinary.mockClear();
     spies.fetchExcelWorkbook.mockClear();
     spies.readExcelEditorState.mockImplementation(async () => null);
+    spies.writeExcelEditorState.mockImplementation(async () => undefined);
   });
 
   it("cold_open_reads_editor_only_not_parsed_cache", async () => {
@@ -254,5 +270,57 @@ describe("ExcelEditorWorkspace cold-open IPC path", () => {
       { activeSheetId?: string },
     ];
     expect(snapshot.activeSheetId).toBe("sheet-2");
+  });
+
+  it("surfaces the read-only banner once when the sidecar rejects with the cross-runtime error", async () => {
+    // Rust's `read_only_document_error()` returns this verbatim string when
+    // DOXMIND_SIDECAR_MIGRATE=off opens a legacy sidecar. Make every
+    // autosave reject with it — the workspace must show the banner exactly
+    // once per file open, regardless of how many edits the user makes.
+    spies.writeExcelEditorState.mockImplementation(async () => {
+      throw new Error(
+        "document at /tmp/test-workspace/.test.doxmind is read-only (DOXMIND_SIDECAR_MIGRATE=0 against legacy sidecar)"
+      );
+    });
+
+    const file = makeFile({ id: `readonly-${Date.now()}-${Math.random()}` });
+    render(<ExcelEditorWorkspace file={file} />);
+
+    await waitFor(() => {
+      expect(spies.fetchExcelWorkbook).toHaveBeenCalledTimes(1);
+    });
+
+    // Trigger an edit — clicking Sheet2 mirrors activeSheetId into
+    // editorState, which fires the debounced autosave. The autosave
+    // rejects; the workspace should call notify.error exactly once.
+    const sheet2Tab = await screen.findByRole("button", { name: "Sheet2" });
+    await act(async () => {
+      fireEvent.click(sheet2Tab);
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    });
+    await waitFor(() => {
+      expect(spies.writeExcelEditorState).toHaveBeenCalledTimes(1);
+    });
+    expect(spies.notifyError).toHaveBeenCalledTimes(1);
+    expect(spies.notifyError.mock.calls[0][0]).toMatch(/read-only/i);
+
+    // Trigger a second edit — switch back to Sheet1. The autosave fires
+    // again and rejects again, but the banner must NOT re-fire: per-file
+    // `readOnlySurfacedRef` is now set.
+    const sheet1Tab = await screen.findByRole("button", { name: "Sheet1" });
+    await act(async () => {
+      fireEvent.click(sheet1Tab);
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    });
+    await waitFor(() => {
+      expect(spies.writeExcelEditorState).toHaveBeenCalledTimes(2);
+    });
+    expect(spies.notifyError).toHaveBeenCalledTimes(1);
   });
 });
