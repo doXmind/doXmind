@@ -10,8 +10,11 @@
  *
  * This test mounts the workspace against a fake storage adapter that
  * exposes BOTH `readExcelEditorState` and `readExcelDocState`, asserts the
- * cold open touched only the editor-only path, and asserts the post-parse
- * codepath still fires the cache-prime write.
+ * cold open touched only the editor-only path, and asserts the cold path
+ * is write-free with respect to the sidecar — `writeExcelParsedCache` is
+ * never called during open. The adapter method stays in the adapter
+ * surface so explicit primers (outside the open path) can still use it,
+ * but the open path itself neither reads nor writes parsedCache.
  */
 
 import React from "react";
@@ -183,17 +186,12 @@ describe("ExcelEditorWorkspace cold-open IPC path", () => {
     // taken on the read side.
     expect(spies.readBinary).toHaveBeenCalledTimes(1);
 
-    // Post-parse cache priming fires fire-and-forget. Wait for it
-    // separately because the void chain resolves a microtask after the
-    // visible workbook setState.
-    await waitFor(() => {
-      expect(spies.writeExcelParsedCache).toHaveBeenCalledTimes(1);
-    });
-    const call = spies.writeExcelParsedCache.mock.calls[0] as unknown[];
-    const sourceHashArg = call[1];
-    const parsedArg = call[2];
-    expect(typeof sourceHashArg).toBe("string");
-    expect(sourceHashArg).toMatch(/^[0-9a-f]{64}$/);
-    expect(parsedArg).toMatchObject({ version: 1 });
+    // Cold open is write-free with respect to the sidecar: the open path
+    // must not prime parsedCache on disk. The adapter method stays on the
+    // surface for explicit primers outside this codepath. Wait one more
+    // microtask cycle so any (incorrectly) deferred write would have
+    // landed by the time we assert.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(spies.writeExcelParsedCache).not.toHaveBeenCalled();
   });
 });

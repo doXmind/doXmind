@@ -545,18 +545,12 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
           );
           if (cancelled) return;
 
+          // sourceHash is still computed because the switch-cache entry
+          // keys on it for future hot revalidation; we just don't write it
+          // anywhere on disk. Cold open is read-only with respect to the
+          // sidecar — both reads (above) and writes (here) skip parsedCache.
           const sourceHash = await sha256Hex(readBytes);
           if (cancelled) return;
-          // Post-parse cache priming. The adapter write is fire-and-forget
-          // and tolerant of failure — a failed sidecar write must never
-          // surface as an open-time error. The cold-open read path will
-          // still skip parsedCache on next open (see comment above); the
-          // write side is kept available for explicit priming callers.
-          if (adapter.writeExcelParsedCache) {
-            void adapter
-              .writeExcelParsedCache(handle, sourceHash, parsed)
-              .catch(() => {});
-          }
           bytes = readBytes;
           docState = readDocState;
           excelSwitchCacheSet(file.id, {
