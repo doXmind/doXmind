@@ -90,12 +90,14 @@ def _open_pdf_block_id_worker(sidecar_path: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_open_pdf_with_no_sidecar_synthesizes_block_and_writes_markdown_shape_sidecar(
+def test_open_pdf_with_no_sidecar_synthesizes_block_in_memory_without_writing(
     tmp_path,
 ):
     pdf_path = _make_pdf(tmp_path)
+    sidecar_path = sidecar_path_for(pdf_path)
 
-    document = SyntheticDocumentFactory().open_pdf(pdf_path)
+    factory = SyntheticDocumentFactory()
+    document = factory.open_pdf(pdf_path)
 
     assert document.path == pdf_path
     assert document.block_type == PDF_BLOCK_TYPE
@@ -110,7 +112,13 @@ def test_open_pdf_with_no_sidecar_synthesizes_block_and_writes_markdown_shape_si
     # PDF binary must NOT be touched.
     assert pdf_path.read_bytes().startswith(b"%PDF-")
 
-    sidecar_path = sidecar_path_for(pdf_path)
+    # Read must NOT touch disk; the sidecar materializes on first explicit
+    # save. Writing here would turn a read into a write-permission error on
+    # read-only filesystems.
+    assert not sidecar_path.exists(), "missing-sidecar read must not write to disk"
+
+    # First explicit write materializes the sidecar in v2 shape.
+    factory.write_full(document, document.snapshot)
     assert sidecar_path.exists()
     on_disk = json.loads(sidecar_path.read_text(encoding="utf-8"))
     assert on_disk["version"] == SIDECAR_VERSION
@@ -128,7 +136,10 @@ def test_open_pdf_with_no_sidecar_synthesizes_block_and_writes_markdown_shape_si
 def test_open_pdf_with_markdown_shape_sidecar_passes_through(tmp_path):
     pdf_path = _make_pdf(tmp_path)
     factory = SyntheticDocumentFactory()
+    # Materialize the sidecar via an explicit write so the second open hits
+    # the on-disk read path.
     first = factory.open_pdf(pdf_path)
+    factory.write_full(first, first.snapshot)
 
     sidecar_path = sidecar_path_for(pdf_path)
     raw_before = sidecar_path.read_text(encoding="utf-8")
@@ -141,21 +152,82 @@ def test_open_pdf_with_markdown_shape_sidecar_passes_through(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Cross-runtime version tolerance: Python reads v1 markdown-shape sidecars
+# emitted by an older Rust runtime, and the next explicit write rewrites
+# them as v2. Future versions are still rejected.
+# ---------------------------------------------------------------------------
+
+
+def test_open_pdf_tolerates_v1_markdown_shape_and_write_full_rewrites_as_v2(tmp_path):
+    pdf_path = _make_pdf(tmp_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    block_id = "v1-block-id"
+    v1_sidecar = {
+        "version": 1,
+        "id": "doc-from-rust",
+        "html": f'<!-- pdf-block id="{block_id}" src="{pdf_path.name}" -->',
+        "markdown_hash": "sha256:stale",
+        "updated_at": "2026-05-12T00:00:00Z",
+        "extras": {"blocks": {block_id: {"editor": {"freeTextBoxes": []}}}},
+    }
+    atomic_write(sidecar_path, json.dumps(v1_sidecar).encode())
+
+    factory = SyntheticDocumentFactory()
+    document = factory.open_pdf(pdf_path)
+
+    assert document.block_id == block_id
+    assert document.snapshot.extras["blocks"][block_id]["editor"] == {"freeTextBoxes": []}
+
+    # The v1 sidecar must remain untouched by the read.
+    on_disk_after_read = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert on_disk_after_read["version"] == 1
+
+    # The next explicit save normalizes the sidecar to SIDECAR_VERSION.
+    factory.write_full(document, document.snapshot)
+    on_disk_after_write = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert on_disk_after_write["version"] == SIDECAR_VERSION
+
+
+def test_open_pdf_rejects_future_sidecar_version(tmp_path):
+    pdf_path = _make_pdf(tmp_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    block_id = "future-block-id"
+    future_sidecar = {
+        "version": SIDECAR_VERSION + 1,
+        "id": "doc-from-future",
+        "html": f'<!-- pdf-block id="{block_id}" src="{pdf_path.name}" -->',
+        "markdown_hash": "sha256:stale",
+        "updated_at": "2026-05-12T00:00:00Z",
+        "extras": {"blocks": {block_id: {}}},
+    }
+    atomic_write(sidecar_path, json.dumps(future_sidecar).encode())
+
+    with pytest.raises(ValueError, match="does not match"):
+        SyntheticDocumentFactory().open_pdf(pdf_path)
+
+
+# ---------------------------------------------------------------------------
 # Excel — symmetric
 # ---------------------------------------------------------------------------
 
 
 def test_open_excel_with_no_sidecar_synthesizes_block(tmp_path):
     xlsx_path = _make_excel(tmp_path)
+    sidecar_path = sidecar_path_for(xlsx_path)
 
-    document = SyntheticDocumentFactory().open_excel(xlsx_path)
+    factory = SyntheticDocumentFactory()
+    document = factory.open_excel(xlsx_path)
 
     assert document.block_type == EXCEL_BLOCK_TYPE
     placeholder = f'<!-- excel-block id="{document.block_id}" src="{xlsx_path.name}" -->'
     assert placeholder in document.snapshot.markdown
     assert document.snapshot.extras == {"blocks": {document.block_id: {}}}
 
-    sidecar = json.loads(sidecar_path_for(xlsx_path).read_text(encoding="utf-8"))
+    # Read must NOT touch disk; the sidecar materializes on first explicit save.
+    assert not sidecar_path.exists(), "missing-sidecar read must not write to disk"
+
+    factory.write_full(document, document.snapshot)
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
     assert sidecar["version"] == SIDECAR_VERSION
     assert "excel_editor" not in sidecar and "excel_parsed_cache" not in sidecar
 
@@ -163,7 +235,10 @@ def test_open_excel_with_no_sidecar_synthesizes_block(tmp_path):
 def test_open_excel_with_markdown_shape_sidecar_passes_through(tmp_path):
     xlsx_path = _make_excel(tmp_path)
     factory = SyntheticDocumentFactory()
+    # Materialize the sidecar via an explicit write so the second open hits
+    # the on-disk read path.
     first = factory.open_excel(xlsx_path)
+    factory.write_full(first, first.snapshot)
 
     sidecar_path = sidecar_path_for(xlsx_path)
     raw_before = sidecar_path.read_text(encoding="utf-8")
@@ -382,7 +457,8 @@ def test_open_pdf_logs_migration_failure(tmp_path, caplog):
 def test_migrate_legacy_sidecar_is_noop_on_markdown_shape(tmp_path):
     pdf_path = _make_pdf(tmp_path)
     factory = SyntheticDocumentFactory()
-    factory.open_pdf(pdf_path)  # produces markdown-shape sidecar
+    doc = factory.open_pdf(pdf_path)
+    factory.write_full(doc, doc.snapshot)  # materialize markdown-shape sidecar
     sidecar_path = sidecar_path_for(pdf_path)
     raw_before = sidecar_path.read_bytes()
     bak_path = sidecar_path.parent / f"{sidecar_path.name}.bak"
@@ -578,6 +654,7 @@ def test_open_pdf_recovers_after_good_sidecar_is_restored(tmp_path):
     pdf_path = _make_pdf(tmp_path)
     factory = SyntheticDocumentFactory()
     original = factory.open_pdf(pdf_path)
+    factory.write_full(original, original.snapshot)  # materialize sidecar on disk
     sidecar_path = sidecar_path_for(pdf_path)
     good_sidecar = sidecar_path.read_bytes()
     corrupt_bytes = b"\xff\xfe"
