@@ -72,6 +72,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { notify } from "@/lib/notifications";
+import { handleReadOnlyAutosaveError } from "@/lib/storage/read-only-error";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -363,6 +364,13 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   // effect observes a non-null activeSheet it flips this to false; from then
   // on, any user-initiated sheet switch mirrors normally.
   const hydratingActiveSheetRef = useRef(true);
+  // One-shot guard for the read-only autosave notice. The Rust + Python save
+  // paths both reject with a stable substring (`"read-only"`) when
+  // DOXMIND_SIDECAR_MIGRATE=off opens a legacy sidecar. Without this guard
+  // the debounced sidecar writer would re-fire on every keystroke and spam
+  // the user with toasts. Reset on file switch (the open effect below
+  // re-arms this alongside `hydratingActiveSheetRef`).
+  const readOnlySurfacedRef = useRef(false);
 
   useEffect(() => {
     editorStateRef.current = editorState;
@@ -465,6 +473,9 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     // re-runs this effect with a new file.id, and the new file's cold open
     // is just as write-sensitive as the first one.
     hydratingActiveSheetRef.current = true;
+    // Reset the read-only banner guard so a freshly-opened file gets its
+    // own one-shot notice if its sidecar is also read-only.
+    readOnlySurfacedRef.current = false;
 
     (async () => {
       try {
@@ -818,6 +829,11 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     const snapshot = editorState;
     const timeout = window.setTimeout(() => {
       adapter.writeExcelEditorState!(handle, snapshot).catch((err) => {
+        // DOXMIND_SIDECAR_MIGRATE=off + legacy sidecar surfaces a stable
+        // read-only error. We tell the user once per file open so they
+        // can either unset the flag or restore from `<sidecar>.bak`;
+        // subsequent autosave failures for the same file stay silent.
+        if (handleReadOnlyAutosaveError(err, readOnlySurfacedRef, notify.error)) return;
         console.error("[ExcelEditor] failed to persist sidecar", err);
       });
     }, SIDECAR_DEBOUNCE_MS);
