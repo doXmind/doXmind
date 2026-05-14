@@ -26,6 +26,22 @@ describe("isReadOnlyDocumentError", () => {
     expect(isReadOnlyDocumentError(err)).toBe(true);
   });
 
+  it("matches the exact JSON-stringified HTTP detail that invokeWorkspaceHttp throws", () => {
+    // The browser-dev path lands here: `disk-storage-adapter.ts` stringifies
+    // the structured `detail` object so downstream substring matchers can
+    // anchor on `code`. Before that adapter fix, the dict coerced to
+    // "[object Object]" and silently dropped through this matcher. This test
+    // pins the actual on-wire shape so a future adapter regression that
+    // drops structured serialization breaks here.
+    const detail = {
+      code: "document_read_only",
+      path: "/Users/foo/Bar.xlsx",
+      recovery: "unset DOXMIND_SIDECAR_MIGRATE or set it to 1 to enable migration",
+    };
+    const err = new Error(JSON.stringify(detail));
+    expect(isReadOnlyDocumentError(err)).toBe(true);
+  });
+
   it("returns false for unrelated errors", () => {
     expect(isReadOnlyDocumentError(new Error("sidecar_corrupt"))).toBe(false);
     expect(isReadOnlyDocumentError(new Error("ENOENT: no such file"))).toBe(false);
