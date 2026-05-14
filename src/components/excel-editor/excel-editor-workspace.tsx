@@ -574,10 +574,28 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
         }
 
         xlsxBytesRef.current = bytes;
-        const sidecar = docState?.editor ?? null;
+        // Resolve the active sheet id at load time. If the loaded sidecar
+        // points at a sheet that no longer exists (rename/delete out-of-
+        // band), the resolver falls back to the first sheet AND we rewrite
+        // the in-memory sidecar so the corrected id is what the debounced
+        // writer sees — not the stale one. Doing the correction here
+        // (rather than via the post-hydration bookkeeping mirror) keeps
+        // the writer's first scheduled snapshot honest: the bookkeeping
+        // guard never has to race a timer that was already armed with a
+        // ghost id.
+        const loadedSidecar = docState?.editor ?? null;
+        const resolvedActiveSheetId =
+          loadedSidecar?.activeSheetId &&
+          parsed.sheets.some((s) => s.id === loadedSidecar.activeSheetId)
+            ? loadedSidecar.activeSheetId
+            : (parsed.sheets[0]?.id ?? null);
+        const sidecar =
+          loadedSidecar && loadedSidecar.activeSheetId !== resolvedActiveSheetId
+            ? { ...loadedSidecar, activeSheetId: resolvedActiveSheetId ?? undefined }
+            : loadedSidecar;
         setWorkbook(parsed);
         setEditorState(sidecar);
-        setActiveSheetId(sidecar?.activeSheetId ?? parsed.sheets[0]?.id ?? null);
+        setActiveSheetId(resolvedActiveSheetId);
         setSelection(singleCellRange(0, 0));
         setStatus("ready");
         // Close the firstPaint measure once and clear the start mark so it
@@ -834,21 +852,16 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   // write-free" contract. We drop the first run and let subsequent runs
   // (user clicks a tab, sheet ops swap activeSheetId, etc.) mirror normally.
   //
-  // Stale-id correction (Fix-T9): suppression is conditional. If the loaded
-  // sidecar's activeSheetId references a deleted/renamed sheet, activeSheet
-  // resolves to the first-sheet fallback while the on-disk id is still
-  // wrong. Letting the write through corrects the sidecar; suppressing it
-  // leaves the stale id to be re-loaded forever. We only suppress when the
-  // sidecar is missing (nothing to correct) or its activeSheetId already
-  // matches the resolved sheet (the write would be redundant).
+  // The stale-id case (sidecar pointing at a renamed/deleted sheet) is
+  // already corrected upstream in the load handler: the in-memory sidecar
+  // gets the resolved first-sheet id before setEditorState fires, so the
+  // first debounced writer run carries the corrected snapshot. Suppressing
+  // this mirror is therefore safe in every cold-open flavour.
   useEffect(() => {
     if (!activeSheet) return;
     if (hydratingActiveSheetRef.current) {
       hydratingActiveSheetRef.current = false;
-      const loaded = editorStateRef.current;
-      if (loaded == null || loaded.activeSheetId === activeSheet.id) return;
-      // Stale id on disk — fall through to the mirror write so the next
-      // debounced flush rewrites the sidecar with the resolved sheet id.
+      return;
     }
     setEditorState((prev) => {
       const base: ExcelEditorState = prev ?? { version: 1 };
