@@ -1541,7 +1541,7 @@ fn migrate_legacy_excel_sidecar(
     atomic_write_bytes(&bak_path, &raw)
         .map_err(|err| format!("failed to write Excel sidecar migration backup: {err}"))?;
 
-    let (block_id, migrated) = build_excel_synthetic_from_legacy(path, &legacy);
+    let (block_id, migrated) = build_excel_synthetic_from_legacy(path, &legacy)?;
     write_excel_sidecar_value(&sidecar_path, &migrated).map_err(|err| {
         format!(
             "failed to migrate Excel sidecar after writing backup {}: {err}",
@@ -1563,10 +1563,8 @@ fn migrate_legacy_excel_sidecar(
 fn build_excel_synthetic_from_legacy(
     path: &Path,
     legacy: &serde_json::Value,
-) -> (String, serde_json::Value) {
-    let block_id = excel_block_id_from_sidecar(legacy)
-        .ok()
-        .flatten()
+) -> Result<(String, serde_json::Value), String> {
+    let block_id = excel_block_id_from_sidecar(legacy)?
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let mut extras = extras_object(legacy);
     let mut blocks = blocks_object_from_extras(&extras);
@@ -1601,7 +1599,7 @@ fn build_excel_synthetic_from_legacy(
         &block_id,
         serde_json::Value::Object(extras),
     );
-    (block_id, migrated)
+    Ok((block_id, migrated))
 }
 
 fn synthesize_excel_read_only_from_legacy(
@@ -1609,7 +1607,7 @@ fn synthesize_excel_read_only_from_legacy(
     sidecar_path: PathBuf,
     legacy: serde_json::Value,
 ) -> Result<ExcelSidecar, String> {
-    let (block_id, sidecar) = build_excel_synthetic_from_legacy(path, &legacy);
+    let (block_id, sidecar) = build_excel_synthetic_from_legacy(path, &legacy)?;
     Ok(ExcelSidecar {
         sidecar_path,
         sidecar,
@@ -5114,6 +5112,70 @@ mod tests {
         assert_eq!(slot["editor"]["activeSheetId"], "SlotSheet");
         assert_eq!(slot["parsedCache"]["sourceHash"], "legacy-cache");
         assert!(sidecar_bak_path(&sidecar_path).exists());
+    }
+
+    /// Regression for the Excel legacy duplicate-placeholder path:
+    /// `build_excel_synthetic_from_legacy` must propagate the
+    /// "multiple placeholders" error from `excel_block_id_from_sidecar`
+    /// rather than swallowing it and generating a fresh block id (which
+    /// would silently lose the user's slot data).
+    ///
+    /// Covers both the `MIGRATE=on` (default migration) path and the
+    /// `MIGRATE=off` (read-only synthesis) path — the bug was in shared
+    /// helper code so both paths were affected.
+    #[test]
+    fn excel_legacy_sidecar_with_duplicate_placeholders_surfaces_error() {
+        let _lock = MIGRATE_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+
+        let duplicate_html = format!(
+            "{}\n{}",
+            excel_placeholder("excel-A", "Budget.xlsx"),
+            excel_placeholder("excel-B", "Budget.xlsx"),
+        );
+        let legacy_bytes = serde_json::to_vec_pretty(&serde_json::json!({
+            "version": 1,
+            "id": "doc-1",
+            "html": duplicate_html,
+            "markdown_hash": "old",
+            "updated_at": "2026-05-12T00:00:00Z",
+            "excel_editor": { "version": 1, "activeSheetId": "LegacySheet" },
+        }))
+        .expect("sidecar bytes");
+
+        // MIGRATE=on (default): migration path must error.
+        {
+            let _guard = MigrateEnvGuard::new();
+            let workspace = TempWorkspace::new("excel-legacy-duplicate-default");
+            let workbook_path = workspace.path.join("Budget.xlsx");
+            write_file(&workbook_path, "PK\x03\x04");
+            let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+            fs::write(&sidecar_path, &legacy_bytes).expect("write duplicate sidecar");
+
+            let err = workspace_read_excel_editor_state(workspace.root(), "Budget.xlsx".into())
+                .expect_err("duplicate placeholders must surface an error, not synthesize a fresh block id");
+            assert!(
+                err.contains("multiple"),
+                "error must mention 'multiple' placeholders; got: {err}"
+            );
+        }
+
+        // MIGRATE=off: read-only synthesis path must also error.
+        {
+            let _guard = MigrateEnvGuard::new();
+            MigrateEnvGuard::set("off");
+            let workspace = TempWorkspace::new("excel-legacy-duplicate-readonly");
+            let workbook_path = workspace.path.join("Budget.xlsx");
+            write_file(&workbook_path, "PK\x03\x04");
+            let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+            fs::write(&sidecar_path, &legacy_bytes).expect("write duplicate sidecar");
+
+            let err = workspace_read_excel_editor_state(workspace.root(), "Budget.xlsx".into())
+                .expect_err("duplicate placeholders must surface an error in MIGRATE=off path too");
+            assert!(
+                err.contains("multiple"),
+                "MIGRATE=off error must mention 'multiple' placeholders; got: {err}"
+            );
+        }
     }
 
     /// Round-trip a freshly-emitted sidecar between the Rust workspace
