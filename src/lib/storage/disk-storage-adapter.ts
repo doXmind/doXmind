@@ -593,6 +593,11 @@ async function invokeWorkspaceHttp<T>(
         message = detail;
       } else if (detail && typeof detail === "object") {
         message = JSON.stringify(detail);
+      } else if (typeof detail === "number" || typeof detail === "boolean") {
+        // FastAPI permits any JSON-serializable detail; preserve scalar values
+        // verbatim so a body like {detail: 42} or {detail: true} doesn't get
+        // silently dropped to the generic command-failed message.
+        message = String(detail);
       } else if (body?.error?.message) {
         message = body.error.message;
       }
