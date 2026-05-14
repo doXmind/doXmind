@@ -356,6 +356,13 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   const cellInputRef = useRef<HTMLInputElement>(null);
   const formulaInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<ExcelDialogState | null>(null);
+  // One-shot gate for the activeSheetId bookkeeping effect below. Cold open
+  // resolves an activeSheet by reading the sidecar (or falling back to the
+  // first sheet) — we don't want that first resolution to dirty editorState
+  // and trip the debounced sidecar writer. The first time the bookkeeping
+  // effect observes a non-null activeSheet it flips this to false; from then
+  // on, any user-initiated sheet switch mirrors normally.
+  const hydratingActiveSheetRef = useRef(true);
 
   useEffect(() => {
     editorStateRef.current = editorState;
@@ -454,6 +461,10 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     setErrorMessage(null);
     setHistory([]);
     setFuture([]);
+    // Re-arm the bookkeeping guard for every (re)load — a hot file switch
+    // re-runs this effect with a new file.id, and the new file's cold open
+    // is just as write-sensitive as the first one.
+    hydratingActiveSheetRef.current = true;
 
     (async () => {
       try {
@@ -814,8 +825,20 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   }, [editorState, adapter, file.storageHandle]);
 
   // Bookkeeping mutation: mirror activeSheetId without polluting undo.
+  //
+  // Cold-open guard (Fix-3): the very first time this effect observes a
+  // non-null activeSheet it's reacting to the load path resolving an active
+  // sheet from the sidecar (or defaulting to the first sheet). Mutating
+  // editorState there is purely bookkeeping — but it trips the debounced
+  // sidecar writer ~350ms later, which violates the "cold open is sidecar
+  // write-free" contract. We drop the first run and let subsequent runs
+  // (user clicks a tab, sheet ops swap activeSheetId, etc.) mirror normally.
   useEffect(() => {
     if (!activeSheet) return;
+    if (hydratingActiveSheetRef.current) {
+      hydratingActiveSheetRef.current = false;
+      return;
+    }
     setEditorState((prev) => {
       const base: ExcelEditorState = prev ?? { version: 1 };
       if (base.activeSheetId === activeSheet.id) return prev;

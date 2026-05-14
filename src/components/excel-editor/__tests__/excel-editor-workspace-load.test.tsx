@@ -18,7 +18,7 @@
  */
 
 import React from "react";
-import { render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // `vi.mock` is hoisted to the top of the file, so any spy the factories
@@ -41,6 +41,18 @@ const spies = vi.hoisted(() => {
           id: "sheet-1",
           name: "Sheet1",
           index: 0,
+          rowCount: 10,
+          colCount: 10,
+          rowHeights: {},
+          colWidths: {},
+          merges: [],
+          frozen: { row: 0, col: 0 },
+          cells: [],
+        },
+        {
+          id: "sheet-2",
+          name: "Sheet2",
+          index: 1,
           rowCount: 10,
           colCount: 10,
           rowHeights: {},
@@ -156,9 +168,11 @@ describe("ExcelEditorWorkspace cold-open IPC path", () => {
     spies.readExcelEditorState.mockClear();
     spies.readExcelDocState.mockClear();
     spies.writeExcelParsedCache.mockClear();
+    spies.writeExcelEditorState.mockClear();
     spies.readBinary.mockClear();
     spies.statBinary.mockClear();
     spies.fetchExcelWorkbook.mockClear();
+    spies.readExcelEditorState.mockImplementation(async () => null);
   });
 
   it("cold_open_reads_editor_only_not_parsed_cache", async () => {
@@ -193,5 +207,52 @@ describe("ExcelEditorWorkspace cold-open IPC path", () => {
     // landed by the time we assert.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(spies.writeExcelParsedCache).not.toHaveBeenCalled();
+  });
+
+  it("cold_open_does_not_persist_sidecar_when_editor_state_was_never_user_modified", async () => {
+    // Cold open with a missing sidecar (`readExcelEditorState` returns null).
+    // The activeSheetId bookkeeping effect would otherwise mirror the
+    // defaulted active sheet into editorState, tripping the debounced
+    // sidecar writer ~350ms later — a write triggered by a read, in
+    // violation of the Fix-3 "cold open is sidecar write-free" contract.
+    // The guard suppresses that first mirror; a subsequent user-initiated
+    // sheet switch must still persist.
+    spies.readExcelEditorState.mockImplementationOnce(async () => null);
+    const file = makeFile({ id: `cold-open-bookkeeping-${Date.now()}-${Math.random()}` });
+
+    render(<ExcelEditorWorkspace file={file} />);
+
+    await waitFor(() => {
+      expect(spies.fetchExcelWorkbook).toHaveBeenCalledTimes(1);
+    });
+
+    // Sit past the 350ms debounce. Any spurious bookkeeping mirror would
+    // have landed in writeExcelEditorState by now. We poll for a tick at
+    // the end so any in-flight microtasks settle.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    });
+    expect(spies.writeExcelEditorState).not.toHaveBeenCalled();
+
+    // Now simulate a legitimate user action: click a different sheet tab.
+    // The bookkeeping effect should fire on this transition (the hydration
+    // guard is one-shot) and trigger a debounced write.
+    const sheet2Tab = await screen.findByRole("button", { name: "Sheet2" });
+    await act(async () => {
+      fireEvent.click(sheet2Tab);
+    });
+
+    // Wait past the debounce again — this time we expect a write.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    });
+    await waitFor(() => {
+      expect(spies.writeExcelEditorState).toHaveBeenCalledTimes(1);
+    });
+    const [, snapshot] = spies.writeExcelEditorState.mock.calls[0] as unknown as [
+      unknown,
+      { activeSheetId?: string },
+    ];
+    expect(snapshot.activeSheetId).toBe("sheet-2");
   });
 });
