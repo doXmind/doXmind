@@ -25,7 +25,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // reference must be created via `vi.hoisted` to share the same hoist phase.
 const spies = vi.hoisted(() => {
   return {
-    readExcelEditorState: vi.fn(async () => null),
+    readExcelEditorState: vi.fn(
+      async (): Promise<{ version: 1; activeSheetId?: string } | null> => null
+    ),
     readExcelDocState: vi.fn(async () => null),
     writeExcelParsedCache: vi.fn(async () => undefined),
     writeExcelEditorState: vi.fn(async () => undefined),
@@ -322,5 +324,45 @@ describe("ExcelEditorWorkspace cold-open IPC path", () => {
       expect(spies.writeExcelEditorState).toHaveBeenCalledTimes(2);
     });
     expect(spies.notifyError).toHaveBeenCalledTimes(1);
+  });
+
+  it("cold_open_with_stale_active_sheet_id_writes_correction", async () => {
+    // Cold open with a sidecar whose activeSheetId points at a sheet that
+    // no longer exists (renamed/deleted out-of-band). The activeSheet
+    // resolver falls back to the first sheet, but if we suppress the
+    // bookkeeping mirror write the stale id sits on disk forever — every
+    // reopen re-runs the same fallback, and the next unrelated user edit's
+    // autosave will persist the ghost id verbatim. The fix is to let the
+    // mirror write through when the loaded sidecar's activeSheetId
+    // diverges from the resolved sheet, so the next debounced flush
+    // rewrites the sidecar with the correct id.
+    spies.readExcelEditorState.mockImplementationOnce(async () => ({
+      version: 1 as const,
+      activeSheetId: "GhostSheet",
+    }));
+    const file = makeFile({ id: `cold-open-stale-${Date.now()}-${Math.random()}` });
+
+    render(<ExcelEditorWorkspace file={file} />);
+
+    await waitFor(() => {
+      expect(spies.fetchExcelWorkbook).toHaveBeenCalledTimes(1);
+    });
+
+    // Sit past the 350ms debounce so the corrective write has a chance to
+    // land.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    });
+
+    await waitFor(() => {
+      expect(spies.writeExcelEditorState).toHaveBeenCalledTimes(1);
+    });
+    const [, snapshot] = spies.writeExcelEditorState.mock.calls[0] as unknown as [
+      unknown,
+      { activeSheetId?: string },
+    ];
+    // The persisted snapshot must hold the resolved first-sheet id, not
+    // the ghost id from the stale sidecar.
+    expect(snapshot.activeSheetId).toBe("sheet-1");
   });
 });
