@@ -1,69 +1,96 @@
-# AGENTS.md
+# CLAUDE.md
 
-This file provides guidance to Codex when working with this repository.
+This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-doXmind Mini is the **local sidecar edition**: a local-first, single-user desktop document editor. The intended storage model is a clean Markdown file beside a hidden `.doxmind` sidecar. Markdown stays portable; the sidecar keeps lossless editor HTML and doXmind-only block data.
+doXmind is a **fully-local desktop IDE** for documents. It is a Tauri shell wrapping a Next.js frontend and a localhost FastAPI sidecar. There is no auth, no cloud sync, no AI runtime, no telemetry, no billing/sharing — the user's files on disk are the source of truth.
 
-There is no auth, cloud sync, sharing, community, billing, telemetry, or AI runtime in this branch. Treat the app as an offline document editor with a localhost backend sidecar.
+Three document types are first-class citizens:
 
-## Tech Stack
+- **Markdown** — rich TipTap editor with custom blocks (math, mermaid, callouts, databases, …). Persisted as a portable `.md` file plus a hidden same-name `.doxmind` sidecar that stores the lossless editor HTML and doXmind-only extras.
+- **PDF** — block-based annotation/edit surface. Editor state lives in a hidden sidecar next to the original PDF.
+- **Excel** — workbook editor with formulas, filters, autofill, formatting, and structural row/col ops. Editor state lives in a hidden sidecar next to the original `.xlsx`.
 
-- **Frontend:** Next.js 15 App Router, React 19, TipTap, Zustand, Tailwind CSS
-- **Backend:** FastAPI, Python 3.12, SQLAlchemy 2.0 async
-- **Current database:** SQLite at `~/.doxmind/doxmind.db`
-- **Desktop shell:** Tauri
-- **External services:** none
+## 1. Think Before Coding
 
-## Commands
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
 
-### Frontend
+Before implementing:
 
-```bash
-npm run dev:all       # frontend + backend with auto-port discovery
-npm run dev           # Next.js only
-npm run server        # FastAPI only
-npm run build
-npm run lint
-npm run type-check
-npm test
-npm run test:ci
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
 ```
 
-Run one frontend test with `npx vitest run path/to/file.test.ts -t "test name"`.
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-### Backend
+## Storage Model
 
-Run from `server/`:
-
-```bash
-python main.py
-pytest
-pytest path/to/test_file.py::test_name
-ruff check .
-ruff format .
-```
-
-`scripts/dev.mjs` resolves Python in this order: `$DOXMIND_PYTHON`, `server/.venv/bin/python`, then `python3` / `python` on PATH.
-
-## First Run
-
-1. `npm run dev:all`
-2. Open `http://localhost:3000`
-3. Start writing. There is no sign-in, API key setup, or provider selection.
-
-## Target Sidecar Model
+The user's filesystem is the source of truth. Each document is represented by the original portable file plus a hidden sidecar holding doXmind-only state.
+A `<sidecar>.lock` file appears next to each sidecar during migration; these files are tiny, persist after use, and must not be deleted manually.
 
 ```text
 ~/Documents/notes/
 ├── Project Plan.md
-├── .Project Plan.doxmind
+├── .Project Plan.doxmind          # markdown sidecar (HTML + extras)
+├── Q3 Forecast.xlsx
+├── .Q3 Forecast.doxmind            # excel editor state
+├── Spec.pdf
+├── .Spec.doxmind                   # pdf editor state
 └── assets/
     └── diagram.png
 ```
 
-Sidecar shape:
+Markdown sidecar shape:
 
 ```json
 {
@@ -78,38 +105,21 @@ Sidecar shape:
 }
 ```
 
-`markdown_hash` is the freshness check. Matching hash means open `sidecar.html`; missing sidecar means import Markdown; mismatched hash means the external `.md` edit wins and the sidecar is overwritten on next save.
+Markdown open algorithm:
 
-## Current Architecture
+1. Read `.md` and split frontmatter/body.
+2. Find the same-name hidden `.doxmind` sidecar.
+3. If missing, import Markdown into editor HTML.
+4. If present and `markdown_hash` matches, use `sidecar.html`.
+5. If present and the hash differs, treat external Markdown edits as authoritative and regenerate the sidecar on save.
 
-The runtime has not fully migrated to sidecar storage. SQLite still stores files, versions, and database blocks. When implementing sidecar storage, create or use a `DocumentStore` boundary so filesystem rules stay out of FastAPI route handlers.
+Markdown save algorithm:
 
-### Frontend
+1. Write `.md = editor.getMarkdown()`.
+2. Hash the just-written Markdown.
+3. Write `.doxmind = { html, markdown_hash, id, extras }`.
 
-- Entry point: `src/app/editor/[[...fileId]]/page.tsx`.
-- Stores: local Zustand stores for files, editor, layout, settings, outline, block selection, and database blocks.
-- Extensions: TipTap extensions for editing, formatting, custom blocks, search, spellcheck, database, math, mermaid, images, and page links.
-- Messages: `src/messages/` should only describe features that exist in this branch.
-
-### Backend
-
-`server/main.py` mounts:
-
-- `files` — document CRUD
-- `versions` — local version snapshots
-- `export` — Markdown / HTML / PDF / DOCX export
-- `import_file` — local import and conversion
-- `images` — local image upload and serving
-- `databases` — database-block CRUD until sidecar `extras.databases` becomes the source of truth
-
-`server/db/database.py` defines the current SQLite schema and startup uses `Base.metadata.create_all`. There is no Alembic.
-
-## Storage Ownership
-
-- Markdown file: portable user-facing source.
-- `.doxmind` sidecar: rich HTML and doXmind-only extras.
-- `extras.databases`: target source of truth for database blocks.
-- SQLite: current implementation detail and future runtime cache, not the long-term document source of truth.
+PDF and Excel follow the same hidden-sidecar pattern; their state schemas are owned by `services/pdf_blocks.py` and `services/excel_workbook.py` respectively.
 
 ## Environment Variables
 
@@ -118,23 +128,40 @@ All optional:
 - `DATA_DIR` — override `~/.doxmind`
 - `DOXMIND_PYTHON` — Python path for `npm run dev:all`
 - `DEBUG`, `HOST`, `PORT` — backend config
+- `DOXMIND_SIDECAR_MIGRATE` — controls one-shot migration of legacy PDF/Excel sidecars (`{pdf_editor, excel_editor, …}` shape) to the markdown sidecar shape on first open. Default on. Accepted enabled values: `1`/`true`/`yes`/`on`. Accepted disabled values: `0`/`false`/`no`/`off`; disabled mode opens legacy sidecars read-only and any save raises `ReadOnlyDocumentError`. Migration writes the original sidecar to `<sidecar>.bak` before rewriting; recovery is `mv .foo.doxmind.bak .foo.doxmind`. See [docs/adr/0003-explicit-sidecar-migration.md](docs/adr/0003-explicit-sidecar-migration.md).
+- `DOXMIND_PERF` — opt-in performance instrumentation. Enabled values (`1`/`true`/`yes`/`on`) make the backend write a JSON line per span to `~/.doxmind/perf.log` (override path with `DOXMIND_PERF_LOG`); the frontend has a parallel flag (`localStorage.DOXMIND_PERF=1` or URL `?perf=1`) that turns on a fixed-position dev overlay. Default off. Caveat: the log file is unbounded and grows by hundreds of bytes per HTTP request — leaving perf on for a multi-hour session can produce many MB. Truncate manually (`> ~/.doxmind/perf.log`) between bench runs; rotation is intentionally not implemented since this is a debug-only path. Aggregate with `node scripts/perf-summary.mjs`.
+- `DOXMIND_DISABLE_DOC_CACHE` / `DOXMIND_DISABLE_PDF_CACHE` / `DOXMIND_DISABLE_XLSX_CACHE` — kill switches for the three backend process-local LRUs in `services/markdown_document_state.py`, `services/pdf_blocks.py`, and `services/excel_workbook.py`. Use during benchmarking or when isolating a stale-cache hypothesis. Default all enabled.
 
 There are no API keys or external service credentials.
 
-## Removed Surface
+## Removed Surface — Do Not Reintroduce
 
-This branch intentionally excludes JWT auth, OAuth user login, password reset, email verification, Stripe billing, credits, quotas, sharing links, community publishing, comments, follows, bookmarks, notifications, telemetry, RLHF reporting, S3, Postgres, Redis, Docker deployment, hosted cloud sync, chat, agents, providers, OpenRouter, autocomplete, quick edit, document review, prompts, and knowledge-base retrieval.
+This product intentionally excludes JWT auth, OAuth user login, password reset, email verification, Stripe billing, credits, quotas, sharing links, community publishing, comments, follows, bookmarks, notifications, telemetry, RLHF reporting, S3, Postgres, Redis, Docker deployment, hosted cloud sync, chat, agents, providers, OpenRouter, autocomplete, quick edit, document review, prompts, knowledge-base retrieval, and `markitdown`.
 
-Do not rebuild these by accident. If a feature needs to return, make the product decision explicit and design it around the local sidecar edition.
+Do not rebuild these by accident. If a feature needs to return, make the product decision explicit and design it around the local desktop IDE model.
 
 ## Commit hygiene
 
 Commits and pull-request descriptions in this repo must read as if a human authored them. Do **not** leave AI attribution anywhere in commit subjects, commit bodies, or PR descriptions. Concretely:
 
-- No `Co-Authored-By: Claude ...` / `Co-Authored-By: Codex ...` / any other AI co-author trailer at the bottom of commit messages.
-- No `🤖 Generated with [Claude Code](https://claude.com/claude-code)` (or equivalent Codex / GPT footer) in PR bodies.
-- No "Generated by AI", "Authored with Claude / Codex", or similar markers anywhere in the commit subject, body, or PR description.
+- No `Co-Authored-By: Claude ...` (or any other AI co-author) trailer at the bottom of commit messages.
+- No `🤖 Generated with [Claude Code](https://claude.com/claude-code)` footer in PR bodies.
+- No "Generated by AI", "Authored with Claude / Codex / etc.", or similar markers anywhere in the commit subject, body, or PR description.
 
 Lead the commit message with the _what_ and _why_ of the change. The body should explain the trade-offs or context a future reader needs; nothing else. PR descriptions follow the same rule — keep summaries factual and let the diff speak.
 
 This rule does **not** apply to triage notes posted as issue comments. The triage workflow explicitly requires a `> *This was generated by AI during triage.*` disclaimer on those comments because triage is an explicitly AI-driven step. The commit-hygiene rule above governs commits and PR descriptions only.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues at `doXmind/local-desk` (uses the `gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical default vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — one `CONTEXT.md` + `docs/adr/` at the repo root (neither exists yet; created lazily by `/grill-with-docs`). See `docs/agents/domain.md`.

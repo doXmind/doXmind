@@ -12,48 +12,61 @@ Three document types are first-class citizens:
 - **PDF** — block-based annotation/edit surface. Editor state lives in a hidden sidecar next to the original PDF.
 - **Excel** — workbook editor with formulas, filters, autofill, formatting, and structural row/col ops. Editor state lives in a hidden sidecar next to the original `.xlsx`.
 
-## Tech Stack
+## 1. Think Before Coding
 
-- **Frontend:** Next.js 15 App Router, React 19, TipTap, Zustand, Tailwind CSS
-- **Backend:** FastAPI, Python 3.12, SQLAlchemy 2.0 async (only for app-level metadata)
-- **Local DB:** SQLite at `~/.doxmind/doxmind.db` — currently a single `app_metadata` key/value table. Documents are *not* stored in SQLite.
-- **Desktop shell:** Tauri 2 (Rust)
-- **External services:** none
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
 
-## Commands
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
 
-### Frontend
+## 2. Simplicity First
 
-```bash
-npm run dev:all       # frontend + backend with auto-port discovery
-npm run dev           # Next.js only
-npm run server        # FastAPI only
-npm run build
-npm run lint
-npm run type-check
-npm test
-npm run test:ci
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
 ```
 
-### Backend
-
-Run from `server/`:
-
-```bash
-python main.py
-pytest
-pytest path/to/test_file.py::test_name
-ruff check .
-ruff format .
-```
-
-`scripts/dev.mjs` resolves Python in this order: `$DOXMIND_PYTHON`, `server/.venv/bin/python`, then `python3` / `python` on PATH.
-
-## First Run
-
-1. `npm run dev:all`
-2. Open `http://localhost:3000` (or launch the Tauri shell)
-3. Pick a workspace directory, then start opening or creating `.md` / `.pdf` / `.xlsx` files. There is no sign-in, API key, or provider selection.
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
 ## Storage Model
 
@@ -102,48 +115,6 @@ Markdown save algorithm:
 3. Write `.doxmind = { html, markdown_hash, id, extras }`.
 
 PDF and Excel follow the same hidden-sidecar pattern; their state schemas are owned by `services/pdf_blocks.py` and `services/excel_workbook.py` respectively.
-
-## Architecture
-
-### Frontend
-
-- `src/app/page.tsx` — welcome screen with recents.
-- `src/app/editor/[[...fileId]]/page.tsx` — main editor entry point.
-- `src/app/settings/page.tsx` — settings.
-- `src/components/editor/` — Markdown editor surface and toolbar.
-- `src/components/excel-editor/` — Excel workspace, sheet view, formula bar, filters.
-- `src/components/pdf-editor/` — PDF block editor.
-- `src/components/welcome-screen.tsx`, `src/components/home/` — welcome / recents UI.
-- `src/components/sidebar/`, `src/components/layout/` — workspace shell, multi-window chrome.
-- `src/extensions/` — TipTap extensions (custom blocks: math, mermaid, callout, database, page-link, …).
-- `src/lib/excel/` — Excel workbook state + serialization.
-- `src/lib/pdf/` — PDF state + export.
-- `src/lib/storage/` — sidecar read/write boundary.
-- `src/lib/markdown.ts`, `src/lib/markdown-selection.ts` — Markdown helpers.
-- `src/stores/` — Zustand stores (file, editor, layout, settings, outline, block selection, database blocks, appearance, editor-ref).
-
-### Backend
-
-`server/main.py` mounts four routers:
-
-- `images` (`/api/images`) — local image upload/serve, used by the Markdown editor.
-- `workspace` (`/api/workspace/invoke`) — single dispatch endpoint that mirrors the Tauri filesystem command surface for plain-browser dev. Commands include `workspace_scan`, `doc_read`, `doc_write_workspace`, `workspace_read_pdf_editor_state` / `workspace_write_pdf_editor_state`, `workspace_read_excel_editor_state` / `workspace_write_excel_editor_state`, `doc_create`, `doc_create_pdf`, `doc_rename`, `doc_move`, `doc_delete`, etc.
-- `pdf` (`/api/pdf`) — `parse-blocks` (PyMuPDF-based block extraction) and `export-edited`.
-- `excel` (`/api/excel`) — `parse-workbook` (openpyxl) and `export-edited`.
-
-`server/db/database.py` defines a single `AppMetadata` key/value table and the async engine. There is no Alembic. Document content never lands in SQLite.
-
-### Document import / parse pipeline
-
-| Format        | Strategy                                          |
-| ------------- | ------------------------------------------------- |
-| `.md` / `.markdown` | Direct read; rendered via `markdown` (`tables`, `fenced_code`) into TipTap HTML. |
-| `.pdf`        | **PyMuPDF** block extraction in `services/pdf_blocks.py`. |
-| `.xlsx`       | **openpyxl** in `services/excel_workbook.py`.     |
-| `.docx`       | **mammoth** → HTML → markdownify (kept available; not currently surfaced as an import flow). |
-| `.pptx`       | **python-pptx** + per-slide markdown emitter (kept available; not currently surfaced). |
-
-Marker / Surya OCR is intentionally excluded from the runtime and from the PyInstaller bundle (`server/doxmind-server.spec`) — the model weights and PyTorch dependency made the bundle unshippable for a desktop IDE. If scanned-PDF support comes back, it must be designed as an optional, lazily-installed add-on.
 
 ## Environment Variables
 
