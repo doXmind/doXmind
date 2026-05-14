@@ -31,6 +31,19 @@ const PDF_BLOCK_TYPE: &str = "pdf-block";
 const PDF_LEGACY_EDITOR_KEY: &str = "pdf_editor";
 const PDF_LEGACY_PARSED_CACHE_KEY: &str = "pdf_parsed_cache";
 
+/// Environment-variable gate that decides whether legacy PDF/Excel
+/// sidecars (`pdf_editor` / `excel_editor` top-level keys) get migrated
+/// on first open. Matches the Python constant of the same name in
+/// `server/services/synthetic_document.py`.
+const MIGRATE_ENV_VAR: &str = "DOXMIND_SIDECAR_MIGRATE";
+/// Values that disable migration. Case-insensitive, trimmed. Mirrors
+/// `_MIGRATE_DISABLED_VALUES` in Python.
+const MIGRATE_DISABLED_VALUES: &[&str] = &["0", "false", "no", "off"];
+/// Values that explicitly enable migration. Anything else (including
+/// the env var being unset) also enables it. Mirrors
+/// `_MIGRATE_ENABLED_VALUES` in Python.
+const MIGRATE_ENABLED_VALUES: &[&str] = &["1", "true", "yes", "on"];
+
 #[cfg(target_os = "macos")]
 mod dock_menu;
 #[cfg(target_os = "macos")]
@@ -814,6 +827,12 @@ struct PdfSyntheticSidecar {
     sidecar_path: PathBuf,
     sidecar: serde_json::Value,
     block_id: String,
+    /// True when this state was synthesized from a legacy on-disk sidecar
+    /// while `DOXMIND_SIDECAR_MIGRATE` was off. Mirrors Python's
+    /// `Document.read_only`: subsequent writes via `update_pdf_block_slot`
+    /// must fail with a `ReadOnlyDocumentError`-shaped error, and the
+    /// on-disk sidecar bytes (and any `.bak`) must remain untouched.
+    read_only: bool,
 }
 
 fn load_pdf_synthetic_sidecar(root: &Path, path: &Path) -> Result<PdfSyntheticSidecar, String> {
@@ -821,15 +840,25 @@ fn load_pdf_synthetic_sidecar(root: &Path, path: &Path) -> Result<PdfSyntheticSi
     let raw = match fs::read(&sidecar_path) {
         Ok(raw) => raw,
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            let state = new_pdf_synthetic_sidecar(root, path, None, None, None, None)?;
-            write_json_sidecar(&sidecar_path, &state.sidecar)?;
-            return Ok(state);
+            // Read paths return the synthesized sidecar in-memory only; the
+            // first explicit write through `update_pdf_block_slot` (or the
+            // editor/parsed-cache writers) materializes it on disk. Writing
+            // here would turn a read into a write-permission error on
+            // read-only filesystems.
+            return new_pdf_synthetic_sidecar(root, path, None, None, None, None);
         }
         Err(err) => return Err(format!("failed to read PDF sidecar: {err}")),
     };
 
     let mut sidecar = parse_pdf_sidecar_json(&sidecar_path, &raw)?;
     if pdf_sidecar_has_legacy_top_level(&sidecar) {
+        if migration_disabled()? {
+            // Mirror Python's `_synthesize_read_only_from_legacy`: expose
+            // legacy editor / parsedCache content as an in-memory v2
+            // sidecar, but never touch `.bak` and never rewrite the on-disk
+            // sidecar. The `read_only` flag causes the next write to fail.
+            return synthesize_pdf_read_only_from_legacy(root, path, sidecar_path, sidecar);
+        }
         sidecar = migrate_pdf_legacy_sidecar(root, path, &sidecar_path, &raw, sidecar)?;
     }
 
@@ -838,6 +867,7 @@ fn load_pdf_synthetic_sidecar(root: &Path, path: &Path) -> Result<PdfSyntheticSi
         sidecar_path,
         sidecar,
         block_id,
+        read_only: false,
     })
 }
 
@@ -846,6 +876,9 @@ where
     F: FnOnce(&mut serde_json::Map<String, serde_json::Value>),
 {
     let mut state = load_pdf_synthetic_sidecar(root, path)?;
+    if state.read_only {
+        return Err(read_only_document_error(path));
+    }
     let slot = pdf_block_slot_mut(&mut state.sidecar, &state.block_id)?;
     mutate(slot);
     remove_pdf_legacy_top_level(&mut state.sidecar);
@@ -899,6 +932,22 @@ fn migrate_pdf_legacy_sidecar(
     atomic_write_bytes(&bak_path, raw)
         .map_err(|err| format!("failed to back up legacy PDF sidecar: {err}"))?;
 
+    let migrated = build_pdf_synthetic_from_legacy(root, path, &legacy)?;
+
+    write_json_sidecar(sidecar_path, &migrated.sidecar)?;
+    Ok(migrated.sidecar)
+}
+
+/// Compose an in-memory `PdfSyntheticSidecar` from a parsed legacy sidecar
+/// value WITHOUT touching the disk. Shared by the on-disk migration path
+/// (which calls this then writes `.bak` + the migrated sidecar) and the
+/// `DOXMIND_SIDECAR_MIGRATE=off` read-only path (which returns this and
+/// writes nothing).
+fn build_pdf_synthetic_from_legacy(
+    root: &Path,
+    path: &Path,
+    legacy: &serde_json::Value,
+) -> Result<PdfSyntheticSidecar, String> {
     let legacy_editor = legacy.get(PDF_LEGACY_EDITOR_KEY).cloned();
     let legacy_cache = legacy.get(PDF_LEGACY_PARSED_CACHE_KEY).cloned();
     let legacy_id = legacy
@@ -906,7 +955,7 @@ fn migrate_pdf_legacy_sidecar(
         .and_then(|value| value.as_str())
         .filter(|value| !value.trim().is_empty())
         .map(str::to_string);
-    let legacy_block_id = pdf_block_id_from_sidecar(&legacy)?;
+    let legacy_block_id = pdf_block_id_from_sidecar(legacy)?;
     let mut migrated = new_pdf_synthetic_sidecar(
         root,
         path,
@@ -940,8 +989,21 @@ fn migrate_pdf_legacy_sidecar(
             .insert("extras".to_string(), preserved_extras);
     }
 
-    write_json_sidecar(sidecar_path, &migrated.sidecar)?;
-    Ok(migrated.sidecar)
+    Ok(migrated)
+}
+
+fn synthesize_pdf_read_only_from_legacy(
+    root: &Path,
+    path: &Path,
+    sidecar_path: PathBuf,
+    legacy: serde_json::Value,
+) -> Result<PdfSyntheticSidecar, String> {
+    let mut synthesized = build_pdf_synthetic_from_legacy(root, path, &legacy)?;
+    // Preserve the on-disk sidecar path so callers see the real location,
+    // even though no write will happen.
+    synthesized.sidecar_path = sidecar_path;
+    synthesized.read_only = true;
+    Ok(synthesized)
 }
 
 fn new_pdf_synthetic_sidecar(
@@ -983,6 +1045,7 @@ fn new_pdf_synthetic_sidecar(
         sidecar_path: doxmind_sidecar::sidecar_path_for(path),
         sidecar,
         block_id,
+        read_only: false,
     })
 }
 
@@ -993,7 +1056,13 @@ fn ensure_pdf_block_slot(
 ) -> Result<String, String> {
     let block_id =
         pdf_block_id_from_sidecar(sidecar)?.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    if sidecar.get("version").is_none() {
+    // Tolerate v1 markdown-shape sidecars emitted by older Python runtimes
+    // and bring them up to the current version on the next explicit write.
+    let needs_version_bump = match sidecar.get("version").and_then(|value| value.as_u64()) {
+        None => true,
+        Some(v) => v < doxmind_sidecar::SIDECAR_VERSION as u64,
+    };
+    if needs_version_bump {
         sidecar
             .as_object_mut()
             .expect("sidecar is an object")
@@ -1195,6 +1264,53 @@ fn pdf_sidecar_has_legacy_top_level(sidecar: &serde_json::Value) -> bool {
         || sidecar.get(PDF_LEGACY_PARSED_CACHE_KEY).is_some()
 }
 
+/// Returns `true` when `DOXMIND_SIDECAR_MIGRATE` is set to a disabled
+/// value (case-insensitive, trimmed). Mirrors Python's
+/// `_migration_disabled()` in `server/services/synthetic_document.py`:
+///   * unset → false (migration enabled, default)
+///   * one of `MIGRATE_DISABLED_VALUES` → true
+///   * one of `MIGRATE_ENABLED_VALUES` → false
+///   * any other value → `Err` with the same message shape as Python
+///
+/// Matching Python exactly is load-bearing: cross-runtime callers that
+/// rely on the documented escape hatch must see identical semantics on
+/// both runtimes (see CLAUDE.md and docs/adr/0003).
+fn migration_disabled() -> Result<bool, String> {
+    let raw = match std::env::var(MIGRATE_ENV_VAR) {
+        Ok(value) => value,
+        Err(std::env::VarError::NotPresent) => return Ok(false),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            return Err(format!(
+                "{MIGRATE_ENV_VAR} has invalid (non-unicode) value; accepted: \
+                 {MIGRATE_DISABLED_VALUES:?} (disabled), \
+                 {MIGRATE_ENABLED_VALUES:?} (enabled)"
+            ));
+        }
+    };
+    let value = raw.trim().to_ascii_lowercase();
+    if MIGRATE_DISABLED_VALUES.iter().any(|v| *v == value) {
+        return Ok(true);
+    }
+    if MIGRATE_ENABLED_VALUES.iter().any(|v| *v == value) {
+        return Ok(false);
+    }
+    Err(format!(
+        "{MIGRATE_ENV_VAR} has invalid value {raw:?}; accepted: \
+         {MIGRATE_DISABLED_VALUES:?} (disabled), \
+         {MIGRATE_ENABLED_VALUES:?} (enabled)"
+    ))
+}
+
+/// String shape that mirrors Python's `ReadOnlyDocumentError` so the
+/// frontend can match on a stable substring (`"read-only"`) regardless
+/// of which runtime served the read.
+fn read_only_document_error(path: &Path) -> String {
+    format!(
+        "document at {} is read-only ({MIGRATE_ENV_VAR}=0 against legacy sidecar)",
+        path.display()
+    )
+}
+
 fn remove_pdf_legacy_top_level(sidecar: &mut serde_json::Value) {
     if let Some(obj) = sidecar.as_object_mut() {
         obj.remove(PDF_LEGACY_EDITOR_KEY);
@@ -1344,6 +1460,12 @@ struct ExcelSidecar {
     sidecar_path: PathBuf,
     sidecar: serde_json::Value,
     block_id: String,
+    /// True when this state was synthesized from a legacy on-disk sidecar
+    /// while `DOXMIND_SIDECAR_MIGRATE` was off. Mirrors Python's
+    /// `Document.read_only`: subsequent writes via `write_excel_slot`
+    /// must fail with a `ReadOnlyDocumentError`-shaped error, and the
+    /// on-disk sidecar bytes (and any `.bak`) must remain untouched.
+    read_only: bool,
 }
 
 fn load_excel_sidecar(path: &Path) -> Result<ExcelSidecar, String> {
@@ -1351,14 +1473,19 @@ fn load_excel_sidecar(path: &Path) -> Result<ExcelSidecar, String> {
     let raw = match fs::read(&sidecar_path) {
         Ok(raw) => raw,
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            // Read paths return the synthesized sidecar in-memory only; the
+            // first explicit write through `write_excel_slot` (or the editor/
+            // parsed-cache writers) materializes it on disk. Writing here
+            // would turn a read into a write-permission error on read-only
+            // filesystems.
             let block_id = uuid::Uuid::new_v4().to_string();
             let sidecar =
                 canonical_excel_sidecar(path, None, &block_id, empty_excel_extras(&block_id));
-            write_excel_sidecar_value(&sidecar_path, &sidecar)?;
             return Ok(ExcelSidecar {
                 sidecar_path,
                 sidecar,
                 block_id,
+                read_only: false,
             });
         }
         Err(err) => return Err(format!("failed to read Excel sidecar: {err}")),
@@ -1368,6 +1495,13 @@ fn load_excel_sidecar(path: &Path) -> Result<ExcelSidecar, String> {
     if sidecar.get(EXCEL_LEGACY_EDITOR_KEY).is_some()
         || sidecar.get(EXCEL_LEGACY_PARSED_CACHE_KEY).is_some()
     {
+        if migration_disabled()? {
+            // Mirror Python's `_synthesize_read_only_from_legacy`: expose
+            // legacy editor / parsedCache content as an in-memory v2
+            // sidecar, but never touch `.bak` and never rewrite the on-disk
+            // sidecar. The `read_only` flag causes the next write to fail.
+            return synthesize_excel_read_only_from_legacy(path, sidecar_path, sidecar);
+        }
         return migrate_legacy_excel_sidecar(path, sidecar_path, sidecar, raw);
     }
 
@@ -1381,6 +1515,7 @@ fn load_excel_sidecar(path: &Path) -> Result<ExcelSidecar, String> {
         sidecar_path,
         sidecar,
         block_id,
+        read_only: false,
     })
 }
 
@@ -1406,9 +1541,32 @@ fn migrate_legacy_excel_sidecar(
     atomic_write_bytes(&bak_path, &raw)
         .map_err(|err| format!("failed to write Excel sidecar migration backup: {err}"))?;
 
-    let block_id =
-        excel_block_id_from_sidecar(&legacy)?.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let mut extras = extras_object(&legacy);
+    let (block_id, migrated) = build_excel_synthetic_from_legacy(path, &legacy)?;
+    write_excel_sidecar_value(&sidecar_path, &migrated).map_err(|err| {
+        format!(
+            "failed to migrate Excel sidecar after writing backup {}: {err}",
+            bak_path.display()
+        )
+    })?;
+
+    Ok(ExcelSidecar {
+        sidecar_path,
+        sidecar: migrated,
+        block_id,
+        read_only: false,
+    })
+}
+
+/// Compose an in-memory v2 Excel sidecar value from a parsed legacy
+/// sidecar WITHOUT touching disk. Shared by the on-disk migration path
+/// and the `DOXMIND_SIDECAR_MIGRATE=off` read-only path.
+fn build_excel_synthetic_from_legacy(
+    path: &Path,
+    legacy: &serde_json::Value,
+) -> Result<(String, serde_json::Value), String> {
+    let block_id = excel_block_id_from_sidecar(legacy)?
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let mut extras = extras_object(legacy);
     let mut blocks = blocks_object_from_extras(&extras);
     let mut slot = blocks
         .remove(&block_id)
@@ -1437,21 +1595,24 @@ fn migrate_legacy_excel_sidecar(
 
     let migrated = canonical_excel_sidecar(
         path,
-        Some(&legacy),
+        Some(legacy),
         &block_id,
         serde_json::Value::Object(extras),
     );
-    write_excel_sidecar_value(&sidecar_path, &migrated).map_err(|err| {
-        format!(
-            "failed to migrate Excel sidecar after writing backup {}: {err}",
-            bak_path.display()
-        )
-    })?;
+    Ok((block_id, migrated))
+}
 
+fn synthesize_excel_read_only_from_legacy(
+    path: &Path,
+    sidecar_path: PathBuf,
+    legacy: serde_json::Value,
+) -> Result<ExcelSidecar, String> {
+    let (block_id, sidecar) = build_excel_synthetic_from_legacy(path, &legacy)?;
     Ok(ExcelSidecar {
         sidecar_path,
-        sidecar: migrated,
+        sidecar,
         block_id,
+        read_only: true,
     })
 }
 
@@ -1460,6 +1621,9 @@ where
     F: FnOnce(&mut serde_json::Map<String, serde_json::Value>),
 {
     let loaded = load_excel_sidecar(path)?;
+    if loaded.read_only {
+        return Err(read_only_document_error(path));
+    }
     let mut extras = extras_object(&loaded.sidecar);
     let mut blocks = blocks_object_from_extras(&extras);
     let mut slot = blocks
@@ -3483,19 +3647,33 @@ mod tests {
         let pdf_path = workspace.path.join("Spec.pdf");
         let source_bytes = b"%PDF-1.4\nmissing sidecar\n%%EOF\n";
         fs::write(&pdf_path, source_bytes).expect("write pdf");
+        let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
 
         let state = workspace_read_pdf_doc_state(workspace.root(), "Spec.pdf".into())
             .expect("read pdf state")
             .expect("synthetic state");
 
+        // Read paths must NOT touch disk; the sidecar only materializes on
+        // the first explicit write.
         assert_eq!(state["editor"], serde_json::Value::Null);
         assert_eq!(state["parsedCache"], serde_json::Value::Null);
         assert_eq!(fs::read(&pdf_path).expect("pdf bytes"), source_bytes);
+        assert!(
+            !sidecar_path.exists(),
+            "missing-sidecar read must not write to disk"
+        );
 
-        let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
+        // First explicit editor write materializes the sidecar in v2 shape.
+        workspace_write_pdf_editor_state(
+            workspace.root(),
+            "Spec.pdf".into(),
+            serde_json::json!({ "freeTextBoxes": [] }),
+        )
+        .expect("write editor state");
+
+        assert!(sidecar_path.exists(), "explicit write creates the sidecar");
         let sidecar = read_json(&sidecar_path);
-        let (_block_id, slot) = only_pdf_block(&sidecar);
-        assert_eq!(slot.as_object().expect("slot object").len(), 0);
+        let (_block_id, _slot) = only_pdf_block(&sidecar);
         assert_eq!(
             sidecar["version"],
             serde_json::json!(doxmind_sidecar::SIDECAR_VERSION)
@@ -3539,6 +3717,12 @@ mod tests {
 
     #[test]
     fn pdf_sidecar_legacy_read_migrates_once_with_backup_and_preserves_binary() {
+        // Serialise against `migrate_off_gates_legacy_sidecar_migration`,
+        // which mutates `DOXMIND_SIDECAR_MIGRATE` (a process-global).
+        // Without this lock, that test setting `=off` mid-parallel-run
+        // turns this test's read into a read-only synthesis and the
+        // expected `.bak` never appears.
+        let _lock = MIGRATE_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
         let workspace = TempWorkspace::new("pdf-sidecar-legacy");
         let pdf_path = workspace.path.join("Spec.pdf");
         let source_bytes = b"%PDF-1.4\nlegacy source\n%%EOF\n";
@@ -3578,6 +3762,8 @@ mod tests {
     fn pdf_sidecar_already_migrated_reads_editor_slot() {
         let workspace = TempWorkspace::new("pdf-sidecar-migrated");
         fs::write(workspace.path.join("Spec.pdf"), b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        // v1 markdown-shape sidecar emitted by an older Python runtime; read
+        // must tolerate it, and the next explicit write must rewrite to v2.
         write_file(
             &workspace.path.join(".Spec.pdf.doxmind"),
             r#"{
@@ -3601,7 +3787,20 @@ mod tests {
             workspace_read_pdf_editor_state(workspace.root(), "Spec.pdf".into()).expect("read");
 
         assert_eq!(editor.expect("editor")["freeTextBoxes"][0]["id"], "box-1");
+
+        // Explicit editor write rewrites the sidecar in v2 shape.
+        workspace_write_pdf_editor_state(
+            workspace.root(),
+            "Spec.pdf".into(),
+            serde_json::json!({"freeTextBoxes": [{"id": "box-2"}]}),
+        )
+        .expect("write editor");
+
         let sidecar = read_json(&workspace.path.join(".Spec.pdf.doxmind"));
+        assert_eq!(
+            sidecar["version"],
+            serde_json::json!(doxmind_sidecar::SIDECAR_VERSION)
+        );
         assert!(sidecar.get(PDF_LEGACY_EDITOR_KEY).is_none());
         assert!(sidecar.get(PDF_LEGACY_PARSED_CACHE_KEY).is_none());
     }
@@ -3738,6 +3937,7 @@ mod tests {
 
     #[test]
     fn pdf_cross_runtime_legacy_fixture_migrates_to_shared_shape() {
+        let _lock = MIGRATE_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
         let workspace = TempWorkspace::new("pdf-cross-runtime-legacy");
         let sidecar_path = install_compat_fixture(&workspace, "Spec.pdf", PDF_LEGACY_FIXTURE);
 
@@ -4440,6 +4640,7 @@ mod tests {
 
     #[test]
     fn excel_read_migrates_legacy_sidecar_into_block_slot() {
+        let _lock = MIGRATE_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
         let workspace = TempWorkspace::new("excel-migrate-legacy");
         let workbook_path = workspace.path.join("Budget.xlsx");
         let workbook_bytes = b"PK\x03\x04workbook";
@@ -4499,6 +4700,8 @@ mod tests {
         let workbook_path = workspace.path.join("Budget.xlsx");
         write_file(&workbook_path, "PK\x03\x04");
         let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        // v1 markdown-shape sidecar emitted by an older Python runtime; read
+        // must tolerate it, and the next explicit write must rewrite to v2.
         fs::write(
             &sidecar_path,
             serde_json::to_vec_pretty(&serde_json::json!({
@@ -4525,6 +4728,20 @@ mod tests {
 
         assert_eq!(editor["activeSheetId"], "Sheet2");
         assert!(!sidecar_bak_path(&sidecar_path).exists());
+
+        // Explicit editor write rewrites the sidecar in v2 shape.
+        workspace_write_excel_editor_state(
+            workspace.root(),
+            "Budget.xlsx".into(),
+            serde_json::json!({ "version": 1, "activeSheetId": "Sheet3" }),
+        )
+        .expect("write editor");
+
+        let sidecar = read_json_file(&sidecar_path);
+        assert_eq!(
+            sidecar["version"],
+            serde_json::json!(doxmind_sidecar::SIDECAR_VERSION)
+        );
     }
 
     #[test]
@@ -4580,8 +4797,24 @@ mod tests {
         let editor = workspace_read_excel_editor_state(workspace.root(), "Budget.xlsx".into())
             .expect("read synthesized sidecar");
 
+        // Read paths must NOT touch disk; the sidecar only materializes on
+        // the first explicit write.
         assert!(editor.is_none());
         assert_eq!(fs::read(&workbook_path).expect("workbook"), workbook_bytes);
+        assert!(
+            !sidecar_path.exists(),
+            "missing-sidecar read must not write to disk"
+        );
+
+        // First explicit editor write materializes the sidecar in v2 shape.
+        workspace_write_excel_editor_state(
+            workspace.root(),
+            "Budget.xlsx".into(),
+            serde_json::json!({ "activeSheetId": "Sheet1" }),
+        )
+        .expect("write editor state");
+
+        assert!(sidecar_path.exists(), "explicit write creates the sidecar");
         let sidecar = read_json_file(&sidecar_path);
         assert_eq!(
             sidecar["version"],
@@ -4589,8 +4822,7 @@ mod tests {
         );
         assert!(sidecar.get(EXCEL_LEGACY_EDITOR_KEY).is_none());
         assert!(sidecar.get(EXCEL_LEGACY_PARSED_CACHE_KEY).is_none());
-        let (_block_id, slot) = only_excel_slot(&sidecar);
-        assert!(slot.as_object().expect("slot object").is_empty());
+        let (_block_id, _slot) = only_excel_slot(&sidecar);
     }
 
     #[test]
@@ -4786,6 +5018,7 @@ mod tests {
 
     #[test]
     fn excel_cross_runtime_legacy_fixture_migrates_to_shared_shape() {
+        let _lock = MIGRATE_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
         let workspace = TempWorkspace::new("excel-cross-runtime-legacy");
         let sidecar_path = install_compat_fixture(&workspace, "Budget.xlsx", EXCEL_LEGACY_FIXTURE);
 
@@ -4837,6 +5070,7 @@ mod tests {
 
     #[test]
     fn excel_legacy_migration_merges_top_level_cache_without_overwriting_slot_editor() {
+        let _lock = MIGRATE_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
         let workspace = TempWorkspace::new("excel-migrate-merge");
         let workbook_path = workspace.path.join("Budget.xlsx");
         write_file(&workbook_path, "PK\x03\x04");
@@ -4878,6 +5112,798 @@ mod tests {
         assert_eq!(slot["editor"]["activeSheetId"], "SlotSheet");
         assert_eq!(slot["parsedCache"]["sourceHash"], "legacy-cache");
         assert!(sidecar_bak_path(&sidecar_path).exists());
+    }
+
+    /// Regression for the Excel legacy duplicate-placeholder path:
+    /// `build_excel_synthetic_from_legacy` must propagate the
+    /// "multiple placeholders" error from `excel_block_id_from_sidecar`
+    /// rather than swallowing it and generating a fresh block id (which
+    /// would silently lose the user's slot data).
+    ///
+    /// Covers both the `MIGRATE=on` (default migration) path and the
+    /// `MIGRATE=off` (read-only synthesis) path — the bug was in shared
+    /// helper code so both paths were affected.
+    #[test]
+    fn excel_legacy_sidecar_with_duplicate_placeholders_surfaces_error() {
+        let _lock = MIGRATE_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+
+        let duplicate_html = format!(
+            "{}\n{}",
+            excel_placeholder("excel-A", "Budget.xlsx"),
+            excel_placeholder("excel-B", "Budget.xlsx"),
+        );
+        let legacy_bytes = serde_json::to_vec_pretty(&serde_json::json!({
+            "version": 1,
+            "id": "doc-1",
+            "html": duplicate_html,
+            "markdown_hash": "old",
+            "updated_at": "2026-05-12T00:00:00Z",
+            "excel_editor": { "version": 1, "activeSheetId": "LegacySheet" },
+        }))
+        .expect("sidecar bytes");
+
+        // MIGRATE=on (default): migration path must error.
+        {
+            let _guard = MigrateEnvGuard::new();
+            let workspace = TempWorkspace::new("excel-legacy-duplicate-default");
+            let workbook_path = workspace.path.join("Budget.xlsx");
+            write_file(&workbook_path, "PK\x03\x04");
+            let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+            fs::write(&sidecar_path, &legacy_bytes).expect("write duplicate sidecar");
+
+            let err = workspace_read_excel_editor_state(workspace.root(), "Budget.xlsx".into())
+                .expect_err("duplicate placeholders must surface an error, not synthesize a fresh block id");
+            assert!(
+                err.contains("multiple"),
+                "error must mention 'multiple' placeholders; got: {err}"
+            );
+        }
+
+        // MIGRATE=off: read-only synthesis path must also error.
+        {
+            let _guard = MigrateEnvGuard::new();
+            MigrateEnvGuard::set("off");
+            let workspace = TempWorkspace::new("excel-legacy-duplicate-readonly");
+            let workbook_path = workspace.path.join("Budget.xlsx");
+            write_file(&workbook_path, "PK\x03\x04");
+            let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+            fs::write(&sidecar_path, &legacy_bytes).expect("write duplicate sidecar");
+
+            let err = workspace_read_excel_editor_state(workspace.root(), "Budget.xlsx".into())
+                .expect_err("duplicate placeholders must surface an error in MIGRATE=off path too");
+            assert!(
+                err.contains("multiple"),
+                "MIGRATE=off error must mention 'multiple' placeholders; got: {err}"
+            );
+        }
+    }
+
+    /// Round-trip a freshly-emitted sidecar between the Rust workspace
+    /// commands and the Python `SyntheticDocumentFactory` and assert
+    /// neither runtime silently rewrites the other's output.
+    ///
+    /// Existing cross-runtime tests load *hand-crafted* fixtures from
+    /// `tests/fixtures/sidecar_compat/`; they never observe what one
+    /// runtime actually emits being parsed by the other. That gap is
+    /// what allowed the v1 markdown-shape mismatch (Blocker #1) to
+    /// ship in commit 32a2fd2: Python writes `version: 2` but the
+    /// Rust read path tolerated v1 only as a legacy/migration trigger,
+    /// so the very first Python-written sidecar would have been
+    /// treated as legacy and rewritten — burning a `.bak` and
+    /// mutating bytes on every cross-runtime open.
+    ///
+    /// This test asserts four invariants per direction (Rust→Python
+    /// and Python→Rust) for both PDF and Excel:
+    ///
+    ///   1. Subprocess exits 0 (the reading runtime accepts the
+    ///      sidecar without raising).
+    ///   2. No `<sidecar>.bak` is created (the reader did not trigger
+    ///      legacy migration).
+    ///   3. Sidecar bytes are byte-identical before vs after the
+    ///      cross-runtime open (no write-on-read).
+    ///   4. The sidecar declares `"version": SIDECAR_VERSION` (2).
+    ///
+    /// Expected failure mode on commit 32a2fd2 (pre-T1): Direction B
+    /// fails invariant (3) — Python emits a v2 sidecar, Rust opens
+    /// it, and (depending on which Blocker is still live) Rust either
+    /// rewrites it via the legacy-migration path or via the
+    /// synthesize-on-missing write-back path. Once T1 lands this test
+    /// must pass cleanly.
+    ///
+    /// Gated behind the `cross-runtime-tests` feature so the
+    /// default `cargo test` keeps passing without `python3` on PATH
+    /// and without the `server/` checkout being reachable.
+    #[test]
+    #[cfg_attr(not(feature = "cross-runtime-tests"), ignore)]
+    fn cross_runtime_emitted_sidecars_open_without_remigration() {
+        // --- Direction A: Rust emits → Python opens ----------------
+        run_direction_a_pdf();
+        run_direction_a_excel();
+
+        // --- Direction B: Python emits → Rust opens ----------------
+        run_direction_b_pdf();
+        run_direction_b_excel();
+    }
+
+    fn resolve_python_executable() -> String {
+        if let Ok(explicit) = std::env::var("DOXMIND_PYTHON") {
+            if !explicit.trim().is_empty() {
+                return explicit;
+            }
+        }
+        "python3".to_string()
+    }
+
+    fn server_dir() -> PathBuf {
+        // CARGO_MANIFEST_DIR points at src-tauri/; server/ is the
+        // sibling that hosts the Python sidecar service.
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        manifest
+            .parent()
+            .expect("src-tauri has a parent")
+            .join("server")
+    }
+
+    fn run_python_snippet(snippet: &str) -> std::process::Output {
+        let python = resolve_python_executable();
+        let server = server_dir();
+        assert!(
+            server.is_dir(),
+            "expected server/ directory at {server:?} — set DOXMIND_PYTHON or run from a checkout that has server/"
+        );
+        std::process::Command::new(&python)
+            .arg("-c")
+            .arg(snippet)
+            .env("PYTHONPATH", &server)
+            // Migration must remain enabled (default) so any legacy
+            // shape would in fact get migrated — that is precisely the
+            // wrong-version path we want to catch.
+            .env_remove("DOXMIND_SIDECAR_MIGRATE")
+            .output()
+            .unwrap_or_else(|err| {
+                panic!(
+                    "failed to spawn python interpreter {python:?}: {err}; \
+                     set DOXMIND_PYTHON or install python3 on PATH"
+                )
+            })
+    }
+
+    fn assert_python_ok(output: &std::process::Output, context: &str) {
+        if !output.status.success() {
+            panic!(
+                "python subprocess failed during {context}:\n--- stdout ---\n{}\n--- stderr ---\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+        }
+    }
+
+    fn assert_v2_sidecar_invariants(
+        sidecar_path: &Path,
+        before: &[u8],
+        after: &[u8],
+        context: &str,
+    ) {
+        assert!(
+            !sidecar_bak_path(sidecar_path).exists(),
+            "{context}: .bak file appeared at {:?} — reader triggered legacy migration on a freshly emitted sidecar",
+            sidecar_bak_path(sidecar_path),
+        );
+        assert_eq!(
+            before, after,
+            "{context}: sidecar bytes changed across the cross-runtime open at {:?}",
+            sidecar_path,
+        );
+        let parsed: serde_json::Value = serde_json::from_slice(after)
+            .unwrap_or_else(|err| panic!("{context}: sidecar at {sidecar_path:?} is not JSON: {err}"));
+        assert_eq!(
+            parsed["version"],
+            serde_json::json!(doxmind_sidecar::SIDECAR_VERSION),
+            "{context}: emitted sidecar must declare version={}",
+            doxmind_sidecar::SIDECAR_VERSION,
+        );
+    }
+
+    fn run_direction_a_pdf() {
+        let workspace = TempWorkspace::new("xrt-rust-emits-pdf");
+        let pdf_path = workspace.path.join("app.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf stub");
+
+        let editor =
+            serde_json::json!({"version": 1, "edits": {"1:0": {"text": "from-rust"}}});
+        workspace_write_pdf_editor_state(workspace.root(), "app.pdf".into(), editor)
+            .expect("rust write pdf editor state");
+
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&pdf_path);
+        let before = fs::read(&sidecar_path).expect("read pdf sidecar after rust write");
+
+        let snippet = format!(
+            "from pathlib import Path\n\
+             from services.synthetic_document import SyntheticDocumentFactory\n\
+             SyntheticDocumentFactory().open_pdf(Path({path:?}))\n",
+            path = pdf_path.to_string_lossy().to_string(),
+        );
+        let output = run_python_snippet(&snippet);
+        assert_python_ok(&output, "direction A (Rust emits PDF → Python opens)");
+
+        let after = fs::read(&sidecar_path).expect("read pdf sidecar after python open");
+        assert_v2_sidecar_invariants(
+            &sidecar_path,
+            &before,
+            &after,
+            "direction A PDF (Rust→Python)",
+        );
+    }
+
+    fn run_direction_a_excel() {
+        let workspace = TempWorkspace::new("xrt-rust-emits-excel");
+        let xlsx_path = workspace.path.join("book.xlsx");
+        fs::write(&xlsx_path, b"PK\x03\x04\x00\x00\x00\x00").expect("write xlsx stub");
+
+        let editor = serde_json::json!({
+            "version": 1,
+            "activeSheetId": "Sheet1",
+            "sheets": [{"id": "Sheet1", "name": "From Rust"}]
+        });
+        workspace_write_excel_editor_state(workspace.root(), "book.xlsx".into(), editor)
+            .expect("rust write excel editor state");
+
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&xlsx_path);
+        let before = fs::read(&sidecar_path).expect("read excel sidecar after rust write");
+
+        let snippet = format!(
+            "from pathlib import Path\n\
+             from services.synthetic_document import SyntheticDocumentFactory\n\
+             SyntheticDocumentFactory().open_excel(Path({path:?}))\n",
+            path = xlsx_path.to_string_lossy().to_string(),
+        );
+        let output = run_python_snippet(&snippet);
+        assert_python_ok(&output, "direction A (Rust emits Excel → Python opens)");
+
+        let after = fs::read(&sidecar_path).expect("read excel sidecar after python open");
+        assert_v2_sidecar_invariants(
+            &sidecar_path,
+            &before,
+            &after,
+            "direction A Excel (Rust→Python)",
+        );
+    }
+
+    fn run_direction_b_pdf() {
+        let workspace = TempWorkspace::new("xrt-python-emits-pdf");
+        let pdf_path = workspace.path.join("app.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf stub");
+
+        // Python synthesizes the v2 sidecar in memory (open returns a
+        // Document without touching disk after T1), then persists it
+        // with an explicit write_full call.
+        let snippet = format!(
+            "from pathlib import Path\n\
+             from services.synthetic_document import SyntheticDocumentFactory\n\
+             factory = SyntheticDocumentFactory()\n\
+             doc = factory.open_pdf(Path({path:?}))\n\
+             factory.write_full(doc, doc.snapshot)\n",
+            path = pdf_path.to_string_lossy().to_string(),
+        );
+        let output = run_python_snippet(&snippet);
+        assert_python_ok(&output, "direction B (Python emits PDF)");
+
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&pdf_path);
+        let before = fs::read(&sidecar_path).expect("read pdf sidecar after python write");
+
+        let state = workspace_read_pdf_doc_state(workspace.root(), "app.pdf".into())
+            .expect("rust read pdf doc state from python-emitted sidecar")
+            .expect("doc state present");
+        // The slot may be empty (no editor saved yet); the contract is
+        // that the read succeeds and exposes editor/parsedCache keys.
+        assert!(state.get("editor").is_some());
+        assert!(state.get("parsedCache").is_some());
+
+        let after = fs::read(&sidecar_path).expect("read pdf sidecar after rust read");
+        assert_v2_sidecar_invariants(
+            &sidecar_path,
+            &before,
+            &after,
+            "direction B PDF (Python→Rust)",
+        );
+    }
+
+    fn run_direction_b_excel() {
+        let workspace = TempWorkspace::new("xrt-python-emits-excel");
+        let xlsx_path = workspace.path.join("book.xlsx");
+        fs::write(&xlsx_path, b"PK\x03\x04\x00\x00\x00\x00").expect("write xlsx stub");
+
+        let snippet = format!(
+            "from pathlib import Path\n\
+             from services.synthetic_document import SyntheticDocumentFactory\n\
+             factory = SyntheticDocumentFactory()\n\
+             doc = factory.open_excel(Path({path:?}))\n\
+             factory.write_full(doc, doc.snapshot)\n",
+            path = xlsx_path.to_string_lossy().to_string(),
+        );
+        let output = run_python_snippet(&snippet);
+        assert_python_ok(&output, "direction B (Python emits Excel)");
+
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&xlsx_path);
+        let before = fs::read(&sidecar_path).expect("read excel sidecar after python write");
+
+        let state = workspace_read_excel_doc_state(workspace.root(), "book.xlsx".into())
+            .expect("rust read excel doc state from python-emitted sidecar")
+            .expect("doc state present");
+        assert!(state.get("editor").is_some());
+        assert!(state.get("parsedCache").is_some());
+
+        let after = fs::read(&sidecar_path).expect("read excel sidecar after rust read");
+        assert_v2_sidecar_invariants(
+            &sidecar_path,
+            &before,
+            &after,
+            "direction B Excel (Python→Rust)",
+        );
+    }
+
+    /// Regression net for Blocker #1: a `version: 1` markdown-shape
+    /// sidecar already on disk (left over from a pre-v2 install) must
+    /// open cross-runtime without crashing and must be upgraded to
+    /// v2 on the next explicit write through Rust.
+    ///
+    /// Today (commit `c6562f3` / `32a2fd2` base) this test FAILS in
+    /// two ways:
+    ///   * Direction A: Python's `_read_markdown_shape` does a strict
+    ///     `sidecar["version"] != SIDECAR_VERSION` check and raises
+    ///     `ValueError`, so the subprocess exits non-zero.
+    ///   * Direction B: Rust's `ensure_pdf_block_slot` /
+    ///     Excel-equivalent only inserts `version` when it is
+    ///     *absent*; it never upgrades a present-but-stale value. So
+    ///     after a v1-markdown-shape sidecar is read and re-written
+    ///     by a write path, `version` stays at 1 on disk.
+    ///
+    /// Both failure modes are exactly what T1 (sidecar-version-fixer)
+    /// fixes:
+    ///   * Python accepts `version in {1, SIDECAR_VERSION}`.
+    ///   * Rust rewrites `version` when absent OR below `SIDECAR_VERSION`.
+    ///
+    /// The test is `#[ignore]`'d on top of the feature gate so it
+    /// does not break CI today. The team lead removes the `#[ignore]`
+    /// after T1 merges to confirm the regression net catches a
+    /// future re-introduction. The `#[ignore]` reason is verbose on
+    /// purpose so the next reader knows exactly when to remove it.
+    ///
+    /// Critically: the seeded sidecar has NO legacy `pdf_editor` /
+    /// `excel_editor` top-level keys. It is a *v1 markdown-shape*
+    /// sidecar, not a legacy-shape one. If it had legacy keys, the
+    /// migration path would fire and a `.bak` file would be written
+    /// — which is not what we are testing here.
+    #[test]
+    #[cfg_attr(not(feature = "cross-runtime-tests"), ignore)]
+    fn v1_markdown_shape_on_disk_opens_cross_runtime_after_t1() {
+        run_v1_markdown_shape_pdf();
+        run_v1_markdown_shape_excel();
+    }
+
+    fn seed_v1_markdown_shape_pdf_sidecar(pdf_path: &Path, block_id: &str) -> PathBuf {
+        let src = pdf_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("pdf filename");
+        let html = format!("<!-- pdf-block id=\"{block_id}\" src=\"{src}\" -->");
+        let sidecar = serde_json::json!({
+            "version": 1,
+            "id": "v1-pdf-doc",
+            "html": html,
+            "markdown_hash": "v1-fixture-hash-pdf",
+            "updated_at": "2026-05-14T00:00:00Z",
+            "extras": { "blocks": { block_id: {} } }
+        });
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(pdf_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&sidecar).expect("serialize seeded pdf sidecar"),
+        )
+        .expect("write seeded v1 pdf sidecar");
+        sidecar_path
+    }
+
+    fn seed_v1_markdown_shape_excel_sidecar(xlsx_path: &Path, block_id: &str) -> PathBuf {
+        let src = xlsx_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("xlsx filename");
+        let html = format!("<!-- excel-block id=\"{block_id}\" src=\"{src}\" -->");
+        let sidecar = serde_json::json!({
+            "version": 1,
+            "id": "v1-excel-doc",
+            "html": html,
+            "markdown_hash": "v1-fixture-hash-excel",
+            "updated_at": "2026-05-14T00:00:00Z",
+            "extras": { "blocks": { block_id: {} } }
+        });
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(xlsx_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&sidecar).expect("serialize seeded excel sidecar"),
+        )
+        .expect("write seeded v1 excel sidecar");
+        sidecar_path
+    }
+
+    fn run_v1_markdown_shape_pdf() {
+        let workspace = TempWorkspace::new("xrt-v1-pdf");
+        let pdf_path = workspace.path.join("app.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf stub");
+        let sidecar_path =
+            seed_v1_markdown_shape_pdf_sidecar(&pdf_path, "v1-pdf-block");
+
+        // Direction A: Python must accept v1 markdown-shape after T1.
+        let snippet = format!(
+            "from pathlib import Path\n\
+             from services.synthetic_document import SyntheticDocumentFactory\n\
+             SyntheticDocumentFactory().open_pdf(Path({path:?}))\n",
+            path = pdf_path.to_string_lossy().to_string(),
+        );
+        let output = run_python_snippet(&snippet);
+        assert_python_ok(
+            &output,
+            "v1 markdown-shape PDF (Python must tolerate version=1 after T1)",
+        );
+        // No legacy fields → no `.bak` should ever be written by the
+        // Python read path.
+        assert!(
+            !sidecar_bak_path(&sidecar_path).exists(),
+            "Python read of v1 markdown-shape PDF sidecar must not write a .bak (no legacy fields present)"
+        );
+
+        // Direction B: Rust must upgrade `version` to SIDECAR_VERSION
+        // on the next explicit write.
+        let editor =
+            serde_json::json!({"version": 1, "edits": {"1:0": {"text": "after-t1"}}});
+        workspace_write_pdf_editor_state(workspace.root(), "app.pdf".into(), editor)
+            .expect("rust write pdf editor state against v1 sidecar");
+
+        let on_disk: serde_json::Value =
+            serde_json::from_slice(&fs::read(&sidecar_path).expect("read sidecar after rust write"))
+                .expect("parse sidecar after rust write");
+        assert_eq!(
+            on_disk["version"],
+            serde_json::json!(doxmind_sidecar::SIDECAR_VERSION),
+            "Rust must rewrite v1 markdown-shape PDF sidecar version to SIDECAR_VERSION on explicit write; got {:?}",
+            on_disk["version"],
+        );
+        // Still no `.bak` — there were no legacy fields, so no
+        // migration should have run.
+        assert!(
+            !sidecar_bak_path(&sidecar_path).exists(),
+            "Rust write of v1 markdown-shape PDF sidecar must not write a .bak (no legacy fields present)"
+        );
+    }
+
+    fn run_v1_markdown_shape_excel() {
+        let workspace = TempWorkspace::new("xrt-v1-excel");
+        let xlsx_path = workspace.path.join("book.xlsx");
+        fs::write(&xlsx_path, b"PK\x03\x04\x00\x00\x00\x00").expect("write xlsx stub");
+        let sidecar_path =
+            seed_v1_markdown_shape_excel_sidecar(&xlsx_path, "v1-excel-block");
+
+        let snippet = format!(
+            "from pathlib import Path\n\
+             from services.synthetic_document import SyntheticDocumentFactory\n\
+             SyntheticDocumentFactory().open_excel(Path({path:?}))\n",
+            path = xlsx_path.to_string_lossy().to_string(),
+        );
+        let output = run_python_snippet(&snippet);
+        assert_python_ok(
+            &output,
+            "v1 markdown-shape Excel (Python must tolerate version=1 after T1)",
+        );
+        assert!(
+            !sidecar_bak_path(&sidecar_path).exists(),
+            "Python read of v1 markdown-shape Excel sidecar must not write a .bak (no legacy fields present)"
+        );
+
+        let editor = serde_json::json!({
+            "version": 1,
+            "activeSheetId": "Sheet1",
+            "sheets": [{"id": "Sheet1", "name": "After T1"}]
+        });
+        workspace_write_excel_editor_state(workspace.root(), "book.xlsx".into(), editor)
+            .expect("rust write excel editor state against v1 sidecar");
+
+        let on_disk: serde_json::Value =
+            serde_json::from_slice(&fs::read(&sidecar_path).expect("read sidecar after rust write"))
+                .expect("parse sidecar after rust write");
+        assert_eq!(
+            on_disk["version"],
+            serde_json::json!(doxmind_sidecar::SIDECAR_VERSION),
+            "Rust must rewrite v1 markdown-shape Excel sidecar version to SIDECAR_VERSION on explicit write; got {:?}",
+            on_disk["version"],
+        );
+        assert!(
+            !sidecar_bak_path(&sidecar_path).exists(),
+            "Rust write of v1 markdown-shape Excel sidecar must not write a .bak (no legacy fields present)"
+        );
+    }
+
+    /// Guard against parallel tests racing on the
+    /// `DOXMIND_SIDECAR_MIGRATE` env var. Cargo runs unit tests
+    /// multi-threaded by default; any test that mutates a process-global
+    /// must serialise itself against every other env-var-sensitive test.
+    /// We keep this private and use it from the single
+    /// `migrate_off_*` test below — adding more env-var tests requires
+    /// holding the same lock.
+    static MIGRATE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// RAII guard that snapshots and restores the env var, with
+    /// best-effort restore on panic. Required because rustc currently
+    /// poisons the mutex on panic; the guard restores state even when
+    /// the test is about to abort.
+    struct MigrateEnvGuard {
+        original: Option<std::ffi::OsString>,
+    }
+
+    impl MigrateEnvGuard {
+        fn new() -> Self {
+            let original = std::env::var_os(MIGRATE_ENV_VAR);
+            std::env::remove_var(MIGRATE_ENV_VAR);
+            Self { original }
+        }
+
+        fn set(value: &str) {
+            std::env::set_var(MIGRATE_ENV_VAR, value);
+        }
+
+        fn unset() {
+            std::env::remove_var(MIGRATE_ENV_VAR);
+        }
+    }
+
+    impl Drop for MigrateEnvGuard {
+        fn drop(&mut self) {
+            match self.original.take() {
+                Some(value) => std::env::set_var(MIGRATE_ENV_VAR, value),
+                None => std::env::remove_var(MIGRATE_ENV_VAR),
+            }
+        }
+    }
+
+    fn write_legacy_pdf_fixture(sidecar_path: &Path) -> Vec<u8> {
+        let legacy = br#"{
+  "version": 1,
+  "id": "legacy-doc",
+  "pdf_editor": {"textEdits": [{"id": "t1"}]},
+  "pdf_parsed_cache": {"sourceHash": "abc", "parsed": {"pages": [1]}},
+  "extras": {"keep": {"x": 1}}
+}"#
+        .to_vec();
+        fs::write(sidecar_path, &legacy).expect("write legacy pdf sidecar");
+        legacy
+    }
+
+    fn write_legacy_excel_fixture(sidecar_path: &Path) -> Vec<u8> {
+        let legacy = br#"{
+  "version": 1,
+  "id": "legacy-xlsx",
+  "excel_editor": {"version": 1, "activeSheetId": "LegacySheet"},
+  "excel_parsed_cache": {"sourceHash": "legacy-cache", "parsed": {"sheets": []}}
+}"#
+        .to_vec();
+        fs::write(sidecar_path, &legacy).expect("write legacy excel sidecar");
+        legacy
+    }
+
+    /// Exhaustive coverage of the `DOXMIND_SIDECAR_MIGRATE=off` gate
+    /// added in T5. Single test function so the env-var mutation is
+    /// serialised against itself — we deliberately do NOT pull in
+    /// `serial_test` since it isn't a dependency and the contract here
+    /// is small enough to encode in one body.
+    ///
+    /// Scenarios covered (mirroring Python's
+    /// `_synthesize_read_only_from_legacy` contract):
+    ///   1. PDF legacy + `MIGRATE=off` — read exposes editor/parsedCache,
+    ///      no `.bak`, sidecar bytes unchanged, subsequent write fails
+    ///      with `"read-only"`.
+    ///   2. Excel legacy + `MIGRATE=off` — same invariants.
+    ///   3. PDF legacy with env var unset — legacy migration still runs
+    ///      (`.bak` exists, on-disk sidecar rewritten to v2). This pins
+    ///      the default-behaviour contract; without it the gate could
+    ///      regress to "always disabled" and pass cases 1+2.
+    ///   4. PDF legacy with `MIGRATE=1` — same as unset (migration runs).
+    #[test]
+    fn migrate_off_gates_legacy_sidecar_migration() {
+        let _lock = MIGRATE_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+        let _guard = MigrateEnvGuard::new();
+
+        // --- Scenario 1: PDF legacy + MIGRATE=off ----------------------
+        {
+            MigrateEnvGuard::set("off");
+            let workspace = TempWorkspace::new("migrate-off-pdf-legacy");
+            let pdf_path = workspace.path.join("Spec.pdf");
+            fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+            let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
+            let legacy_bytes = write_legacy_pdf_fixture(&sidecar_path);
+
+            let state = workspace_read_pdf_doc_state(workspace.root(), "Spec.pdf".into())
+                .expect("read should succeed read-only")
+                .expect("doc state present");
+
+            // Legacy editor/parsedCache content reaches the caller.
+            assert_eq!(state["editor"]["textEdits"][0]["id"], "t1");
+            assert_eq!(state["parsedCache"]["sourceHash"], "abc");
+
+            // No `.bak` written, on-disk sidecar untouched.
+            assert!(
+                !sidecar_bak_path(&sidecar_path).exists(),
+                "MIGRATE=off must not write a .bak alongside legacy PDF sidecar"
+            );
+            assert_eq!(
+                fs::read(&sidecar_path).expect("read sidecar after"),
+                legacy_bytes,
+                "MIGRATE=off must not rewrite the on-disk PDF sidecar"
+            );
+
+            // Write attempts surface a read-only error.
+            let err = workspace_write_pdf_editor_state(
+                workspace.root(),
+                "Spec.pdf".into(),
+                serde_json::json!({"textEdits": []}),
+            )
+            .expect_err("write must fail on read-only synthetic PDF doc");
+            assert!(
+                err.contains("read-only"),
+                "PDF write error must mention 'read-only'; got: {err}"
+            );
+
+            let err = workspace_write_pdf_parsed_cache(
+                workspace.root(),
+                "Spec.pdf".into(),
+                "fresh-hash".into(),
+                serde_json::json!({"pages": []}),
+            )
+            .expect_err("parsed-cache write must fail on read-only synthetic PDF doc");
+            assert!(err.contains("read-only"), "{err}");
+
+            // After failed writes, sidecar is still untouched.
+            assert!(!sidecar_bak_path(&sidecar_path).exists());
+            assert_eq!(
+                fs::read(&sidecar_path).expect("read sidecar after failed writes"),
+                legacy_bytes
+            );
+        }
+
+        // --- Scenario 2: Excel legacy + MIGRATE=off --------------------
+        {
+            MigrateEnvGuard::set("off");
+            let workspace = TempWorkspace::new("migrate-off-excel-legacy");
+            let xlsx_path = workspace.path.join("Budget.xlsx");
+            fs::write(&xlsx_path, b"PK\x03\x04").expect("write xlsx");
+            let sidecar_path = doxmind_sidecar::sidecar_path_for(&xlsx_path);
+            let legacy_bytes = write_legacy_excel_fixture(&sidecar_path);
+
+            let state = workspace_read_excel_doc_state(workspace.root(), "Budget.xlsx".into())
+                .expect("read should succeed read-only")
+                .expect("doc state present");
+
+            assert_eq!(state["editor"]["activeSheetId"], "LegacySheet");
+            assert_eq!(state["parsedCache"]["sourceHash"], "legacy-cache");
+
+            assert!(
+                !sidecar_bak_path(&sidecar_path).exists(),
+                "MIGRATE=off must not write a .bak alongside legacy Excel sidecar"
+            );
+            assert_eq!(
+                fs::read(&sidecar_path).expect("read sidecar after"),
+                legacy_bytes,
+                "MIGRATE=off must not rewrite the on-disk Excel sidecar"
+            );
+
+            let err = workspace_write_excel_editor_state(
+                workspace.root(),
+                "Budget.xlsx".into(),
+                serde_json::json!({"version": 1, "activeSheetId": "Whatever"}),
+            )
+            .expect_err("write must fail on read-only synthetic Excel doc");
+            assert!(
+                err.contains("read-only"),
+                "Excel write error must mention 'read-only'; got: {err}"
+            );
+
+            let err = workspace_write_excel_parsed_cache(
+                workspace.root(),
+                "Budget.xlsx".into(),
+                "fresh-hash".into(),
+                serde_json::json!({"sheets": []}),
+            )
+            .expect_err("parsed-cache write must fail on read-only synthetic Excel doc");
+            assert!(err.contains("read-only"), "{err}");
+
+            assert!(!sidecar_bak_path(&sidecar_path).exists());
+            assert_eq!(
+                fs::read(&sidecar_path).expect("read sidecar after failed writes"),
+                legacy_bytes
+            );
+        }
+
+        // --- Scenario 3: env var unset → default migration runs --------
+        {
+            MigrateEnvGuard::unset();
+            let workspace = TempWorkspace::new("migrate-default-pdf-legacy");
+            let pdf_path = workspace.path.join("Spec.pdf");
+            fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+            let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
+            let legacy_bytes = write_legacy_pdf_fixture(&sidecar_path);
+
+            workspace_read_pdf_doc_state(workspace.root(), "Spec.pdf".into())
+                .expect("read should migrate by default")
+                .expect("state");
+
+            assert!(
+                sidecar_bak_path(&sidecar_path).exists(),
+                "default behaviour must write `.bak` during legacy migration"
+            );
+            assert_eq!(
+                fs::read(sidecar_bak_path(&sidecar_path)).expect("read bak"),
+                legacy_bytes,
+                "the `.bak` must contain the original legacy bytes"
+            );
+            let migrated = read_json(&sidecar_path);
+            assert_eq!(
+                migrated["version"],
+                serde_json::json!(doxmind_sidecar::SIDECAR_VERSION),
+                "default behaviour rewrites sidecar to v2"
+            );
+            assert!(migrated.get(PDF_LEGACY_EDITOR_KEY).is_none());
+        }
+
+        // --- Scenario 4: MIGRATE=1 → default migration runs ------------
+        {
+            MigrateEnvGuard::set("1");
+            let workspace = TempWorkspace::new("migrate-on-pdf-legacy");
+            let pdf_path = workspace.path.join("Spec.pdf");
+            fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+            let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
+            write_legacy_pdf_fixture(&sidecar_path);
+
+            workspace_read_pdf_doc_state(workspace.root(), "Spec.pdf".into())
+                .expect("read should migrate when MIGRATE=1")
+                .expect("state");
+
+            assert!(
+                sidecar_bak_path(&sidecar_path).exists(),
+                "MIGRATE=1 is explicit opt-in to migration; .bak must exist"
+            );
+        }
+    }
+
+    /// `migration_disabled()` mirrors Python's parser one-for-one.
+    /// Spelled-out exhaustive coverage of accepted spellings + the
+    /// invalid-value error path.
+    #[test]
+    fn migration_disabled_parses_documented_values() {
+        let _lock = MIGRATE_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+        let _guard = MigrateEnvGuard::new();
+
+        MigrateEnvGuard::unset();
+        assert!(!migration_disabled().expect("unset → false"));
+
+        for value in ["0", "false", "no", "off", "OFF", " off ", "False"] {
+            MigrateEnvGuard::set(value);
+            assert!(
+                migration_disabled().expect("disabled value must parse"),
+                "{value:?} should disable migration"
+            );
+        }
+
+        for value in ["1", "true", "yes", "on", "ON", " on ", "True"] {
+            MigrateEnvGuard::set(value);
+            assert!(
+                !migration_disabled().expect("enabled value must parse"),
+                "{value:?} should enable migration"
+            );
+        }
+
+        MigrateEnvGuard::set("maybe");
+        let err = migration_disabled().expect_err("invalid value must error");
+        assert!(err.contains("DOXMIND_SIDECAR_MIGRATE"), "{err}");
+        assert!(err.contains("maybe"), "{err}");
     }
 
     #[test]

@@ -23,6 +23,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { notify } from "@/lib/notifications";
+import { handleReadOnlyAutosaveError } from "@/lib/storage/read-only-error";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -223,6 +224,12 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   const paragraphModeRef = useRef(false);
   const isDraggingBlockRef = useRef(false);
   const deleteActiveObjectRef = useRef<() => void>(() => undefined);
+  // One-shot guard for the read-only autosave notice. Rust + Python save
+  // paths both reject with a stable substring (`"read-only"`) when
+  // DOXMIND_SIDECAR_MIGRATE=off opens a legacy sidecar. The debounced
+  // autosave below would otherwise re-fire on every keystroke; we surface
+  // once per file open and stay silent afterwards.
+  const readOnlySurfacedRef = useRef(false);
   const rootPath = useFileStore((s) => s.rootPath);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [pageSize, setPageSize] = useState<PageSize>({ width: 0, height: 0 });
@@ -385,6 +392,9 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
 
       setStatus("loading");
       setActiveObject(null);
+      // Reset the read-only banner guard so a freshly-opened file gets its
+      // own one-shot notice if its sidecar is also read-only.
+      readOnlySurfacedRef.current = false;
 
       try {
         const pdfjs = getPdfjs();
@@ -1122,7 +1132,12 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
         setEditorDirty(false);
         setLastSavedAt(new Date().toISOString());
       } catch (error) {
-        console.error("Auto-save failed", error);
+        // Same contract as the Excel side: surface once per file open
+        // when DOXMIND_SIDECAR_MIGRATE=off makes saves silently fail,
+        // then stay quiet so we don't toast on every keystroke.
+        if (!handleReadOnlyAutosaveError(error, readOnlySurfacedRef, notify.error)) {
+          console.error("Auto-save failed", error);
+        }
       } finally {
         setEditorSaving(false);
       }

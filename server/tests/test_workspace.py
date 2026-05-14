@@ -624,7 +624,18 @@ def test_workspace_pdf_missing_sidecar_read_synthesizes_markdown_shape_block_slo
     )
 
     assert restored == {"editor": None, "parsedCache": None}
+    # Read paths must NOT touch disk; the sidecar materializes on the first
+    # explicit save (keeps read-only filesystems readable).
+    assert not sidecar_path.exists(), "missing-sidecar read must not write to disk"
+
+    invoke(
+        sync_client,
+        "workspace_write_pdf_editor_state",
+        {"root": str(tmp_path), "path": pdf_path.name, "payload": {"freeTextBoxes": []}},
+    )
+
     sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert sidecar["version"] == SIDECAR_VERSION
     assert "pdf_editor" not in sidecar
     assert "pdf_parsed_cache" not in sidecar
     assert len(sidecar["extras"]["blocks"]) == 1
@@ -669,7 +680,22 @@ def test_workspace_excel_missing_sidecar_read_synthesizes_markdown_shape_block_s
     )
 
     assert restored == {"editor": None, "parsedCache": None}
+    # Read paths must NOT touch disk; the sidecar materializes on the first
+    # explicit save (keeps read-only filesystems readable).
+    assert not sidecar_path.exists(), "missing-sidecar read must not write to disk"
+
+    invoke(
+        sync_client,
+        "workspace_write_excel_editor_state",
+        {
+            "root": str(tmp_path),
+            "path": xlsx_path.name,
+            "payload": {"version": 1, "sheets": []},
+        },
+    )
+
     sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert sidecar["version"] == SIDECAR_VERSION
     assert "excel_editor" not in sidecar
     assert "excel_parsed_cache" not in sidecar
     assert len(sidecar["extras"]["blocks"]) == 1

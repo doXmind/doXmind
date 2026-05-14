@@ -72,6 +72,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { notify } from "@/lib/notifications";
+import { handleReadOnlyAutosaveError } from "@/lib/storage/read-only-error";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -154,7 +155,6 @@ import { cn, sha256Hex } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { perfAsync, perfMeasure, perfSync } from "@/lib/perf";
 import { isSwitchCacheStillValid } from "@/lib/switch-cache-validation";
-import { freshParsedCacheValue } from "@/lib/parsed-cache-freshness";
 
 // Module-level switch cache. The whole point of this layer is to dodge the
 // 18+ MB JSON response from /api/excel/parse-workbook on a re-open. The
@@ -357,6 +357,20 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   const cellInputRef = useRef<HTMLInputElement>(null);
   const formulaInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<ExcelDialogState | null>(null);
+  // One-shot gate for the activeSheetId bookkeeping effect below. Cold open
+  // resolves an activeSheet by reading the sidecar (or falling back to the
+  // first sheet) — we don't want that first resolution to dirty editorState
+  // and trip the debounced sidecar writer. The first time the bookkeeping
+  // effect observes a non-null activeSheet it flips this to false; from then
+  // on, any user-initiated sheet switch mirrors normally.
+  const hydratingActiveSheetRef = useRef(true);
+  // One-shot guard for the read-only autosave notice. The Rust + Python save
+  // paths both reject with a stable substring (`"read-only"`) when
+  // DOXMIND_SIDECAR_MIGRATE=off opens a legacy sidecar. Without this guard
+  // the debounced sidecar writer would re-fire on every keystroke and spam
+  // the user with toasts. Reset on file switch (the open effect below
+  // re-arms this alongside `hydratingActiveSheetRef`).
+  const readOnlySurfacedRef = useRef(false);
 
   useEffect(() => {
     editorStateRef.current = editorState;
@@ -455,25 +469,31 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     setErrorMessage(null);
     setHistory([]);
     setFuture([]);
+    // Re-arm the bookkeeping guard for every (re)load — a hot file switch
+    // re-runs this effect with a new file.id, and the new file's cold open
+    // is just as write-sensitive as the first one.
+    hydratingActiveSheetRef.current = true;
+    // Reset the read-only banner guard so a freshly-opened file gets its
+    // own one-shot notice if its sidecar is also read-only.
+    readOnlySurfacedRef.current = false;
 
     (async () => {
       try {
-        // Cold opens read parsedCache when present, but only use it after the
-        // source workbook hash matches. Excel does not write this cache from
-        // the normal open path; explicit parsed-cache writes remain opt-in.
-        const readDocStateFull = (): Promise<ExcelLoadedDocState | null> =>
-          adapter.readExcelDocState
-            ? adapter.readExcelDocState(handle).then(
-                (state) => state,
-                () => null
-              )
-            : adapter.readExcelEditorState
-              ? adapter.readExcelEditorState(handle).then(
-                  (editor) => ({ editor, parsedCache: null }),
-                  () => null
-                )
-              : Promise.resolve(null);
-
+        // Cold open reads editor state only — never parsedCache. We used to
+        // also pull a parsedCache blob (the full ~18 MB parsed workbook DTO)
+        // hoping to skip openpyxl on the next cold open with a matching hash.
+        // Two things made that a net negative:
+        //   1. The backend's process-local LRU (see services/excel_workbook.py)
+        //      already caches parse output for same-process re-opens.
+        //   2. Reading the 18 MB JSON back over IPC + parsing it on the main
+        //      thread cost ~1 s on every cold open — competing with the very
+        //      thing it tried to save (3.8 s openpyxl).
+        // The trade is: a process-restart-then-reopen of an unmodified file
+        // re-runs openpyxl once. The module-level switch cache plus the
+        // backend LRU together cover every other path, so the regression is
+        // bounded to that one slot. Explicit `writeExcelParsedCache` adapter
+        // writes remain available for callers that want to prime the cache
+        // post-parse — they just don't run on the read side.
         const readEditorOnly = (): Promise<ExcelLoadedDocState | null> =>
           adapter.readExcelEditorState
             ? adapter.readExcelEditorState(handle).then(
@@ -522,7 +542,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
           parsed = switchCached.parsed;
         } else {
           perfSync("doxmind.excel.switchCacheMiss", () => undefined, { fileId: file.id });
-          // Cold path: binary read + sidecar read + stat probe
+          // Cold path: binary read + editor-only sidecar read + stat probe
           // in parallel. The stat is needed to populate the cache key for
           // future hot switches; if it fails (HTTP fallback) we cache with
           // null mtime/size and any future hit will treat that as
@@ -532,7 +552,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
             () =>
               Promise.all([
                 adapter.readBinary!(handle),
-                readDocStateFull(),
+                readEditorOnly(),
                 adapter.statBinary
                   ? adapter.statBinary(handle).catch(() => null)
                   : Promise.resolve(null),
@@ -540,20 +560,18 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
           );
           if (cancelled) return;
 
-          const sourceHash = await sha256Hex(readBytes);
-          if (cancelled) return;
-          const cachedWorkbook = freshParsedCacheValue<ExcelWorkbookDto>(
-            readDocState?.parsedCache,
-            sourceHash
+          parsed = await perfAsync(
+            "doxmind.excel.fetchWorkbook",
+            () => fetchExcelWorkbook(readBytes, file.name, controller.signal),
+            { bytes: readBytes.byteLength }
           );
-          parsed = cachedWorkbook
-            ? cachedWorkbook
-            : await perfAsync(
-                "doxmind.excel.fetchWorkbook",
-                () => fetchExcelWorkbook(readBytes, file.name, controller.signal),
-                { bytes: readBytes.byteLength }
-              );
+          if (cancelled) return;
 
+          // sourceHash is still computed because the switch-cache entry
+          // keys on it for future hot revalidation; we just don't write it
+          // anywhere on disk. Cold open is read-only with respect to the
+          // sidecar — both reads (above) and writes (here) skip parsedCache.
+          const sourceHash = await sha256Hex(readBytes);
           if (cancelled) return;
           bytes = readBytes;
           docState = readDocState;
@@ -567,10 +585,28 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
         }
 
         xlsxBytesRef.current = bytes;
-        const sidecar = docState?.editor ?? null;
+        // Resolve the active sheet id at load time. If the loaded sidecar
+        // points at a sheet that no longer exists (rename/delete out-of-
+        // band), the resolver falls back to the first sheet AND we rewrite
+        // the in-memory sidecar so the corrected id is what the debounced
+        // writer sees — not the stale one. Doing the correction here
+        // (rather than via the post-hydration bookkeeping mirror) keeps
+        // the writer's first scheduled snapshot honest: the bookkeeping
+        // guard never has to race a timer that was already armed with a
+        // ghost id.
+        const loadedSidecar = docState?.editor ?? null;
+        const resolvedActiveSheetId =
+          loadedSidecar?.activeSheetId &&
+          parsed.sheets.some((s) => s.id === loadedSidecar.activeSheetId)
+            ? loadedSidecar.activeSheetId
+            : (parsed.sheets[0]?.id ?? null);
+        const sidecar =
+          loadedSidecar && loadedSidecar.activeSheetId !== resolvedActiveSheetId
+            ? { ...loadedSidecar, activeSheetId: resolvedActiveSheetId ?? undefined }
+            : loadedSidecar;
         setWorkbook(parsed);
         setEditorState(sidecar);
-        setActiveSheetId(sidecar?.activeSheetId ?? parsed.sheets[0]?.id ?? null);
+        setActiveSheetId(resolvedActiveSheetId);
         setSelection(singleCellRange(0, 0));
         setStatus("ready");
         // Close the firstPaint measure once and clear the start mark so it
@@ -811,6 +847,11 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     const snapshot = editorState;
     const timeout = window.setTimeout(() => {
       adapter.writeExcelEditorState!(handle, snapshot).catch((err) => {
+        // DOXMIND_SIDECAR_MIGRATE=off + legacy sidecar surfaces a stable
+        // read-only error. We tell the user once per file open so they
+        // can either unset the flag or restore from `<sidecar>.bak`;
+        // subsequent autosave failures for the same file stay silent.
+        if (handleReadOnlyAutosaveError(err, readOnlySurfacedRef, notify.error)) return;
         console.error("[ExcelEditor] failed to persist sidecar", err);
       });
     }, SIDECAR_DEBOUNCE_MS);
@@ -818,8 +859,26 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   }, [editorState, adapter, file.storageHandle]);
 
   // Bookkeeping mutation: mirror activeSheetId without polluting undo.
+  //
+  // Cold-open guard (Fix-3): the very first time this effect observes a
+  // non-null activeSheet it's reacting to the load path resolving an active
+  // sheet from the sidecar (or defaulting to the first sheet). Mutating
+  // editorState there is purely bookkeeping — but it trips the debounced
+  // sidecar writer ~350ms later, which violates the "cold open is sidecar
+  // write-free" contract. We drop the first run and let subsequent runs
+  // (user clicks a tab, sheet ops swap activeSheetId, etc.) mirror normally.
+  //
+  // The stale-id case (sidecar pointing at a renamed/deleted sheet) is
+  // already corrected upstream in the load handler: the in-memory sidecar
+  // gets the resolved first-sheet id before setEditorState fires, so the
+  // first debounced writer run carries the corrected snapshot. Suppressing
+  // this mirror is therefore safe in every cold-open flavour.
   useEffect(() => {
     if (!activeSheet) return;
+    if (hydratingActiveSheetRef.current) {
+      hydratingActiveSheetRef.current = false;
+      return;
+    }
     setEditorState((prev) => {
       const base: ExcelEditorState = prev ?? { version: 1 };
       if (base.activeSheetId === activeSheet.id) return prev;

@@ -583,7 +583,24 @@ async function invokeWorkspaceHttp<T>(
     let message = `Workspace command failed: ${command}`;
     try {
       const body = await response.json();
-      message = body?.detail || body?.error?.message || message;
+      const detail = body?.detail;
+      // FastAPI HTTPException(detail=...) accepts either a string or a
+      // structured dict. The structured form (e.g. `{"code": "document_read_only", ...}`)
+      // must be serialized to a string that downstream matchers like
+      // `isReadOnlyDocumentError` can substring-search, otherwise the
+      // implicit `String(detail)` would render it as "[object Object]".
+      if (typeof detail === "string") {
+        message = detail;
+      } else if (detail && typeof detail === "object") {
+        message = JSON.stringify(detail);
+      } else if (typeof detail === "number" || typeof detail === "boolean") {
+        // FastAPI permits any JSON-serializable detail; preserve scalar values
+        // verbatim so a body like {detail: 42} or {detail: true} doesn't get
+        // silently dropped to the generic command-failed message.
+        message = String(detail);
+      } else if (body?.error?.message) {
+        message = body.error.message;
+      }
     } catch {
       // Keep the generic message when the local sidecar cannot return JSON.
     }
