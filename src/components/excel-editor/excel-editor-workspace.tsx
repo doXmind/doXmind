@@ -833,11 +833,22 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   // sidecar writer ~350ms later, which violates the "cold open is sidecar
   // write-free" contract. We drop the first run and let subsequent runs
   // (user clicks a tab, sheet ops swap activeSheetId, etc.) mirror normally.
+  //
+  // Stale-id correction (Fix-T9): suppression is conditional. If the loaded
+  // sidecar's activeSheetId references a deleted/renamed sheet, activeSheet
+  // resolves to the first-sheet fallback while the on-disk id is still
+  // wrong. Letting the write through corrects the sidecar; suppressing it
+  // leaves the stale id to be re-loaded forever. We only suppress when the
+  // sidecar is missing (nothing to correct) or its activeSheetId already
+  // matches the resolved sheet (the write would be redundant).
   useEffect(() => {
     if (!activeSheet) return;
     if (hydratingActiveSheetRef.current) {
       hydratingActiveSheetRef.current = false;
-      return;
+      const loaded = editorStateRef.current;
+      if (loaded == null || loaded.activeSheetId === activeSheet.id) return;
+      // Stale id on disk — fall through to the mirror write so the next
+      // debounced flush rewrites the sidecar with the resolved sheet id.
     }
     setEditorState((prev) => {
       const base: ExcelEditorState = prev ?? { version: 1 };
