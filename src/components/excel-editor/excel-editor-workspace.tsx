@@ -154,7 +154,6 @@ import { cn, sha256Hex } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { perfAsync, perfMeasure, perfSync } from "@/lib/perf";
 import { isSwitchCacheStillValid } from "@/lib/switch-cache-validation";
-import { freshParsedCacheValue } from "@/lib/parsed-cache-freshness";
 
 // Module-level switch cache. The whole point of this layer is to dodge the
 // 18+ MB JSON response from /api/excel/parse-workbook on a re-open. The
@@ -458,22 +457,21 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
 
     (async () => {
       try {
-        // Cold opens read parsedCache when present, but only use it after the
-        // source workbook hash matches. Excel does not write this cache from
-        // the normal open path; explicit parsed-cache writes remain opt-in.
-        const readDocStateFull = (): Promise<ExcelLoadedDocState | null> =>
-          adapter.readExcelDocState
-            ? adapter.readExcelDocState(handle).then(
-                (state) => state,
-                () => null
-              )
-            : adapter.readExcelEditorState
-              ? adapter.readExcelEditorState(handle).then(
-                  (editor) => ({ editor, parsedCache: null }),
-                  () => null
-                )
-              : Promise.resolve(null);
-
+        // Cold open reads editor state only — never parsedCache. We used to
+        // also pull a parsedCache blob (the full ~18 MB parsed workbook DTO)
+        // hoping to skip openpyxl on the next cold open with a matching hash.
+        // Two things made that a net negative:
+        //   1. The backend's process-local LRU (see services/excel_workbook.py)
+        //      already caches parse output for same-process re-opens.
+        //   2. Reading the 18 MB JSON back over IPC + parsing it on the main
+        //      thread cost ~1 s on every cold open — competing with the very
+        //      thing it tried to save (3.8 s openpyxl).
+        // The trade is: a process-restart-then-reopen of an unmodified file
+        // re-runs openpyxl once. The module-level switch cache plus the
+        // backend LRU together cover every other path, so the regression is
+        // bounded to that one slot. Explicit `writeExcelParsedCache` adapter
+        // writes remain available for callers that want to prime the cache
+        // post-parse — they just don't run on the read side.
         const readEditorOnly = (): Promise<ExcelLoadedDocState | null> =>
           adapter.readExcelEditorState
             ? adapter.readExcelEditorState(handle).then(
@@ -522,7 +520,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
           parsed = switchCached.parsed;
         } else {
           perfSync("doxmind.excel.switchCacheMiss", () => undefined, { fileId: file.id });
-          // Cold path: binary read + sidecar read + stat probe
+          // Cold path: binary read + editor-only sidecar read + stat probe
           // in parallel. The stat is needed to populate the cache key for
           // future hot switches; if it fails (HTTP fallback) we cache with
           // null mtime/size and any future hit will treat that as
@@ -532,7 +530,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
             () =>
               Promise.all([
                 adapter.readBinary!(handle),
-                readDocStateFull(),
+                readEditorOnly(),
                 adapter.statBinary
                   ? adapter.statBinary(handle).catch(() => null)
                   : Promise.resolve(null),
@@ -540,20 +538,18 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
           );
           if (cancelled) return;
 
-          const sourceHash = await sha256Hex(readBytes);
-          if (cancelled) return;
-          const cachedWorkbook = freshParsedCacheValue<ExcelWorkbookDto>(
-            readDocState?.parsedCache,
-            sourceHash
+          parsed = await perfAsync(
+            "doxmind.excel.fetchWorkbook",
+            () => fetchExcelWorkbook(readBytes, file.name, controller.signal),
+            { bytes: readBytes.byteLength }
           );
-          parsed = cachedWorkbook
-            ? cachedWorkbook
-            : await perfAsync(
-                "doxmind.excel.fetchWorkbook",
-                () => fetchExcelWorkbook(readBytes, file.name, controller.signal),
-                { bytes: readBytes.byteLength }
-              );
+          if (cancelled) return;
 
+          // sourceHash is still computed because the switch-cache entry
+          // keys on it for future hot revalidation; we just don't write it
+          // anywhere on disk. Cold open is read-only with respect to the
+          // sidecar — both reads (above) and writes (here) skip parsedCache.
+          const sourceHash = await sha256Hex(readBytes);
           if (cancelled) return;
           bytes = readBytes;
           docState = readDocState;
