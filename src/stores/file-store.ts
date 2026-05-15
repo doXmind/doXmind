@@ -32,33 +32,41 @@ export type SortOption =
   | "created-newest"
   | "created-oldest";
 
-// Helper function to sort files based on sort option
+// Sort the sidebar tree. Every option produces the same three-tier comparator:
+//   1. Folders before files. VS Code / Notion / Finder convention; users
+//      expect containers to cluster.
+//   2. The user-chosen criterion (name / modified / created).
+//   3. id ascending as an absolute tiebreaker. Without this, two entries
+//      with equal sort keys (e.g. files whose updatedAt got the same
+//      timestamp during a batched autosave) fall back to whatever order
+//      Array.sort happens to keep, which lets the sidebar shuffle on
+//      otherwise-irrelevant mutations.
 export function sortFilesByOption(files: FileItem[], sortBy: SortOption): FileItem[] {
-  const sorted = [...files];
+  const criterion = criterionFor(sortBy);
+  return [...files].sort((a, b) => {
+    if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+    const primary = criterion(a, b);
+    if (primary !== 0) return primary;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+}
 
+function criterionFor(sortBy: SortOption): (a: FileItem, b: FileItem) => number {
   switch (sortBy) {
     case "name-asc":
-      return sorted.sort((a, b) => a.name.localeCompare(b.name));
+      return (a, b) => a.name.localeCompare(b.name);
     case "name-desc":
-      return sorted.sort((a, b) => b.name.localeCompare(a.name));
+      return (a, b) => b.name.localeCompare(a.name);
     case "modified-newest":
-      return sorted.sort(
-        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      );
+      return (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     case "modified-oldest":
-      return sorted.sort(
-        (a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
-      );
+      return (a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
     case "created-newest":
-      return sorted.sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
+      return (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     case "created-oldest":
-      return sorted.sort(
-        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      );
+      return (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     default:
-      return sorted;
+      return () => 0;
   }
 }
 
@@ -311,7 +319,11 @@ export const useFileStore = create<FileState>()(
       recents: [],
       isLoading: false,
       isSynced: false,
-      sortBy: "modified-newest" as SortOption,
+      // Default to name-asc so the sidebar order is stable. modified-newest
+      // is intrinsically jittery: every autosave bumps updatedAt and shuffles
+      // the tree, which (combined with the post-mutation re-sort) made the
+      // sidebar appear to reshuffle on every keystroke.
+      sortBy: "name-asc" as SortOption,
       justCreatedFileId: null,
       expandedFolderIds: new Set<string>(),
       selectedFileIds: new Set<string>(),
