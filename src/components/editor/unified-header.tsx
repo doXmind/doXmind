@@ -127,7 +127,13 @@ export function UnifiedHeader() {
         data-borderless={!currentFileName ? "" : undefined}
         className="desktop-chrome-header relative z-20 grid h-11 shrink-0 items-center text-foreground"
         style={{
-          gridTemplateColumns: "var(--files-sidebar-width, 0px) minmax(0, 1fr)",
+          // On macOS Tauri the native traffic-light cluster floats over the
+          // top-left ~78px of the WebView. The first column must never shrink
+          // below that, or the title in col-start-2 slides under the buttons
+          // when the sidebar is collapsed.
+          gridTemplateColumns: isMacTauri
+            ? "max(var(--files-sidebar-width, 0px), 78px) minmax(0, 1fr)"
+            : "var(--files-sidebar-width, 0px) minmax(0, 1fr)",
         }}
       >
         <div
