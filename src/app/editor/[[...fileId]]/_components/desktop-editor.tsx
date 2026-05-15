@@ -16,6 +16,7 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { isMarkdownFile } from "@/lib/document-types";
 import { MINDLINES_WIDTH } from "@/lib/constants";
+import { MarkdownSkeleton } from "@/components/workspace/markdown-skeleton";
 
 export function DesktopEditor() {
   const currentFileId = useFileStore((s) => s.currentFileId);
@@ -189,9 +190,5 @@ export function DesktopEditor() {
 }
 
 function LoadingPlaceholder() {
-  return (
-    <div className="flex flex-1 items-center justify-center">
-      <div className="animate-pulse text-muted-foreground">Loading...</div>
-    </div>
-  );
+  return <MarkdownSkeleton />;
 }

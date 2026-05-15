@@ -34,6 +34,7 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { cn, debounce } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { MarkdownSkeleton } from "@/components/workspace/markdown-skeleton";
 import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
 import { rangeToMarkdown } from "@/lib/markdown-selection";
 import { useDatabaseStore } from "@/stores/database-store";
@@ -592,11 +593,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   );
 
   if (!editor) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Loading editor...</div>
-      </div>
-    );
+    return <MarkdownSkeleton />;
   }
 
   return (
