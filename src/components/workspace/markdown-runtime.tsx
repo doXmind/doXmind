@@ -227,6 +227,10 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       },
       handleDOMEvents: {
         mousedown: (view, event) => {
+          // In read mode the outer ScrollArea handler activates edit mode;
+          // running this fallback would mutate the doc and scroll to bottom
+          // on the activation click.
+          if (!view.editable) return false;
           if (event.button !== 0) return false;
 
           const editorDom = view.dom as HTMLElement;
@@ -567,6 +571,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
 
       if (!isEditing) {
         event.preventDefault();
+        event.stopPropagation();
         activateEdit({
           type: "pointer",
           clientX: event.clientX,
