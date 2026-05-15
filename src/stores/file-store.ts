@@ -1439,16 +1439,20 @@ export const useFileStore = create<FileState>()(
         expandedFolderIds: Array.from(state.expandedFolderIds),
       }),
       merge: (persistedState, currentState) => {
+        // Explicitly pick only the fields we want to rehydrate. A naive
+        // `...persisted` spread would copy any stale keys (e.g. an older
+        // `sortBy: "modified-newest"`) still sitting in localStorage from
+        // a previous schema, silently overriding in-code defaults. TS
+        // type-narrowing on the cast doesn't filter the runtime object.
         const persisted = persistedState as Partial<{
           recents: RecentEntry[];
           expandedFolderIds: string[];
         }>;
         return {
           ...currentState,
-          ...persisted,
           recents: persisted.recents ?? [],
+          expandedFolderIds: new Set(persisted.expandedFolderIds ?? []),
           files: currentState.files,
-          expandedFolderIds: new Set(persisted.expandedFolderIds || []),
         };
       },
     }
