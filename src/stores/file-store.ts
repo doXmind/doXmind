@@ -686,7 +686,7 @@ export const useFileStore = create<FileState>()(
           };
 
           set((state) => ({
-            files: [newFile, ...state.files],
+            files: sortFilesByOption([newFile, ...state.files], state.sortBy),
             currentFileId: newFile.id,
             justCreatedFileId: newFile.id,
             loadedContentIds: new Set([...state.loadedContentIds, newFile.id]),
@@ -707,10 +707,15 @@ export const useFileStore = create<FileState>()(
         const originalFile = get().files.find((f) => f.id === id);
         if (!originalFile) return;
 
-        // Optimistic update
+        // Optimistic update. Renames change the sort key, so re-sort to keep
+        // the sidebar order deterministic; pure content updates leave the
+        // sort key untouched but reusing the helper is cheap.
         set((state) => ({
-          files: state.files.map((file) =>
-            file.id === id ? { ...file, ...updates, updatedAt: new Date().toISOString() } : file
+          files: sortFilesByOption(
+            state.files.map((file) =>
+              file.id === id ? { ...file, ...updates, updatedAt: new Date().toISOString() } : file
+            ),
+            state.sortBy
           ),
           // If content is being updated, mark as loaded
           ...(updates.content !== undefined && {
@@ -736,30 +741,36 @@ export const useFileStore = create<FileState>()(
               name: updates.name ?? originalFile.name,
             });
             set((state) => ({
-              files: state.files.map((item) =>
-                item.id === id
-                  ? {
-                      ...item,
-                      id: content.handle.id,
-                      name: updates.name ?? content.name,
-                      ...readModelFromContent(content),
-                      storageHandle: content.handle,
-                      updatedAt: content.updatedAt,
-                    }
-                  : item
+              files: sortFilesByOption(
+                state.files.map((item) =>
+                  item.id === id
+                    ? {
+                        ...item,
+                        id: content.handle.id,
+                        name: updates.name ?? content.name,
+                        ...readModelFromContent(content),
+                        storageHandle: content.handle,
+                        updatedAt: content.updatedAt,
+                      }
+                    : item
+                ),
+                state.sortBy
               ),
               currentFileId: state.currentFileId === id ? content.handle.id : state.currentFileId,
               loadedContentIds: new Set([...state.loadedContentIds, content.handle.id]),
             }));
           } else if (updatedEntry) {
             set((state) => ({
-              files: state.files.map((item) =>
-                item.id === id
-                  ? {
-                      ...item,
-                      ...fileFromEntry(updatedEntry!, readModelFromFile(item)),
-                    }
-                  : item
+              files: sortFilesByOption(
+                state.files.map((item) =>
+                  item.id === id
+                    ? {
+                        ...item,
+                        ...fileFromEntry(updatedEntry!, readModelFromFile(item)),
+                      }
+                    : item
+                ),
+                state.sortBy
               ),
             }));
           }
@@ -904,7 +915,7 @@ export const useFileStore = create<FileState>()(
             : state.files;
           return {
             transientFile: transient,
-            files: [synthetic, ...filteredFiles],
+            files: sortFilesByOption([synthetic, ...filteredFiles], state.sortBy),
             currentFileId: id,
             justCreatedFileId: id,
             isSynced: true,
@@ -1130,11 +1141,11 @@ export const useFileStore = create<FileState>()(
           // come last, mid-import.
           if (options?.silent) {
             set((state) => ({
-              files: [newFolder, ...state.files],
+              files: sortFilesByOption([newFolder, ...state.files], state.sortBy),
             }));
           } else {
             set((state) => ({
-              files: [newFolder, ...state.files],
+              files: sortFilesByOption([newFolder, ...state.files], state.sortBy),
               justCreatedFileId: newFolder.id,
             }));
           }
@@ -1148,12 +1159,16 @@ export const useFileStore = create<FileState>()(
 
       moveFileToFolder: async (fileId: string, folderId: string | null) => {
         const originalFile = get().files.find((file) => file.id === fileId);
-        // Optimistic update
+        // Optimistic update — re-sort because parentId moves the file into a
+        // different bucket, where its position depends on name within that bucket.
         set((state) => ({
-          files: state.files.map((file) =>
-            file.id === fileId
-              ? { ...file, parentId: folderId, updatedAt: new Date().toISOString() }
-              : file
+          files: sortFilesByOption(
+            state.files.map((file) =>
+              file.id === fileId
+                ? { ...file, parentId: folderId, updatedAt: new Date().toISOString() }
+                : file
+            ),
+            state.sortBy
           ),
         }));
 
@@ -1164,10 +1179,13 @@ export const useFileStore = create<FileState>()(
             parentHandleForId(get().files, folderId)
           );
           set((state) => ({
-            files: state.files.map((file) =>
-              file.id === fileId
-                ? { ...file, ...fileFromEntry(moved, readModelFromFile(file)) }
-                : file
+            files: sortFilesByOption(
+              state.files.map((file) =>
+                file.id === fileId
+                  ? { ...file, ...fileFromEntry(moved, readModelFromFile(file)) }
+                  : file
+              ),
+              state.sortBy
             ),
           }));
         } catch (error) {
@@ -1201,8 +1219,13 @@ export const useFileStore = create<FileState>()(
           if (existing) {
             // Touch updatedAt by replacing the entry in place; the sidecar is
             // intentionally left alone on disk so the next open trips Salvage.
+            // Name doesn't change here, but re-sort to be defensive — under
+            // modified-newest the touched entry should move to the top.
             set((state) => ({
-              files: state.files.map((f) => (f.id === existing.id ? { ...f, content: "" } : f)),
+              files: sortFilesByOption(
+                state.files.map((f) => (f.id === existing.id ? { ...f, content: "" } : f)),
+                state.sortBy
+              ),
             }));
             eventBus.emit("storage:changed");
             return existing.id;
@@ -1210,7 +1233,7 @@ export const useFileStore = create<FileState>()(
         }
         const newFile = fileFromEntry(entry);
         set((state) => ({
-          files: [newFile, ...state.files],
+          files: sortFilesByOption([newFile, ...state.files], state.sortBy),
           justCreatedFileId: newFile.id,
         }));
         eventBus.emit("storage:changed");
@@ -1324,12 +1347,16 @@ export const useFileStore = create<FileState>()(
       },
 
       bulkMoveFiles: async (fileIds, folderId) => {
-        // Optimistic update
+        // Optimistic update — re-sort because parentId changes shuffle the
+        // moved files into a different bucket (see moveFileToFolder).
         set((state) => ({
-          files: state.files.map((file) =>
-            fileIds.includes(file.id)
-              ? { ...file, parentId: folderId, updatedAt: new Date().toISOString() }
-              : file
+          files: sortFilesByOption(
+            state.files.map((file) =>
+              fileIds.includes(file.id)
+                ? { ...file, parentId: folderId, updatedAt: new Date().toISOString() }
+                : file
+            ),
+            state.sortBy
           ),
           selectedFileIds: new Set(), // Clear selection after move
         }));
