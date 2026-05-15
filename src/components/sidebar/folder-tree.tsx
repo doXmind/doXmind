@@ -124,7 +124,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   const rootFiles = useMemo(() => getFilesInFolder(null), [files, getFilesInFolder]);
   const allFolders = useMemo(() => files.filter((f) => f.isFolder), [files]);
 
-  const hasExpandedFolders = viewFolders.some((f) => !collapsedFolderIds.has(f.id));
+  const hasExpandedFolders = allFolders.some((f) => !collapsedFolderIds.has(f.id));
 
   useImperativeHandle(
     ref,
@@ -760,10 +760,12 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     );
   };
 
-  const folderRows = viewFolders.map((folder) => {
+  const renderFolder = (folder: FileItemType) => {
     const folderFiles = getFilesInFolder(folder.id);
+    const childFolders = getFolders(folder.id);
     const isCollapsed = collapsedFolderIds.has(folder.id);
     const isActiveFolder = activeParentId === folder.id;
+    const hasChildren = folderFiles.length > 0 || childFolders.length > 0;
 
     return (
       <div key={folder.id} className="space-y-0.5">
@@ -845,14 +847,17 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
             </div>
           )}
         </div>
-        {!isCollapsed && folderFiles.length > 0 && (
+        {!isCollapsed && hasChildren && (
           <div className="ml-6 space-y-0.5 pl-1.5">
+            {childFolders.map((child) => renderFolder(child))}
             {folderFiles.map((file) => renderFileWithSubPages(file))}
           </div>
         )}
       </div>
     );
-  });
+  };
+
+  const folderRows = viewFolders.map((folder) => renderFolder(folder));
 
   return (
     <div
