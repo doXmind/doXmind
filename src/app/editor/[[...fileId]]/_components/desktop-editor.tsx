@@ -43,7 +43,15 @@ export function DesktopEditor() {
 
   const editor = useEditorRefStore((s) => s.editor);
   const { headings, activeId, navigateTo } = useHeadings(editor);
-  const hasHeadings = !!currentFile && isMarkdownFile(currentFile) && headings.length > 0;
+  const hasLiveHeadings = !!currentFile && isMarkdownFile(currentFile) && headings.length > 0;
+  // BrowsingRuntime renders its own collapsed outline rail in read mode using
+  // the file's cached outline, so the content gutter must be reserved when
+  // *either* surface will render a rail. Without this fallback the editor's
+  // `--editor-outline-gutter` jumps from 0 (read) to 128 (edit) when the live
+  // TipTap editor mounts, visibly shifting the page-frame on every toggle.
+  const hasReservedOutline =
+    hasLiveHeadings ||
+    (!!currentFile && isMarkdownFile(currentFile) && (currentFile.outline?.length ?? 0) >= 2);
 
   // Do not animate grid-template-columns here. Even optimized grid column
   // animation forces the heavy TipTap editor to reflow on every frame in the
@@ -60,7 +68,8 @@ export function DesktopEditor() {
   const filesHandleColPx = 0;
   // Outline lives in the collapsed rail and expands on hover.
   const outlineRailWidth = MINDLINES_WIDTH.COLLAPSED;
-  const outlineContentGutterPx = !isFocusMode && hasHeadings ? MINDLINES_WIDTH.CONTENT_GUTTER : 0;
+  const outlineContentGutterPx =
+    !isFocusMode && hasReservedOutline ? MINDLINES_WIDTH.CONTENT_GUTTER : 0;
 
   const shellStyle = {
     "--files-sidebar-width":
@@ -118,7 +127,7 @@ export function DesktopEditor() {
               {/* Outline rail — collapsed by default, expands into a floating
                 outline popover on hover. Keep it close to the scroll edge so
                 the popover reads as part of the document navigation chrome. */}
-              {!isFocusMode && hasHeadings && (
+              {!isFocusMode && hasLiveHeadings && (
                 <div
                   className="pointer-events-none absolute bottom-[14vh] right-2 top-[18vh] z-30 overflow-visible transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] md:right-2"
                   style={{ width: outlineRailWidth }}
