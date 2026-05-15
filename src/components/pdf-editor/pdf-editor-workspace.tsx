@@ -125,6 +125,18 @@ interface PdfTextBox {
    * export so the original glyphs are erased at their real location.
    */
   originalBbox?: { x: number; y: number; width: number; height: number };
+  /**
+   * Parse-time styling — paragraph-mode boxes inherit color/bold/italic and
+   * a styleRanges fallback from PyMuPDF's dominant span. Without these
+   * mirrors, `isTextBoxEdited` would treat every freshly-loaded paragraph as
+   * "edited" (since `color` is always set by parse), causing the white cover
+   * to render over every paragraph on initial open and whiteout any vector
+   * primitives (e.g. divider lines) that sit inside the bbox.
+   */
+  originalColor?: string;
+  originalBold?: boolean;
+  originalItalic?: boolean;
+  originalStyleRanges?: PdfTextStyleRange[];
   /** Original PyMuPDF line/span geometry; required for redact-and-rewrite export. */
   originalLines?: import("@/lib/pdf/parse-blocks").PdfBlocksLine[];
 }
@@ -545,13 +557,17 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
             const base = editedById.get(id);
             if (!base) continue;
             // Persisted edits override current bbox (= where the user
-            // last left it) but originalBbox / originalLines stay at the
-            // parse-time values from PyMuPDF.
+            // last left it) but originalBbox / originalLines / parse-time
+            // style mirrors all stay at the values from PyMuPDF.
             editedById.set(id, {
               ...base,
               ...edit,
               originalBbox: base.originalBbox,
               originalLines: base.originalLines,
+              originalColor: base.originalColor,
+              originalBold: base.originalBold,
+              originalItalic: base.originalItalic,
+              originalStyleRanges: base.originalStyleRanges,
             });
           }
           const migrated = migrateLegacyTextEdits(
@@ -2929,6 +2945,10 @@ function paragraphToTextBox(para: PdfParagraph): PdfTextBox {
     // Always sourced from the parse-time bbox (preserved through migration),
     // never the live `para.bbox` which may have been moved by the user.
     originalBbox: { ...para.originalBbox },
+    originalColor: para.originalColor,
+    originalBold: para.originalBold,
+    originalItalic: para.originalItalic,
+    originalStyleRanges: para.originalStyleRanges,
   };
 }
 
@@ -3109,17 +3129,59 @@ function isTextBoxEdited(box: PdfTextBox): boolean {
       Math.abs(original.width - box.width) > 0.5 ||
       Math.abs(original.height - box.height) > 0.5);
 
+  // Paragraph-mode boxes carry parse-time color/bold/italic/styleRanges from
+  // PyMuPDF. Compare against the original mirrors so a freshly-loaded
+  // paragraph (where current === original) isn't flagged as edited. Single-
+  // run boxes have no mirrors, so any color/bold/italic on them was set by
+  // the user.
+  const styleChanged =
+    box.originalColor !== undefined ||
+    box.originalBold !== undefined ||
+    box.originalItalic !== undefined ||
+    box.originalStyleRanges !== undefined
+      ? box.color !== box.originalColor ||
+        Boolean(box.bold) !== Boolean(box.originalBold) ||
+        Boolean(box.italic) !== Boolean(box.originalItalic) ||
+        !styleRangesEqual(box.styleRanges, box.originalStyleRanges)
+      : Boolean(box.color) ||
+        Boolean(box.bold) ||
+        Boolean(box.italic) ||
+        Boolean(box.styleRanges?.length);
+
   return (
     box.text !== box.originalText ||
     box.fontSize !== (box.originalFontSize ?? box.fontSize) ||
     moved ||
-    Boolean(box.color) ||
-    Boolean(box.bold) ||
-    Boolean(box.italic) ||
-    Boolean(box.styleRanges?.length) ||
+    styleChanged ||
     Boolean(box.deleted) ||
     Boolean(box.textAlign && box.textAlign !== "left")
   );
+}
+
+function styleRangesEqual(
+  a: PdfTextStyleRange[] | undefined,
+  b: PdfTextStyleRange[] | undefined
+): boolean {
+  if (a === b) return true;
+  const aLen = a?.length ?? 0;
+  const bLen = b?.length ?? 0;
+  if (aLen !== bLen) return false;
+  if (aLen === 0) return true;
+  for (let i = 0; i < aLen; i++) {
+    const ra = a![i];
+    const rb = b![i];
+    if (
+      ra.start !== rb.start ||
+      ra.end !== rb.end ||
+      ra.color !== rb.color ||
+      ra.highlightColor !== rb.highlightColor ||
+      Boolean(ra.bold) !== Boolean(rb.bold) ||
+      Boolean(ra.italic) !== Boolean(rb.italic)
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function normalizeStyleRanges(

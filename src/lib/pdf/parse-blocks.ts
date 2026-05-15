@@ -70,6 +70,15 @@ export interface PdfParagraph {
   textAlign?: "left" | "center" | "right";
   styleRanges?: import("@/lib/storage/types").PdfTextStyleRange[];
   deleted?: boolean;
+  /**
+   * Parse-time styling — mirrors `color`/`bold`/`italic`/`styleRanges` at the
+   * moment PyMuPDF emitted the paragraph. Lets `isTextBoxEdited` distinguish
+   * "user changed the style" from "paragraph carries its original style".
+   */
+  originalColor?: string;
+  originalBold?: boolean;
+  originalItalic?: boolean;
+  originalStyleRanges?: import("@/lib/storage/types").PdfTextStyleRange[];
   /** Preserved span/line geometry from PyMuPDF — needed for accurate export. */
   originalLines: PdfBlocksLine[];
 }
@@ -161,6 +170,10 @@ export function paragraphFromBlock(block: PdfBlock, pageIndex: number): PdfParag
   );
 
   const text = parts.join("");
+  const color = dominant?.color;
+  const bold = dominant?.bold || undefined;
+  const italic = dominant?.italic || undefined;
+  const styleRanges = ranges.length ? ranges : undefined;
   return {
     id: block.id,
     pageIndex,
@@ -170,10 +183,14 @@ export function paragraphFromBlock(block: PdfBlock, pageIndex: number): PdfParag
     originalText: text,
     fontSize: dominant?.size ?? 12,
     fontFamily: dominant?.font || undefined,
-    color: dominant?.color,
-    bold: dominant?.bold || undefined,
-    italic: dominant?.italic || undefined,
-    styleRanges: ranges.length ? ranges : undefined,
+    color,
+    bold,
+    italic,
+    styleRanges,
+    originalColor: color,
+    originalBold: bold,
+    originalItalic: italic,
+    originalStyleRanges: styleRanges,
     originalLines: block.lines,
   };
 }
