@@ -1742,9 +1742,16 @@ function PdfExistingText({
   // nodes the React fiber tree still tracks, so the next reconciliation
   // calls removeChild on a node that's no longer a child and crashes.
   // Instead we own the inner DOM imperatively below.
+  // When the paragraph isn't visible (unedited and not active), drop the
+  // styleRanges so every segment falls back to baseStyle.color =
+  // "transparent". Without this, `buildStyledRunsHtml` emits a per-segment
+  // inline `style="color:#X"` for each styled run that wins over the
+  // parent's `text-transparent` class, so the editor's contenteditable
+  // text renders on top of pdf.js's underlying text layer and the user
+  // sees every paragraph doubled.
   const editableSnapshot = {
     text: box.text,
-    ranges: box.styleRanges,
+    ranges: visible ? box.styleRanges : undefined,
     deleted: Boolean(box.deleted),
     originalText: box.originalText,
     baseStyle: {
