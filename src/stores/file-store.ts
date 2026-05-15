@@ -1429,15 +1429,18 @@ export const useFileStore = create<FileState>()(
       // only. Persisting them would race across windows (same origin = shared
       // localStorage). Per-window state arrives via URL params (?folder=... /
       // ?file=...) at boot. Recents + UI prefs are global and shared.
+      // sortBy is intentionally NOT persisted. There is no UI that mutates
+      // it, so persisting only freezes whatever default was shipped in the
+      // first session a user ran — making subsequent default changes
+      // invisible without a manual localStorage clear. If a sort menu is
+      // added later, re-include sortBy in partialize.
       partialize: (state) => ({
         recents: state.recents,
-        sortBy: state.sortBy,
         expandedFolderIds: Array.from(state.expandedFolderIds),
       }),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<{
           recents: RecentEntry[];
-          sortBy: SortOption;
           expandedFolderIds: string[];
         }>;
         return {
