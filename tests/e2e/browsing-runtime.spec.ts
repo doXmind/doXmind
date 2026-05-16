@@ -14,36 +14,33 @@ test.beforeAll(async () => {
   await ensureSmokeFixtures();
 });
 
-test("Markdown browsing runtime promotes to the full editor only after real edit intent", async ({
-  page,
-}) => {
+test("Markdown opens in read mode and promotes to editable on click", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveTitle(/doXmind/i);
 
   await openLooseFile(page, smokeMarkdownPath);
 
-  const browsingRuntime = page.getByTestId("browsing-runtime");
-  const browsingDocument = page.getByTestId("browsing-document");
-  await expect(browsingRuntime).toBeVisible();
+  // Single-renderer model: MarkdownRuntime stays mounted across read↔edit;
+  // only `contenteditable` flips. There is no separate browsing-runtime
+  // surface to swap in and out.
+  const markdownRuntime = page.getByTestId("markdown-runtime");
+  await expect(markdownRuntime).toBeVisible();
   await expect(page.locator('div.ProseMirror[contenteditable="true"]')).toHaveCount(0);
+  await expect(page.locator('div.ProseMirror[contenteditable="false"]')).toBeVisible();
 
   await expect(page.getByRole("heading", { name: "doXmind Playwright Smoke" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Deep Section" })).toBeAttached();
   await expect(page.getByRole("link", { name: "Example link" })).toBeVisible();
-  await expect(browsingDocument.getByText("PDF: smoke.pdf")).toBeVisible();
-  await expect(browsingDocument.getByText("Excel: smoke.xlsx")).toBeVisible();
-  await expect(page.locator('[data-browsing-heavy-block="pdf-block"]')).toHaveCount(1);
-  await expect(page.locator('[data-browsing-heavy-block="excel-block"]')).toHaveCount(1);
-  await expect(page.getByTestId("pdf-runtime")).toHaveCount(0);
-  await expect(page.getByTestId("excel-runtime")).toHaveCount(0);
 
+  // Search highlights use the TipTap search extension's `.search-result`
+  // class (src/extensions/search/index.ts).
   await page.getByRole("button", { name: /Find/ }).click();
   await page.getByLabel("Search text").fill("needle");
-  await expect(page.locator('[data-browsing-search-result="true"]')).toHaveCount(3);
-  await expect(browsingRuntime).toBeVisible();
+  await expect(page.locator(".search-result")).toHaveCount(3);
+  // Still in read mode while searching.
   await expect(page.locator('div.ProseMirror[contenteditable="true"]')).toHaveCount(0);
 
-  const scroll = page.locator("[data-browsing-scroll]");
+  const scroll = page.locator("[data-editor-scroll]");
   await scroll.evaluate((el) => {
     el.scrollTop = 0;
   });
@@ -63,38 +60,38 @@ test("Markdown browsing runtime promotes to the full editor only after real edit
   });
   const beforeEditScroll = await scroll.evaluate((el) => el.scrollTop);
   const scrollBox = await scroll.boundingBox();
-  if (!scrollBox) throw new Error("Browsing scroll area was not visible");
+  if (!scrollBox) throw new Error("Editor scroll area was not visible");
   await page.mouse.click(scrollBox.x + scrollBox.width / 2, scrollBox.y + scrollBox.height / 2);
 
+  // Promotion: same runtime instance, contenteditable flips false → true.
   await expect(page.locator('div.ProseMirror[contenteditable="true"]')).toBeVisible();
-  await expect(page.getByTestId("browsing-runtime")).toHaveCount(0);
+  await expect(markdownRuntime).toBeVisible();
   await expect
-    .poll(() => page.locator("[data-editor-scroll]").evaluate((el) => el.scrollTop))
+    .poll(() => scroll.evaluate((el) => el.scrollTop))
     .toBeGreaterThan(beforeEditScroll - 80);
 });
 
-test("keyboard edit intent also promotes Markdown browsing to the full editor", async ({
-  page,
-}) => {
+test("keyboard edit intent promotes Markdown read mode to editable", async ({ page }) => {
   await openLooseFile(page, smokeMarkdownPath);
 
-  await expect(page.getByTestId("browsing-runtime")).toBeVisible();
+  const markdownRuntime = page.getByTestId("markdown-runtime");
+  await expect(markdownRuntime).toBeVisible();
   await expect(page.locator('div.ProseMirror[contenteditable="true"]')).toHaveCount(0);
 
   await page.keyboard.type("x");
 
   await expect(page.locator('div.ProseMirror[contenteditable="true"]')).toBeVisible();
-  await expect(page.getByTestId("browsing-runtime")).toHaveCount(0);
+  await expect(markdownRuntime).toBeVisible();
 });
 
-test("PDF and Excel loose files keep their dedicated workspace runtimes", async ({ page }) => {
+test("PDF and Excel loose files use their dedicated runtimes", async ({ page }) => {
   await openLooseFile(page, smokePdfPath);
   await expect(page.getByTestId("pdf-runtime")).toBeVisible();
-  await expect(page.getByTestId("browsing-runtime")).toHaveCount(0);
+  await expect(page.getByTestId("markdown-runtime")).toHaveCount(0);
 
   await openLooseFile(page, smokeExcelPath);
   await expect(page.getByTestId("excel-runtime")).toBeVisible();
-  await expect(page.getByTestId("browsing-runtime")).toHaveCount(0);
+  await expect(page.getByTestId("markdown-runtime")).toHaveCount(0);
 });
 
 async function openLooseFile(page: Page, absolutePath: string) {
@@ -128,16 +125,12 @@ async function ensureSmokeMarkdown() {
       "",
       "```mermaid",
       "graph TD",
-      "  A[Browsing Runtime] --> B[Full Editor Runtime]",
+      "  A[Read Mode] --> B[Edit Mode]",
       "```",
       "",
       "$$",
       "E = mc^2",
       "$$",
-      "",
-      '<div data-type="pdf-block" data-id="smoke-pdf" data-src="smoke.pdf" class="custom-block-external-reference">PDF: smoke.pdf</div>',
-      "",
-      '<div data-type="excel-block" data-id="smoke-excel" data-src="smoke.xlsx" class="custom-block-external-reference">Excel: smoke.xlsx</div>',
       "",
       "## Middle Section",
       "",
