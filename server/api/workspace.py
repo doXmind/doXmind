@@ -323,7 +323,15 @@ def workspace_scan(root: str) -> dict[str, Any]:
         return cached[1]
 
     documents: list[dict[str, Any]] = []
-    for path in sorted(workspace.rglob("*")):
+    # Sort by lowercased file name so listing order is deterministic across
+    # scans (rglob returns filesystem order, which isn't stable on macOS/APFS)
+    # and matches the frontend's name-asc sort. Sorting by full path alone
+    # would make a file's position depend on its parent folder name; the
+    # `as_posix()` tiebreaker is only there to give two files with the same
+    # lowercased basename (e.g. `Notes/README.md` vs `Specs/README.md`) a
+    # deterministic order — otherwise Timsort's stability would fall back
+    # to `rglob`'s unstable filesystem order, defeating this whole sort.
+    for path in sorted(workspace.rglob("*"), key=lambda p: (p.name.lower(), p.as_posix())):
         if any(part in IGNORED_SCAN_DIRS for part in path.relative_to(workspace).parts[:-1]):
             continue
         if (

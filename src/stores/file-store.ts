@@ -32,33 +32,41 @@ export type SortOption =
   | "created-newest"
   | "created-oldest";
 
-// Helper function to sort files based on sort option
+// Sort the sidebar tree. Every option produces the same three-tier comparator:
+//   1. Folders before files. VS Code / Notion / Finder convention; users
+//      expect containers to cluster.
+//   2. The user-chosen criterion (name / modified / created).
+//   3. id ascending as an absolute tiebreaker. Without this, two entries
+//      with equal sort keys (e.g. files whose updatedAt got the same
+//      timestamp during a batched autosave) fall back to whatever order
+//      Array.sort happens to keep, which lets the sidebar shuffle on
+//      otherwise-irrelevant mutations.
 export function sortFilesByOption(files: FileItem[], sortBy: SortOption): FileItem[] {
-  const sorted = [...files];
+  const criterion = criterionFor(sortBy);
+  return [...files].sort((a, b) => {
+    if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+    const primary = criterion(a, b);
+    if (primary !== 0) return primary;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+}
 
+function criterionFor(sortBy: SortOption): (a: FileItem, b: FileItem) => number {
   switch (sortBy) {
     case "name-asc":
-      return sorted.sort((a, b) => a.name.localeCompare(b.name));
+      return (a, b) => a.name.localeCompare(b.name);
     case "name-desc":
-      return sorted.sort((a, b) => b.name.localeCompare(a.name));
+      return (a, b) => b.name.localeCompare(a.name);
     case "modified-newest":
-      return sorted.sort(
-        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      );
+      return (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     case "modified-oldest":
-      return sorted.sort(
-        (a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
-      );
+      return (a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
     case "created-newest":
-      return sorted.sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
+      return (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     case "created-oldest":
-      return sorted.sort(
-        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      );
+      return (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     default:
-      return sorted;
+      return () => 0;
   }
 }
 
@@ -311,7 +319,11 @@ export const useFileStore = create<FileState>()(
       recents: [],
       isLoading: false,
       isSynced: false,
-      sortBy: "modified-newest" as SortOption,
+      // Default to name-asc so the sidebar order is stable. modified-newest
+      // is intrinsically jittery: every autosave bumps updatedAt and shuffles
+      // the tree, which (combined with the post-mutation re-sort) made the
+      // sidebar appear to reshuffle on every keystroke.
+      sortBy: "name-asc" as SortOption,
       justCreatedFileId: null,
       expandedFolderIds: new Set<string>(),
       selectedFileIds: new Set<string>(),
@@ -686,7 +698,7 @@ export const useFileStore = create<FileState>()(
           };
 
           set((state) => ({
-            files: [newFile, ...state.files],
+            files: sortFilesByOption([newFile, ...state.files], state.sortBy),
             currentFileId: newFile.id,
             justCreatedFileId: newFile.id,
             loadedContentIds: new Set([...state.loadedContentIds, newFile.id]),
@@ -707,10 +719,15 @@ export const useFileStore = create<FileState>()(
         const originalFile = get().files.find((f) => f.id === id);
         if (!originalFile) return;
 
-        // Optimistic update
+        // Optimistic update. Renames change the sort key, so re-sort to keep
+        // the sidebar order deterministic; pure content updates leave the
+        // sort key untouched but reusing the helper is cheap.
         set((state) => ({
-          files: state.files.map((file) =>
-            file.id === id ? { ...file, ...updates, updatedAt: new Date().toISOString() } : file
+          files: sortFilesByOption(
+            state.files.map((file) =>
+              file.id === id ? { ...file, ...updates, updatedAt: new Date().toISOString() } : file
+            ),
+            state.sortBy
           ),
           // If content is being updated, mark as loaded
           ...(updates.content !== undefined && {
@@ -736,30 +753,36 @@ export const useFileStore = create<FileState>()(
               name: updates.name ?? originalFile.name,
             });
             set((state) => ({
-              files: state.files.map((item) =>
-                item.id === id
-                  ? {
-                      ...item,
-                      id: content.handle.id,
-                      name: updates.name ?? content.name,
-                      ...readModelFromContent(content),
-                      storageHandle: content.handle,
-                      updatedAt: content.updatedAt,
-                    }
-                  : item
+              files: sortFilesByOption(
+                state.files.map((item) =>
+                  item.id === id
+                    ? {
+                        ...item,
+                        id: content.handle.id,
+                        name: updates.name ?? content.name,
+                        ...readModelFromContent(content),
+                        storageHandle: content.handle,
+                        updatedAt: content.updatedAt,
+                      }
+                    : item
+                ),
+                state.sortBy
               ),
               currentFileId: state.currentFileId === id ? content.handle.id : state.currentFileId,
               loadedContentIds: new Set([...state.loadedContentIds, content.handle.id]),
             }));
           } else if (updatedEntry) {
             set((state) => ({
-              files: state.files.map((item) =>
-                item.id === id
-                  ? {
-                      ...item,
-                      ...fileFromEntry(updatedEntry!, readModelFromFile(item)),
-                    }
-                  : item
+              files: sortFilesByOption(
+                state.files.map((item) =>
+                  item.id === id
+                    ? {
+                        ...item,
+                        ...fileFromEntry(updatedEntry!, readModelFromFile(item)),
+                      }
+                    : item
+                ),
+                state.sortBy
               ),
             }));
           }
@@ -904,7 +927,7 @@ export const useFileStore = create<FileState>()(
             : state.files;
           return {
             transientFile: transient,
-            files: [synthetic, ...filteredFiles],
+            files: sortFilesByOption([synthetic, ...filteredFiles], state.sortBy),
             currentFileId: id,
             justCreatedFileId: id,
             isSynced: true,
@@ -1130,11 +1153,11 @@ export const useFileStore = create<FileState>()(
           // come last, mid-import.
           if (options?.silent) {
             set((state) => ({
-              files: [newFolder, ...state.files],
+              files: sortFilesByOption([newFolder, ...state.files], state.sortBy),
             }));
           } else {
             set((state) => ({
-              files: [newFolder, ...state.files],
+              files: sortFilesByOption([newFolder, ...state.files], state.sortBy),
               justCreatedFileId: newFolder.id,
             }));
           }
@@ -1148,12 +1171,16 @@ export const useFileStore = create<FileState>()(
 
       moveFileToFolder: async (fileId: string, folderId: string | null) => {
         const originalFile = get().files.find((file) => file.id === fileId);
-        // Optimistic update
+        // Optimistic update — re-sort because parentId moves the file into a
+        // different bucket, where its position depends on name within that bucket.
         set((state) => ({
-          files: state.files.map((file) =>
-            file.id === fileId
-              ? { ...file, parentId: folderId, updatedAt: new Date().toISOString() }
-              : file
+          files: sortFilesByOption(
+            state.files.map((file) =>
+              file.id === fileId
+                ? { ...file, parentId: folderId, updatedAt: new Date().toISOString() }
+                : file
+            ),
+            state.sortBy
           ),
         }));
 
@@ -1164,10 +1191,13 @@ export const useFileStore = create<FileState>()(
             parentHandleForId(get().files, folderId)
           );
           set((state) => ({
-            files: state.files.map((file) =>
-              file.id === fileId
-                ? { ...file, ...fileFromEntry(moved, readModelFromFile(file)) }
-                : file
+            files: sortFilesByOption(
+              state.files.map((file) =>
+                file.id === fileId
+                  ? { ...file, ...fileFromEntry(moved, readModelFromFile(file)) }
+                  : file
+              ),
+              state.sortBy
             ),
           }));
         } catch (error) {
@@ -1201,8 +1231,13 @@ export const useFileStore = create<FileState>()(
           if (existing) {
             // Touch updatedAt by replacing the entry in place; the sidecar is
             // intentionally left alone on disk so the next open trips Salvage.
+            // Name doesn't change here, but re-sort to be defensive — under
+            // modified-newest the touched entry should move to the top.
             set((state) => ({
-              files: state.files.map((f) => (f.id === existing.id ? { ...f, content: "" } : f)),
+              files: sortFilesByOption(
+                state.files.map((f) => (f.id === existing.id ? { ...f, content: "" } : f)),
+                state.sortBy
+              ),
             }));
             eventBus.emit("storage:changed");
             return existing.id;
@@ -1210,7 +1245,7 @@ export const useFileStore = create<FileState>()(
         }
         const newFile = fileFromEntry(entry);
         set((state) => ({
-          files: [newFile, ...state.files],
+          files: sortFilesByOption([newFile, ...state.files], state.sortBy),
           justCreatedFileId: newFile.id,
         }));
         eventBus.emit("storage:changed");
@@ -1324,12 +1359,16 @@ export const useFileStore = create<FileState>()(
       },
 
       bulkMoveFiles: async (fileIds, folderId) => {
-        // Optimistic update
+        // Optimistic update — re-sort because parentId changes shuffle the
+        // moved files into a different bucket (see moveFileToFolder).
         set((state) => ({
-          files: state.files.map((file) =>
-            fileIds.includes(file.id)
-              ? { ...file, parentId: folderId, updatedAt: new Date().toISOString() }
-              : file
+          files: sortFilesByOption(
+            state.files.map((file) =>
+              fileIds.includes(file.id)
+                ? { ...file, parentId: folderId, updatedAt: new Date().toISOString() }
+                : file
+            ),
+            state.sortBy
           ),
           selectedFileIds: new Set(), // Clear selection after move
         }));
@@ -1390,23 +1429,30 @@ export const useFileStore = create<FileState>()(
       // only. Persisting them would race across windows (same origin = shared
       // localStorage). Per-window state arrives via URL params (?folder=... /
       // ?file=...) at boot. Recents + UI prefs are global and shared.
+      // sortBy is intentionally NOT persisted. There is no UI that mutates
+      // it, so persisting only freezes whatever default was shipped in the
+      // first session a user ran — making subsequent default changes
+      // invisible without a manual localStorage clear. If a sort menu is
+      // added later, re-include sortBy in partialize.
       partialize: (state) => ({
         recents: state.recents,
-        sortBy: state.sortBy,
         expandedFolderIds: Array.from(state.expandedFolderIds),
       }),
       merge: (persistedState, currentState) => {
+        // Explicitly pick only the fields we want to rehydrate. A naive
+        // `...persisted` spread would copy any stale keys (e.g. an older
+        // `sortBy: "modified-newest"`) still sitting in localStorage from
+        // a previous schema, silently overriding in-code defaults. TS
+        // type-narrowing on the cast doesn't filter the runtime object.
         const persisted = persistedState as Partial<{
           recents: RecentEntry[];
-          sortBy: SortOption;
           expandedFolderIds: string[];
         }>;
         return {
           ...currentState,
-          ...persisted,
           recents: persisted.recents ?? [],
+          expandedFolderIds: new Set(persisted.expandedFolderIds ?? []),
           files: currentState.files,
-          expandedFolderIds: new Set(persisted.expandedFolderIds || []),
         };
       },
     }

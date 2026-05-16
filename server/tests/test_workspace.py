@@ -253,6 +253,51 @@ def test_workspace_folder_and_search(sync_client, tmp_path):
     assert json.loads((tmp_path / ".doxmind" / "index.json").read_text()) == index
 
 
+def test_workspace_scan_order_is_deterministic_across_calls(sync_client, tmp_path):
+    """scan must return the same document order on repeated calls even when
+    files live in different subfolders. rglob's filesystem order isn't stable
+    on macOS/APFS, and sorting by full path would let parent-folder naming
+    shift a file's position; sort key is `name.lower()` to keep the listing
+    independent of where each file lives."""
+    root = str(tmp_path)
+    # Mix of subfolders + names whose path-order and name-order diverge:
+    # sorting by full path would put "Alpha/Charlie.md" before "Bravo/Alpha.md"
+    # because the parent folder name dominates; sorting by file name puts
+    # "Alpha.md" first regardless of parent.
+    layout = [
+        ("Alpha/Charlie.md", "doc-charlie"),
+        ("Bravo/Alpha.md", "doc-alpha"),
+        ("Charlie/Bravo.md", "doc-bravo"),
+        ("Delta/echo.md", "doc-echo"),
+        ("delta.md", "doc-delta-root"),
+    ]
+    for rel_path, doc_id in layout:
+        invoke(
+            sync_client,
+            "doc_create",
+            {
+                "root": root,
+                "payload": {
+                    "path": rel_path,
+                    "html": "<p>x</p>",
+                    "markdown": "x",
+                    "meta": {"id": doc_id},
+                },
+            },
+        )
+
+    first = invoke(sync_client, "workspace_scan", {"root": root})
+    # The TTL cache would mask determinism issues by returning the same
+    # cached dict on the second call; invalidate it so the second scan
+    # walks the filesystem again.
+    workspace_module._invalidate_scan_cache(root)
+    second = invoke(sync_client, "workspace_scan", {"root": root})
+
+    assert json.dumps(first) == json.dumps(second)
+    names = [doc["name"] for doc in first["documents"]]
+    assert names == sorted(names, key=str.lower)
+
+
 def test_doc_create_pdf_writes_binary_and_appears_in_scan(sync_client, tmp_path):
     root = str(tmp_path)
     # Tiny but valid PDF header — the create handler enforces the magic

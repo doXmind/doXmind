@@ -16,11 +16,13 @@ export function CodeBlockNodeView({ node, updateAttributes }: NodeViewProps) {
   const [copied, setCopied] = useState(false);
   const [lineCount, setLineCount] = useState(1);
 
-  // Calculate line count from content
+  // Calculate line count from content. Trailing newlines (e.g. left over
+  // from a markdown round-trip on a doc saved before the parseMarkdown
+  // trim landed) must not extend the gutter past the last visible row.
   useEffect(() => {
-    const text = node.textContent || "";
-    const lines = text.split("\n").length;
-    setLineCount(Math.max(1, lines));
+    const text = (node.textContent || "").replace(/\n+$/, "");
+    const lines = text.length === 0 ? 1 : text.split("\n").length;
+    setLineCount(lines);
   }, [node.textContent]);
 
   // Copy code to clipboard

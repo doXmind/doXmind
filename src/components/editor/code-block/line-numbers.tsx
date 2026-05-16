@@ -26,7 +26,11 @@ export function LineNumbers({ count, className }: LineNumbersProps) {
       aria-hidden="true"
     >
       {Array.from({ length: count }, (_, i) => (
-        <div key={i + 1} className="h-[1.625rem] leading-relaxed">
+        // line-height matches the content's absolute `1.625rem` rule in
+        // code-block.css. Using Tailwind's `leading-relaxed` (unitless
+        // 1.625 × 14px = 22.75px) here while content is 26px caused the
+        // gutter and content baselines to drift apart by ~2.6px per row.
+        <div key={i + 1} className="h-[1.625rem] leading-[1.625rem]">
           {i + 1}
         </div>
       ))}

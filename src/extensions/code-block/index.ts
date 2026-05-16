@@ -27,10 +27,16 @@ export const CustomCodeBlock = CodeBlockLowlight.extend<CustomCodeBlockOptions>(
     if (token.raw?.startsWith("```") === false && token.codeBlockStyle !== "indented") {
       return [];
     }
+    // Strip trailing newlines from the code text. Markdown round-trips
+    // (renderMarkdown emits `\n` between content and the closing fence,
+    // which marked then reads back as a literal trailing newline) would
+    // otherwise leave the block visibly padded with blank rows below the
+    // real code.
+    const text = (token.text ?? "").replace(/\n+$/, "");
     return helpers.createNode(
       "codeBlock",
       { language: token.lang || null },
-      token.text ? [helpers.createTextNode(token.text)] : []
+      text ? [helpers.createTextNode(text)] : []
     );
   },
 
