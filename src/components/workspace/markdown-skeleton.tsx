@@ -1,50 +1,155 @@
 "use client";
 
+import type { DocumentOutlineItem } from "@/lib/storage/types";
+
 /**
- * Placeholder shown while TipTap is mounting (MarkdownRuntime) or while
- * the file's content is in flight (desktop-editor). Visually mirrors the
- * real editor's box model — same outer flex column, same scroll surface,
- * same `editor-page-frame` padding — so the eventual content slides in
- * without a layout shift.
+ * Placeholder shown while TipTap is mounting (markdown-runtime) or while
+ * the file's content is in flight (desktop-editor). Notion-style: when the
+ * caller hands us a file's cached metadata, we render the real title and
+ * outline-derived heading shapes so the user gets immediate "this is the
+ * doc I clicked" confirmation rather than a generic loader.
  *
- * The shaded bars use the same `bg-muted` palette as the editor chrome
- * so the skeleton reads as a quiet placeholder, not an attention-grabbing
- * loader.
+ * Visually mirrors the real editor's box model — same outer flex column,
+ * same scroll surface, same `editor-page-frame` padding — so the eventual
+ * content slides in without a layout shift.
  */
-export function MarkdownSkeleton() {
+export interface SkeletonFile {
+  name?: string;
+  outline?: ReadonlyArray<DocumentOutlineItem>;
+}
+
+interface MarkdownSkeletonProps {
+  file?: SkeletonFile;
+}
+
+export function MarkdownSkeleton({ file }: MarkdownSkeletonProps = {}) {
   return (
-    <div className="flex h-full flex-col" data-testid="markdown-skeleton" aria-busy="true">
+    <div
+      className="animate-in fade-in-0 flex h-full flex-col duration-200"
+      data-testid="markdown-skeleton"
+      aria-busy="true"
+    >
       <div className="flex min-h-0 min-w-0 flex-1 overflow-x-hidden">
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <div className="min-h-0 flex-1 overflow-hidden">
             <div className="editor-page-frame relative">
-              {/* Title row — same collapsed h-7 as DocumentTitle without an icon */}
-              <div className="h-7" aria-hidden="true" />
-              {/* H1-shaped bar */}
-              <div className="mt-1 h-9 w-2/3 animate-pulse rounded-md bg-muted/40" />
-              {/* Paragraph 1 */}
-              <div className="mt-6 space-y-2.5">
-                <div className="h-4 w-full animate-pulse rounded bg-muted/30" />
-                <div className="h-4 w-[96%] animate-pulse rounded bg-muted/30" />
-                <div className="h-4 w-[88%] animate-pulse rounded bg-muted/30" />
-              </div>
-              {/* H2-shaped bar */}
-              <div className="mt-8 h-6 w-1/3 animate-pulse rounded bg-muted/40" />
-              {/* Paragraph 2 */}
-              <div className="mt-4 space-y-2.5">
-                <div className="h-4 w-full animate-pulse rounded bg-muted/30" />
-                <div className="h-4 w-[92%] animate-pulse rounded bg-muted/30" />
-                <div className="h-4 w-[78%] animate-pulse rounded bg-muted/30" />
-              </div>
-              {/* Paragraph 3 */}
-              <div className="mt-4 space-y-2.5">
-                <div className="h-4 w-full animate-pulse rounded bg-muted/30" />
-                <div className="h-4 w-[84%] animate-pulse rounded bg-muted/30" />
-              </div>
+              <MarkdownSkeletonContent file={file} includeTitle />
             </div>
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+interface MarkdownSkeletonContentProps {
+  file?: SkeletonFile;
+  /**
+   * When true the skeleton renders its own title row (used by the page-level
+   * loader where there is no live DocumentTitle yet). When false the
+   * caller's DocumentTitle is already visible above the overlay, so we skip
+   * to body content to avoid double-painting the title.
+   */
+  includeTitle?: boolean;
+}
+
+export function MarkdownSkeletonContent({
+  file,
+  includeTitle = false,
+}: MarkdownSkeletonContentProps) {
+  const title = file?.name ? stripDocExtension(file.name) : null;
+  const outline = file?.outline;
+  const hasOutline = !!outline && outline.length > 0;
+
+  return (
+    <>
+      {includeTitle && (
+        <>
+          {/* DocumentTitle reserves h-7 above the H1 in the real layout. */}
+          <div className="h-7" aria-hidden="true" />
+          {title ? (
+            <h1 className="text-foreground/70 mt-1 truncate text-3xl font-bold">{title}</h1>
+          ) : (
+            <div className="bg-muted/25 mt-1 h-9 w-2/3 rounded-md" />
+          )}
+        </>
+      )}
+
+      {hasOutline ? (
+        <OutlineSkeletonBody outline={outline} />
+      ) : (
+        <GenericSkeletonBody includeTitle={includeTitle} />
+      )}
+    </>
+  );
+}
+
+function OutlineSkeletonBody({ outline }: { outline: ReadonlyArray<DocumentOutlineItem> }) {
+  // Cap at the first ~12 headings to keep the overlay light on huge docs.
+  // The real content will replace it within a frame anyway.
+  const visible = outline.slice(0, 12);
+  return (
+    <div className="mt-8 space-y-7">
+      {visible.map((item, index) => (
+        <section key={`${item.id}-${index}`}>
+          <HeadingGhost depth={item.depth} text={item.text} />
+          <ParagraphBars />
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function HeadingGhost({ depth, text }: { depth: number; text: string }) {
+  const sizeClass =
+    depth === 1
+      ? "text-2xl font-bold"
+      : depth === 2
+        ? "text-xl font-semibold"
+        : depth === 3
+          ? "text-lg font-medium"
+          : "text-base font-medium";
+  return (
+    <div className={`text-muted-foreground/45 ${sizeClass} truncate`} aria-hidden="true">
+      {text}
+    </div>
+  );
+}
+
+function ParagraphBars() {
+  return (
+    <div className="mt-3 space-y-2.5" aria-hidden="true">
+      <div className="bg-muted/20 h-3.5 w-full rounded" />
+      <div className="bg-muted/20 h-3.5 w-[94%] rounded" />
+      <div className="bg-muted/20 h-3.5 w-[80%] rounded" />
+    </div>
+  );
+}
+
+function GenericSkeletonBody({ includeTitle }: { includeTitle: boolean }) {
+  // Fallback when we don't have an outline yet (first-ever open of an
+  // un-scanned file). Three paragraph clusters separated by a faint H2.
+  return (
+    <>
+      <div className={`${includeTitle ? "mt-8" : ""} space-y-2.5`} aria-hidden="true">
+        <div className="bg-muted/20 h-3.5 w-full rounded" />
+        <div className="bg-muted/20 h-3.5 w-[96%] rounded" />
+        <div className="bg-muted/20 h-3.5 w-[88%] rounded" />
+      </div>
+      <div className="bg-muted/25 mt-8 h-6 w-1/3 rounded" aria-hidden="true" />
+      <div className="mt-4 space-y-2.5" aria-hidden="true">
+        <div className="bg-muted/20 h-3.5 w-full rounded" />
+        <div className="bg-muted/20 h-3.5 w-[92%] rounded" />
+        <div className="bg-muted/20 h-3.5 w-[78%] rounded" />
+      </div>
+      <div className="mt-4 space-y-2.5" aria-hidden="true">
+        <div className="bg-muted/20 h-3.5 w-full rounded" />
+        <div className="bg-muted/20 h-3.5 w-[84%] rounded" />
+      </div>
+    </>
+  );
+}
+
+function stripDocExtension(name: string): string {
+  return name.replace(/\.(md|markdown)$/i, "");
 }

@@ -34,7 +34,10 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { cn, debounce } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { MarkdownSkeleton } from "@/components/workspace/markdown-skeleton";
+import {
+  MarkdownSkeleton,
+  MarkdownSkeletonContent,
+} from "@/components/workspace/markdown-skeleton";
 import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
 import { rangeToMarkdown } from "@/lib/markdown-selection";
 import { useDatabaseStore } from "@/stores/database-store";
@@ -621,7 +624,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   );
 
   if (!editor) {
-    return <MarkdownSkeleton />;
+    return <MarkdownSkeleton file={{ name: file.name, outline: file.outline }} />;
   }
 
   return (
@@ -648,22 +651,18 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
                 <EditorContent editor={editor} />
                 {isSwitching && (
                   <div
-                    className="pointer-events-none absolute inset-0 bg-background"
+                    className="animate-in fade-in-0 pointer-events-none absolute inset-0 bg-background duration-150"
                     aria-hidden="true"
                     data-testid="markdown-switch-overlay"
                   >
-                    <div className="h-9 w-2/3 animate-pulse rounded-md bg-muted/40" />
-                    <div className="mt-6 space-y-2.5">
-                      <div className="h-4 w-full animate-pulse rounded bg-muted/30" />
-                      <div className="h-4 w-[96%] animate-pulse rounded bg-muted/30" />
-                      <div className="h-4 w-[88%] animate-pulse rounded bg-muted/30" />
-                    </div>
-                    <div className="mt-8 h-6 w-1/3 animate-pulse rounded bg-muted/40" />
-                    <div className="mt-4 space-y-2.5">
-                      <div className="h-4 w-full animate-pulse rounded bg-muted/30" />
-                      <div className="h-4 w-[92%] animate-pulse rounded bg-muted/30" />
-                      <div className="h-4 w-[78%] animate-pulse rounded bg-muted/30" />
-                    </div>
+                    {/* DocumentTitle is already painted outside the overlay,
+                        so skip the skeleton's own title row. The overlay
+                        feeds the same cached outline that the page-level
+                        loader uses, so hot-switching to a previously-seen
+                        doc shows its real heading text immediately. */}
+                    <MarkdownSkeletonContent
+                      file={{ name: file.name, outline: file.outline }}
+                    />
                   </div>
                 )}
               </div>

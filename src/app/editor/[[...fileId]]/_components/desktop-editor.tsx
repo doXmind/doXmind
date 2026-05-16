@@ -159,10 +159,12 @@ export function DesktopEditor() {
                         reservedRightInset={outlineContentGutterPx}
                       />
                     ) : (
-                      <LoadingPlaceholder />
+                      <MarkdownSkeleton
+                        file={{ name: currentFile.name, outline: currentFile.outline }}
+                      />
                     )
                   ) : !isSynced && currentFileId ? (
-                    <LoadingPlaceholder />
+                    <MarkdownSkeleton />
                   ) : openTarget === "folder" ? (
                     <WorkspaceHome />
                   ) : (
@@ -189,6 +191,3 @@ export function DesktopEditor() {
   );
 }
 
-function LoadingPlaceholder() {
-  return <MarkdownSkeleton />;
-}
