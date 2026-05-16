@@ -21,6 +21,13 @@ export function useBlockKeyboardShortcuts(editor: Editor | null) {
     if (!editor) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // ProseMirror's `editable` flag only gates DOM-driven edits (typing,
+      // paste, beforeinput); programmatic `view.dispatch(tr)` always lands.
+      // Without this guard, a stray Cmd+D (macOS reflex for "Add bookmark")
+      // would silently duplicate the first top-level block and autosave the
+      // corruption to disk in read mode.
+      if (!editor.isEditable) return;
+
       const isMod = e.ctrlKey || e.metaKey;
 
       // Cmd/Ctrl+Shift+ArrowUp: Move block up
