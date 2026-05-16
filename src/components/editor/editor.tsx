@@ -260,10 +260,12 @@ export function Editor({
             { name: "Markdown", extensions: ["md"] },
           ]);
           if (!path) {
-            // User dismissed the dialog. Keep typing in memory; the next
-            // debounced save will prompt again.
-            lastContentRef.current = content;
-            setDirty(false);
+            // User dismissed the dialog. Keep `isDirty=true` and leave
+            // `lastContentRef.current` pointing at the previous flush —
+            // otherwise the header pill lies about being saved, and the
+            // close-time `saveCurrentNow` early-returns on `content ===
+            // lastContentRef.current`, silently dropping the typed buffer
+            // when the user closes the window after cancelling.
             return;
           }
           // Re-read in case more typing happened during the dialog (the
