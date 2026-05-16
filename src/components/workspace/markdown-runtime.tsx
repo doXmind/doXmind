@@ -77,6 +77,12 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   const [activationIntent, setActivationIntent] = useState<EditActivationIntent | undefined>(
     undefined
   );
+  // Hot-switch overlay: when file.id changes the desktop-editor skeleton is
+  // bypassed (loadedContentIds already has the file), but `setContent` is
+  // deferred to a macrotask so the PM DOM keeps showing the previous file
+  // for one render cycle. The overlay paints skeleton bars on top of
+  // EditorContent during that gap so the click feels acknowledged.
+  const [isSwitching, setIsSwitching] = useState(false);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const appliedActivationIntentRef = useRef<EditActivationIntent | undefined>(undefined);
@@ -389,7 +395,14 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
     setActivationIntent(undefined);
     appliedActivationIntentRef.current = undefined;
     isFileSwitchingRef.current = true;
+    setIsSwitching(true);
 
+    // Capture the rAF handle so a rapid A→B→C switch can cancel an inflight
+    // rAF from the previous swap. Without this, a stale rAF can land between
+    // the new swap's `setIsSwitching(true)` commit and its `setContent`,
+    // clearing the overlay during the new swap and letting `editor.emit`
+    // leak past the `isFileSwitchingRef` guard in `onUpdate`.
+    let rafId: number | undefined;
     const timeoutId = setTimeout(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- domObserver is internal ProseMirror API
       const domObserver = (editor.view as any).domObserver;
@@ -410,8 +423,10 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
         scrollAreaRef.current.scrollTop = 0;
       }
 
-      requestAnimationFrame(() => {
+      rafId = requestAnimationFrame(() => {
+        rafId = undefined;
         isFileSwitchingRef.current = false;
+        setIsSwitching(false);
         if (typeof window !== "undefined") {
           const startMark = window.__doxmindSwitchStartMark;
           const fileIdAtStart = window.__doxmindSwitchFileId;
@@ -429,7 +444,9 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
 
     return () => {
       clearTimeout(timeoutId);
+      if (rafId !== undefined) cancelAnimationFrame(rafId);
       isFileSwitchingRef.current = false;
+      setIsSwitching(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only reset on file.id change, not content
   }, [file.id, editor]);
@@ -623,7 +640,29 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
               style={pageFrameStyle}
             >
               <DocumentTitle fileId={file.id} />
-              <EditorContent editor={editor} />
+              <div className="relative">
+                <EditorContent editor={editor} />
+                {isSwitching && (
+                  <div
+                    className="pointer-events-none absolute inset-0 bg-background"
+                    aria-hidden="true"
+                    data-testid="markdown-switch-overlay"
+                  >
+                    <div className="h-9 w-2/3 animate-pulse rounded-md bg-muted/40" />
+                    <div className="mt-6 space-y-2.5">
+                      <div className="h-4 w-full animate-pulse rounded bg-muted/30" />
+                      <div className="h-4 w-[96%] animate-pulse rounded bg-muted/30" />
+                      <div className="h-4 w-[88%] animate-pulse rounded bg-muted/30" />
+                    </div>
+                    <div className="mt-8 h-6 w-1/3 animate-pulse rounded bg-muted/40" />
+                    <div className="mt-4 space-y-2.5">
+                      <div className="h-4 w-full animate-pulse rounded bg-muted/30" />
+                      <div className="h-4 w-[92%] animate-pulse rounded bg-muted/30" />
+                      <div className="h-4 w-[78%] animate-pulse rounded bg-muted/30" />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </ScrollArea>
           <SearchBar />
