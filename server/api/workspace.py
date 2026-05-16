@@ -431,6 +431,7 @@ def read_doc(path: Path) -> dict[str, Any]:
             legacy_source="markdown",
             source_state="sidecar_stale",
             correlation=correlation,
+            markdown_html=outcome.fresh_html,
         )
     assert isinstance(outcome, NoSidecar)
     return _document_read_response(
@@ -441,6 +442,7 @@ def read_doc(path: Path) -> dict[str, Any]:
         legacy_source="markdown",
         source_state="sidecar_missing",
         correlation=correlation,
+        markdown_html=outcome.html,
     )
 
 
@@ -453,8 +455,19 @@ def _document_read_response(
     legacy_source: str,
     source_state: str,
     correlation: Any,
+    markdown_html: str | None = None,
 ) -> dict[str, Any]:
-    browsing_html = "" if not markdown.strip() else _render_browsing_markdown(markdown)
+    # When upstream (NoSidecar / SidecarStale branches) already produced
+    # `markdown_to_html(markdown)` for `editor_html`, hand that HTML over so
+    # the browsing sanitizer can reuse it. UsedSidecar passes None — its
+    # `editor_html` comes from the cached sidecar (TipTap-serialized HTML),
+    # which is not interchangeable with the plain markdown render.
+    if not markdown.strip():
+        browsing_html = ""
+    elif markdown_html is not None:
+        browsing_html = _render_browsing_from_html(markdown_html)
+    else:
+        browsing_html = _render_browsing_markdown(markdown)
     return {
         "html": editor_html,
         "editorHtml": editor_html,
@@ -530,8 +543,12 @@ class BrowsingHtmlSanitizer(HTMLParser):
 
 
 def _render_browsing_markdown(markdown: str) -> str:
+    return _render_browsing_from_html(markdown_to_html(markdown))
+
+
+def _render_browsing_from_html(html: str) -> str:
     sanitizer = BrowsingHtmlSanitizer()
-    sanitizer.feed(markdown_to_html(markdown))
+    sanitizer.feed(html)
     sanitizer.close()
     return sanitizer.html()
 
