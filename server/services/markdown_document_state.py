@@ -46,12 +46,18 @@ from services.sidecar_io import (
 # Process-local LRU cache for read() results, keyed on (path, file mtime,
 # file size, sidecar mtime, sidecar size). The `markdown_to_html` step on
 # the no-sidecar branch is by far the dominant cost (~535ms on a 4MB file
-# in benchmarks), so keeping ~32 recent ReadOutcomes in memory turns repeat
-# opens into a lookup. The correlator/salvager identity is intentionally
-# *not* part of the key — production wires them once per process, and tests
-# that pass custom variants should call `_clear_read_cache()` between cases
-# (or set `DOXMIND_DISABLE_DOC_CACHE=1`).
-_READ_CACHE_MAX = 32
+# in benchmarks), so keeping a few hundred recent ReadOutcomes in memory
+# turns repeat opens into a lookup. The correlator/salvager identity is
+# intentionally *not* part of the key — production wires them once per
+# process, and tests that pass custom variants should call
+# `_clear_read_cache()` between cases (or set `DOXMIND_DISABLE_DOC_CACHE=1`).
+#
+# Cap sizing: 128 entries comfortably covers a heavy-rotation vault (the
+# usual 5-20 active docs plus headroom for hover-prefetch). Each cached
+# ReadOutcome holds a parsed body + HTML + extras; for a typical 50 KB
+# markdown that's roughly 0.5-1 MB at the cap — small next to the editor
+# and PM state already resident.
+_READ_CACHE_MAX = 128
 _READ_CACHE: OrderedDict[tuple, ReadOutcome] = OrderedDict()
 _READ_CACHE_LOCK = Lock()
 
