@@ -290,8 +290,10 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
 
   // Register editor in global store so SearchBar, the outline rail, command
   // palette, and presentation mode all see the same instance regardless of
-  // read/edit state.
-  const { setEditor } = useEditorRefStore();
+  // read/edit state. Use the selector form (matching desktop-editor.tsx)
+  // so the component doesn't re-render every time `setEditor` writes a new
+  // state object — `setEditor` itself is reference-stable.
+  const setEditor = useEditorRefStore((s) => s.setEditor);
   useEffect(() => {
     setEditor(editor);
     return () => setEditor(null);
