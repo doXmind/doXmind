@@ -395,6 +395,12 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
     isFileSwitchingRef.current = true;
     setIsSwitching(true);
 
+    // Capture the rAF handle so a rapid A→B→C switch can cancel an inflight
+    // rAF from the previous swap. Without this, a stale rAF can land between
+    // the new swap's `setIsSwitching(true)` commit and its `setContent`,
+    // clearing the overlay during the new swap and letting `editor.emit`
+    // leak past the `isFileSwitchingRef` guard in `onUpdate`.
+    let rafId: number | undefined;
     const timeoutId = setTimeout(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- domObserver is internal ProseMirror API
       const domObserver = (editor.view as any).domObserver;
@@ -415,7 +421,8 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
         scrollAreaRef.current.scrollTop = 0;
       }
 
-      requestAnimationFrame(() => {
+      rafId = requestAnimationFrame(() => {
+        rafId = undefined;
         isFileSwitchingRef.current = false;
         setIsSwitching(false);
         if (typeof window !== "undefined") {
@@ -435,6 +442,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
 
     return () => {
       clearTimeout(timeoutId);
+      if (rafId !== undefined) cancelAnimationFrame(rafId);
       isFileSwitchingRef.current = false;
       setIsSwitching(false);
     };
