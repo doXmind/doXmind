@@ -106,8 +106,12 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
             { name: "Markdown", extensions: ["md"] },
           ]);
           if (!path) {
-            lastContentRef.current = content;
-            setDirty(false);
+            // User dismissed the dialog. Keep `isDirty=true` and leave
+            // `lastContentRef.current` pointing at the previous flush —
+            // otherwise the header pill lies about being saved, and the
+            // close-time `saveCurrentNow` early-returns on `content ===
+            // lastContentRef.current`, silently dropping the typed buffer
+            // when the user closes the window after cancelling.
             return;
           }
           const latest = useFileStore.getState().transientFile;
