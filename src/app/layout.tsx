@@ -27,7 +27,12 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "doXmind",
   description: "Local-first markdown writing studio.",
-  icons: { icon: "/icon.svg" },
+  icons: {
+    icon: [
+      { url: "/icon-light.svg", media: "(prefers-color-scheme: light)" },
+      { url: "/icon-dark.svg", media: "(prefers-color-scheme: dark)" },
+    ],
+  },
 };
 
 // Tauri sets `window.__TAURI_PLATFORM__` via an initialization script that
