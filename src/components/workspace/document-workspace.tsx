@@ -1,10 +1,26 @@
 "use client";
 
-import { ExcelEditorWorkspace } from "@/components/excel-editor/excel-editor-workspace";
-import { PdfEditorWorkspace } from "@/components/pdf-editor/pdf-editor-workspace";
-import { MarkdownRuntime } from "@/components/workspace/markdown-runtime";
+import dynamic from "next/dynamic";
+import { MarkdownDocumentWorkspace } from "@/components/workspace/markdown-document-workspace";
+import { MarkdownSkeleton } from "@/components/workspace/markdown-skeleton";
 import { isExcelFile, isMarkdownFile, isPdfFile } from "@/lib/document-types";
 import { type FileItem } from "@/stores/file-store";
+
+const PdfEditorWorkspace = dynamic(
+  () =>
+    import("@/components/pdf-editor/pdf-editor-workspace").then((m) => ({
+      default: m.PdfEditorWorkspace,
+    })),
+  { ssr: false, loading: () => <MarkdownSkeleton /> }
+);
+
+const ExcelEditorWorkspace = dynamic(
+  () =>
+    import("@/components/excel-editor/excel-editor-workspace").then((m) => ({
+      default: m.ExcelEditorWorkspace,
+    })),
+  { ssr: false, loading: () => <MarkdownSkeleton /> }
+);
 
 interface DocumentWorkspaceProps {
   file: FileItem;
@@ -19,10 +35,10 @@ export function DocumentWorkspace({ file, reservedRightInset = 0 }: DocumentWork
     return <ExcelEditorWorkspace file={file} />;
   }
   if (isMarkdownFile(file)) {
-    return <MarkdownRuntime file={file} reservedRightInset={reservedRightInset} />;
+    return <MarkdownDocumentWorkspace file={file} reservedRightInset={reservedRightInset} />;
   }
-  // Fallback for unknown markdown-ish files; MarkdownRuntime handles
+  // Fallback for unknown markdown-ish files; MarkdownDocumentWorkspace handles
   // unknown file types harmlessly because its content area is just a
   // TipTap surface populated from `file.content`.
-  return <MarkdownRuntime file={file} reservedRightInset={reservedRightInset} />;
+  return <MarkdownDocumentWorkspace file={file} reservedRightInset={reservedRightInset} />;
 }

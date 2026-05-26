@@ -8,7 +8,7 @@ import type { Heading } from "@/components/editor/mindlines/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useLayoutStore } from "@/stores/layout-store";
 import { cn } from "@/lib/utils";
-import { perfMark, perfMeasure } from "@/lib/perf";
+import { perfMark, perfMeasure, perfSync } from "@/lib/perf";
 import type { FileItem } from "@/stores/file-store";
 
 const SCROLLSPY_THRESHOLD = 0.2;
@@ -64,8 +64,13 @@ export function BrowsingRuntime({
 
   const sourceHtml = file.browsingHtml ?? file.editorHtml ?? file.content ?? "";
   const preparedHtml = useMemo(
-    () => prepareBrowsingHtml(sourceHtml, headings),
-    [headings, sourceHtml]
+    () =>
+      perfSync("doxmind.browsing.prepareHtml", () => prepareBrowsingHtml(sourceHtml, headings), {
+        bytes: sourceHtml.length,
+        headings: headings.length,
+        rendererVersion: file.browsingRendererVersion,
+      }),
+    [file.browsingRendererVersion, headings, sourceHtml]
   );
   const searchRender = useMemo(
     () => renderSearchHighlights(preparedHtml, searchTerm, currentSearchIndex),
@@ -535,6 +540,7 @@ function renderSearchHighlights(html: string, rawTerm: string, activeIndex: numb
 
 function prepareBrowsingHtml(html: string, headings: Heading[] = []) {
   if (!html || typeof window === "undefined" || typeof DOMParser === "undefined") return html;
+  if (!needsBrowsingHtmlPreparation(html, headings)) return html;
 
   const parser = new DOMParser();
   const doc = parser.parseFromString(`<div data-root>${html}</div>`, "text/html");
@@ -592,6 +598,18 @@ function prepareBrowsingHtml(html: string, headings: Heading[] = []) {
   }
 
   return root.innerHTML;
+}
+
+function needsBrowsingHtmlPreparation(html: string, headings: Heading[]) {
+  if (headings.length > 0 && /<h[1-6](?=\s|>)(?![^>]*\sid=)/i.test(html)) return true;
+  if (/<img\b/i.test(html)) return true;
+  if (/language-(?:mermaid|math)/i.test(html)) return true;
+  if (
+    /data-type=["'](?:mermaid-chart|block-math|inline-math|pdf-block|excel-block)["']/i.test(html)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function applyOutlineHeadingIds(root: Element, headings: Heading[]) {

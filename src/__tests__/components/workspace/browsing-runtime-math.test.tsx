@@ -8,6 +8,7 @@ import type { FileItem } from "@/types";
 vi.mock("@/lib/perf", () => ({
   perfMark: vi.fn(),
   perfMeasure: vi.fn(),
+  perfSync: vi.fn(<T,>(_name: string, fn: () => T) => fn()),
 }));
 
 const now = "2026-05-09T00:00:00.000Z";

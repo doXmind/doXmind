@@ -79,7 +79,7 @@ export function CodeBlockNodeView({ node, updateAttributes }: NodeViewProps) {
               as="pre"
               className={cn(
                 "code-block-content",
-                "p-4 pl-4 font-mono text-sm leading-relaxed",
+                "p-4 pl-4 font-mono",
                 "focus:outline-none",
                 "bg-transparent",
                 // Mobile optimization

@@ -13,6 +13,8 @@
   @apply overflow-hidden rounded-lg;
   @apply border border-border/60;
   @apply bg-muted/30;
+  --code-block-font-size: var(--ui-code-font-size-base);
+  --code-block-line-height: 1.45;
   transition: border-color 0.15s ease;
 }
 
@@ -32,6 +34,7 @@
 .ProseMirror .code-block-body {
   @apply flex;
   @apply overflow-x-auto;
+  align-items: stretch;
 }
 
 /* Line numbers styling */
@@ -39,16 +42,28 @@
   @apply sticky left-0;
   @apply min-w-[3rem];
   @apply bg-muted/20;
+  @apply overflow-hidden rounded-none;
+  margin: 0;
+  padding: 1rem;
+  font-size: var(--code-block-font-size) !important;
+  line-height: var(--code-block-line-height) !important;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  white-space: pre;
+  tab-size: 2;
 }
 
 /* Code content */
 .ProseMirror .code-block-content {
-  @apply font-mono text-sm;
-  @apply leading-relaxed;
+  @apply font-mono;
   @apply p-4;
   @apply min-w-0 flex-1;
   @apply bg-transparent;
+  font-size: var(--code-block-font-size) !important;
+  line-height: var(--code-block-line-height) !important;
   white-space: pre;
+  tab-size: 2;
 }
 
 .ProseMirror .code-block-content code {
@@ -143,9 +158,4 @@
 /* Selection within code block */
 .ProseMirror .code-block-content ::selection {
   background-color: hsl(var(--foreground) / 0.2);
-}
-
-/* Line height for code lines - must match line-numbers */
-.ProseMirror .code-block-content {
-  line-height: 1.625rem;
 }

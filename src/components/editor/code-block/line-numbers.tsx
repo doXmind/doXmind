@@ -8,12 +8,13 @@ interface LineNumbersProps {
 }
 
 export function LineNumbers({ count, className }: LineNumbersProps) {
+  const numbers = Array.from({ length: count }, (_, i) => String(i + 1)).join("\n");
+
   return (
-    <div
+    <pre
       className={cn(
         "line-numbers",
-        "select-none pb-4 pl-4 pr-4 pt-4 text-right",
-        "font-mono text-sm leading-relaxed",
+        "select-none text-right font-mono",
         "text-muted-foreground/50 dark:text-muted-foreground/70",
         "border-r border-border/30",
         "bg-muted/20",
@@ -25,15 +26,7 @@ export function LineNumbers({ count, className }: LineNumbersProps) {
       )}
       aria-hidden="true"
     >
-      {Array.from({ length: count }, (_, i) => (
-        // line-height matches the content's absolute `1.625rem` rule in
-        // code-block.css. Using Tailwind's `leading-relaxed` (unitless
-        // 1.625 × 14px = 22.75px) here while content is 26px caused the
-        // gutter and content baselines to drift apart by ~2.6px per row.
-        <div key={i + 1} className="h-[1.625rem] leading-[1.625rem]">
-          {i + 1}
-        </div>
-      ))}
-    </div>
+      {numbers}
+    </pre>
   );
 }

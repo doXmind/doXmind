@@ -64,6 +64,8 @@ export function EditorClient() {
   const setKeyboardShortcutsOpen = useLayoutStore((s) => s.setKeyboardShortcutsOpen);
   const isCommandPaletteOpen = useLayoutStore((s) => s.isCommandPaletteOpen);
   const setCommandPaletteOpen = useLayoutStore((s) => s.setCommandPaletteOpen);
+  const isQuickSwitcherOpen = useLayoutStore((s) => s.isQuickSwitcherOpen);
+  const isPresentationMode = useLayoutStore((s) => s.isPresentationMode);
 
   // Boot: per-window state arrives via ?folder=... / ?file=... URL params,
   // set by Rust at window creation. If neither is present we land on the
@@ -191,13 +193,17 @@ export function EditorClient() {
     <>
       <DesktopEditor />
 
-      <KeyboardShortcutsModal
-        open={isKeyboardShortcutsOpen}
-        onClose={() => setKeyboardShortcutsOpen(false)}
-      />
-      <CommandPalette open={isCommandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
-      <QuickSwitcher />
-      <PresentationMode />
+      {isKeyboardShortcutsOpen && (
+        <KeyboardShortcutsModal
+          open={isKeyboardShortcutsOpen}
+          onClose={() => setKeyboardShortcutsOpen(false)}
+        />
+      )}
+      {isCommandPaletteOpen && (
+        <CommandPalette open={isCommandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
+      )}
+      {isQuickSwitcherOpen && <QuickSwitcher />}
+      {isPresentationMode && <PresentationMode />}
       {perfEnabled && <PerfOverlay />}
     </>
   );

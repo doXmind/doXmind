@@ -49,17 +49,21 @@ import type { EditActivationIntent } from "@/components/workspace/browsing-runti
 interface MarkdownRuntimeProps {
   file: FileItem;
   reservedRightInset?: number;
+  initialScrollTop?: number;
+  initialActivationIntent?: EditActivationIntent;
 }
 
 /**
- * Single-renderer markdown surface. Owns one TipTap instance that stays
- * mounted across the read↔edit toggle; `editor.setEditable(...)` is the
- * only thing that changes. Chrome (block handle, bubble menu, status bar,
- * search bar) is conditional on the mode but the content DOM is never
- * remounted — eliminating the layout jitter caused by swapping between
- * the legacy BrowsingRuntime (static HTML) and Editor (TipTap) renderers.
+ * TipTap markdown surface. MarkdownDocumentWorkspace lazy-mounts this only
+ * when edit mode is needed; once mounted, read/edit toggles keep the same
+ * editor instance and only flip `editor.setEditable(...)`.
  */
-export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntimeProps) {
+export function MarkdownRuntime({
+  file,
+  reservedRightInset = 0,
+  initialScrollTop = 0,
+  initialActivationIntent,
+}: MarkdownRuntimeProps) {
   const updateFile = useFileStore((s) => s.updateFile);
   const setTransientContent = useFileStore((s) => s.setTransientContent);
   const materializeTransient = useFileStore((s) => s.materializeTransient);
@@ -76,9 +80,9 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   // edit mode; everything else starts in read mode and switches on the
   // user's first edit intent (click in the content area, or any printable
   // key while focus is elsewhere on the page).
-  const [isEditing, setIsEditing] = useState(isTransient);
+  const [isEditing, setIsEditing] = useState(isTransient || !!initialActivationIntent);
   const [activationIntent, setActivationIntent] = useState<EditActivationIntent | undefined>(
-    undefined
+    initialActivationIntent
   );
   // Hot-switch overlay: when file.id changes the desktop-editor skeleton is
   // bypassed (loadedContentIds already has the file), but `setContent` is
@@ -91,6 +95,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   const appliedActivationIntentRef = useRef<EditActivationIntent | undefined>(undefined);
   const lastContentRef = useRef(file.content);
   const isFileSwitchingRef = useRef(false);
+  const restoredInitialScrollRef = useRef(false);
   const prevDbIdsRef = useRef<Set<string>>(new Set());
   const initialFileIdRef = useRef<string | null>(file.id);
 
@@ -332,6 +337,22 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   }, [editor]);
 
   useEffect(() => {
+    if (!editor || initialScrollTop <= 0 || restoredInitialScrollRef.current) return;
+    const delays = [0, 16, 50, 100, 250, 500];
+    const timers = delays.map((delay, index) =>
+      window.setTimeout(() => {
+        if (scrollAreaRef.current) {
+          scrollAreaRef.current.scrollTop = initialScrollTop;
+        }
+        if (index === delays.length - 1) {
+          restoredInitialScrollRef.current = true;
+        }
+      }, delay)
+    );
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [editor, initialScrollTop]);
+
+  useEffect(() => {
     const saveCurrentNow = async () => {
       if (!editor) return;
       const content = editor.getHTML();
@@ -492,7 +513,11 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       domObserver?.start();
 
       if (scrollAreaRef.current) {
-        if (isEmpty) {
+        const shouldRestoreActivationScroll =
+          initialScrollTop > 0 && !restoredInitialScrollRef.current;
+        if (shouldRestoreActivationScroll) {
+          scrollAreaRef.current.scrollTop = initialScrollTop;
+        } else if (isEmpty) {
           scrollAreaRef.current.scrollTop = 0;
         } else {
           scrollAreaRef.current.scrollTop = preservedScrollTop;
@@ -507,7 +532,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       clearTimeout(timeoutId);
       isFileSwitchingRef.current = false;
     };
-  }, [file.content, editor]);
+  }, [file.content, editor, initialScrollTop]);
 
   // Apply a pending edit-activation intent (replay the printable key the
   // user pressed in read mode that triggered the mode switch).
@@ -522,11 +547,14 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
         if (appliedActivationIntentRef.current === activationIntent) return;
         appliedActivationIntentRef.current = activationIntent;
         applyActivationIntent(editor.view, activationIntent, scrollAreaRef.current);
+        if (scrollAreaRef.current && initialScrollTop > 0) {
+          scrollAreaRef.current.scrollTop = initialScrollTop;
+        }
       }, delay)
     );
 
     return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [activationIntent, editor, isEditing]);
+  }, [activationIntent, editor, initialScrollTop, isEditing]);
 
   useEffect(() => {
     if (!editor || typeof window === "undefined") return;
@@ -660,9 +688,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
                         feeds the same cached outline that the page-level
                         loader uses, so hot-switching to a previously-seen
                         doc shows its real heading text immediately. */}
-                    <MarkdownSkeletonContent
-                      file={{ name: file.name, outline: file.outline }}
-                    />
+                    <MarkdownSkeletonContent file={{ name: file.name, outline: file.outline }} />
                   </div>
                 )}
               </div>
