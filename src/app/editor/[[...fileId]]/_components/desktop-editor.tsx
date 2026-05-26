@@ -45,11 +45,10 @@ export function DesktopEditor() {
   const editor = useEditorRefStore((s) => s.editor);
   const { headings, activeId, navigateTo } = useHeadings(editor);
   const hasLiveHeadings = !!currentFile && isMarkdownFile(currentFile) && headings.length > 0;
-  // BrowsingRuntime renders its own collapsed outline rail in read mode using
-  // the file's cached outline, so the content gutter must be reserved when
-  // *either* surface will render a rail. Without this fallback the editor's
-  // `--editor-outline-gutter` jumps from 0 (read) to 128 (edit) when the live
-  // TipTap editor mounts, visibly shifting the page-frame on every toggle.
+  // The unified Markdown runtime starts read-only, but live heading extraction
+  // still arrives after the TipTap view mounts. Reserve the outline gutter
+  // from the cached read model too, otherwise the page frame shifts when the
+  // live headings become available.
   const hasReservedOutline =
     hasLiveHeadings ||
     (!!currentFile && isMarkdownFile(currentFile) && (currentFile.outline?.length ?? 0) >= 2);
@@ -190,4 +189,3 @@ export function DesktopEditor() {
     </AppShell>
   );
 }
-

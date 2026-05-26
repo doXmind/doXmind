@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { MarkdownDocumentWorkspace } from "@/components/workspace/markdown-document-workspace";
+import { MarkdownRuntime } from "@/components/workspace/markdown-runtime";
 import { MarkdownSkeleton } from "@/components/workspace/markdown-skeleton";
 import { isExcelFile, isMarkdownFile, isPdfFile } from "@/lib/document-types";
 import { type FileItem } from "@/stores/file-store";
@@ -35,10 +35,10 @@ export function DocumentWorkspace({ file, reservedRightInset = 0 }: DocumentWork
     return <ExcelEditorWorkspace file={file} />;
   }
   if (isMarkdownFile(file)) {
-    return <MarkdownDocumentWorkspace file={file} reservedRightInset={reservedRightInset} />;
+    return <MarkdownRuntime file={file} reservedRightInset={reservedRightInset} />;
   }
-  // Fallback for unknown markdown-ish files; MarkdownDocumentWorkspace handles
+  // Fallback for unknown markdown-ish files; MarkdownRuntime handles
   // unknown file types harmlessly because its content area is just a
   // TipTap surface populated from `file.content`.
-  return <MarkdownDocumentWorkspace file={file} reservedRightInset={reservedRightInset} />;
+  return <MarkdownRuntime file={file} reservedRightInset={reservedRightInset} />;
 }

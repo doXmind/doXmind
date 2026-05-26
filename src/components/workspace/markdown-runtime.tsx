@@ -44,26 +44,20 @@ import { useDatabaseStore } from "@/stores/database-store";
 import { eventBus } from "@/lib/events";
 import { perfMark, perfMeasure, perfSync } from "@/lib/perf";
 
-import type { EditActivationIntent } from "@/components/workspace/browsing-runtime";
-
 interface MarkdownRuntimeProps {
   file: FileItem;
   reservedRightInset?: number;
-  initialScrollTop?: number;
-  initialActivationIntent?: EditActivationIntent;
 }
 
+type EditActivationIntent =
+  | { type: "pointer"; clientX: number; clientY: number }
+  | { type: "keyboard"; key: string };
+
 /**
- * TipTap markdown surface. MarkdownDocumentWorkspace lazy-mounts this only
- * when edit mode is needed; once mounted, read/edit toggles keep the same
- * editor instance and only flip `editor.setEditable(...)`.
+ * Unified Markdown surface. Read/edit mode is a property of the same TipTap
+ * editor instance, so activation never swaps the document DOM.
  */
-export function MarkdownRuntime({
-  file,
-  reservedRightInset = 0,
-  initialScrollTop = 0,
-  initialActivationIntent,
-}: MarkdownRuntimeProps) {
+export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntimeProps) {
   const updateFile = useFileStore((s) => s.updateFile);
   const setTransientContent = useFileStore((s) => s.setTransientContent);
   const materializeTransient = useFileStore((s) => s.materializeTransient);
@@ -80,10 +74,8 @@ export function MarkdownRuntime({
   // edit mode; everything else starts in read mode and switches on the
   // user's first edit intent (click in the content area, or any printable
   // key while focus is elsewhere on the page).
-  const [isEditing, setIsEditing] = useState(isTransient || !!initialActivationIntent);
-  const [activationIntent, setActivationIntent] = useState<EditActivationIntent | undefined>(
-    initialActivationIntent
-  );
+  const [isEditing, setIsEditing] = useState(isTransient);
+  const [activationIntent, setActivationIntent] = useState<EditActivationIntent | undefined>();
   // Hot-switch overlay: when file.id changes the desktop-editor skeleton is
   // bypassed (loadedContentIds already has the file), but `setContent` is
   // deferred to a macrotask so the PM DOM keeps showing the previous file
@@ -95,7 +87,6 @@ export function MarkdownRuntime({
   const appliedActivationIntentRef = useRef<EditActivationIntent | undefined>(undefined);
   const lastContentRef = useRef(file.content);
   const isFileSwitchingRef = useRef(false);
-  const restoredInitialScrollRef = useRef(false);
   const prevDbIdsRef = useRef<Set<string>>(new Set());
   const initialFileIdRef = useRef<string | null>(file.id);
 
@@ -302,7 +293,9 @@ export function MarkdownRuntime({
   useEffect(() => {
     if (!editor) return;
     if (editor.isEditable !== isEditing) {
+      const preservedScrollTop = scrollAreaRef.current?.scrollTop ?? null;
       editor.setEditable(isEditing);
+      restoreScrollTop(scrollAreaRef.current, preservedScrollTop);
     }
   }, [editor, isEditing]);
 
@@ -335,22 +328,6 @@ export function MarkdownRuntime({
       });
     });
   }, [editor]);
-
-  useEffect(() => {
-    if (!editor || initialScrollTop <= 0 || restoredInitialScrollRef.current) return;
-    const delays = [0, 16, 50, 100, 250, 500];
-    const timers = delays.map((delay, index) =>
-      window.setTimeout(() => {
-        if (scrollAreaRef.current) {
-          scrollAreaRef.current.scrollTop = initialScrollTop;
-        }
-        if (index === delays.length - 1) {
-          restoredInitialScrollRef.current = true;
-        }
-      }, delay)
-    );
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [editor, initialScrollTop]);
 
   useEffect(() => {
     const saveCurrentNow = async () => {
@@ -513,11 +490,7 @@ export function MarkdownRuntime({
       domObserver?.start();
 
       if (scrollAreaRef.current) {
-        const shouldRestoreActivationScroll =
-          initialScrollTop > 0 && !restoredInitialScrollRef.current;
-        if (shouldRestoreActivationScroll) {
-          scrollAreaRef.current.scrollTop = initialScrollTop;
-        } else if (isEmpty) {
+        if (isEmpty) {
           scrollAreaRef.current.scrollTop = 0;
         } else {
           scrollAreaRef.current.scrollTop = preservedScrollTop;
@@ -532,7 +505,7 @@ export function MarkdownRuntime({
       clearTimeout(timeoutId);
       isFileSwitchingRef.current = false;
     };
-  }, [file.content, editor, initialScrollTop]);
+  }, [file.content, editor]);
 
   // Apply a pending edit-activation intent (replay the printable key the
   // user pressed in read mode that triggered the mode switch).
@@ -542,19 +515,9 @@ export function MarkdownRuntime({
     }
     if (!isEditing) return;
 
-    const timers = [0, 16].map((delay) =>
-      window.setTimeout(() => {
-        if (appliedActivationIntentRef.current === activationIntent) return;
-        appliedActivationIntentRef.current = activationIntent;
-        applyActivationIntent(editor.view, activationIntent, scrollAreaRef.current);
-        if (scrollAreaRef.current && initialScrollTop > 0) {
-          scrollAreaRef.current.scrollTop = initialScrollTop;
-        }
-      }, delay)
-    );
-
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [activationIntent, editor, initialScrollTop, isEditing]);
+    appliedActivationIntentRef.current = activationIntent;
+    applyActivationIntent(editor.view, activationIntent, scrollAreaRef.current);
+  }, [activationIntent, editor, isEditing]);
 
   useEffect(() => {
     if (!editor || typeof window === "undefined") return;
@@ -762,12 +725,16 @@ function applyActivationIntent(
   intent: EditActivationIntent,
   scrollParent: HTMLElement | null
 ) {
+  const preservedScrollTop = scrollParent?.scrollTop ?? null;
+
   if (intent.type === "pointer") {
     const pos = view.posAtCoords({ left: intent.clientX, top: intent.clientY });
-    if (pos) {
-      setTextSelectionNear(view, pos.pos);
+    const selectionPos = pos?.pos ?? getVisibleCaretPosition(view, scrollParent);
+    if (selectionPos !== undefined) {
+      setTextSelectionNear(view, selectionPos);
     }
     view.focus();
+    restoreScrollTop(scrollParent, preservedScrollTop);
     return;
   }
 
@@ -780,6 +747,7 @@ function applyActivationIntent(
     dispatch(state.tr.insertText(replayText));
   }
   view.focus();
+  restoreScrollTop(scrollParent, preservedScrollTop);
 }
 
 function setTextSelectionNear(view: EditorView, pos: number) {
@@ -798,6 +766,18 @@ function getVisibleCaretPosition(view: EditorView, scrollParent: HTMLElement | n
 
 function getReplayableKeyboardText(key: string) {
   return key.length === 1 ? key : null;
+}
+
+function restoreScrollTop(scrollParent: HTMLElement | null, scrollTop: number | null) {
+  if (!scrollParent || scrollTop === null) return;
+  scrollParent.scrollTop = scrollTop;
+  if (typeof requestAnimationFrame !== "function") return;
+  requestAnimationFrame(() => {
+    scrollParent.scrollTop = scrollTop;
+    requestAnimationFrame(() => {
+      scrollParent.scrollTop = scrollTop;
+    });
+  });
 }
 
 function exitTextBlockContainerAtEnd(

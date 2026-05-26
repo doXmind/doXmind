@@ -69,6 +69,9 @@ test("Markdown opens in read mode and promotes to editable on click", async ({ p
   await expect
     .poll(() => scroll.evaluate((el) => el.scrollTop))
     .toBeGreaterThan(beforeEditScroll - 80);
+  await expect
+    .poll(() => scroll.evaluate((el) => el.scrollTop))
+    .toBeLessThan(beforeEditScroll + 80);
 });
 
 test("keyboard edit intent promotes Markdown read mode to editable", async ({ page }) => {
