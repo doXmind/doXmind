@@ -5,41 +5,22 @@ import { NodeViewWrapper } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
 import { List } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { subscribeOutline } from "@/components/editor/mindlines/use-canonical-outline";
+import type { Heading } from "@/components/editor/mindlines/canonical-outline";
 
-interface TocHeading {
-  level: number;
-  text: string;
-  pos: number;
-}
+const MAX_SHOW_COUNT = 50;
 
 export function TocNodeView({ editor }: NodeViewProps) {
-  const [headings, setHeadings] = useState<TocHeading[]>([]);
+  const [headings, setHeadings] = useState<Heading[]>([]);
 
-  // Extract headings from the document
-  const updateHeadings = useCallback(() => {
-    const found: TocHeading[] = [];
-    editor.state.doc.descendants((node, pos) => {
-      if (node.type.name === "heading") {
-        found.push({
-          level: node.attrs.level,
-          text: node.textContent || "Untitled",
-          pos,
-        });
-      }
+  useEffect(() => {
+    return subscribeOutline(editor, (next) => {
+      setHeadings(next);
     });
-    setHeadings(found);
   }, [editor]);
 
-  // Update on mount and on every transaction
-  useEffect(() => {
-    updateHeadings();
-
-    const handler = () => updateHeadings();
-    editor.on("update", handler);
-    return () => {
-      editor.off("update", handler);
-    };
-  }, [editor, updateHeadings]);
+  const visibleHeadings =
+    headings.length > MAX_SHOW_COUNT ? headings.slice(0, MAX_SHOW_COUNT) : headings;
 
   // Scroll to heading position
   const scrollToHeading = useCallback(
@@ -100,15 +81,15 @@ export function TocNodeView({ editor }: NodeViewProps) {
         </div>
 
         {/* Heading list */}
-        {headings.length === 0 ? (
+        {visibleHeadings.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             No headings found. Add headings to your document to generate a table of contents.
           </p>
         ) : (
           <nav className="flex flex-col gap-0.5">
-            {headings.map((heading, i) => (
+            {visibleHeadings.map((heading) => (
               <button
-                key={`${heading.pos}-${i}`}
+                key={heading.id}
                 onClick={() => scrollToHeading(heading.pos)}
                 className={cn(
                   "rounded px-2 py-1 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground",
