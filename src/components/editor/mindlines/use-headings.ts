@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import type { Heading } from "./types";
+import { findActiveByPosition } from "./active-resolver";
 import { useCanonicalOutline } from "./use-canonical-outline";
 import { getScrollParent } from "./utils/heading-utils";
 
@@ -33,8 +34,12 @@ export function useHeadings(editor: Editor | null) {
     return filtered.length >= MIN_OUTLINE_HEADINGS ? filtered : [];
   }, [canonical]);
 
-  // Scroll-spy: track active heading based on scroll position
-  // Finds the last heading whose top is above the threshold line (top ~20% of viewport)
+  // Scroll-spy: probe a single viewport coordinate with `editor.view.posAtCoords`,
+  // then resolve the active heading via binary search over the canonical list.
+  // Cost per scroll: O(1) coord probe + O(log N) resolution, RAF-coalesced.
+  const activeIdRef = useRef<string | null>(null);
+  activeIdRef.current = activeId;
+
   useEffect(() => {
     if (!editor || headings.length === 0) {
       setActiveId(null);
@@ -44,40 +49,33 @@ export function useHeadings(editor: Editor | null) {
     const scrollParent = getEditorScrollParent(editor);
     let rafId: number | null = null;
 
-    const findTopHeading = () => {
+    const resolveActive = () => {
       rafId = null;
       const containerRect = scrollParent.getBoundingClientRect();
-      const threshold = containerRect.top + containerRect.height * SCROLLSPY_THRESHOLD;
+      const top = containerRect.top + containerRect.height * SCROLLSPY_THRESHOLD;
+      const left = containerRect.left + containerRect.width / 2;
 
-      let best: Heading | null = null;
-      for (const heading of headings) {
-        try {
-          const dom = editor.view.nodeDOM(heading.pos);
-          if (!(dom instanceof HTMLElement)) continue;
-          if (dom.getBoundingClientRect().top <= threshold) {
-            best = heading;
-          } else {
-            break; // Headings are in document order
-          }
-        } catch {
-          // nodeDOM may throw if pos is stale during a transaction
-          continue;
-        }
+      let probePos: number | null = null;
+      try {
+        const result = editor.view.posAtCoords({ left, top });
+        probePos = result?.pos ?? null;
+      } catch {
+        probePos = null;
       }
 
-      const nextActiveId = best?.id ?? headings[0]?.id ?? null;
+      const nextActiveId = findActiveByPosition(headings, probePos, activeIdRef.current);
       setActiveId((prev) => (prev === nextActiveId ? prev : nextActiveId));
     };
 
     const handleScroll = () => {
       if (rafId !== null) return;
-      rafId = requestAnimationFrame(findTopHeading);
+      rafId = requestAnimationFrame(resolveActive);
     };
 
     scrollParent.addEventListener("scroll", handleScroll, { passive: true });
 
     // Initial check for pre-scrolled state
-    findTopHeading();
+    resolveActive();
 
     return () => {
       scrollParent.removeEventListener("scroll", handleScroll);
