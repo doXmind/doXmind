@@ -14,7 +14,7 @@ interface SettingsRailProps {
 export function SettingsRail({ sections, active, onJump, heading, footer }: SettingsRailProps) {
   return (
     <aside className="sticky top-[72px] self-start">
-      <div className="mb-3.5 pl-3.5 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/70">
+      <div className="mb-3.5 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/70">
         {heading}
       </div>
       <nav className="relative flex flex-col">
@@ -28,7 +28,7 @@ export function SettingsRail({ sections, active, onJump, heading, footer }: Sett
         ))}
       </nav>
       {footer && (
-        <div className="mt-5 border-t border-border/60 pl-3.5 pt-3.5 font-mono text-[10.5px] leading-[1.7] text-muted-foreground/80">
+        <div className="mt-5 border-t border-border/60 pt-3.5 font-mono text-[10.5px] leading-[1.7] text-muted-foreground/80">
           {footer}
         </div>
       )}

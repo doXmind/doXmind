@@ -370,10 +370,10 @@ samp,
      itself is low-alpha by default (see `.dark` / `:root`), so it doesn't
      need a separate Tauri-specific override. */
   html.is-tauri-macos.dark {
-    --content-surface-bg: rgba(24, 24, 24, 0.92);
+    --content-surface-bg: hsl(var(--background));
   }
   html.is-tauri-macos:not(.dark) {
-    --content-surface-bg: rgba(255, 255, 255, 0.94);
+    --content-surface-bg: hsl(var(--background));
   }
 
   /* Global text selection - Notion-style blue highlight */
@@ -429,6 +429,20 @@ samp,
 
 .desktop-content-surface {
   background: var(--content-surface-bg);
+}
+
+.desktop-chrome-content-panel,
+.desktop-content-with-sidebar {
+  background: var(--content-surface-bg);
+}
+
+.desktop-chrome-content-panel {
+  border-top-left-radius: 18px;
+  overflow: hidden;
+}
+
+.desktop-content-with-sidebar {
+  border-top-left-radius: 0;
 }
 
 .desktop-chrome-header {
@@ -491,10 +505,12 @@ html.is-tauri-macos .settings-surface {
 
 html.is-tauri-macos .desktop-chrome-header {
   grid-template-columns: max(var(--files-sidebar-width, 304px), 124px) minmax(0, 1fr) auto;
-  /* Right of the sidebar seam, the header should read as a continuation
-     of the editor surface — same opacity, same color — so there's no
-     visible band where the header ends and the content begins. Left
-     stays glass over the native vibrancy. */
+  background: var(--content-surface-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html.is-tauri-macos .desktop-chrome-header[data-sidebar-open] {
   background: linear-gradient(
     to right,
     var(--sidebar-translucent-bg) 0,
@@ -502,8 +518,6 @@ html.is-tauri-macos .desktop-chrome-header {
     var(--content-surface-bg) var(--files-sidebar-width, 304px),
     var(--content-surface-bg) 100%
   );
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
 }
 
 html.is-tauri-macos .desktop-chrome-header::after {
@@ -511,7 +525,7 @@ html.is-tauri-macos .desktop-chrome-header::after {
 }
 
 html.is-tauri-macos .desktop-chrome-left-controls {
-  padding-left: 78px;
+  padding-left: 92px;
 }
 
 html.is-tauri-macos .sidebar-glass {

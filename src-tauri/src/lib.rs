@@ -22,8 +22,8 @@ use std::{cmp, collections::BTreeMap, collections::HashMap};
 use doxmind_sidecar::{DocMeta, DocPayload, DocumentOutlineItem, ReadResult, Source, SourceState};
 use serde::{Deserialize, Serialize};
 use tauri::{
-    AppHandle, Emitter, Manager, RunEvent, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
-    WindowEvent,
+    AppHandle, Emitter, LogicalPosition, Manager, RunEvent, Url, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
@@ -2939,6 +2939,7 @@ fn create_editor_window(
     {
         builder = builder
             .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .traffic_light_position(LogicalPosition::new(28.0, 30.0))
             .hidden_title(true)
             .transparent(true);
     }

@@ -125,7 +125,8 @@ export function UnifiedHeader() {
       <header
         data-tauri-drag-region
         data-borderless={!currentFileName ? "" : undefined}
-        className="desktop-chrome-header relative z-20 grid h-11 shrink-0 items-center text-foreground"
+        data-sidebar-open={hasOpenTarget && isFilesSidebarOpen ? "" : undefined}
+        className="desktop-chrome-header relative z-20 grid h-14 shrink-0 items-center text-foreground"
         style={{
           // On macOS Tauri the native traffic-light cluster floats over the
           // top-left ~78px of the WebView. The first column must never shrink
@@ -160,7 +161,10 @@ export function UnifiedHeader() {
 
         <div
           data-tauri-drag-region
-          className="col-start-2 flex h-full min-w-0 items-center px-4 md:px-6"
+          className={cn(
+            "col-start-2 flex h-full min-w-0 items-center px-4 md:px-6",
+            hasOpenTarget && isFilesSidebarOpen && "desktop-chrome-content-panel"
+          )}
         >
           <div
             data-tauri-drag-region

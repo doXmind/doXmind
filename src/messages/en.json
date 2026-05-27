@@ -576,7 +576,18 @@
     "aboutEngine": "Engine",
     "aboutPrivacy": "Privacy",
     "aboutAcknowledgements": "Acknowledgements",
-    "aboutLicenses": "Open-source licenses"
+    "aboutLicenses": "Third-party licenses",
+    "aboutPrivacyTitle": "Privacy",
+    "aboutPrivacyBody1": "doXmind is local-first desktop software. Your documents stay in the folders you choose on this Mac.",
+    "aboutPrivacyBody2": "This edition has no sign-in, cloud sync, telemetry, billing, sharing, community publishing, or hosted AI runtime.",
+    "aboutPrivacyBody3": "Network access is limited to actions you explicitly start, such as opening external links or using operating-system services.",
+    "aboutAcknowledgementsTitle": "Acknowledgements",
+    "aboutAcknowledgementsBody1": "doXmind is proprietary software built on a desktop stack from Apple, Rust, Tauri, Python, React, Next.js, TipTap, and ProseMirror.",
+    "aboutAcknowledgementsBody2": "We thank the maintainers of the open-source libraries used inside the app. Their work makes a local-first Markdown editor practical to ship.",
+    "aboutAcknowledgementsBody3": "doXmind itself is not open source; these acknowledgements are for the third-party components included with the product.",
+    "aboutLicensesTitle": "Third-party licenses",
+    "aboutLicensesBody1": "doXmind itself is proprietary software. It is not distributed as an open-source project.",
+    "aboutLicensesBody2": "The app includes third-party open-source components. Their licenses apply to those components only."
   },
   "welcome": {
     "recentWorkspaces": "Recent workspaces",

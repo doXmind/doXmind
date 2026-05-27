@@ -18,6 +18,7 @@ import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { isMarkdownFile } from "@/lib/document-types";
 import { MINDLINES_WIDTH } from "@/lib/constants";
 import { MarkdownSkeleton } from "@/components/workspace/markdown-skeleton";
+import { cn } from "@/lib/utils";
 
 export function DesktopEditor() {
   const currentFileId = useFileStore((s) => s.currentFileId);
@@ -124,7 +125,13 @@ export function DesktopEditor() {
 
               <main
                 id="main-content"
-                className="desktop-content-surface relative min-h-0 min-w-0 overflow-hidden bg-background"
+                className={cn(
+                  "desktop-content-surface relative min-h-0 min-w-0 overflow-hidden bg-background",
+                  !isFocusMode &&
+                    hasOpenTarget &&
+                    isFilesSidebarOpen &&
+                    "desktop-content-with-sidebar"
+                )}
               >
                 {/* Outline rail — collapsed by default, expands into a floating
                 outline popover on hover. Keep it close to the scroll edge so

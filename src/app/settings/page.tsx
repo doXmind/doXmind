@@ -100,8 +100,8 @@ export default function SettingsPage() {
         data-tauri-drag-region
         className={cn(
           "sticky top-0 z-10 flex items-center gap-3.5 border-b border-border/70 bg-background px-6",
-          "h-11",
-          isMacTauri && "pl-[88px]"
+          "h-14",
+          isMacTauri && "pl-[112px]"
         )}
       >
         <Link

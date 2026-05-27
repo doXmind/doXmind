@@ -576,7 +576,18 @@
     "aboutEngine": "引擎",
     "aboutPrivacy": "隐私",
     "aboutAcknowledgements": "致谢",
-    "aboutLicenses": "开源许可"
+    "aboutLicenses": "第三方许可",
+    "aboutPrivacyTitle": "隐私",
+    "aboutPrivacyBody1": "doXmind 是本地优先的桌面软件。你的文档会保存在你选择的 Mac 文件夹里。",
+    "aboutPrivacyBody2": "这个版本没有登录、云同步、遥测、计费、分享、社区发布或托管 AI 运行时。",
+    "aboutPrivacyBody3": "网络访问仅限于你明确触发的操作，例如打开外部链接或使用操作系统服务。",
+    "aboutAcknowledgementsTitle": "致谢",
+    "aboutAcknowledgementsBody1": "doXmind 是闭源商业软件，构建于 Apple、Rust、Tauri、Python、React、Next.js、TipTap 与 ProseMirror 等桌面技术之上。",
+    "aboutAcknowledgementsBody2": "感谢 app 内部使用的开源库维护者。他们的工作让本地优先 Markdown 编辑器可以被可靠地交付。",
+    "aboutAcknowledgementsBody3": "doXmind 本身不是开源项目；这里的致谢仅面向产品中包含的第三方组件。",
+    "aboutLicensesTitle": "第三方许可",
+    "aboutLicensesBody1": "doXmind 本身是闭源商业软件，并不是作为开源项目分发。",
+    "aboutLicensesBody2": "app 内包含第三方开源组件。这些许可证只适用于对应的第三方组件。"
   },
   "welcome": {
     "recentWorkspaces": "最近的工作区",
