@@ -100,3 +100,23 @@ tests/fixtures/sidecar_compat/
 
 - browser-dev: `server/tests/test_sidecar_cross_runtime_compat.py`
 - desktop/Tauri: `src-tauri/src/lib.rs` 中 include 同一组 fixture 的 tests
+
+## SIDECAR_VERSION bump policy
+
+`SIDECAR_VERSION` 的读路径走显式 migration table（`services.synthetic_document._SIDECAR_MIGRATIONS`）：
+
+```python
+_SIDECAR_MIGRATIONS: dict[int, Callable[[dict], dict]] = {
+    1: _identity_sidecar_migration,
+    2: _identity_sidecar_migration,  # current
+}
+```
+
+约束：
+
+1. **Whitelist = table keys**：版本号必须显式列在表里才会被接受；不在表里的版本（包括未来版本）一律 raise `ValueError`。
+2. **每次 bump 必须保留旧版本入口**：bump 到 v3 时，v2 的入口要保留（哪怕只是 identity migration），否则用户磁盘上已经存在的 v2 sidecar 会被新版本直接拒绝。
+3. **Schema 改动放在对应 callable 里**：v1 和 v2 之间没有 schema 差异（read 路径靠下游对缺失字段的 graceful 处理），所以两条都是 identity。下次出现真实的 schema 差异时，把 migration 逻辑写进 `_migrate_vN_to_vN_plus_1` 函数挂到老版本的 key 下，新版本 key 用 identity。
+4. **Acceptance test 守护**：`test_sidecar_migration_table_covers_current_version` 断言 `SIDECAR_VERSION ∈ table`，并且所有 key 都 `≤ SIDECAR_VERSION`。CI 失败即 bump 漏了维护。
+
+这个 table 是 Python 侧的契约。Rust 侧（`src-tauri/src/lib.rs` 的 markdown-shape 读路径）维护一份对等的版本接受逻辑；两边同时 bump 时要保持一致。

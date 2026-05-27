@@ -1165,6 +1165,11 @@ fn pdf_block_slot_mut<'a>(
         *blocks = serde_json::json!({});
     }
     let blocks_obj = blocks.as_object_mut().expect("blocks is an object");
+    // Mirror Python's OrphanPolicy.DISCARD: a Synthetic Document has exactly
+    // one placeholder, so any extras.blocks key other than `block_id` is an
+    // orphan slot. Without this, Rust writes preserve orphans that Python
+    // reads would discard, and the on-disk shape diverges between runtimes.
+    blocks_obj.retain(|key, _| key == block_id);
     let slot = blocks_obj
         .entry(block_id.to_string())
         .or_insert_with(|| serde_json::json!({}));
@@ -1189,6 +1194,7 @@ fn pdf_block_slot_mut_in_extras<'a>(
         *blocks = serde_json::json!({});
     }
     let blocks_obj = blocks.as_object_mut().expect("blocks is an object");
+    blocks_obj.retain(|key, _| key == block_id);
     let slot = blocks_obj
         .entry(block_id.to_string())
         .or_insert_with(|| serde_json::json!({}));
@@ -1202,9 +1208,7 @@ fn pdf_block_id_from_sidecar(sidecar: &serde_json::Value) -> Result<Option<Strin
     if let Some(html) = sidecar.get("html").and_then(|value| value.as_str()) {
         let ids = pdf_block_ids_in_html(html);
         if ids.len() > 1 {
-            return Err(format!(
-                "markdown-shape PDF sidecar has multiple {PDF_BLOCK_TYPE} placeholders; Synthetic Documents require exactly one"
-            ));
+            return Err(duplicate_placeholder_error("PDF", PDF_BLOCK_TYPE, &ids));
         }
         if let Some(id) = ids.into_iter().next() {
             return Ok(Some(id));
@@ -1215,6 +1219,36 @@ fn pdf_block_id_from_sidecar(sidecar: &serde_json::Value) -> Result<Option<Strin
         .and_then(|value| value.get("blocks"))
         .and_then(|value| value.as_object())
         .and_then(|blocks| blocks.keys().next().cloned()))
+}
+
+/// Format the `len(ids) > 1` error message for markdown-shape sidecars,
+/// matching Python's vocabulary in `services.synthetic_document`. Same-id
+/// duplicates point at a different fix (user hand-edited a sidecar to
+/// repeat an id) than different-id duplicates ("two separate blocks where
+/// the schema requires one"), so the message distinguishes them.
+fn duplicate_placeholder_error(runtime_label: &str, block_type: &str, ids: &[String]) -> String {
+    let mut duplicate_ids: Vec<&String> = Vec::new();
+    let mut seen: std::collections::BTreeSet<&String> = std::collections::BTreeSet::new();
+    for id in ids {
+        let count = ids.iter().filter(|other| *other == id).count();
+        if count > 1 && seen.insert(id) {
+            duplicate_ids.push(id);
+        }
+    }
+    if !duplicate_ids.is_empty() {
+        duplicate_ids.sort();
+        let joined = duplicate_ids
+            .iter()
+            .map(|id| id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return format!(
+            "markdown-shape {runtime_label} sidecar has duplicate {block_type} placeholder id(s): {joined}"
+        );
+    }
+    format!(
+        "markdown-shape {runtime_label} sidecar has multiple {block_type} placeholders; Synthetic Documents require exactly one"
+    )
 }
 
 fn pdf_block_ids_in_html(html: &str) -> Vec<String> {
@@ -1567,9 +1601,9 @@ fn build_excel_synthetic_from_legacy(
     let block_id = excel_block_id_from_sidecar(legacy)?
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let mut extras = extras_object(legacy);
-    let mut blocks = blocks_object_from_extras(&extras);
-    let mut slot = blocks
-        .remove(&block_id)
+    let existing_blocks = blocks_object_from_extras(&extras);
+    let mut slot = existing_blocks
+        .get(&block_id)
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_default();
 
@@ -1590,6 +1624,12 @@ fn build_excel_synthetic_from_legacy(
         }
     }
 
+    // Mirror Python's OrphanPolicy.DISCARD during legacy migration too:
+    // build a fresh blocks map holding only the canonical block_id so any
+    // legacy extras.blocks entry that wasn't the one referenced by the
+    // placeholder is dropped at the migration boundary, not silently
+    // carried into the v2 shape.
+    let mut blocks = serde_json::Map::new();
     blocks.insert(block_id.clone(), serde_json::Value::Object(slot));
     extras.insert("blocks".to_string(), serde_json::Value::Object(blocks));
 
@@ -1625,14 +1665,19 @@ where
         return Err(read_only_document_error(path));
     }
     let mut extras = extras_object(&loaded.sidecar);
-    let mut blocks = blocks_object_from_extras(&extras);
-    let mut slot = blocks
-        .remove(&loaded.block_id)
+    let existing_blocks = blocks_object_from_extras(&extras);
+    let mut slot = existing_blocks
+        .get(&loaded.block_id)
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_default();
 
     update(&mut slot);
 
+    // Mirror Python's OrphanPolicy.DISCARD: drop any extras.blocks key that
+    // doesn't match the canonical placeholder id; otherwise orphan slots
+    // ride through Rust writes forever and the on-disk shape diverges from
+    // what Python's read path produces.
+    let mut blocks = serde_json::Map::new();
     blocks.insert(loaded.block_id.clone(), serde_json::Value::Object(slot));
     extras.insert("blocks".to_string(), serde_json::Value::Object(blocks));
     let next = canonical_excel_sidecar(
@@ -1753,9 +1798,7 @@ fn excel_block_id_from_sidecar(sidecar: &serde_json::Value) -> Result<Option<Str
     if let Some(html) = sidecar.get("html").and_then(|html| html.as_str()) {
         let ids = excel_block_ids_in_html(html);
         if ids.len() > 1 {
-            return Err(format!(
-                "markdown-shape Excel sidecar has multiple {EXCEL_BLOCK_TYPE} placeholders; Synthetic Documents require exactly one"
-            ));
+            return Err(duplicate_placeholder_error("Excel", EXCEL_BLOCK_TYPE, &ids));
         }
         if let Some(id) = ids.into_iter().next() {
             return Ok(Some(id));
@@ -2896,7 +2939,6 @@ fn create_editor_window(
     {
         builder = builder
             .title_bar_style(tauri::TitleBarStyle::Overlay)
-            .traffic_light_position(tauri::LogicalPosition::new(14.0, 24.0))
             .hidden_title(true)
             .transparent(true);
     }
@@ -2912,24 +2954,17 @@ fn create_editor_window(
         }
     }
 
+    // Native close semantics: the red traffic light destroys the window. On
+    // macOS the app stays resident in the dock even after the last window
+    // closes; `RunEvent::Reopen` below brings a fresh window back when the
+    // user clicks the dock icon. Freeing the label on destroy lets the same
+    // folder be reopened later under a clean label.
     let owned_label = label.to_string();
     let close_handle = app.clone();
     window.on_window_event(move |event| {
-        if let WindowEvent::CloseRequested { api, .. } = event {
-            // Multi-window close model: only the last visible window minimizes
-            // (preserves the macOS "stay resident" feel from before). Any
-            // additional window closes for real, freeing its label so the same
-            // folder can be reopened later.
-            let visible_count = visible_window_count(&close_handle);
-            if visible_count <= 1 {
-                api.prevent_close();
-                if let Some(window) = close_handle.get_webview_window(&owned_label) {
-                    let _ = window.minimize();
-                }
-            } else {
-                if let Some(registry) = close_handle.try_state::<WindowRegistry>() {
-                    registry.clear(&owned_label);
-                }
+        if let WindowEvent::Destroyed = event {
+            if let Some(registry) = close_handle.try_state::<WindowRegistry>() {
+                registry.clear(&owned_label);
             }
         }
     });
@@ -2941,16 +2976,6 @@ fn create_editor_window(
     let _ = window.set_focus();
 
     Ok(window)
-}
-
-/// Count windows that are currently visible (not minimized / hidden). Used by
-/// the close handler to decide between "minimize the last window" and "really
-/// close this one".
-fn visible_window_count(app: &AppHandle) -> usize {
-    app.webview_windows()
-        .values()
-        .filter(|w| w.is_visible().unwrap_or(false))
-        .count()
 }
 
 #[tauri::command]
@@ -3274,6 +3299,18 @@ window.__TAURI_PLATFORM__ = "{platform}";
                     }
                 }
             }
+            // macOS dock-icon click after every window has been closed. Tauri
+            // keeps the process resident; we bring a window back so the user
+            // can keep working.
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } => {
+                if !has_visible_windows {
+                    focus_main_window(handle);
+                }
+            }
             // macOS dispatches Finder "Open With" / drag-to-dock as file://
             // URLs here. Push the paths into the shared queue and ping the
             // frontend; the listener in NativeMenuListener calls
@@ -3370,6 +3407,15 @@ fn focus_main_window(app: &AppHandle) {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
+        return;
+    }
+    // "main" was destroyed (user closed every window). Re-create it so the
+    // tray menu and dock-icon reopen flow land on a fresh welcome screen
+    // instead of silently doing nothing.
+    if let Some(init) = app.try_state::<InitScript>() {
+        if let Err(err) = create_editor_window(app, "main", None, &init.0) {
+            log::warn!("[focus] failed to recreate main window: {err}");
+        }
     }
 }
 
@@ -3687,7 +3733,11 @@ mod tests {
     }
 
     #[test]
-    fn pdf_sidecar_duplicate_placeholders_error_without_rewrite() {
+    fn pdf_sidecar_same_id_duplicate_placeholders_error_without_rewrite() {
+        // A hand-edited sidecar with the same placeholder id repeated:
+        // Python distinguishes this from different-id duplicates so the
+        // user can find and remove the offending repeat; Rust matches
+        // that vocabulary.
         let workspace = TempWorkspace::new("pdf-sidecar-duplicate-placeholder");
         let pdf_path = workspace.path.join("Spec.pdf");
         fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf");
@@ -3708,11 +3758,143 @@ mod tests {
         let err = workspace_read_pdf_doc_state(workspace.root(), "Spec.pdf".into())
             .expect_err("duplicate placeholders must fail visibly");
 
-        assert!(err.contains("multiple pdf-block placeholders"), "{err}");
+        assert!(
+            err.contains("duplicate pdf-block placeholder id(s): block-1"),
+            "{err}"
+        );
         assert_eq!(
             fs::read(&sidecar_path).expect("read sidecar after"),
             raw_before
         );
+    }
+
+    #[test]
+    fn pdf_sidecar_different_id_duplicate_placeholders_error_without_rewrite() {
+        // Two placeholders with different ids: the failure mode is
+        // "schema requires one block, found multiple" — distinct from the
+        // same-id case above and reported with different wording.
+        let workspace = TempWorkspace::new("pdf-sidecar-multi-placeholder");
+        let pdf_path = workspace.path.join("Spec.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
+        write_file(
+            &sidecar_path,
+            r#"{
+  "version": 2,
+  "id": "doc-1",
+  "html": "<!-- pdf-block id=\"block-A\" src=\"Spec.pdf\" -->\n<!-- pdf-block id=\"block-B\" src=\"Spec.pdf\" -->",
+  "markdown_hash": "old",
+  "updated_at": "old",
+  "extras": {"blocks": {"block-A": {}, "block-B": {}}}
+}"#,
+        );
+        let raw_before = fs::read(&sidecar_path).expect("read sidecar before");
+
+        let err = workspace_read_pdf_doc_state(workspace.root(), "Spec.pdf".into())
+            .expect_err("multiple placeholders must fail visibly");
+
+        assert!(
+            err.contains(
+                "multiple pdf-block placeholders; Synthetic Documents require exactly one"
+            ),
+            "{err}"
+        );
+        assert!(!err.contains("duplicate"), "{err}");
+        assert_eq!(
+            fs::read(&sidecar_path).expect("read sidecar after"),
+            raw_before
+        );
+    }
+
+    #[test]
+    fn pdf_editor_write_preserves_unrelated_extras_keys() {
+        // The orphan-pruning rule in issue #96 applies only to
+        // `extras.blocks`. Other top-level extras keys (theme, layout,
+        // user-authored metadata, …) are not part of the block schema
+        // and must ride through writes untouched.
+        let workspace = TempWorkspace::new("pdf-preserve-extras");
+        let pdf_path = workspace.path.join("Spec.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&pdf_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "version": doxmind_sidecar::SIDECAR_VERSION,
+                "id": "doc-1",
+                "html": "<!-- pdf-block id=\"keep\" src=\"Spec.pdf\" -->",
+                "markdown_hash": "old",
+                "updated_at": "2026-05-12T00:00:00Z",
+                "extras": {
+                    "blocks": { "keep": {} },
+                    "theme": "solarized",
+                    "user_metadata": { "tags": ["draft"] }
+                }
+            }))
+            .expect("sidecar bytes"),
+        )
+        .expect("write sidecar");
+
+        workspace_write_pdf_editor_state(
+            workspace.root(),
+            "Spec.pdf".into(),
+            serde_json::json!({ "freeTextBoxes": [] }),
+        )
+        .expect("write editor state");
+
+        let after = read_json_file(&sidecar_path);
+        assert_eq!(after["extras"]["theme"], "solarized");
+        assert_eq!(after["extras"]["user_metadata"]["tags"][0], "draft");
+    }
+
+    #[test]
+    fn pdf_editor_write_prunes_orphan_extras_blocks_slots() {
+        // Python's BlockCorrelation runs with OrphanPolicy.DISCARD on read,
+        // so an extras.blocks entry whose id doesn't match the placeholder
+        // gets pruned. Rust writes must produce the same on-disk shape;
+        // otherwise the two runtimes' outputs diverge and orphans
+        // accumulate forever (issue #96).
+        let workspace = TempWorkspace::new("pdf-orphan-prune");
+        let pdf_path = workspace.path.join("Spec.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&pdf_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "version": doxmind_sidecar::SIDECAR_VERSION,
+                "id": "doc-1",
+                "html": "<!-- pdf-block id=\"keep\" src=\"Spec.pdf\" -->",
+                "markdown_hash": "old",
+                "updated_at": "2026-05-12T00:00:00Z",
+                "extras": {
+                    "blocks": {
+                        "keep": { "editor": { "freeTextBoxes": [] } },
+                        "orphan": { "editor": { "freeTextBoxes": [{"id": "leftover"}] } }
+                    }
+                }
+            }))
+            .expect("sidecar bytes"),
+        )
+        .expect("write sidecar");
+
+        workspace_write_pdf_editor_state(
+            workspace.root(),
+            "Spec.pdf".into(),
+            serde_json::json!({ "freeTextBoxes": [{"id": "fresh"}] }),
+        )
+        .expect("write editor state");
+
+        let after = read_json_file(&sidecar_path);
+        let blocks = after["extras"]["blocks"]
+            .as_object()
+            .expect("extras.blocks object");
+        assert_eq!(
+            blocks.len(),
+            1,
+            "orphan slot must be pruned to match Python's OrphanPolicy.DISCARD; got: {:?}",
+            blocks.keys().collect::<Vec<_>>()
+        );
+        assert!(blocks.contains_key("keep"));
+        assert!(!blocks.contains_key("orphan"));
     }
 
     #[test]
@@ -4745,7 +4927,7 @@ mod tests {
     }
 
     #[test]
-    fn excel_sidecar_duplicate_placeholders_error_without_rewrite() {
+    fn excel_sidecar_same_id_duplicate_placeholders_error_without_rewrite() {
         let workspace = TempWorkspace::new("excel-duplicate-placeholder");
         let workbook_path = workspace.path.join("Budget.xlsx");
         write_file(&workbook_path, "PK\x03\x04");
@@ -4778,11 +4960,108 @@ mod tests {
         let err = workspace_read_excel_doc_state(workspace.root(), "Budget.xlsx".into())
             .expect_err("duplicate placeholders must fail visibly");
 
-        assert!(err.contains("multiple excel-block placeholders"), "{err}");
+        assert!(
+            err.contains("duplicate excel-block placeholder id(s): excel-1"),
+            "{err}"
+        );
         assert_eq!(
             fs::read(&sidecar_path).expect("read sidecar after"),
             raw_before
         );
+    }
+
+    #[test]
+    fn excel_sidecar_different_id_duplicate_placeholders_error_without_rewrite() {
+        let workspace = TempWorkspace::new("excel-multi-placeholder");
+        let workbook_path = workspace.path.join("Budget.xlsx");
+        write_file(&workbook_path, "PK\x03\x04");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "version": doxmind_sidecar::SIDECAR_VERSION,
+                "id": "doc-1",
+                "html": format!(
+                    "{}\n{}",
+                    excel_placeholder("excel-A", "Budget.xlsx"),
+                    excel_placeholder("excel-B", "Budget.xlsx")
+                ),
+                "markdown_hash": "old",
+                "updated_at": "2026-05-12T00:00:00Z",
+                "extras": {
+                    "blocks": {
+                        "excel-A": {},
+                        "excel-B": {}
+                    }
+                }
+            }))
+            .expect("sidecar bytes"),
+        )
+        .expect("write sidecar");
+        let raw_before = fs::read(&sidecar_path).expect("read sidecar before");
+
+        let err = workspace_read_excel_doc_state(workspace.root(), "Budget.xlsx".into())
+            .expect_err("multiple placeholders must fail visibly");
+
+        assert!(
+            err.contains(
+                "multiple excel-block placeholders; Synthetic Documents require exactly one"
+            ),
+            "{err}"
+        );
+        assert!(!err.contains("duplicate"), "{err}");
+        assert_eq!(
+            fs::read(&sidecar_path).expect("read sidecar after"),
+            raw_before
+        );
+    }
+
+    #[test]
+    fn excel_editor_write_prunes_orphan_extras_blocks_slots() {
+        // Symmetric to `pdf_editor_write_prunes_orphan_extras_blocks_slots`
+        // (issue #96).
+        let workspace = TempWorkspace::new("excel-orphan-prune");
+        let workbook_path = workspace.path.join("Budget.xlsx");
+        write_file(&workbook_path, "PK\x03\x04");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "version": doxmind_sidecar::SIDECAR_VERSION,
+                "id": "doc-1",
+                "html": excel_placeholder("keep", "Budget.xlsx"),
+                "markdown_hash": "old",
+                "updated_at": "2026-05-12T00:00:00Z",
+                "extras": {
+                    "blocks": {
+                        "keep": { "editor": { "version": 1, "activeSheetId": "Sheet1" } },
+                        "orphan": { "editor": { "version": 1, "activeSheetId": "Stale" } }
+                    }
+                }
+            }))
+            .expect("sidecar bytes"),
+        )
+        .expect("write sidecar");
+
+        workspace_write_excel_editor_state(
+            workspace.root(),
+            "Budget.xlsx".into(),
+            serde_json::json!({ "version": 1, "activeSheetId": "Sheet2" }),
+        )
+        .expect("write editor state");
+
+        let after = read_json_file(&sidecar_path);
+        let blocks = after["extras"]["blocks"]
+            .as_object()
+            .expect("extras.blocks object");
+        assert_eq!(
+            blocks.len(),
+            1,
+            "orphan slot must be pruned; got: {:?}",
+            blocks.keys().collect::<Vec<_>>()
+        );
+        assert!(blocks.contains_key("keep"));
+        assert!(!blocks.contains_key("orphan"));
     }
 
     #[test]
@@ -5112,6 +5391,55 @@ mod tests {
         assert_eq!(slot["editor"]["activeSheetId"], "SlotSheet");
         assert_eq!(slot["parsedCache"]["sourceHash"], "legacy-cache");
         assert!(sidecar_bak_path(&sidecar_path).exists());
+    }
+
+    #[test]
+    fn excel_legacy_migration_prunes_orphan_extras_blocks_slots() {
+        // Issue #96 for the Excel legacy → markdown-shape migration path.
+        // `build_excel_synthetic_from_legacy` previously rebuilt
+        // `extras.blocks` by re-inserting only the canonical slot but
+        // letting any other legacy entry ride through. That made the
+        // migrated v2 sidecar carry orphans that Python's read path
+        // would then prune on first open, producing a different on-disk
+        // shape between Rust-migrated and Python-read sidecars.
+        let _lock = MIGRATE_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+        let workspace = TempWorkspace::new("excel-legacy-orphan-prune");
+        let workbook_path = workspace.path.join("Budget.xlsx");
+        write_file(&workbook_path, "PK\x03\x04");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        let legacy = serde_json::to_vec_pretty(&serde_json::json!({
+            "version": 1,
+            "id": "legacy-doc",
+            "html": excel_placeholder("keep", "Budget.xlsx"),
+            "excel_editor": { "version": 1, "activeSheetId": "LegacySheet" },
+            "extras": {
+                "blocks": {
+                    "keep": { "editor": { "version": 1, "activeSheetId": "Sheet1" } },
+                    "orphan": { "editor": { "version": 1, "activeSheetId": "Stale" } }
+                },
+                "unrelated": { "preserve": true }
+            }
+        }))
+        .expect("legacy bytes");
+        fs::write(&sidecar_path, legacy).expect("write legacy sidecar");
+
+        workspace_read_excel_doc_state(workspace.root(), "Budget.xlsx".into())
+            .expect("migrate legacy sidecar")
+            .expect("state");
+
+        let after = read_json_file(&sidecar_path);
+        let blocks = after["extras"]["blocks"]
+            .as_object()
+            .expect("extras.blocks object");
+        assert_eq!(
+            blocks.len(),
+            1,
+            "legacy migration must drop orphan slots; got: {:?}",
+            blocks.keys().collect::<Vec<_>>()
+        );
+        assert!(blocks.contains_key("keep"));
+        assert!(!blocks.contains_key("orphan"));
+        assert_eq!(after["extras"]["unrelated"]["preserve"], true);
     }
 
     /// Regression for the Excel legacy duplicate-placeholder path:
