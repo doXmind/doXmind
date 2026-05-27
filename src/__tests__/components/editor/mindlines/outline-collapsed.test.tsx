@@ -6,6 +6,31 @@ import { useFileStore } from "@/stores/file-store";
 import type { Heading } from "@/components/editor/mindlines/types";
 import type { FileItem } from "@/types";
 
+// `@tanstack/react-virtual` reads layout sizes from the scroll element; jsdom
+// reports zero so the live virtualizer would render no rows. These behavior
+// tests pre-date virtualization, so we stub the hook to render every row
+// (mimicking the old eager `.map` semantics). The dedicated virtualization
+// invariants live in `outline-collapsed-virtual.test.tsx`.
+vi.mock("@tanstack/react-virtual", () => ({
+  useVirtualizer: ({ count, estimateSize }: { count: number; estimateSize: () => number }) => {
+    const size = estimateSize();
+    return {
+      getTotalSize: () => count * size,
+      getVirtualItems: () =>
+        Array.from({ length: count }, (_, index) => ({
+          index,
+          key: index,
+          size,
+          start: index * size,
+          end: (index + 1) * size,
+          lane: 0,
+        })),
+      scrollToIndex: vi.fn(),
+      measure: vi.fn(),
+    };
+  },
+}));
+
 // AnimatePresence's exit animation keeps elements mounted longer than the
 // store-driven open/close timers we're verifying. Stub it out so the outline
 // unmounts the moment its state flips to closed.

@@ -1,7 +1,8 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { cn } from "@/lib/utils";
 import {
   isPointInOutlineSafeArea,
@@ -38,6 +39,7 @@ const POPOVER_MAX_HEIGHT_PX = 640;
 const POPOVER_VERTICAL_VIEWPORT_GUTTER_PX = 160;
 const POPOVER_ROW_ESTIMATE_PX = 28;
 const POPOVER_VERTICAL_PADDING_PX = 16;
+const POPOVER_ROW_OVERSCAN = 6;
 const HOVER_SAFE_AREA_PADDING_PX = 10;
 
 // ease-out-expo: fast start, smooth tail — Notion's "settle" feel.
@@ -198,14 +200,6 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
   );
 
   useEffect(() => {
-    if (phase !== "open" || !activeId) return;
-    const activeItem = listRef.current?.querySelector<HTMLElement>(
-      `[data-outline-id="${activeId}"]`
-    );
-    activeItem?.scrollIntoView({ block: "nearest" });
-  }, [activeId, phase]);
-
-  useEffect(() => {
     if (phase === "idle") return;
 
     const handlePointerMove = (event: PointerEvent) => {
@@ -229,10 +223,47 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
     return () => window.removeEventListener("pointermove", handlePointerMove);
   }, [cancelClose, closePopoverImmediate, isPointerInSafeArea, phase, schedulePopoverClose]);
 
-  if (headings.length === 0) return null;
-
   const compactRail = headings.length > 28;
   const popoverMounted = phase === "open" || phase === "closing";
+
+  // Virtualize the popover rows so a 1k-heading outline mounts only what's
+  // visible (plus a small overscan), keeping pointer-move + scroll cheap.
+  // The estimate matches the row's `min-h-[28px]` so initial layout doesn't
+  // jump when real heights settle in.
+  const rowVirtualizer = useVirtualizer({
+    count: headings.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => POPOVER_ROW_ESTIMATE_PX,
+    overscan: POPOVER_ROW_OVERSCAN,
+  });
+
+  const activeIndex = useMemo(() => {
+    if (!activeId) return -1;
+    return headings.findIndex((h) => h.id === activeId);
+  }, [activeId, headings]);
+
+  // One-shot scroll-to-active when the popover transitions from closed to
+  // open. We use an index-based call into the virtualizer rather than
+  // `Element.scrollIntoView` so the row need not be in the DOM yet — the
+  // virtualizer scrolls the viewport, then the windowed range catches up
+  // and renders the active row in place. The transition is detected by an
+  // effect comparing prev/current `popoverMounted`; firing inside an
+  // effect keeps render-phase pure.
+  const activeIndexRef = useRef(activeIndex);
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
+  const prevPopoverMountedRef = useRef(false);
+  useEffect(() => {
+    const wasOpen = prevPopoverMountedRef.current;
+    prevPopoverMountedRef.current = popoverMounted;
+    if (!popoverMounted || wasOpen) return;
+    const target = activeIndexRef.current;
+    if (target < 0) return;
+    rowVirtualizer.scrollToIndex(target, { align: "center", behavior: "auto" });
+  }, [popoverMounted, rowVirtualizer]);
+
+  if (headings.length === 0) return null;
 
   const handleNavigate = (heading: Heading) => {
     onNavigate(heading, { skipFocus: true });
@@ -360,34 +391,51 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
               ref={listRef}
               className="autohide-scrollbar max-h-[min(640px,calc(100vh-160px))] flex-1 overflow-y-auto py-2"
             >
-              {headings.map((heading) => {
-                const isActive = heading.id === activeId;
-                const indentPx = popoverIndentForLevel(heading.level);
-                const fontSize = popoverFontSizeForLevel(heading.level);
-                const fontWeight = popoverWeightForLevel(heading.level, isActive);
-                return (
-                  <button
-                    key={heading.id}
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleNavigate(heading);
-                    }}
-                    className={cn(
-                      "mx-1.5 flex min-h-[28px] cursor-pointer items-center rounded py-[5px] pr-3 text-left leading-[1.4] tracking-[-0.005em] transition-colors duration-100 hover:bg-foreground/[0.045]",
-                      "w-[calc(100%-12px)]",
-                      popoverColorClass(heading.level, isActive),
-                      isActive && "bg-foreground/[0.04]"
-                    )}
-                    style={{ paddingLeft: indentPx, fontSize, fontWeight }}
-                    data-outline-id={heading.id}
-                    aria-current={isActive ? "location" : undefined}
-                    title={heading.text || "Untitled"}
-                  >
-                    <span className="min-w-0 flex-1 truncate">{heading.text || "Untitled"}</span>
-                  </button>
-                );
-              })}
+              <div
+                data-testid="outline-popover-virtual-list"
+                style={{
+                  height: `${rowVirtualizer.getTotalSize()}px`,
+                  width: "100%",
+                  position: "relative",
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const heading = headings[virtualRow.index];
+                  if (!heading) return null;
+                  const isActive = heading.id === activeId;
+                  const indentPx = popoverIndentForLevel(heading.level);
+                  const fontSize = popoverFontSizeForLevel(heading.level);
+                  const fontWeight = popoverWeightForLevel(heading.level, isActive);
+                  return (
+                    <button
+                      key={heading.id}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleNavigate(heading);
+                      }}
+                      className={cn(
+                        "absolute left-0 top-0 mx-1.5 flex min-h-[28px] cursor-pointer items-center rounded py-[5px] pr-3 text-left leading-[1.4] tracking-[-0.005em] transition-colors duration-100 hover:bg-foreground/[0.045]",
+                        "w-[calc(100%-12px)]",
+                        popoverColorClass(heading.level, isActive),
+                        isActive && "bg-foreground/[0.04]"
+                      )}
+                      style={{
+                        paddingLeft: indentPx,
+                        fontSize,
+                        fontWeight,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                      data-outline-id={heading.id}
+                      data-outline-virtual-row="true"
+                      aria-current={isActive ? "location" : undefined}
+                      title={heading.text || "Untitled"}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{heading.text || "Untitled"}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </motion.nav>
         )}
