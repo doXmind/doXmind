@@ -11,6 +11,7 @@ import { WorkspaceHome } from "@/components/workspace/workspace-home";
 import { UnifiedHeader } from "@/components/editor/unified-header";
 import { OutlineCollapsed } from "@/components/editor/mindlines/outline-collapsed";
 import { useHeadings } from "@/components/editor/mindlines/use-headings";
+import { OutlineProvider } from "@/components/editor/mindlines/use-canonical-outline";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
@@ -92,100 +93,102 @@ export function DesktopEditor() {
 
   return (
     <AppShell hideHeader>
-      <div className="desktop-window-shell flex h-full flex-col" style={shellStyle}>
-        {!isFocusMode && <UnifiedHeader />}
+      <OutlineProvider editor={editor}>
+        <div className="desktop-window-shell flex h-full flex-col" style={shellStyle}>
+          {!isFocusMode && <UnifiedHeader />}
 
-        <div className="flex min-h-0 flex-1">
-          <div
-            className="grid min-h-0 flex-1"
-            style={{
-              gridTemplateColumns: `${filesSidebarColPx}px ${filesHandleColPx}px minmax(0, 1fr)`,
-              transition: filesGridTransition,
-            }}
-          >
-            <aside className="min-w-0 overflow-hidden">
-              {!isFocusMode && hasOpenTarget && (
-                <div style={{ minWidth: filesSidebarWidth }} className="h-full">
-                  <FilesSidebar />
-                </div>
-              )}
-            </aside>
-            <div className="min-w-0 overflow-hidden">
-              {!isFocusMode && hasOpenTarget && isFilesSidebarOpen && (
-                <ResizeHandle
-                  side="left"
-                  onResize={(delta) => setFilesSidebarWidth(filesSidebarWidth + delta)}
-                  onDoubleClick={() => resetPanelWidths()}
-                />
-              )}
-            </div>
-
-            <main
-              id="main-content"
-              className="desktop-content-surface relative min-h-0 min-w-0 overflow-hidden bg-background"
+          <div className="flex min-h-0 flex-1">
+            <div
+              className="grid min-h-0 flex-1"
+              style={{
+                gridTemplateColumns: `${filesSidebarColPx}px ${filesHandleColPx}px minmax(0, 1fr)`,
+                transition: filesGridTransition,
+              }}
             >
-              {/* Outline rail — collapsed by default, expands into a floating
+              <aside className="min-w-0 overflow-hidden">
+                {!isFocusMode && hasOpenTarget && (
+                  <div style={{ minWidth: filesSidebarWidth }} className="h-full">
+                    <FilesSidebar />
+                  </div>
+                )}
+              </aside>
+              <div className="min-w-0 overflow-hidden">
+                {!isFocusMode && hasOpenTarget && isFilesSidebarOpen && (
+                  <ResizeHandle
+                    side="left"
+                    onResize={(delta) => setFilesSidebarWidth(filesSidebarWidth + delta)}
+                    onDoubleClick={() => resetPanelWidths()}
+                  />
+                )}
+              </div>
+
+              <main
+                id="main-content"
+                className="desktop-content-surface relative min-h-0 min-w-0 overflow-hidden bg-background"
+              >
+                {/* Outline rail — collapsed by default, expands into a floating
                 outline popover on hover. Keep it close to the scroll edge so
                 the popover reads as part of the document navigation chrome. */}
-              {!isFocusMode && hasLiveHeadings && (
-                <div
-                  className="pointer-events-none absolute bottom-[14vh] right-2 top-[18vh] z-30 overflow-visible transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] md:right-2"
-                  style={{ width: outlineRailWidth }}
-                >
-                  {/* `relative` so the OutlineCollapsed root, which is
+                {!isFocusMode && hasLiveHeadings && (
+                  <div
+                    className="pointer-events-none absolute bottom-[14vh] right-2 top-[18vh] z-30 overflow-visible transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] md:right-2"
+                    style={{ width: outlineRailWidth }}
+                  >
+                    {/* `relative` so the OutlineCollapsed root, which is
                       `absolute right-0`, anchors to this 40px-wide column's
                       right edge and grows leftward when expanded. Without
                       relative positioning here, the absolute child would
                       anchor to the outer fixed-width column above and the
                       math would still work — but explicit relative keeps
                       the contract local. */}
-                  <div className="pointer-events-auto relative h-full w-full">
-                    <OutlineCollapsed
-                      headings={headings}
-                      activeId={activeId}
-                      onNavigate={navigateTo}
-                    />
+                    <div className="pointer-events-auto relative h-full w-full">
+                      <OutlineCollapsed
+                        headings={headings}
+                        activeId={activeId}
+                        onNavigate={navigateTo}
+                      />
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              <div className="relative flex h-full min-w-0 flex-col overflow-hidden">
-                <ErrorBoundary>
-                  {currentFile ? (
-                    isCurrentFileLoaded ? (
-                      <DocumentWorkspace
-                        file={currentFile}
-                        reservedRightInset={outlineContentGutterPx}
-                      />
+                <div className="relative flex h-full min-w-0 flex-col overflow-hidden">
+                  <ErrorBoundary>
+                    {currentFile ? (
+                      isCurrentFileLoaded ? (
+                        <DocumentWorkspace
+                          file={currentFile}
+                          reservedRightInset={outlineContentGutterPx}
+                        />
+                      ) : (
+                        <MarkdownSkeleton
+                          file={{ name: currentFile.name, outline: currentFile.outline }}
+                        />
+                      )
+                    ) : !isSynced && currentFileId ? (
+                      <MarkdownSkeleton />
+                    ) : openTarget === "folder" ? (
+                      <WorkspaceHome />
                     ) : (
-                      <MarkdownSkeleton
-                        file={{ name: currentFile.name, outline: currentFile.outline }}
-                      />
-                    )
-                  ) : !isSynced && currentFileId ? (
-                    <MarkdownSkeleton />
-                  ) : openTarget === "folder" ? (
-                    <WorkspaceHome />
-                  ) : (
-                    <WelcomeScreen />
-                  )}
-                </ErrorBoundary>
-              </div>
-            </main>
+                      <WelcomeScreen />
+                    )}
+                  </ErrorBoundary>
+                </div>
+              </main>
+            </div>
           </div>
-        </div>
 
-        {isFocusMode && (
-          <div className="fixed left-1/2 top-0 z-50 -translate-x-1/2 opacity-0 transition-opacity duration-300 hover:opacity-100">
-            <button
-              onClick={() => setFocusMode(false)}
-              className="mt-2 rounded-full border border-border bg-card/80 px-4 py-1.5 text-xs text-muted-foreground shadow-lg backdrop-blur-sm transition-colors hover:text-foreground"
-            >
-              Exit Focus Mode (F11)
-            </button>
-          </div>
-        )}
-      </div>
+          {isFocusMode && (
+            <div className="fixed left-1/2 top-0 z-50 -translate-x-1/2 opacity-0 transition-opacity duration-300 hover:opacity-100">
+              <button
+                onClick={() => setFocusMode(false)}
+                className="mt-2 rounded-full border border-border bg-card/80 px-4 py-1.5 text-xs text-muted-foreground shadow-lg backdrop-blur-sm transition-colors hover:text-foreground"
+              >
+                Exit Focus Mode (F11)
+              </button>
+            </div>
+          )}
+        </div>
+      </OutlineProvider>
     </AppShell>
   );
 }

@@ -1,21 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import type { Heading } from "./types";
+import { useCanonicalOutline } from "./use-canonical-outline";
 import { getScrollParent } from "./utils/heading-utils";
 
 /** Scroll-spy threshold: fraction of viewport height from top */
 const SCROLLSPY_THRESHOLD = 0.2;
 const OUTLINE_MAX_LEVEL = 3;
 const MIN_OUTLINE_HEADINGS = 2;
-/**
- * Trailing-edge debounce on heading extraction. Keeps the outline fresh
- * but stops `doc.forEach` from running on every keystroke — on a 1k-line
- * doc this dominates outline UX cost (parent re-renders cascade into the
- * popover).
- */
-const HEADINGS_DEBOUNCE_MS = 200;
 
 function getEditorScrollParent(editor: Editor) {
   const editorDom = editor.view.dom as HTMLElement;
@@ -25,66 +19,19 @@ function getEditorScrollParent(editor: Editor) {
   );
 }
 
-function headingsEqual(a: Heading[], b: Heading[]) {
-  if (a.length !== b.length) return false;
-  return a.every(
-    (heading, index) =>
-      heading.id === b[index]?.id &&
-      heading.level === b[index]?.level &&
-      heading.text === b[index]?.text &&
-      heading.pos === b[index]?.pos
-  );
-}
-
 /**
  * Hook to extract and track headings from a TipTap editor
  * Provides headings array, active heading ID (scroll-spy), and navigation function
  */
 export function useHeadings(editor: Editor | null) {
-  const [headings, setHeadings] = useState<Heading[]>([]);
+  const { headings: canonical } = useCanonicalOutline(editor);
   const [activeId, setActiveId] = useState<string | null>(null);
 
-  // Extract headings from editor content
-  useEffect(() => {
-    if (!editor) {
-      setHeadings([]);
-      setActiveId(null);
-      return;
-    }
-
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const computeHeadings = () => {
-      debounceTimer = null;
-      const found: Heading[] = [];
-
-      editor.state.doc.forEach((node, offset) => {
-        if (node.type.name === "heading" && node.attrs.level <= OUTLINE_MAX_LEVEL) {
-          found.push({
-            id: `h-${offset}`,
-            level: node.attrs.level,
-            text: node.textContent || "Untitled",
-            pos: offset,
-          });
-        }
-      });
-
-      const outlineHeadings = found.length >= MIN_OUTLINE_HEADINGS ? found : [];
-      setHeadings((prev) => (headingsEqual(prev, outlineHeadings) ? prev : outlineHeadings));
-    };
-
-    const scheduleUpdate = () => {
-      if (debounceTimer !== null) return;
-      debounceTimer = setTimeout(computeHeadings, HEADINGS_DEBOUNCE_MS);
-    };
-
-    computeHeadings();
-    editor.on("update", scheduleUpdate);
-    return () => {
-      editor.off("update", scheduleUpdate);
-      if (debounceTimer !== null) clearTimeout(debounceTimer);
-    };
-  }, [editor]);
+  // Sidebar shows level ≤ 3 only; the canonical source carries levels 1–6.
+  const headings = useMemo<Heading[]>(() => {
+    const filtered = canonical.filter((heading) => heading.level <= OUTLINE_MAX_LEVEL);
+    return filtered.length >= MIN_OUTLINE_HEADINGS ? filtered : [];
+  }, [canonical]);
 
   // Scroll-spy: track active heading based on scroll position
   // Finds the last heading whose top is above the threshold line (top ~20% of viewport)
