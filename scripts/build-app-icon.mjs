@@ -16,14 +16,12 @@ const outDir = resolve(projectRoot, "src-tauri");
 const sourcePath = resolve(outDir, "app-icon.png");
 
 const SIZE = 1024;
-// Apple's icon-grid template reserves ~10% margin (PAD=100) for the system
-// shadow. That looks correct in the Dock/Finder but appears as a "halo" of
-// empty pixels in our DMG view, where the squircle sits on a flat HFS
-// background with no shadow rendering. PAD=40 keeps a small visual breathing
-// room while letting the squircle fill the icon slot.
-const PAD = 40;
+// Recent macOS releases visually expect the app-icon artwork to sit inside a
+// 1024 canvas rather than fill it edge-to-edge. Keep the black enclosure at
+// 832px with 96px transparent padding per side so it matches native Dock icons.
+const PAD = 96;
 const INNER = SIZE - PAD * 2;
-const RADIUS = 215;
+const RADIUS = 190;
 
 function squirclePath(x, y, w, h, r) {
   const k = 0.5519;
@@ -73,7 +71,18 @@ function markPath(fill) {
 
 const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}" viewBox="0 0 ${SIZE} ${SIZE}">
-  <path d="${squirclePath(PAD, PAD, INNER, INNER, RADIUS)}" fill="#000000"/>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="${PAD}" x2="0" y2="${PAD + INNER}" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#18181B"/>
+      <stop offset="0.55" stop-color="#08080A"/>
+      <stop offset="1" stop-color="#000000"/>
+    </linearGradient>
+    <filter id="shadow" x="${PAD - 60}" y="${PAD - 40}" width="${INNER + 120}" height="${INNER + 140}" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000000" flood-opacity="0.34"/>
+    </filter>
+  </defs>
+  <path d="${squirclePath(PAD, PAD, INNER, INNER, RADIUS)}" fill="url(#tile)" filter="url(#shadow)"/>
+  <path d="${squirclePath(PAD + 1, PAD + 1, INNER - 2, INNER - 2, RADIUS - 1)}" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="2"/>
   ${markPath("#FFFFFF")}
 </svg>`;
 

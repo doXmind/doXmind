@@ -9,8 +9,7 @@ export function editorPath(fileId: string | null): string {
 }
 
 export function getEditorFileIdFromPathname(pathname?: string): string | null {
-  const source =
-    pathname ?? (typeof window !== "undefined" ? window.location.pathname : "/editor");
+  const source = pathname ?? (typeof window !== "undefined" ? window.location.pathname : "/editor");
   const match = source.match(/^\/editor\/([^/?#]+)/);
   return match?.[1] ? decodeURIComponent(match[1]) : null;
 }
@@ -18,7 +17,7 @@ export function getEditorFileIdFromPathname(pathname?: string): string | null {
 export function setEditorLocation(fileId: string | null, options?: { replace?: boolean }) {
   if (typeof window === "undefined") return;
 
-  const nextPath = editorPath(fileId);
+  const nextPath = `${editorPath(fileId)}${window.location.search}${window.location.hash}`;
   const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   if (current === nextPath) return;
 

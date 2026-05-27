@@ -398,6 +398,7 @@
     "newPdfDocument": "新建 PDF",
     "newExcelDocument": "新建 Excel",
     "newFolder": "新建文件夹",
+    "refresh": "刷新",
     "collapseAll": "全部收起",
     "fromTemplate": "从模板创建",
     "openFolder": "打开文件夹",

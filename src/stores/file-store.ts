@@ -226,6 +226,40 @@ function rememberRecent(entry: RecentEntry, state: Pick<FileState, "recents">): 
   ].slice(0, RECENTS_LIMIT);
 }
 
+function forgetRecent(entry: RecentEntry, state: Pick<FileState, "recents">): RecentEntry[] {
+  return state.recents.filter((r) => !(r.kind === entry.kind && r.path === entry.path));
+}
+
+function isMissingWorkspaceRootError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /workspace root is not a directory/i.test(message) ||
+    /failed to resolve workspace root/i.test(message) ||
+    /no such file or directory/i.test(message)
+  );
+}
+
+function replaceWorkspaceLocation(target: RecentEntry | null): void {
+  if (typeof window === "undefined") return;
+
+  const url = new URL(window.location.href);
+  url.pathname = "/editor";
+  url.searchParams.delete("folder");
+  url.searchParams.delete("file");
+
+  if (target?.kind === "folder") {
+    url.searchParams.set("folder", target.path);
+  } else if (target?.kind === "file") {
+    url.searchParams.set("file", target.path);
+  }
+
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (next !== current) {
+    window.history.replaceState(window.history.state, "", next);
+  }
+}
+
 function handleForFile(file: FileItem): DocumentHandle {
   return (
     file.storageHandle ?? { mode: "disk", id: file.id, kind: file.isFolder ? "folder" : "document" }
@@ -352,6 +386,7 @@ export const useFileStore = create<FileState>()(
           }
           return;
         }
+        const rootBeforeLoad = get().rootPath;
         set({ isLoading: true });
         try {
           const adapter = getAdapter(get());
@@ -409,6 +444,26 @@ export const useFileStore = create<FileState>()(
           });
         } catch (error) {
           log.error("Failed to load files from server", error);
+          if (rootBeforeLoad && isMissingWorkspaceRootError(error)) {
+            set((state) => ({
+              openTarget: "none",
+              rootPath: null,
+              openFilePath: null,
+              transientFile: null,
+              files: [],
+              currentFileId: null,
+              currentFolderId: null,
+              loadedContentIds: new Set(),
+              selectedFileIds: new Set(),
+              recents: forgetRecent({ kind: "folder", path: rootBeforeLoad }, state),
+              isSynced: true,
+              isLoading: false,
+            }));
+            replaceWorkspaceLocation(null);
+            void unregisterWindowTarget();
+            void syncRecentsToDock(get().recents);
+            return;
+          }
           // Keep local files if server is unavailable
           set({ isSynced: false, isLoading: false });
         }
@@ -523,6 +578,7 @@ export const useFileStore = create<FileState>()(
           loadedContentIds: new Set(),
           isSynced: false,
         }));
+        replaceWorkspaceLocation({ kind: "folder", path: trimmedRoot });
         void registerWindowTarget({ kind: "folder", path: trimmedRoot });
         void syncRecentsToDock(get().recents);
         await get().loadFiles();
@@ -615,6 +671,7 @@ export const useFileStore = create<FileState>()(
           isSynced: true,
           isLoading: false,
         }));
+        replaceWorkspaceLocation({ kind: "file", path: trimmed });
         void registerWindowTarget({ kind: "file", path: trimmed });
         void syncRecentsToDock(get().recents);
       },
@@ -633,6 +690,7 @@ export const useFileStore = create<FileState>()(
           isSynced: true,
           isLoading: false,
         });
+        replaceWorkspaceLocation(null);
         void unregisterWindowTarget();
       },
 

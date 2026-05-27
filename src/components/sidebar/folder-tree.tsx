@@ -10,7 +10,17 @@ import {
   useState,
 } from "react";
 import { useTranslations } from "next-intl";
-import { Check, FilePlus2, Folder, FolderOpen, FolderPlus, Pencil, Trash2, X } from "lucide-react";
+import {
+  Check,
+  FilePlus2,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  Pencil,
+  RefreshCw,
+  Trash2,
+  X,
+} from "lucide-react";
 import { PdfGlyph, SpreadsheetGlyph } from "@/components/icons/document-glyphs";
 import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
@@ -37,7 +47,15 @@ import { ImportConflictModal } from "./import-conflict-modal";
 const log = storeLogger.child("FolderTree");
 
 type FolderMenuItem = {
-  id: "new-file" | "new-pdf" | "new-excel" | "new-folder" | "rename" | "reveal" | "delete";
+  id:
+    | "new-file"
+    | "new-pdf"
+    | "new-excel"
+    | "new-folder"
+    | "refresh"
+    | "rename"
+    | "reveal"
+    | "delete";
   label: string;
   icon: React.ReactNode;
   onClick: () => void;
@@ -45,7 +63,7 @@ type FolderMenuItem = {
 };
 
 type EmptyMenuItem = {
-  id: "new-file" | "new-pdf" | "new-excel" | "new-folder";
+  id: "new-file" | "new-pdf" | "new-excel" | "new-folder" | "refresh";
   label: string;
   icon: React.ReactNode;
   onClick: () => void;
@@ -82,6 +100,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   const importExternalFile = useFileStore((s) => s.importExternalFile);
   const renameFile = useFileStore((s) => s.renameFile);
   const deleteFile = useFileStore((s) => s.deleteFile);
+  const loadFiles = useFileStore((s) => s.loadFiles);
   const justCreatedFileId = useFileStore((s) => s.justCreatedFileId);
   const clearJustCreatedFileId = useFileStore((s) => s.clearJustCreatedFileId);
 
@@ -209,7 +228,6 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     },
     [importExternalFile, t]
   );
-
 
   // External imports go through the D2 plan-phase resolver
   // (`src/lib/external-import-resolver.ts`) for whitelist + collision
@@ -563,8 +581,18 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   // Build the right-click menu for a folder. Encapsulating the items in
   // a single array makes keyboard navigation independent of which menu is
   // open and which entries are present.
+  const handleRefresh = useCallback(() => {
+    void loadFiles();
+  }, [loadFiles]);
+
   const buildFolderMenu = useCallback(
     (folder: FileItemType): FolderMenuItem[] => [
+      {
+        id: "refresh",
+        label: t("refresh"),
+        icon: <RefreshCw className="mr-2 h-4 w-4" />,
+        onClick: handleRefresh,
+      },
       {
         id: "new-file",
         label: t("newDocument"),
@@ -620,11 +648,17 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         destructive: true,
       },
     ],
-    [t, onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder]
+    [t, handleRefresh, onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder]
   );
 
   const buildEmptyMenu = useCallback(
     (): EmptyMenuItem[] => [
+      {
+        id: "refresh",
+        label: t("refresh"),
+        icon: <RefreshCw className="mr-2 h-4 w-4" />,
+        onClick: handleRefresh,
+      },
       {
         id: "new-file",
         label: t("newDocument"),
@@ -650,7 +684,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         onClick: () => onCreateFolder(null),
       },
     ],
-    [t, onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder]
+    [t, handleRefresh, onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder]
   );
 
   // Position helpers — clamp to viewport so menus don't overflow.
