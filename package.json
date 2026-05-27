@@ -32,7 +32,8 @@
     "icons": "node scripts/build-app-icon.mjs",
     "dev:desktop": "node scripts/desktop-dev.mjs",
     "build:sidecar": "node scripts/build-sidecar.mjs",
-    "build:desktop": "node scripts/build-sidecar.mjs && tauri build --config src-tauri/tauri.bundle.conf.json"
+    "build:desktop": "node scripts/build-sidecar.mjs && tauri build --config src-tauri/tauri.bundle.conf.json",
+    "gen:outline-stress": "node scripts/generate-outline-stress-md.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
