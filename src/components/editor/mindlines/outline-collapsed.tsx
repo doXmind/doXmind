@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { cn } from "@/lib/utils";
+import { aggregateMarkers } from "./aggregate-markers";
 import {
   isPointInOutlineSafeArea,
   projectLeftAnchoredPopoverRect,
@@ -41,6 +42,10 @@ const POPOVER_ROW_ESTIMATE_PX = 28;
 const POPOVER_VERTICAL_PADDING_PX = 16;
 const POPOVER_ROW_OVERSCAN = 6;
 const HOVER_SAFE_AREA_PADDING_PX = 10;
+// Cap the rail's DOM marker count. Above this, neighbouring headings are
+// collapsed into equal-position buckets so very large outlines stay cheap to
+// render without losing the active row's exact placement.
+const MAX_RAIL_MARKERS = 120;
 
 // ease-out-expo: fast start, smooth tail — Notion's "settle" feel.
 const EASE_OUT_EXPO: [number, number, number, number] = [0.16, 1, 0.3, 1];
@@ -226,6 +231,42 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
   const compactRail = headings.length > 28;
   const popoverMounted = phase === "open" || phase === "closing";
 
+  // Bound the rail to MAX_RAIL_MARKERS DOM nodes; the active heading is
+  // always represented exactly so the live row never snaps to a bucket
+  // midpoint. See `aggregate-markers.ts`.
+  const railMarkers = useMemo(
+    () => aggregateMarkers(headings, activeId, MAX_RAIL_MARKERS),
+    [headings, activeId]
+  );
+
+  // Resolve the click target for a bucket marker: navigate to the first
+  // heading whose position falls in the marker's bucket. For markers that
+  // map 1:1 to a heading (sub-cap path or the active marker), this returns
+  // the heading itself.
+  const resolveMarkerTarget = useCallback(
+    (markerId: string): Heading | null => {
+      const direct = headings.find((heading) => heading.id === markerId);
+      if (direct) return direct;
+      if (!markerId.startsWith("bucket-")) return null;
+      const bucketIndex = Number(markerId.slice("bucket-".length));
+      if (!Number.isFinite(bucketIndex) || headings.length === 0) return null;
+      const firstPos = headings[0].pos;
+      const lastPos = headings[headings.length - 1].pos;
+      const span = lastPos - firstPos;
+      if (span <= 0) return headings[0] ?? null;
+      const bucketSize = span / MAX_RAIL_MARKERS;
+      const bucketStart = firstPos + bucketIndex * bucketSize;
+      const bucketEnd =
+        bucketIndex === MAX_RAIL_MARKERS - 1
+          ? lastPos + 1
+          : firstPos + (bucketIndex + 1) * bucketSize;
+      return (
+        headings.find((heading) => heading.pos >= bucketStart && heading.pos < bucketEnd) ?? null
+      );
+    },
+    [headings]
+  );
+
   // Virtualize the popover rows so a 1k-heading outline mounts only what's
   // visible (plus a small overscan), keeping pointer-move + scroll cheap.
   // The estimate matches the row's `min-h-[28px]` so initial layout doesn't
@@ -322,32 +363,33 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
         style={{ gap: compactRail ? 2 : 5, width: "100%" }}
         aria-hidden={popoverMounted}
       >
-        {headings.map((heading) => {
-          const isActive = heading.id === activeId;
-          const isHover = hoveredLineId === heading.id;
-          const w = lineWidthForLevel(heading.level);
-          const opacity = isActive ? 0.9 : isHover ? 0.38 : 0.16;
+        {railMarkers.map((marker) => {
+          const isHover = hoveredLineId === marker.id;
+          const w = lineWidthForLevel(marker.level);
+          const opacity = marker.isActive ? 0.9 : isHover ? 0.38 : 0.16;
+          const target = resolveMarkerTarget(marker.id);
+          const labelText = target?.text || "Untitled";
 
           return (
             <button
-              key={heading.id}
+              key={marker.id}
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                handleNavigate(heading);
+                if (target) handleNavigate(target);
               }}
               onMouseEnter={() => {
-                setHoveredLineId(heading.id);
+                setHoveredLineId(marker.id);
                 schedulePopoverOpen();
               }}
               onMouseLeave={() => setHoveredLineId(null)}
               onPointerEnter={schedulePopoverOpen}
-              onFocus={() => setHoveredLineId(heading.id)}
+              onFocus={() => setHoveredLineId(marker.id)}
               onBlur={() => setHoveredLineId(null)}
               className="flex shrink-0 cursor-pointer items-center rounded-sm bg-transparent p-0 outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
               style={{ height: compactRail ? 8 : 12 }}
-              aria-label={`Navigate to: ${heading.text || "Untitled"}`}
-              aria-current={isActive ? "location" : undefined}
+              aria-label={`Navigate to: ${labelText}`}
+              aria-current={marker.isActive ? "location" : undefined}
               tabIndex={popoverMounted ? -1 : 0}
             >
               <span
