@@ -104,8 +104,8 @@ async function main() {
   pipe(backend, { name: "backend", color: "36" });
 
   const frontend = spawn(
-    "npx",
-    ["next", "dev", "-p", String(frontendPort)],
+    process.execPath,
+    [path.join(REPO_ROOT, "node_modules", "next", "dist", "bin", "next"), "dev", "-p", String(frontendPort)],
     {
       cwd: REPO_ROOT,
       env: {
