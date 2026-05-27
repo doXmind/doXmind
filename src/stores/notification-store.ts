@@ -5,6 +5,18 @@ export interface NotificationError {
   title: string;
   description?: string;
   createdAt: number;
+  persistent?: boolean;
+}
+
+export interface PushErrorOptions {
+  description?: string;
+  /**
+   * Suppress the 5s auto-dismiss timer. The user must close the banner
+   * manually. Reserve for messages that the user has to see even while
+   * actively typing — e.g. read-only autosave failures, where the user
+   * is mid-edit and a transient toast would be invisible.
+   */
+  persistent?: boolean;
 }
 
 export type ProgressStatus = "running" | "success" | "error";
@@ -28,7 +40,7 @@ interface NotificationState {
   errors: NotificationError[];
   progress: ProgressTask[];
 
-  pushError: (title: string, description?: string) => string;
+  pushError: (title: string, options?: PushErrorOptions) => string;
   dismissError: (id: string) => void;
   clearAllErrors: () => void;
 
@@ -47,10 +59,19 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   errors: [],
   progress: [],
 
-  pushError: (title, description) => {
+  pushError: (title, options) => {
     const id = makeId("err");
     set((state) => ({
-      errors: [...state.errors, { id, title, description, createdAt: Date.now() }],
+      errors: [
+        ...state.errors,
+        {
+          id,
+          title,
+          description: options?.description,
+          persistent: options?.persistent,
+          createdAt: Date.now(),
+        },
+      ],
     }));
     return id;
   },
@@ -108,5 +129,5 @@ export const useNotificationStore = create<NotificationState>((set) => ({
 }));
 
 export function notify(title: string, description?: string) {
-  return useNotificationStore.getState().pushError(title, description);
+  return useNotificationStore.getState().pushError(title, { description });
 }

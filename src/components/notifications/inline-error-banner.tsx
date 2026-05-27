@@ -35,13 +35,15 @@ function ErrorBannerRow({ error }: ErrorBannerRowProps) {
   // arrow from the parent would change identity on every parent render and
   // restart the auto-dismiss countdown — which would mean adding a second
   // error before 5 s had reset every older row's timer.
+  const persistent = error.persistent === true;
   useEffect(() => {
+    if (persistent) return;
     const id = error.id;
     const timer = window.setTimeout(() => {
       useNotificationStore.getState().dismissError(id);
     }, AUTO_DISMISS_MS);
     return () => window.clearTimeout(timer);
-  }, [error.id]);
+  }, [error.id, persistent]);
 
   const handleDismiss = () => useNotificationStore.getState().dismissError(error.id);
 

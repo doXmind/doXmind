@@ -60,13 +60,20 @@ export const READ_ONLY_NOTICE_DESCRIPTION =
 export function handleReadOnlyAutosaveError(
   err: unknown,
   surfacedRef: { current: boolean },
-  notifyError: (title: string, options?: { description?: string }) => void
+  notifyError: (
+    title: string,
+    options?: { description?: string; persistent?: boolean }
+  ) => void
 ): boolean {
   if (!isReadOnlyDocumentError(err)) return false;
   if (surfacedRef.current) return true;
   surfacedRef.current = true;
+  // Persistent because the user is typing when this fires; a 5s toast
+  // would dismiss before they look up, and the per-file spam guard means
+  // they'd never see it again until they switch files.
   notifyError(READ_ONLY_NOTICE_TITLE, {
     description: READ_ONLY_NOTICE_DESCRIPTION,
+    persistent: true,
   });
   return true;
 }

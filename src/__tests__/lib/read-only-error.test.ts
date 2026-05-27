@@ -68,6 +68,7 @@ describe("handleReadOnlyAutosaveError", () => {
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith(READ_ONLY_NOTICE_TITLE, {
       description: READ_ONLY_NOTICE_DESCRIPTION,
+      persistent: true,
     });
   });
 
