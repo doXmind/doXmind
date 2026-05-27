@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import uuid
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -71,6 +72,31 @@ _LEGACY_EDITOR_KEY = {
 _LEGACY_PARSED_CACHE_KEY = {
     PDF_BLOCK_TYPE: "pdf_parsed_cache",
     EXCEL_BLOCK_TYPE: "excel_parsed_cache",
+}
+
+
+def _identity_sidecar_migration(sidecar: dict[str, Any]) -> dict[str, Any]:
+    return sidecar
+
+
+# Per-version read migrations for markdown-shape Synthetic Document
+# sidecars. Each entry maps a known on-disk `version` to a callable that
+# returns the sidecar in SIDECAR_VERSION's canonical shape. Versions not
+# present here are rejected at read time (see `_read_markdown_shape`).
+#
+# Adding a new SIDECAR_VERSION means: keep the previous version's entry
+# (so old on-disk files stay readable), add a migration callable for it
+# if the schema changed, and add a new identity entry for the new
+# SIDECAR_VERSION. The acceptance test in
+# `tests/test_synthetic_document.py` enforces that SIDECAR_VERSION has
+# an entry here.
+_SIDECAR_MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    # v1 markdown-shape sidecars (emitted by older Rust runtimes before
+    # the version constant bumped to 2) are structurally compatible with
+    # v2 on read; the next explicit save through `_write_sidecar`
+    # rewrites the file as SIDECAR_VERSION.
+    1: _identity_sidecar_migration,
+    2: _identity_sidecar_migration,
 }
 
 
@@ -331,15 +357,13 @@ class SyntheticDocumentFactory:
         self, path: Path, block_type: str, sidecar: dict[str, Any]
     ) -> Document:
         version = sidecar.get("version")
-        # Tolerate v1 markdown-shape sidecars emitted by older Rust runtimes
-        # (the original markdown-document version constant) on read; the next
-        # explicit save through `_write_sidecar` will rewrite the file as v2.
-        # Future versions are still rejected.
-        if version not in (1, SIDECAR_VERSION):
+        migrate = _SIDECAR_MIGRATIONS.get(version) if isinstance(version, int) else None
+        if migrate is None:
             raise ValueError(
                 f"sidecar version {version!r} for {path} does not match "
                 f"current SIDECAR_VERSION={SIDECAR_VERSION}"
             )
+        sidecar = migrate(sidecar)
         extras = sidecar.get("extras")
         if not isinstance(extras, dict):
             extras = {"blocks": {}}

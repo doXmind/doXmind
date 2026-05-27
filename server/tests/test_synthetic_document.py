@@ -206,6 +206,24 @@ def test_open_pdf_rejects_future_sidecar_version(tmp_path):
         SyntheticDocumentFactory().open_pdf(pdf_path)
 
 
+def test_sidecar_migration_table_covers_current_version():
+    # The migration table is the single source of truth for which on-disk
+    # sidecar versions Python can read. SIDECAR_VERSION must have an
+    # entry, and every entry must be a non-negative int no greater than
+    # SIDECAR_VERSION (a future version with a higher key would mean
+    # silently accepting a sidecar we have no migration for).
+    migrations = sd_module._SIDECAR_MIGRATIONS
+    assert SIDECAR_VERSION in migrations, (
+        f"_SIDECAR_MIGRATIONS missing entry for current SIDECAR_VERSION={SIDECAR_VERSION}; "
+        "bumping SIDECAR_VERSION requires adding the previous version's migration."
+    )
+    for key in migrations:
+        assert isinstance(key, int) and key >= 1
+        assert key <= SIDECAR_VERSION, (
+            f"_SIDECAR_MIGRATIONS has key {key} > SIDECAR_VERSION={SIDECAR_VERSION}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Excel — symmetric
 # ---------------------------------------------------------------------------
