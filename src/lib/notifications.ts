@@ -2,6 +2,12 @@ import { useNotificationStore } from "@/stores/notification-store";
 
 interface ErrorOptions {
   description?: string;
+  /**
+   * Suppress the 5s auto-dismiss timer — banner sticks until the user
+   * closes it. Use for messages the user must see while mid-edit (e.g.
+   * read-only autosave failures); default toasts stay transient.
+   */
+  persistent?: boolean;
 }
 
 interface PromiseOptions<T> {
@@ -22,7 +28,10 @@ interface PromiseOptions<T> {
  */
 export const notify = {
   error(title: string, options?: ErrorOptions): string {
-    return useNotificationStore.getState().pushError(title, options?.description);
+    return useNotificationStore.getState().pushError(title, {
+      description: options?.description,
+      persistent: options?.persistent,
+    });
   },
 
   // Mirrors sonner's `toast.promise` shape but routes through our two

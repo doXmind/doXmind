@@ -47,6 +47,7 @@ describe("PdfEditorWorkspace autosave read-only surface", () => {
     expect(notifyError).toHaveBeenCalledTimes(1);
     expect(notifyError).toHaveBeenCalledWith(READ_ONLY_NOTICE_TITLE, {
       description: READ_ONLY_NOTICE_DESCRIPTION,
+      persistent: true,
     });
   });
 
