@@ -1202,6 +1202,13 @@ fn pdf_block_id_from_sidecar(sidecar: &serde_json::Value) -> Result<Option<Strin
     if let Some(html) = sidecar.get("html").and_then(|value| value.as_str()) {
         let ids = pdf_block_ids_in_html(html);
         if ids.len() > 1 {
+            let duplicate_ids = duplicate_placeholder_ids(&ids);
+            if !duplicate_ids.is_empty() {
+                return Err(format!(
+                    "markdown-shape PDF sidecar has duplicate {PDF_BLOCK_TYPE} placeholder id(s): {}",
+                    duplicate_ids.join(", ")
+                ));
+            }
             return Err(format!(
                 "markdown-shape PDF sidecar has multiple {PDF_BLOCK_TYPE} placeholders; Synthetic Documents require exactly one"
             ));
@@ -1215,6 +1222,19 @@ fn pdf_block_id_from_sidecar(sidecar: &serde_json::Value) -> Result<Option<Strin
         .and_then(|value| value.get("blocks"))
         .and_then(|value| value.as_object())
         .and_then(|blocks| blocks.keys().next().cloned()))
+}
+
+fn duplicate_placeholder_ids(ids: &[String]) -> Vec<String> {
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+    for id in ids {
+        *counts.entry(id.as_str()).or_insert(0) += 1;
+    }
+    let mut duplicates: Vec<String> = counts
+        .into_iter()
+        .filter_map(|(id, count)| (count > 1).then(|| id.to_string()))
+        .collect();
+    duplicates.sort();
+    duplicates
 }
 
 fn pdf_block_ids_in_html(html: &str) -> Vec<String> {
@@ -1753,6 +1773,13 @@ fn excel_block_id_from_sidecar(sidecar: &serde_json::Value) -> Result<Option<Str
     if let Some(html) = sidecar.get("html").and_then(|html| html.as_str()) {
         let ids = excel_block_ids_in_html(html);
         if ids.len() > 1 {
+            let duplicate_ids = duplicate_placeholder_ids(&ids);
+            if !duplicate_ids.is_empty() {
+                return Err(format!(
+                    "markdown-shape Excel sidecar has duplicate {EXCEL_BLOCK_TYPE} placeholder id(s): {}",
+                    duplicate_ids.join(", ")
+                ));
+            }
             return Err(format!(
                 "markdown-shape Excel sidecar has multiple {EXCEL_BLOCK_TYPE} placeholders; Synthetic Documents require exactly one"
             ));
@@ -3708,11 +3735,70 @@ mod tests {
         let err = workspace_read_pdf_doc_state(workspace.root(), "Spec.pdf".into())
             .expect_err("duplicate placeholders must fail visibly");
 
-        assert!(err.contains("multiple pdf-block placeholders"), "{err}");
+        assert!(
+            err.contains("duplicate pdf-block placeholder id(s): block-1"),
+            "{err}"
+        );
         assert_eq!(
             fs::read(&sidecar_path).expect("read sidecar after"),
             raw_before
         );
+    }
+
+    #[test]
+    fn pdf_block_id_from_sidecar_same_id_duplicates_error() {
+        let sidecar = serde_json::json!({
+            "html": "<!-- pdf-block id=\"A\" src=\"Spec.pdf\" -->\n<!-- pdf-block id=\"A\" src=\"Spec.pdf\" -->",
+        });
+        let err = pdf_block_id_from_sidecar(&sidecar)
+            .expect_err("same-id duplicates must produce a duplicate-id error");
+        assert!(
+            err.contains("duplicate pdf-block placeholder id(s):"),
+            "{err}"
+        );
+        assert!(err.contains('A'), "{err}");
+    }
+
+    #[test]
+    fn pdf_block_id_from_sidecar_different_id_duplicates_error() {
+        let sidecar = serde_json::json!({
+            "html": "<!-- pdf-block id=\"A\" src=\"Spec.pdf\" -->\n<!-- pdf-block id=\"B\" src=\"Spec.pdf\" -->",
+        });
+        let err = pdf_block_id_from_sidecar(&sidecar)
+            .expect_err("distinct-id duplicates must produce a multiple-placeholders error");
+        assert!(err.contains("multiple pdf-block placeholders"), "{err}");
+    }
+
+    #[test]
+    fn excel_block_id_from_sidecar_same_id_duplicates_error() {
+        let sidecar = serde_json::json!({
+            "html": format!(
+                "{}\n{}",
+                excel_placeholder("A", "Budget.xlsx"),
+                excel_placeholder("A", "Budget.xlsx"),
+            ),
+        });
+        let err = excel_block_id_from_sidecar(&sidecar)
+            .expect_err("same-id duplicates must produce a duplicate-id error");
+        assert!(
+            err.contains("duplicate excel-block placeholder id(s):"),
+            "{err}"
+        );
+        assert!(err.contains('A'), "{err}");
+    }
+
+    #[test]
+    fn excel_block_id_from_sidecar_different_id_duplicates_error() {
+        let sidecar = serde_json::json!({
+            "html": format!(
+                "{}\n{}",
+                excel_placeholder("A", "Budget.xlsx"),
+                excel_placeholder("B", "Budget.xlsx"),
+            ),
+        });
+        let err = excel_block_id_from_sidecar(&sidecar)
+            .expect_err("distinct-id duplicates must produce a multiple-placeholders error");
+        assert!(err.contains("multiple excel-block placeholders"), "{err}");
     }
 
     #[test]
@@ -4778,7 +4864,10 @@ mod tests {
         let err = workspace_read_excel_doc_state(workspace.root(), "Budget.xlsx".into())
             .expect_err("duplicate placeholders must fail visibly");
 
-        assert!(err.contains("multiple excel-block placeholders"), "{err}");
+        assert!(
+            err.contains("duplicate excel-block placeholder id(s): excel-1"),
+            "{err}"
+        );
         assert_eq!(
             fs::read(&sidecar_path).expect("read sidecar after"),
             raw_before
