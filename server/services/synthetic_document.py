@@ -36,6 +36,7 @@ from services.external_ref_blocks import (
 from services.markdown_document_state import DocumentSnapshot
 from services.sidecar_io import (
     SIDECAR_VERSION,
+    SIDECAR_VERSION_WHITELIST,
     Corrupt,
     CorruptSidecarError,
     Loaded,
@@ -331,11 +332,10 @@ class SyntheticDocumentFactory:
         self, path: Path, block_type: str, sidecar: dict[str, Any]
     ) -> Document:
         version = sidecar.get("version")
-        # Tolerate v1 markdown-shape sidecars emitted by older Rust runtimes
-        # (the original markdown-document version constant) on read; the next
-        # explicit save through `_write_sidecar` will rewrite the file as v2.
-        # Future versions are still rejected.
-        if version not in (1, SIDECAR_VERSION):
+        # Accept any version in SIDECAR_VERSION_WHITELIST; future versions
+        # are rejected loudly rather than silently load-pathed. The next
+        # explicit save normalizes the file to current SIDECAR_VERSION.
+        if version not in SIDECAR_VERSION_WHITELIST:
             raise ValueError(
                 f"sidecar version {version!r} for {path} does not match "
                 f"current SIDECAR_VERSION={SIDECAR_VERSION}"

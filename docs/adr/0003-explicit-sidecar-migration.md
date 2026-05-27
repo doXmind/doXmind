@@ -100,3 +100,36 @@ tests/fixtures/sidecar_compat/
 
 - browser-dev: `server/tests/test_sidecar_cross_runtime_compat.py`
 - desktop/Tauri: `src-tauri/src/lib.rs` 中 include 同一组 fixture 的 tests
+
+## Version bump procedure
+
+`SIDECAR_VERSION` 是 sidecar wire format 的整数版本号。bump 之后硬盘上仍然
+会留下旧版本的 sidecar 文件 —— 用户没打开过的文件、刚降级回旧 app 又升回来
+的文件、备份恢复进来的文件，都可能写着上一版。Python 必须能继续读这些。
+
+为了避免 "bump 时忘了把上一版加进白名单 → 把所有旧 sidecar 拒掉" 这种回归，
+版本接受策略选**严白名单**，不用 `version <= SIDECAR_VERSION` 这种开放下界：
+
+- `services.sidecar_io.SIDECAR_VERSION_WHITELIST` 显式列出所有"被接受的"
+  历史版本号，目前是 `{1, 2}`。
+- 不在白名单的版本（包括未来的 v3、v99）都被 read 路径 loud-fail，不会被
+  默默 load-pathed 然后用 missing-field 默认值兜底。
+
+bump `SIDECAR_VERSION` 时按这个流程走：
+
+1. **改常量**：把 `services.sidecar_io.SIDECAR_VERSION` 提到新值。
+2. **加白名单**：把**上一版**加进 `SIDECAR_VERSION_WHITELIST` —— 比如从 2
+   bump 到 3，就把白名单从 `{1, 2}` 改成 `{1, 2, 3}`。
+3. **更新测试**：把 `test_synthetic_document.py` 里的
+   `test_sidecar_version_whitelist_covers_all_known_history` 的期望集合
+   同步过去。该测试的作用是当步骤 2 漏掉时 CI 直接 fail。
+4. **加 migration 代码（如果结构变了）**：在 `_read_markdown_shape` 或
+   等价 read 路径里处理新旧字段差异。结构没变只换 cache-invalidation
+   语义的（v1 → v2 那种）不需要 migration 代码，由 `_write_sidecar`
+   在下次显式 save 时把文件 normalize 到当前版本。
+5. **更新 README / docs/sidecar-format.md**：`version` 字段的 "Current
+   value" 描述同步。
+
+什么时候考虑放弃严白名单：白名单大到（比如有 5+ 个版本要养）维护成本高于
+风险时，再考虑把它升级成 per-version migration table（key = 版本号，
+value = 该版本的 reader）。在那之前，白名单 + 测试已经足够。

@@ -32,6 +32,15 @@ salvaged per Custom Block rules). Future schema changes that need to
 invalidate the cached HTML follow the same lever.
 """
 
+SIDECAR_VERSION_WHITELIST: frozenset[int] = frozenset({1, 2})
+"""
+Explicit set of sidecar versions accepted on read. Strict whitelist (not
+``version <= SIDECAR_VERSION``) so unknown future versions fail loudly
+rather than being silently load-pathed with missing-field defaults. When
+bumping ``SIDECAR_VERSION``, add the previous version here and update the
+whitelist completeness test. See ADR-0003 "Version bump procedure".
+"""
+
 TASK_ITEM_RE = re.compile(r"^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$")
 
 

@@ -19,6 +19,7 @@ import pytest
 from services import synthetic_document as sd_module
 from services.sidecar_io import (
     SIDECAR_VERSION,
+    SIDECAR_VERSION_WHITELIST,
     CorruptSidecarError,
     atomic_write,
     sidecar_path_for,
@@ -83,6 +84,14 @@ def _make_excel(tmp_path: Path, name: str = "Q3 Forecast.xlsx") -> Path:
 def _open_pdf_block_id_worker(sidecar_path: str) -> str:
     pdf_path = sd_module._path_for_sidecar(Path(sidecar_path))
     return SyntheticDocumentFactory().open_pdf(pdf_path).block_id
+
+
+def test_sidecar_version_whitelist_covers_all_known_history() -> None:
+    # When bumping SIDECAR_VERSION, add the previous version to
+    # SIDECAR_VERSION_WHITELIST (sidecar_io.py) and update this set.
+    # Procedure documented in ADR-0003 "Version bump procedure".
+    assert SIDECAR_VERSION_WHITELIST == frozenset({1, 2})
+    assert SIDECAR_VERSION in SIDECAR_VERSION_WHITELIST
 
 
 # ---------------------------------------------------------------------------
