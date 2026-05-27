@@ -17,7 +17,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{cmp, collections::BTreeMap, collections::HashMap};
+use std::{cmp, collections::BTreeMap, collections::HashMap, collections::HashSet};
 
 use doxmind_sidecar::{DocMeta, DocPayload, DocumentOutlineItem, ReadResult, Source, SourceState};
 use serde::{Deserialize, Serialize};
@@ -882,6 +882,7 @@ where
     let slot = pdf_block_slot_mut(&mut state.sidecar, &state.block_id)?;
     mutate(slot);
     remove_pdf_legacy_top_level(&mut state.sidecar);
+    prune_orphan_pdf_block_slots(&mut state.sidecar, &state.block_id);
     refresh_pdf_synthetic_sidecar(root, path, &mut state.sidecar)?;
     write_json_sidecar(&state.sidecar_path, &state.sidecar)
 }
@@ -989,6 +990,7 @@ fn build_pdf_synthetic_from_legacy(
             .insert("extras".to_string(), preserved_extras);
     }
 
+    prune_orphan_pdf_block_slots(&mut migrated.sidecar, &migrated.block_id);
     Ok(migrated)
 }
 
@@ -1215,6 +1217,49 @@ fn pdf_block_id_from_sidecar(sidecar: &serde_json::Value) -> Result<Option<Strin
         .and_then(|value| value.get("blocks"))
         .and_then(|value| value.as_object())
         .and_then(|blocks| blocks.keys().next().cloned()))
+}
+
+// drop orphan block slots so cross-runtime writes converge (mirrors Python OrphanPolicy.DISCARD).
+// Without this, a Rust write reinserts slots whose ids no longer appear in html, and the
+// follow-up Python read prunes them — but only on read, leaving the next Rust write to lose
+// them permanently. Pruning here keeps `extras.blocks` bounded to ids actually referenced by
+// the html placeholder set, while leaving other top-level `extras.*` keys untouched.
+fn prune_orphan_pdf_block_slots(sidecar: &mut serde_json::Value, live_id: &str) {
+    let live: HashSet<String> = sidecar
+        .get("html")
+        .and_then(|value| value.as_str())
+        .map(pdf_block_ids_in_html)
+        .unwrap_or_default()
+        .into_iter()
+        .chain(std::iter::once(live_id.to_string()))
+        .collect();
+    let Some(blocks) = sidecar
+        .get_mut("extras")
+        .and_then(|value| value.get_mut("blocks"))
+        .and_then(|value| value.as_object_mut())
+    else {
+        return;
+    };
+    blocks.retain(|id, _| live.contains(id));
+}
+
+fn prune_orphan_excel_block_slots(sidecar: &mut serde_json::Value, live_id: &str) {
+    let live: HashSet<String> = sidecar
+        .get("html")
+        .and_then(|value| value.as_str())
+        .map(excel_block_ids_in_html)
+        .unwrap_or_default()
+        .into_iter()
+        .chain(std::iter::once(live_id.to_string()))
+        .collect();
+    let Some(blocks) = sidecar
+        .get_mut("extras")
+        .and_then(|value| value.get_mut("blocks"))
+        .and_then(|value| value.as_object_mut())
+    else {
+        return;
+    };
+    blocks.retain(|id, _| live.contains(id));
 }
 
 fn pdf_block_ids_in_html(html: &str) -> Vec<String> {
@@ -1593,12 +1638,13 @@ fn build_excel_synthetic_from_legacy(
     blocks.insert(block_id.clone(), serde_json::Value::Object(slot));
     extras.insert("blocks".to_string(), serde_json::Value::Object(blocks));
 
-    let migrated = canonical_excel_sidecar(
+    let mut migrated = canonical_excel_sidecar(
         path,
         Some(legacy),
         &block_id,
         serde_json::Value::Object(extras),
     );
+    prune_orphan_excel_block_slots(&mut migrated, &block_id);
     Ok((block_id, migrated))
 }
 
@@ -1635,12 +1681,13 @@ where
 
     blocks.insert(loaded.block_id.clone(), serde_json::Value::Object(slot));
     extras.insert("blocks".to_string(), serde_json::Value::Object(blocks));
-    let next = canonical_excel_sidecar(
+    let mut next = canonical_excel_sidecar(
         path,
         Some(&loaded.sidecar),
         &loaded.block_id,
         serde_json::Value::Object(extras),
     );
+    prune_orphan_excel_block_slots(&mut next, &loaded.block_id);
     write_excel_sidecar_value(&loaded.sidecar_path, &next)
 }
 
@@ -5915,5 +5962,133 @@ mod tests {
         assert!(err.contains("must end in .md"), "unexpected error: {err}");
         // Source untouched.
         assert!(workspace.path.join("notes.txt").exists());
+    }
+
+    #[test]
+    fn pdf_write_drops_orphan_extras_blocks() {
+        let workspace = TempWorkspace::new("pdf-write-orphan-prune");
+        let pdf_path = workspace.path.join("Spec.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
+        write_file(
+            &sidecar_path,
+            r#"{
+  "version": 2,
+  "id": "doc-1",
+  "html": "<!-- pdf-block id=\"block-A\" src=\"Spec.pdf\" -->",
+  "markdown_hash": "old",
+  "updated_at": "old",
+  "extras": {
+    "blocks": {
+      "block-A": {"editor": {"textEdits": []}},
+      "block-B-orphan": {"editor": {"textEdits": [{"id": "ghost"}]}}
+    }
+  }
+}"#,
+        );
+
+        workspace_write_pdf_editor_state(
+            workspace.root(),
+            "Spec.pdf".into(),
+            serde_json::json!({"textEdits": [{"id": "new"}]}),
+        )
+        .expect("write editor");
+
+        let sidecar = read_json(&sidecar_path);
+        let blocks = sidecar["extras"]["blocks"]
+            .as_object()
+            .expect("extras.blocks object");
+        assert!(blocks.contains_key("block-A"), "live slot must survive");
+        assert!(
+            !blocks.contains_key("block-B-orphan"),
+            "orphan slot must be pruned: {blocks:?}"
+        );
+        assert_eq!(blocks.len(), 1);
+    }
+
+    #[test]
+    fn excel_write_drops_orphan_extras_blocks() {
+        let workspace = TempWorkspace::new("excel-write-orphan-prune");
+        let workbook_path = workspace.path.join("Budget.xlsx");
+        write_file(&workbook_path, "PK\x03\x04");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "version": 2,
+                "id": "doc-1",
+                "html": excel_placeholder("excel-A", "Budget.xlsx"),
+                "markdown_hash": "old",
+                "updated_at": "2026-05-12T00:00:00Z",
+                "extras": {
+                    "blocks": {
+                        "excel-A": { "editor": { "version": 1, "activeSheetId": "Sheet1" } },
+                        "excel-B-orphan": { "editor": { "version": 1, "activeSheetId": "Ghost" } }
+                    }
+                }
+            }))
+            .expect("sidecar bytes"),
+        )
+        .expect("write sidecar");
+
+        workspace_write_excel_editor_state(
+            workspace.root(),
+            "Budget.xlsx".into(),
+            serde_json::json!({ "version": 1, "activeSheetId": "Sheet2" }),
+        )
+        .expect("write editor");
+
+        let sidecar = read_json_file(&sidecar_path);
+        let blocks = sidecar["extras"]["blocks"]
+            .as_object()
+            .expect("extras.blocks object");
+        assert!(blocks.contains_key("excel-A"), "live slot must survive");
+        assert!(
+            !blocks.contains_key("excel-B-orphan"),
+            "orphan slot must be pruned: {blocks:?}"
+        );
+        assert_eq!(blocks.len(), 1);
+    }
+
+    #[test]
+    fn pdf_write_preserves_unrelated_extras_keys() {
+        let workspace = TempWorkspace::new("pdf-write-orphan-prune-keeps-extras");
+        let pdf_path = workspace.path.join("Spec.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
+        write_file(
+            &sidecar_path,
+            r#"{
+  "version": 2,
+  "id": "doc-1",
+  "html": "<!-- pdf-block id=\"block-A\" src=\"Spec.pdf\" -->",
+  "markdown_hash": "old",
+  "updated_at": "old",
+  "extras": {
+    "foo": "bar",
+    "theme": {"dark": true},
+    "blocks": {
+      "block-A": {"editor": {"textEdits": []}},
+      "block-B-orphan": {"editor": {"textEdits": [{"id": "ghost"}]}}
+    }
+  }
+}"#,
+        );
+
+        workspace_write_pdf_editor_state(
+            workspace.root(),
+            "Spec.pdf".into(),
+            serde_json::json!({"textEdits": [{"id": "new"}]}),
+        )
+        .expect("write editor");
+
+        let sidecar = read_json(&sidecar_path);
+        assert_eq!(sidecar["extras"]["foo"], "bar");
+        assert_eq!(sidecar["extras"]["theme"]["dark"], true);
+        let blocks = sidecar["extras"]["blocks"]
+            .as_object()
+            .expect("extras.blocks object");
+        assert!(!blocks.contains_key("block-B-orphan"));
+        assert_eq!(blocks.len(), 1);
     }
 }
