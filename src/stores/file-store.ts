@@ -304,6 +304,37 @@ function readModelFromFile(file: FileItem): LoadedReadModel {
   };
 }
 
+function shouldSyncDatabases(content: DocumentContent): boolean {
+  if (content.html.includes("data-database-id")) return true;
+  if (content.markdown?.includes("database:")) return true;
+  const extras = content.extras;
+  if (!extras || typeof extras !== "object") return false;
+  const databases = (extras as { databases?: unknown }).databases;
+  return Boolean(databases && typeof databases === "object" && Object.keys(databases).length > 0);
+}
+
+function syncDatabasesForContent(content: DocumentContent): void {
+  if (!shouldSyncDatabases(content)) return;
+  perfSync(
+    "doxmind.loadFileContent.syncDatabases",
+    () => syncDatabasesForDocument(content.extras, content.html, content.markdown),
+    { htmlBytes: content.html?.length ?? 0 }
+  );
+}
+
+function outlinesEqual(
+  left: LoadedReadModel["outline"] = [],
+  right: LoadedReadModel["outline"] = []
+): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (a.id !== b.id || a.depth !== b.depth || a.text !== b.text) return false;
+  }
+  return true;
+}
+
 function fileFromEntry(entry: WorkspaceEntry, existingReadModel?: LoadedReadModel): FileItem {
   return {
     id: entry.handle.id,
@@ -500,11 +531,7 @@ export const useFileStore = create<FileState>()(
                 () => getAdapter(get()).read(handleForFile(file)),
                 { fileId, documentType: file.documentType }
               );
-              perfSync(
-                "doxmind.loadFileContent.syncDatabases",
-                () => syncDatabasesForDocument(fullFile.extras, fullFile.html, fullFile.markdown),
-                { htmlBytes: fullFile.html?.length ?? 0 }
-              );
+              syncDatabasesForContent(fullFile);
               perfSync("doxmind.loadFileContent.storeCommit", () =>
                 set((state) => {
                   // Only update if the file exists in the files array.
@@ -522,9 +549,7 @@ export const useFileStore = create<FileState>()(
                   const htmlUnchanged = existing.content === nextReadModel.content;
                   const browsingHtmlUnchanged =
                     (existing.browsingHtml ?? existing.content) === nextReadModel.browsingHtml;
-                  const outlineUnchanged =
-                    JSON.stringify(existing.outline ?? []) ===
-                    JSON.stringify(nextReadModel.outline ?? []);
+                  const outlineUnchanged = outlinesEqual(existing.outline, nextReadModel.outline);
                   const handleIdUnchanged = existing.id === fullFile.handle.id;
                   if (
                     htmlUnchanged &&
@@ -636,7 +661,7 @@ export const useFileStore = create<FileState>()(
           };
         } else {
           const content = await adapter.read(handle);
-          syncDatabasesForDocument(content.extras, content.html, content.markdown);
+          syncDatabasesForContent(content);
           const readModel = readModelFromContent(content);
           looseFile = {
             id: content.handle.id || handle.id,

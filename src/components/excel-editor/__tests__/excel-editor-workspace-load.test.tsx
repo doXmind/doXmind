@@ -127,10 +127,9 @@ vi.mock("@/lib/notifications", () => ({
 
 // Mock the openpyxl-backed parse so the test doesn't hit the network.
 vi.mock("@/lib/excel/parse-workbook", async () => {
-  const actual =
-    await vi.importActual<typeof import("@/lib/excel/parse-workbook")>(
-      "@/lib/excel/parse-workbook"
-    );
+  const actual = await vi.importActual<typeof import("@/lib/excel/parse-workbook")>(
+    "@/lib/excel/parse-workbook"
+  );
   return {
     ...actual,
     fetchExcelWorkbook: spies.fetchExcelWorkbook,
@@ -140,9 +139,7 @@ vi.mock("@/lib/excel/parse-workbook", async () => {
 // File store is consulted for `rootPath`; provide a thin stub so the
 // `createStorageAdapter` selector argument doesn't blow up on undefined.
 vi.mock("@/stores/file-store", async () => {
-  const actual = await vi.importActual<typeof import("@/stores/file-store")>(
-    "@/stores/file-store"
-  );
+  const actual = await vi.importActual<typeof import("@/stores/file-store")>("@/stores/file-store");
   return {
     ...actual,
     useFileStore: (selector?: (state: { rootPath: string }) => unknown) => {
@@ -205,6 +202,7 @@ describe("ExcelEditorWorkspace cold-open IPC path", () => {
     await waitFor(() => {
       expect(spies.fetchExcelWorkbook).toHaveBeenCalledTimes(1);
     });
+    await screen.findByTestId("excel-sheet-view");
 
     // Editor-only sidecar read happened.
     expect(spies.readExcelEditorState).toHaveBeenCalledTimes(1);
@@ -223,7 +221,9 @@ describe("ExcelEditorWorkspace cold-open IPC path", () => {
     // surface for explicit primers outside this codepath. Wait one more
     // microtask cycle so any (incorrectly) deferred write would have
     // landed by the time we assert.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
     expect(spies.writeExcelParsedCache).not.toHaveBeenCalled();
   });
 

@@ -74,7 +74,9 @@ interface DocReadResultDto {
 }
 
 interface MarkdownSearchResultDto {
+  id?: string;
   path: string;
+  name?: string | null;
   title?: string | null;
   matches: Array<{
     line: number;
@@ -101,7 +103,6 @@ export class DiskStorageAdapter implements StorageAdapter {
     const root = this.requireRoot();
     const result = await this.invoke<WorkspaceScanResultDto>("workspace_scan", { root });
     this.root = result.root;
-    await this.invoke("workspace_index_rebuild", { root: this.root });
     return entriesFromDocuments(result.documents);
   }
 
@@ -496,12 +497,6 @@ export class DiskStorageAdapter implements StorageAdapter {
     const normalizedQuery = query.trim();
     if (!normalizedQuery) return { results: [] };
 
-    const entries = await this.list();
-    const entriesByPath = new Map(
-      entries
-        .filter((entry) => entry.kind === "document")
-        .map((entry) => [entry.handle.relPath ?? entry.handle.path ?? "", entry])
-    );
     const fileIdSet = options.fileIds ? new Set(options.fileIds) : null;
     const results = await this.invoke<MarkdownSearchResultDto[]>("workspace_markdown_search", {
       root: this.requireRoot(),
@@ -512,16 +507,17 @@ export class DiskStorageAdapter implements StorageAdapter {
     return {
       results: results
         .flatMap((result) => {
-          const entry = entriesByPath.get(result.path);
-          if (!entry || (fileIdSet && !fileIdSet.has(entry.handle.id))) return [];
+          const fileId = result.id ?? result.path;
+          if (fileIdSet && !fileIdSet.has(fileId)) return [];
           const firstMatch = result.matches[0];
+          const name = result.name ?? result.title ?? basename(result.path);
           return [
             {
-              id: `${entry.handle.id}:${firstMatch?.line ?? 0}`,
-              content: firstMatch?.preview ?? result.title ?? entry.name,
+              id: `${fileId}:${firstMatch?.line ?? 0}`,
+              content: firstMatch?.preview ?? result.title ?? name,
               metadata: {
-                fileId: entry.handle.id,
-                name: entry.name,
+                fileId,
+                name,
                 path: result.path,
                 chunkIndex: firstMatch?.line,
               },

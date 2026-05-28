@@ -201,6 +201,11 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
             str(payload.get("root") or ""),
             str(payload.get("path") or ""),
         )
+    if command == "workspace_stat_binary":
+        return stat_workspace_binary(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+        )
     if command == "workspace_read_pdf_editor_state":
         return read_pdf_editor_state(
             str(payload.get("root") or ""),
@@ -331,33 +336,36 @@ def workspace_scan(root: str) -> dict[str, Any]:
     # lowercased basename (e.g. `Notes/README.md` vs `Specs/README.md`) a
     # deterministic order — otherwise Timsort's stability would fall back
     # to `rglob`'s unstable filesystem order, defeating this whole sort.
-    for path in sorted(workspace.rglob("*"), key=lambda p: (p.name.lower(), p.as_posix())):
-        if any(part in IGNORED_SCAN_DIRS for part in path.relative_to(workspace).parts[:-1]):
-            continue
-        if (
-            not path.is_file()
-            or is_hidden_sidecar_name(path.name)
-            or not is_workspace_document_file(path)
-        ):
-            continue
+    for path in iter_workspace_document_paths(workspace):
         documents.append(document_dto_for_path(workspace, path))
     result = {"root": str(workspace), "documents": documents}
+    write_workspace_index(workspace, workspace_index_from_documents(documents))
     _scan_cache[key] = (now, result)
     return result
 
 
 def workspace_index_rebuild(root: str) -> dict[str, Any]:
     workspace = canonical_workspace_root(root)
-    ids: dict[str, str] = {}
-    for doc in workspace_scan(root)["documents"]:
-        if doc["idSource"] == "frontmatter":
-            ids.setdefault(doc["id"], doc["path"])
+    index = workspace_index_from_documents(workspace_scan(root)["documents"])
+    write_workspace_index(workspace, index)
+    return index
 
-    index = {"version": 1, "ids": ids}
+
+def workspace_index_from_documents(documents: list[dict[str, Any]]) -> dict[str, Any]:
+    ids: dict[str, str] = {}
+    for doc in documents:
+        if doc.get("documentType") == "markdown" and doc.get("idSource") == "frontmatter":
+            ids.setdefault(str(doc["id"]), str(doc["path"]))
+    return {"version": 1, "ids": ids}
+
+
+def write_workspace_index(workspace: Path, index: dict[str, Any]) -> None:
     index_path = workspace / ".doxmind" / "index.json"
     index_path.parent.mkdir(parents=True, exist_ok=True)
-    index_path.write_text(json.dumps(index, indent=2, ensure_ascii=False), encoding="utf-8")
-    return index
+    raw = json.dumps(index, indent=2, ensure_ascii=False)
+    if index_path.exists() and index_path.read_text(encoding="utf-8") == raw:
+        return
+    index_path.write_text(raw, encoding="utf-8")
 
 
 def workspace_markdown_search(root: str, query: str, limit: Any = None) -> list[dict[str, Any]]:
@@ -368,17 +376,26 @@ def workspace_markdown_search(root: str, query: str, limit: Any = None) -> list[
     max_results = min(int(limit or 50), 200)
     results: list[dict[str, Any]] = []
 
-    for doc in workspace_scan(root)["documents"]:
-        if doc.get("documentType") != "markdown":
+    for path in iter_workspace_document_paths(workspace):
+        if not is_markdown_file(path):
             continue
-        path = workspace / doc["path"]
         raw = path.read_text(encoding="utf-8")
+        rel_path = relative_path_string(workspace, path)
         matches = []
         for line_number, line in enumerate(raw.splitlines(), start=1):
             if needle in line.lower():
                 matches.append({"line": line_number, "preview": line.strip()[:240]})
         if matches:
-            results.append({"path": doc["path"], "title": doc.get("title"), "matches": matches})
+            frontmatter_id, title = parse_frontmatter_scan_fields(raw)
+            results.append(
+                {
+                    "id": frontmatter_id or stable_path_id(rel_path),
+                    "path": rel_path,
+                    "name": path.name,
+                    "title": title,
+                    "matches": matches,
+                }
+            )
         if len(results) >= max_results:
             break
     return results
@@ -643,6 +660,15 @@ def read_workspace_binary(root: str, rel_path: str) -> list[int]:
     if not is_pdf_file(path) and not is_excel_file(path):
         raise ValueError("binary workspace reads are only enabled for PDF and Excel files")
     return list(path.read_bytes())
+
+
+def stat_workspace_binary(root: str, rel_path: str) -> dict[str, Any]:
+    workspace = canonical_workspace_root(root)
+    path = resolve_existing_workspace_path(workspace, rel_path)
+    if not is_pdf_file(path) and not is_excel_file(path):
+        raise ValueError("binary workspace stat is only enabled for PDF and Excel files")
+    stat = path.stat()
+    return {"mtimeNs": str(stat.st_mtime_ns), "size": stat.st_size}
 
 
 def read_pdf_editor_state(root: str, rel_path: str) -> dict[str, Any] | None:
@@ -1233,6 +1259,20 @@ def document_dto_for_path(root: Path, path: Path) -> dict[str, Any]:
         "documentType": document_type,
         "hasSidecar": sidecar_path_for(path).exists(),
     }
+
+
+def iter_workspace_document_paths(workspace: Path):
+    # Sort by lowercased file name so listing/search order is deterministic
+    # across scans and matches the frontend's name-asc sort.
+    for path in sorted(workspace.rglob("*"), key=lambda p: (p.name.lower(), p.as_posix())):
+        if any(part in IGNORED_SCAN_DIRS for part in path.relative_to(workspace).parts[:-1]):
+            continue
+        if (
+            path.is_file()
+            and not is_hidden_sidecar_name(path.name)
+            and is_workspace_document_file(path)
+        ):
+            yield path
 
 
 def parse_frontmatter_scan_fields(raw: str) -> tuple[str | None, str | None]:

@@ -76,9 +76,6 @@ describe("useFileStore disk workspace", () => {
           ],
         };
       }
-      if (command === "workspace_index_rebuild") {
-        return { version: 1, ids: { "doc-1": "Folder/Doc.md" } };
-      }
       throw new Error(`Unexpected command: ${command}`);
     });
 
@@ -115,9 +112,6 @@ describe("useFileStore disk workspace", () => {
             },
           ],
         };
-      }
-      if (command === "workspace_index_rebuild") {
-        return { version: 1, ids: { "doc-2": "Fresh.md" } };
       }
       throw new Error(`Unexpected command: ${command}`);
     });
@@ -196,9 +190,6 @@ describe("useFileStore disk workspace", () => {
     invokeMock.mockImplementation(async (command: string) => {
       if (command === "workspace_scan") {
         return { root: "/workspace", documents: [] };
-      }
-      if (command === "workspace_index_rebuild") {
-        return { version: 1, ids: {} };
       }
       throw new Error(`Unexpected command: ${command}`);
     });

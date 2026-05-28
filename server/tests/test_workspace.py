@@ -141,6 +141,9 @@ def test_workspace_create_read_and_scan(sync_client, tmp_path):
     scan = invoke(sync_client, "workspace_scan", {"root": root})
     assert scan["documents"][0]["id"] == "doc-1"
     assert scan["documents"][0]["title"] == "Plan"
+    assert json.loads((tmp_path / ".doxmind" / "index.json").read_text())["ids"] == {
+        "doc-1": "Notes/Plan.md"
+    }
 
     read = invoke(sync_client, "doc_read", {"path": str(tmp_path / "Notes" / "Plan.md")})
     assert read["source"] == "sidecar"
@@ -245,7 +248,9 @@ def test_workspace_folder_and_search(sync_client, tmp_path):
         },
     )
     results = invoke(sync_client, "workspace_markdown_search", {"root": root, "query": "needle"})
+    assert results[0]["id"] == "search-doc"
     assert results[0]["path"] == "Folder/Search.md"
+    assert results[0]["name"] == "Search.md"
     assert results[0]["matches"][0]["preview"] == "needle line"
 
     index = invoke(sync_client, "workspace_index_rebuild", {"root": root})
@@ -609,6 +614,9 @@ def test_workspace_pdf_scan_binary_and_editor_state(sync_client, tmp_path):
 
     binary = invoke(sync_client, "workspace_read_binary", {"root": root, "path": "Application.pdf"})
     assert bytes(binary) == pdf_bytes
+    stat = invoke(sync_client, "workspace_stat_binary", {"root": root, "path": "Application.pdf"})
+    assert stat["size"] == len(pdf_bytes)
+    assert stat["mtimeNs"].isdigit()
 
     state = {"version": 1, "edits": {"1:0": {"text": "Edited company name"}}}
     invoke(

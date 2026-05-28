@@ -40,7 +40,6 @@ import {
   Columns4,
   Bookmark,
   FileText,
-  Globe,
   ChevronLeft,
 } from "lucide-react";
 import { useTranslations } from "next-intl";

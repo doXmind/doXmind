@@ -416,7 +416,9 @@ struct WorkspaceIndexDto {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MarkdownSearchResultDto {
+    id: String,
     path: String,
+    name: String,
     title: Option<String>,
     matches: Vec<MarkdownSearchMatchDto>,
 }
@@ -1382,12 +1384,7 @@ fn workspace_read_excel_editor_state(
     if !is_excel_file(&path) {
         return Err("Excel editor state is only enabled for .xlsx/.xlsm files".to_string());
     }
-    let sidecar = load_excel_sidecar(&path)?;
-    Ok(excel_slot_field(
-        &sidecar.sidecar,
-        &sidecar.block_id,
-        "editor",
-    ))
+    read_excel_editor_state_light(&path)
 }
 
 /// Write `bytes` to `path` atomically via temp-file + rename.
@@ -1500,6 +1497,81 @@ struct ExcelSidecar {
     /// must fail with a `ReadOnlyDocumentError`-shaped error, and the
     /// on-disk sidecar bytes (and any `.bak`) must remain untouched.
     read_only: bool,
+}
+
+#[derive(Deserialize)]
+struct ExcelEditorOnlySidecar {
+    html: Option<String>,
+    extras: Option<ExcelEditorOnlyExtras>,
+    #[serde(rename = "excel_editor")]
+    legacy_editor: Option<serde_json::Value>,
+    #[serde(rename = "excel_parsed_cache")]
+    legacy_parsed_cache: Option<serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+struct ExcelEditorOnlyExtras {
+    blocks: Option<BTreeMap<String, ExcelEditorOnlySlot>>,
+}
+
+#[derive(Deserialize)]
+struct ExcelEditorOnlySlot {
+    editor: Option<serde_json::Value>,
+}
+
+fn read_excel_editor_state_light(path: &Path) -> Result<Option<serde_json::Value>, String> {
+    let sidecar_path = doxmind_sidecar::sidecar_path_for(path);
+    let raw = match fs::read(&sidecar_path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("failed to read Excel sidecar: {err}")),
+    };
+
+    let sidecar: ExcelEditorOnlySidecar = match serde_json::from_slice(&raw) {
+        Ok(value) => value,
+        Err(err) => {
+            let forensic = write_excel_forensic_copy(&sidecar_path, &raw)?;
+            return Err(format!(
+                "invalid Excel sidecar JSON: {err}; forensic copy: {}",
+                forensic.display()
+            ));
+        }
+    };
+
+    if sidecar.legacy_editor.is_some() || sidecar.legacy_parsed_cache.is_some() {
+        let sidecar = load_excel_sidecar(path)?;
+        return Ok(excel_slot_field(
+            &sidecar.sidecar,
+            &sidecar.block_id,
+            "editor",
+        ));
+    }
+
+    let block_id = if let Some(html) = sidecar.html.as_deref() {
+        let ids = excel_block_ids_in_html(html);
+        if ids.len() > 1 {
+            return Err(duplicate_placeholder_error("Excel", EXCEL_BLOCK_TYPE, &ids));
+        }
+        ids.into_iter().next()
+    } else {
+        None
+    }
+    .or_else(|| {
+        sidecar
+            .extras
+            .as_ref()
+            .and_then(|extras| extras.blocks.as_ref())
+            .and_then(|blocks| blocks.keys().next().cloned())
+    });
+
+    let Some(block_id) = block_id else {
+        return Ok(None);
+    };
+    Ok(sidecar
+        .extras
+        .and_then(|extras| extras.blocks)
+        .and_then(|blocks| blocks.get(&block_id).and_then(|slot| slot.editor.clone()))
+        .filter(|value| !value.is_null()))
 }
 
 fn load_excel_sidecar(path: &Path) -> Result<ExcelSidecar, String> {
@@ -1885,6 +1957,8 @@ fn workspace_scan(root: String) -> Result<WorkspaceScanResultDto, String> {
     let mut documents = Vec::new();
     scan_workspace_dir(&root, &root, &mut documents)?;
     documents.sort_by(|a, b| a.path.cmp(&b.path));
+    let index = workspace_index_from_documents(&documents);
+    write_workspace_index(&root, &index)?;
 
     Ok(WorkspaceScanResultDto {
         root: root.to_string_lossy().into_owned(),
@@ -2633,6 +2707,17 @@ fn rebuild_workspace_index(root: &Path) -> Result<WorkspaceIndexDto, String> {
     Ok(WorkspaceIndexDto { version: 1, ids })
 }
 
+fn workspace_index_from_documents(documents: &[WorkspaceDocumentDto]) -> WorkspaceIndexDto {
+    let mut ids = BTreeMap::new();
+    for doc in documents {
+        if doc.document_type == "markdown" && doc.id_source == "frontmatter" {
+            ids.entry(doc.id.clone())
+                .or_insert_with(|| doc.path.clone());
+        }
+    }
+    WorkspaceIndexDto { version: 1, ids }
+}
+
 fn workspace_index_path(root: &Path) -> PathBuf {
     root.join(".doxmind").join("index.json")
 }
@@ -2645,6 +2730,13 @@ fn write_workspace_index(root: &Path, index: &WorkspaceIndexDto) -> Result<(), S
     }
     let raw = serde_json::to_string_pretty(index)
         .map_err(|err| format!("failed to serialize workspace index: {err}"))?;
+    if path.exists() {
+        let existing = fs::read_to_string(&path)
+            .map_err(|err| format!("failed to read existing workspace index: {err}"))?;
+        if existing == raw {
+            return Ok(());
+        }
+    }
     fs::write(path, raw).map_err(|err| format!("failed to write workspace index: {err}"))
 }
 
@@ -2703,15 +2795,25 @@ fn search_workspace_markdown(
     for path in paths {
         let raw = fs::read_to_string(&path)
             .map_err(|err| format!("failed to read markdown document for search: {err}"))?;
-        let title = parse_frontmatter_scan_fields(&raw).title;
+        let relative_path = relative_path_string(root, &path)?;
         let matches = markdown_line_matches(&raw, &needle);
         if matches.is_empty() {
             continue;
         }
+        let meta = parse_frontmatter_scan_fields(&raw);
+        let id = meta
+            .id
+            .clone()
+            .unwrap_or_else(|| stable_path_id(&relative_path));
 
         results.push(MarkdownSearchResultDto {
-            path: relative_path_string(root, &path)?,
-            title,
+            id,
+            path: relative_path,
+            name: path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            title: meta.title,
             matches,
         });
 
@@ -4240,7 +4342,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_scan_uses_stable_path_id_without_writing() {
+    fn workspace_scan_uses_stable_path_id_without_writing_document_sidecar() {
         let workspace = TempWorkspace::new("scan-stable-id");
         write_file(&workspace.path.join("notes/Untitled.md"), "# Untitled\n");
         write_file(&workspace.path.join(".git/ignored.md"), "# ignored\n");
@@ -4273,6 +4375,12 @@ mod tests {
         assert_eq!(scan.documents[0].id, "doc-1");
         assert_eq!(scan.documents[0].id_source, "frontmatter");
         assert_eq!(scan.documents[0].title.as_deref(), Some("Project Plan"));
+
+        let cached = workspace_index_read(workspace.root()).expect("read scan-written index");
+        assert_eq!(
+            cached.ids.get("doc-1").map(String::as_str),
+            Some("Plan.markdown")
+        );
     }
 
     #[test]
@@ -4349,7 +4457,9 @@ mod tests {
             .expect("search markdown");
 
         assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "notes");
         assert_eq!(results[0].path, "Notes.md");
+        assert_eq!(results[0].name, "Notes.md");
         assert_eq!(results[0].title.as_deref(), Some("Meeting Notes"));
         assert_eq!(results[0].matches.len(), 2);
         assert_eq!(results[0].matches[0].line, 6);
@@ -5197,6 +5307,45 @@ mod tests {
         let (_block_id, slot) = only_excel_slot(&sidecar);
         assert_eq!(slot["editor"]["activeSheetId"], "Sheet1");
         assert!(slot.get("parsedCache").is_none());
+    }
+
+    #[test]
+    fn excel_editor_read_skips_large_parsed_cache_slot() {
+        let workspace = TempWorkspace::new("excel-read-editor-light");
+        let workbook_path = workspace.path.join("Budget.xlsx");
+        write_file(&workbook_path, "PK\x03\x04");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        let large_cache = "x".repeat(1024 * 1024);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "version": 1,
+                "id": "doc-1",
+                "html": excel_placeholder("excel-1", "Budget.xlsx"),
+                "markdown_hash": "old",
+                "updated_at": "2026-05-12T00:00:00Z",
+                "extras": {
+                    "blocks": {
+                        "excel-1": {
+                            "editor": { "version": 1, "activeSheetId": "Sheet1" },
+                            "parsedCache": {
+                                "sourceHash": "abc",
+                                "parsed": { "blob": large_cache }
+                            }
+                        }
+                    }
+                }
+            }))
+            .expect("sidecar bytes"),
+        )
+        .expect("write sidecar");
+
+        let editor = workspace_read_excel_editor_state(workspace.root(), "Budget.xlsx".into())
+            .expect("read editor")
+            .expect("editor state");
+
+        assert_eq!(editor["activeSheetId"], "Sheet1");
+        assert!(editor.get("parsedCache").is_none());
     }
 
     #[test]
