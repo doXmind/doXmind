@@ -89,6 +89,13 @@ function pdfSwitchCacheSet(fileId: string, entry: PdfSwitchCacheEntry): void {
   }
 }
 
+function yieldToNextFrame(): Promise<void> {
+  if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
 interface PdfTextBox {
   id: string;
   pageIndex: number;
@@ -248,6 +255,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   const [pageCount, setPageCount] = useState(0);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [textBoxes, setTextBoxes] = useState<PdfTextBox[]>([]);
+  const [isTextModelHydrating, setIsTextModelHydrating] = useState(false);
   const [textEdits, setTextEdits] = useState<Record<string, PdfTextBox>>({});
   const [legacyEdits, setLegacyEdits] = useState<Record<string, { text: string }>>({});
   /**
@@ -403,6 +411,13 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
       const handle = file.storageHandle;
 
       setStatus("loading");
+      setIsTextModelHydrating(true);
+      setSourceBytes(null);
+      setPageSize({ width: 0, height: 0 });
+      setPageCount(0);
+      setTextBoxes([]);
+      setParagraphBoxesByPage({});
+      setParagraphMode(false);
       setActiveObject(null);
       // Reset the read-only banner guard so a freshly-opened file gets its
       // own one-shot notice if its sidecar is also read-only.
@@ -472,6 +487,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
         let blocks: PdfBlocksResponse | null;
         let sourceHash: string;
         let editorState: Awaited<ReturnType<typeof readDocStateFull>>;
+        let statForCache: { mtimeNs: string; size: number } | null = null;
         if (switchCached) {
           perfSync("doxmind.pdf.switchCacheHit", () => undefined, { fileId: file.id });
           const docState = await perfAsync("doxmind.pdf.readEditorOnly", () => readEditorOnly(), {
@@ -498,11 +514,35 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
               ])
           );
           if (cancelled) return;
-          // Phase 2: try the PyMuPDF sidecar for paragraph-aware blocks.
-          // The parsed cache lives in the .doxmind sidecar keyed by SHA-256
-          // of the source bytes; an unchanged PDF skips PyMuPDF entirely.
           const blocksBytes = new Uint8Array(readBytes);
+          bytes = readBytes;
+          editorState = docState;
+          statForCache = statResult;
+
+          const pdf = await perfAsync(
+            "doxmind.pdf.pdfjsGetDocument",
+            () => pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise,
+            { bytes: bytes.byteLength, cacheHit: false }
+          );
+          if (cancelled) return;
+
+          const normalized = normalizePdfEditorState(editorState?.editor ?? null);
+          setTextEdits(normalized.textEdits);
+          setLegacyEdits(normalized.legacyEdits);
+          setFreeTextBoxes(normalized.freeText);
+          setHighlightBoxes(normalized.highlights);
+          setSourceBytes(new Uint8Array(bytes));
+          setPageCount(pdf.numPages);
+          setCurrentPageIndex((pageIndex) => clampPageIndex(pageIndex, pdf.numPages));
+
+          // Phase 2: try the PyMuPDF sidecar for paragraph-aware blocks after
+          // the PDF shell is already paintable. Cached blocks still hydrate
+          // almost immediately; uncached parsing no longer blocks first page
+          // canvas render.
+          await yieldToNextFrame();
+          if (cancelled) return;
           sourceHash = await sha256Hex(blocksBytes);
+          if (cancelled) return;
           const cachedBlocks = freshParsedCacheValue<PdfBlocksResponse>(
             docState?.parsedCache,
             sourceHash
@@ -519,35 +559,27 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
                 .catch(() => {});
             }
           }
-          bytes = readBytes;
-          editorState = docState;
-          // Populate the switch cache so future re-opens skip readBinary +
-          // fetchPdfBlocks entirely. mtime/size may be null in HTTP fallback;
-          // a future cache hit treats null as "unknown" and serves anyway.
-          pdfSwitchCacheSet(file.id, {
-            bytes,
-            blocks,
-            sourceHash,
-            mtimeNs: statResult?.mtimeNs ?? null,
-            size: statResult?.size ?? null,
-          });
         }
 
-        const pdf = await perfAsync(
-          "doxmind.pdf.pdfjsGetDocument",
-          () => pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise,
-          { bytes: bytes.byteLength, cacheHit: !!switchCached }
-        );
-        if (cancelled) return;
+        if (switchCached) {
+          const pdf = await perfAsync(
+            "doxmind.pdf.pdfjsGetDocument",
+            () => pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise,
+            { bytes: bytes.byteLength, cacheHit: true }
+          );
+          if (cancelled) return;
+
+          const normalized = normalizePdfEditorState(editorState?.editor ?? null);
+          setTextEdits(normalized.textEdits);
+          setLegacyEdits(normalized.legacyEdits);
+          setFreeTextBoxes(normalized.freeText);
+          setHighlightBoxes(normalized.highlights);
+          setSourceBytes(new Uint8Array(bytes));
+          setPageCount(pdf.numPages);
+          setCurrentPageIndex((pageIndex) => clampPageIndex(pageIndex, pdf.numPages));
+        }
 
         const normalized = normalizePdfEditorState(editorState?.editor ?? null);
-        setSourceBytes(new Uint8Array(bytes));
-        setPageCount(pdf.numPages);
-        setCurrentPageIndex((pageIndex) => clampPageIndex(pageIndex, pdf.numPages));
-        setTextEdits(normalized.textEdits);
-        setLegacyEdits(normalized.legacyEdits);
-        setFreeTextBoxes(normalized.freeText);
-        setHighlightBoxes(normalized.highlights);
         if (blocks) {
           const allParagraphs = paragraphsFromResponse(blocks);
           // Apply persisted v2 edits, then migrate any leftover v1 textEdits.
@@ -596,9 +628,25 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
           setParagraphMode(false);
           setParagraphBoxesByPage({});
         }
+        setIsTextModelHydrating(false);
+        if (!switchCached) {
+          // Populate the switch cache so future re-opens skip readBinary +
+          // fetchPdfBlocks entirely. mtime/size may be null in HTTP fallback;
+          // a future cache hit treats null as "unknown" and serves anyway.
+          pdfSwitchCacheSet(file.id, {
+            bytes,
+            blocks,
+            sourceHash,
+            mtimeNs: statForCache?.mtimeNs ?? null,
+            size: statForCache?.size ?? null,
+          });
+        }
       } catch (error) {
         console.error(error);
-        if (!cancelled) setStatus("error");
+        if (!cancelled) {
+          setIsTextModelHydrating(false);
+          setStatus("error");
+        }
       }
     }
 
@@ -1448,19 +1496,20 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
                       onSelect={() => undefined}
                     />
                   )}
-                  {textBoxes.map((box) => (
-                    <PdfExistingText
-                      key={box.id}
-                      box={box}
-                      scale={scale}
-                      active={activeObject?.kind === "text" && activeObject.id === box.id}
-                      onSelect={() => setActiveObject({ kind: "text", id: box.id })}
-                      onChange={(text) => updateTextBoxText(box.id, text)}
-                      onClear={() => setActiveObject(null)}
-                      pendingSelectionRestore={pendingSelectionRestore}
-                      onSelectionRestored={() => setPendingSelectionRestore(null)}
-                    />
-                  ))}
+                  {!isTextModelHydrating &&
+                    textBoxes.map((box) => (
+                      <PdfExistingText
+                        key={box.id}
+                        box={box}
+                        scale={scale}
+                        active={activeObject?.kind === "text" && activeObject.id === box.id}
+                        onSelect={() => setActiveObject({ kind: "text", id: box.id })}
+                        onChange={(text) => updateTextBoxText(box.id, text)}
+                        onClear={() => setActiveObject(null)}
+                        pendingSelectionRestore={pendingSelectionRestore}
+                        onSelectionRestored={() => setPendingSelectionRestore(null)}
+                      />
+                    ))}
                   {pageFreeTextBoxes.map((box) => (
                     <FreeTextObject
                       key={box.id}

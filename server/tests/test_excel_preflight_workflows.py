@@ -12,8 +12,8 @@ import io
 import zipfile
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree as ET
 
-import pytest
 from openpyxl import Workbook, load_workbook
 
 from services.excel_workbook import export_edited_workbook, parse_workbook
@@ -31,7 +31,7 @@ def export_workbook(edits: dict[str, Any]):
 
 
 def divergent_iterator_workbook() -> bytes:
-    """Return malformed XLSX bytes whose read-only value stream ends early."""
+    """Return sparse XLSX bytes whose read-only value stream used to diverge."""
     wb = Workbook()
     ws = wb.active
     ws["A1"] = "Header"
@@ -51,9 +51,50 @@ def divergent_iterator_workbook() -> bytes:
     return malformed.getvalue()
 
 
-def test_parse_workbook_funnels_malformed_xlsx_iterator_divergence():
-    with pytest.raises(ValueError, match=r"^failed to parse xlsx: zip\(\) argument 2"):
-        parse_workbook(divergent_iterator_workbook())
+def cached_formula_workbook() -> bytes:
+    """Return XLSX bytes with a formula and an embedded cached result."""
+    wb = Workbook()
+    ws = wb.active
+    ws["A1"] = 1
+    ws["B1"] = 2
+    ws["C1"] = "=A1+B1"
+
+    source = io.BytesIO()
+    wb.save(source)
+
+    patched = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(source.getvalue())) as zin:
+        with zipfile.ZipFile(patched, "w") as zout:
+            for item in zin.infolist():
+                payload = zin.read(item.filename)
+                if item.filename == "xl/worksheets/sheet1.xml":
+                    root = ET.fromstring(payload)
+                    namespace = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+                    cell = root.find(f".//{namespace}c[@r='C1']")
+                    assert cell is not None
+                    for value_node in cell.findall(f"{namespace}v"):
+                        cell.remove(value_node)
+                    value_node = ET.SubElement(cell, f"{namespace}v")
+                    value_node.text = "3"
+                    payload = ET.tostring(root, encoding="utf-8")
+                zout.writestr(item, payload)
+    return patched.getvalue()
+
+
+def test_parse_workbook_accepts_sparse_xlsx_without_value_stream_divergence():
+    sheet = parse_workbook(divergent_iterator_workbook())["sheets"][0]
+
+    assert sheet["rowCount"] == 3
+    assert sheet["cells"] == [
+        {"row": 0, "col": 0, "value": "Header", "formula": None},
+        {"row": 2, "col": 0, "value": "Dangling", "formula": None},
+    ]
+
+
+def test_parse_workbook_reads_cached_values_only_for_formula_cells():
+    cells = parse_workbook(cached_formula_workbook())["sheets"][0]["cells"]
+
+    assert cells[2] == {"row": 0, "col": 2, "value": 3, "formula": "=A1+B1"}
 
 
 def test_finance_budget_review_workflow_exports_review_artifacts():

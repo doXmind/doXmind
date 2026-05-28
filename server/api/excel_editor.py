@@ -61,10 +61,13 @@ async def parse_workbook_route(
             actual_size=len(xlsx_bytes),
         )
 
-    from services.excel_workbook import parse_workbook
+    from services.excel_workbook import parse_workbook_json_bytes
 
     try:
-        return parse_workbook(xlsx_bytes)
+        return Response(
+            content=parse_workbook_json_bytes(xlsx_bytes),
+            media_type="application/json",
+        )
     except ValueError as exc:
         raise BadRequestError(message=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - defensive
