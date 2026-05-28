@@ -90,12 +90,7 @@ reference across an editor swap when content differs`) does not distinguish the 
   use `parseInt(..., 10)` if hardening is desired.
 
 - **(2026-05-28, post-Wave-F2 GAN cosmetic findings, future cleanup)**:
-  (a) `outline-perf.test.ts:269-285` — `fixtureHeadingsForRail()` filters `level <= 3`
-  which is a no-op for the current 300×H1 + 300×H2 + 300×H3 fixture. If the F1 stress
-  fixture is ever regenerated with deeper levels, Invariants 2-4 will silently diverge
-  from the real `useHeadings` pipeline. Add a defensive comment or assert
-  `produced.length === parseFixtureHeadings(...).length` to lock the equivalence.
-  (b) `outline-perf.test.ts:402-425` — Invariant 2 fires `mouseEnter` on the rail
+  `outline-perf.test.ts:402-425` — Invariant 2 fires `mouseEnter` on the rail
   sensor, which calls debounced `schedulePopoverOpen` rather than synchronous
   `openPopoverNow`. The 10.08 ms measurement reads closer to the rail-sensor
   mouseEnter synchronous tail than the full popover-mount work. 5× headroom against
@@ -112,6 +107,12 @@ reference across an editor swap when content differs`) does not distinguish the 
   active row stays exact. Decision logged on issue #114, label flipped to
   `ready-for-agent`. Wave D contract writing is now unblocked (will be written when its
   upstream dependencies — Waves A and B — land).
+
+- **(2026-05-28)** `outline-perf.test.ts:269-285` — `fixtureHeadingsForRail()` equivalence
+  guard landed. Added a length-equality `throw` so a future fixture regen that smuggles
+  H4-H6 headings past the `level <= 3` filter fails loud instead of letting Invariants 2-4
+  drift from the real `useHeadings` pipeline. Closes prior active item (post-Wave-F2 GAN
+  finding (a)).
 
 ---
 

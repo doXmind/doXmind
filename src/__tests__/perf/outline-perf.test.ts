@@ -268,6 +268,18 @@ function fixtureHeadingsForRail(): Heading[] {
     }
     offset += 10;
   }
+  // Current fixture is 300×H1 + 300×H2 + 300×H3, so the level≤3 filter is a no-op.
+  // A future fixture regen that adds H4-H6 would silently drop headings here while
+  // the real useHeadings pipeline (consumer-side filter at ≤3) sees them all — so
+  // Invariants 2-4 would no longer mirror reality. Fail loud instead of drifting.
+  if (out.length !== parsed.length) {
+    throw new Error(
+      `fixtureHeadingsForRail divergence: produced ${out.length} of ${parsed.length} ` +
+        `parsed headings. The level≤3 filter dropped headings — invariants 2-4 would ` +
+        `no longer mirror the real useHeadings pipeline. Either widen the filter to ` +
+        `match the consumer-side cutoff, or regenerate the fixture without H4-H6 headings.`
+    );
+  }
   return out;
 }
 
