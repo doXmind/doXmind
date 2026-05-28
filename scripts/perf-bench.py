@@ -38,12 +38,15 @@ os.environ["DOXMIND_PERF_LOG"] = str(PERF_LOG)
 # Make sure the server package is importable.
 sys.path.insert(0, str(SERVER_DIR))
 
+from services.excel_workbook import (  # noqa: E402
+    _clear_xlsx_cache,
+    parse_workbook_json_bytes,
+)
 from services.markdown_document_state import (  # noqa: E402
     MarkdownDocumentState,
     _clear_read_cache,
 )
-from services.pdf_blocks import parse_pdf_blocks, _clear_pdf_cache  # noqa: E402
-from services.excel_workbook import parse_workbook, _clear_xlsx_cache  # noqa: E402
+from services.pdf_blocks import _clear_pdf_cache, parse_pdf_blocks  # noqa: E402
 
 WARMUP = 1
 RUNS = 5
@@ -101,7 +104,9 @@ def _build_md(name: str, lines: int, math: int, mermaid: int, db: int, links: in
             words.append(w)
         return " ".join(words) + "."
 
-    every = lambda total: max(1, lines // max(total, 1))
+    def every(total: int) -> int:
+        return max(1, lines // max(total, 1))
+
     me, mr, dbe, lk = every(math), every(mermaid), every(db), every(links)
     mi = mri = dbi = lki = 0
     for i in range(lines):
@@ -174,6 +179,24 @@ def ensure_xlsx(name: str, sheets: int, rows: int, cols: int) -> Path:
     return out
 
 
+def ensure_xlsx_no_formulas(name: str, sheets: int, rows: int, cols: int) -> Path:
+    out = FIXTURES / f"{name}.xlsx"
+    if out.exists():
+        return out
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    for s in range(sheets):
+        ws = wb.create_sheet(f"Sheet{s+1}")
+        for r in range(rows):
+            for c in range(cols):
+                ws.cell(row=r + 1, column=c + 1, value=(r * cols + c) % 997)
+    wb.save(str(out))
+    wb.close()
+    return out
+
+
 # ---------------------------------------------------------------- runners
 
 
@@ -214,6 +237,7 @@ def main() -> int:
     medium_pdf = ensure_pdf("medium", 30)
     large_pdf = ensure_pdf("large", 200)
     medium_xlsx = ensure_xlsx("medium", sheets=10, rows=2000, cols=20)
+    medium_flat_xlsx = ensure_xlsx_no_formulas("medium-flat", sheets=5, rows=1000, cols=20)
     large_xlsx = ensure_xlsx("large", sheets=10, rows=5000, cols=50)
     state = MarkdownDocumentState()
 
@@ -225,6 +249,9 @@ def main() -> int:
     _print(f"  pdf-medium {medium_pdf.stat().st_size / 1024:>8.1f} KB  {medium_pdf}")
     _print(f"  pdf-large  {large_pdf.stat().st_size / 1024:>8.1f} KB  {large_pdf}")
     _print(f"  xlsx-medium {medium_xlsx.stat().st_size / 1024:>8.1f} KB  {medium_xlsx}")
+    _print(
+        f"  xlsx-flat   {medium_flat_xlsx.stat().st_size / 1024:>8.1f} KB  {medium_flat_xlsx}"
+    )
     _print(f"  xlsx-large  {large_xlsx.stat().st_size / 1024:>8.1f} KB  {large_xlsx}")
     _print("")
 
@@ -279,25 +306,44 @@ def main() -> int:
 
     # Excel
     medium_xlsx_bytes = medium_xlsx.read_bytes()
+    medium_flat_xlsx_bytes = medium_flat_xlsx.read_bytes()
     large_xlsx_bytes = large_xlsx.read_bytes()
 
     def excel_cold_medium(b=medium_xlsx_bytes):
         clear_all_caches()
-        parse_workbook(b)
+        parse_workbook_json_bytes(b)
+
+    def excel_cold_medium_flat(b=medium_flat_xlsx_bytes):
+        clear_all_caches()
+        parse_workbook_json_bytes(b)
 
     def excel_cold_large(b=large_xlsx_bytes):
         clear_all_caches()
-        parse_workbook(b)
+        parse_workbook_json_bytes(b)
 
     results.append(time_n(excel_cold_medium, label="excel.medium.cold-no-cache", n=3))
+    results.append(time_n(excel_cold_medium_flat, label="excel.medium-flat.cold-no-cache", n=3))
     results.append(time_n(excel_cold_large, label="excel.large.cold-no-cache", n=3))
-    parse_workbook(medium_xlsx_bytes)
-    parse_workbook(large_xlsx_bytes)
+    parse_workbook_json_bytes(medium_xlsx_bytes)
+    parse_workbook_json_bytes(medium_flat_xlsx_bytes)
+    parse_workbook_json_bytes(large_xlsx_bytes)
     results.append(
-        time_n(lambda b=medium_xlsx_bytes: parse_workbook(b), label="excel.medium.repeat-cache-hit")
+        time_n(
+            lambda b=medium_xlsx_bytes: parse_workbook_json_bytes(b),
+            label="excel.medium.repeat-cache-hit",
+        )
     )
     results.append(
-        time_n(lambda b=large_xlsx_bytes: parse_workbook(b), label="excel.large.repeat-cache-hit")
+        time_n(
+            lambda b=medium_flat_xlsx_bytes: parse_workbook_json_bytes(b),
+            label="excel.medium-flat.repeat-cache-hit",
+        )
+    )
+    results.append(
+        time_n(
+            lambda b=large_xlsx_bytes: parse_workbook_json_bytes(b),
+            label="excel.large.repeat-cache-hit",
+        )
     )
 
     # ---- print table ----

@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { NodeViewWrapper } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
-import { FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useFileStore } from "@/stores/file-store";

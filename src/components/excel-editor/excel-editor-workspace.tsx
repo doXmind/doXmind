@@ -151,7 +151,7 @@ import {
   type CFOverlay,
   type RangeStats,
 } from "@/lib/excel/conditional-formats";
-import { cn, sha256Hex } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { perfAsync, perfMeasure, perfSync } from "@/lib/perf";
 import { isSwitchCacheStillValid } from "@/lib/switch-cache-validation";
@@ -175,7 +175,6 @@ import { isSwitchCacheStillValid } from "@/lib/switch-cache-validation";
 type ExcelSwitchCacheEntry = {
   bytes: Uint8Array;
   parsed: ExcelWorkbookDto;
-  sourceHash: string;
   mtimeNs: string | null;
   size: number | null;
 };
@@ -567,18 +566,11 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
           );
           if (cancelled) return;
 
-          // sourceHash is still computed because the switch-cache entry
-          // keys on it for future hot revalidation; we just don't write it
-          // anywhere on disk. Cold open is read-only with respect to the
-          // sidecar — both reads (above) and writes (here) skip parsedCache.
-          const sourceHash = await sha256Hex(readBytes);
-          if (cancelled) return;
           bytes = readBytes;
           docState = readDocState;
           excelSwitchCacheSet(file.id, {
             bytes,
             parsed,
-            sourceHash,
             mtimeNs: statResult?.mtimeNs ?? null,
             size: statResult?.size ?? null,
           });
@@ -2015,6 +2007,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     findQuery,
     findMatchCase,
     applyCellUpdates,
+    computedValueAt,
   ]);
 
   // ---------------------------------------------------------------------

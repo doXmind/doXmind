@@ -49,6 +49,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   view: "View",
   action: "Actions",
 };
+const MIN_CONTENT_SEARCH_CHARS = 2;
 
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   if (!open) return null;
@@ -80,9 +81,12 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
 
   // Perform search with debounce
   const performSearch = useDebouncedCallback(async (searchQuery: string) => {
-    if (!searchQuery.trim()) {
+    const trimmedQuery = searchQuery.trim();
+    if (trimmedQuery.length < MIN_CONTENT_SEARCH_CHARS || !rootPath) {
+      abortControllerRef.current?.abort();
       setFileSearchResults([]);
       setSearchError(null);
+      setIsSearching(false);
       return;
     }
 
@@ -96,12 +100,12 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
 
     try {
       const adapter = createStorageAdapter({ disk: { root: rootPath } });
-      const filesRes = await searchMarkdown(adapter, searchQuery, {
+      const filesRes = await searchMarkdown(adapter, trimmedQuery, {
         limit: 10,
         signal: controller.signal,
       }).catch(() => null);
 
-      if (filesRes) setFileSearchResults(filesRes.results);
+      if (!controller.signal.aborted && filesRes) setFileSearchResults(filesRes.results);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setSearchError("Search failed. Click to retry.");
