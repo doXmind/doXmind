@@ -1,6 +1,6 @@
 "use client";
 
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, type Editor as TiptapEditor } from "@tiptap/react";
 import { TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import {
@@ -164,9 +164,14 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
     ]
   );
 
+  // Defer the two TipTap serializers (getHTML + getMarkdown each walk the doc)
+  // to the debounce-fire moment instead of running them on every keystroke.
   const debouncedSave = useMemo(
     () =>
-      debounce((content: string, contentMarkdown?: string) => {
+      debounce((editor: TiptapEditor) => {
+        if (editor.isDestroyed) return;
+        const content = editor.getHTML();
+        const contentMarkdown = editor.getMarkdown();
         void persistContent(content, contentMarkdown);
       }, EDITOR_DEBOUNCE_DELAY),
     [persistContent]
@@ -268,10 +273,8 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
     immediatelyRender: false,
     onUpdate: ({ editor }) => {
       if (isFileSwitchingRef.current) return;
-      const html = editor.getHTML();
-      const markdown = editor.getMarkdown();
       setDirty(true);
-      debouncedSave(html, markdown);
+      debouncedSave(editor);
     },
     onSelectionUpdate: ({ editor }) => {
       const { from, to } = editor.state.selection;
@@ -356,10 +359,17 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
         const appWindow = getCurrentWindow();
         return appWindow.onCloseRequested(async (event) => {
           if (closingAfterFlush) return;
-          event.preventDefault();
-          await saveCurrentNow();
           closingAfterFlush = true;
-          await appWindow.close();
+          event.preventDefault();
+          try {
+            await Promise.race([
+              saveCurrentNow(),
+              new Promise<void>((resolve) => window.setTimeout(resolve, 1500)),
+            ]);
+          } catch (error) {
+            console.error("[MarkdownRuntime] failed to save before close", error);
+          }
+          await appWindow.destroy();
         });
       })
       .then((unlisten) => {

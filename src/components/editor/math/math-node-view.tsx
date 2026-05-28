@@ -3,8 +3,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
-import katex from "katex";
 import { cn } from "@/lib/utils";
+import { loadKatex } from "./katex-loader";
 import { MathEditorPanel } from "./math-editor-panel";
 
 /**
@@ -47,7 +47,9 @@ export function MathNodeView({
     return () => document.removeEventListener("block-enter-edit", handler);
   }, [getPos]);
 
-  // Render KaTeX when not editing
+  // Render KaTeX when not editing. KaTeX is lazy-loaded so the editor's
+  // initial chunk doesn't ship ~280 KB of math typesetting code for docs
+  // that may never contain math.
   useEffect(() => {
     if (!renderedRef.current || isEditing) return;
 
@@ -58,18 +60,25 @@ export function MathNodeView({
       return;
     }
 
-    try {
-      katex.render(latexToRender, renderedRef.current, {
-        displayMode: isBlock,
-        throwOnError: false,
-        errorColor: "#ef4444",
-        trust: true,
-      });
-      setRenderError(null);
-    } catch (err) {
-      setRenderError((err as Error).message);
-      renderedRef.current.innerHTML = `<span class="text-destructive">${latexToRender}</span>`;
-    }
+    let cancelled = false;
+    void loadKatex().then((katex) => {
+      if (cancelled || !renderedRef.current) return;
+      try {
+        katex.render(latexToRender, renderedRef.current, {
+          displayMode: isBlock,
+          throwOnError: false,
+          errorColor: "#ef4444",
+          trust: true,
+        });
+        setRenderError(null);
+      } catch (err) {
+        setRenderError((err as Error).message);
+        renderedRef.current.innerHTML = `<span class="text-destructive">${latexToRender}</span>`;
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [latex, isBlock, isEditing, t]);
 
   // Sync local latex when prop changes

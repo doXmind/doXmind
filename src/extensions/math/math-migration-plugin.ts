@@ -169,26 +169,16 @@ export function createMathMigrationPlugin() {
       const docChanged = transactions.some((tr) => tr.docChanged);
       if (!docChanged) return null;
 
-      // Check if this looks like a content replacement (setContent)
-      // vs a normal user edit
-      const isContentReplacement = transactions.some((tr) => {
-        // Large replacements that span most of the document
-        // or transactions without history (programmatic changes)
-        return (
-          tr.docChanged &&
-          (tr.getMeta("addToHistory") === false ||
-            (tr.steps.length > 0 &&
-              tr.steps.some((step) => {
-                const stepJson = step.toJSON();
-                // Check if it's replacing a large portion
-                return stepJson.from === 0 || stepJson.stepType === "replaceAround";
-              })))
+      // Steady-state fast path: once we've done at least one migration check,
+      // bail unless this looks like a programmatic content replacement. Avoids
+      // walking step JSON on every keystroke. `preventUpdate` is set by
+      // TipTap's setContent({ emitUpdate: false }); `addToHistory === false`
+      // catches other programmatic transactions.
+      if (migrationScheduled) {
+        const isProgrammatic = transactions.some(
+          (tr) => tr.getMeta("preventUpdate") === true || tr.getMeta("addToHistory") === false
         );
-      });
-
-      // Skip normal user edits to avoid re-triggering on every keystroke
-      if (!isContentReplacement && migrationScheduled) {
-        return null;
+        if (!isProgrammatic) return null;
       }
 
       // Check if migration is needed
