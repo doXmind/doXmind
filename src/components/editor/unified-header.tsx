@@ -138,18 +138,37 @@ export function UnifiedHeader() {
         }}
       >
         <div
-          data-tauri-drag-region
           className={cn(
             "desktop-chrome-left-controls absolute left-0 top-0 z-10 flex h-full min-w-0 items-center gap-2",
             !isMacTauri && "pl-3"
           )}
         >
+          {isMacTauri && (
+            <>
+              {/* Two drag strips that physically avoid the macOS traffic-light
+                  cluster (centered at y=30, ~14px tall). Tauri's drag.js only
+                  checks e.target, so the bare container above must NOT carry
+                  data-tauri-drag-region — these siblings restore window-drag
+                  for the empty space around the buttons without ever sitting
+                  on top of the close/min/max controls. */}
+              <span
+                data-tauri-drag-region
+                aria-hidden
+                className="pointer-events-auto absolute inset-x-0 top-0 h-5"
+              />
+              <span
+                data-tauri-drag-region
+                aria-hidden
+                className="pointer-events-auto absolute inset-x-0 bottom-0 top-10"
+              />
+            </>
+          )}
           {hasOpenTarget && (
             <Tooltip content={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")} side="bottom">
               <Button
                 variant="ghost"
                 size="icon"
-                className="desktop-header-button h-7 w-7 rounded-md"
+                className="desktop-header-button relative z-10 h-7 w-7 rounded-md"
                 onClick={toggleFilesSidebar}
                 aria-label={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")}
               >
@@ -160,7 +179,13 @@ export function UnifiedHeader() {
         </div>
 
         <div
-          data-tauri-drag-region
+          // Intentionally NOT a drag region: when the sidebar is collapsed
+          // this column's left edge sits at x=78px, overlapping the right
+          // 14px of the macOS traffic-light cluster. Tauri's drag.js only
+          // inspects e.target, so a drag-region here would swallow clicks
+          // landing on that overlap. The inner children below still carry
+          // data-tauri-drag-region, so the body of the header remains
+          // draggable everywhere they cover.
           className={cn(
             "col-start-2 flex h-full min-w-0 items-center px-4 md:px-6",
             hasOpenTarget && isFilesSidebarOpen && "desktop-chrome-content-panel"
