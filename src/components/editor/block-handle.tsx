@@ -470,26 +470,37 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
     };
   }, [editor, isDragging, cancelHide, scheduleHide, computePosition, resolveListItemAtCoords]);
 
-  // Recompute position when the document changes (blocks may shift)
+  // Recompute position when the document changes (blocks may shift).
+  // Skip selection-only transactions and coalesce bursts via RAF so each
+  // animation frame triggers at most one layout read (computePosition does
+  // getBoundingClientRect + querySelector).
   useEffect(() => {
     if (hoveredBlockPos === null) return;
 
-    const updatePos = () => {
+    let rafId: number | null = null;
+    const runUpdate = () => {
+      rafId = null;
       if (hoveredBlockPosRef.current === null) return;
       const pos = computePosition(hoveredBlockPosRef.current);
       if (pos) {
         setPosition(pos);
       } else {
-        // Block no longer valid
         hoveredBlockPosRef.current = null;
         setHoveredBlockPos(null);
         setPosition(null);
       }
     };
 
-    editor.on("transaction", updatePos);
+    const onTransaction = ({ transaction }: { transaction: { docChanged: boolean } }) => {
+      if (!transaction.docChanged) return;
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(runUpdate);
+    };
+
+    editor.on("transaction", onTransaction);
     return () => {
-      editor.off("transaction", updatePos);
+      editor.off("transaction", onTransaction);
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
     };
   }, [editor, hoveredBlockPos, computePosition]);
 
