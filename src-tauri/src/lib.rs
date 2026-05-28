@@ -225,17 +225,34 @@ fn pick_free_port() -> u16 {
 }
 
 /// In dev mode, find a usable Python interpreter — preferring the project
-/// venv at `server/.venv/bin/python` so editable installs are picked up.
+/// venv so editable installs are picked up. The venv layout differs between
+/// platforms (POSIX: `bin/python`, Windows: `Scripts/python.exe`), and the
+/// system launcher is `python3` on POSIX vs `python` on Windows, so both
+/// the venv path and the fallback are platform-aware.
 #[cfg(debug_assertions)]
 fn resolve_python(server_dir: &std::path::Path) -> PathBuf {
     if let Ok(explicit) = std::env::var("DOXMIND_PYTHON") {
         return PathBuf::from(explicit);
     }
-    let venv = server_dir.join(".venv").join("bin").join("python");
+
+    let venv_dir = server_dir.join(".venv");
+    #[cfg(target_os = "windows")]
+    let venv = venv_dir.join("Scripts").join("python.exe");
+    #[cfg(not(target_os = "windows"))]
+    let venv = venv_dir.join("bin").join("python");
+
     if venv.exists() {
         return venv;
     }
-    PathBuf::from("python3")
+
+    #[cfg(target_os = "windows")]
+    {
+        PathBuf::from("python")
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        PathBuf::from("python3")
+    }
 }
 
 #[cfg(debug_assertions)]
@@ -1424,7 +1441,64 @@ fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         let _ = fs::remove_file(&tmp);
         return Err(err);
     }
+    // Intentionally NOT setting FILE_ATTRIBUTE_HIDDEN on per-file sidecars
+    // here: Win32 `CreateFile` with `CREATE_ALWAYS` rejects hidden files
+    // with ERROR_ACCESS_DENIED, which would break external rewriters
+    // (sync tools, manual edits, third-party processes using the standard
+    // open-truncate-write pattern). Directory-level hiding is still
+    // applied where it's safe — see `write_workspace_index`.
     Ok(())
+}
+
+/// Best-effort: set FILE_ATTRIBUTE_HIDDEN on Windows for a *directory* whose
+/// name starts with `.`. Only safe for directories — see the comment in
+/// `atomic_write_bytes` for why we don't hide per-file sidecars on Windows.
+/// On POSIX the leading dot is already the hidden convention so this is a
+/// no-op. Failures are swallowed: visibility is cosmetic, never block writes.
+fn mark_hidden_if_dot_prefixed(path: &Path) {
+    let starts_with_dot = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|name| name.starts_with('.'))
+        .unwrap_or(false);
+    if !starts_with_dot {
+        return;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            GetFileAttributesW, SetFileAttributesW, FILE_ATTRIBUTE_HIDDEN,
+        };
+
+        // INVALID_FILE_ATTRIBUTES is documented as 0xFFFFFFFF. We inline the
+        // literal because the constant's module path has shifted across
+        // windows-sys versions.
+        const INVALID_FILE_ATTRIBUTES: u32 = u32::MAX;
+
+        let wide: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        // SAFETY: `wide` is a valid null-terminated UTF-16 string for the
+        // lifetime of the call; the Win32 APIs take a const pointer and do
+        // not retain it past return.
+        unsafe {
+            let attrs = GetFileAttributesW(wide.as_ptr());
+            if attrs == INVALID_FILE_ATTRIBUTES {
+                return;
+            }
+            if attrs & FILE_ATTRIBUTE_HIDDEN != 0 {
+                return;
+            }
+            let _ = SetFileAttributesW(wide.as_ptr(), attrs | FILE_ATTRIBUTE_HIDDEN);
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path; // silence unused-variable warning on POSIX
+    }
 }
 
 #[tauri::command]
@@ -2727,6 +2801,10 @@ fn write_workspace_index(root: &Path, index: &WorkspaceIndexDto) -> Result<(), S
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|err| format!("failed to create workspace index directory: {err}"))?;
+        // The parent directory is `.doxmind/`. Its leading dot hides it on
+        // POSIX but not on Windows; flip FILE_ATTRIBUTE_HIDDEN so the workspace
+        // doesn't grow a visible doXmind folder next to the user's documents.
+        mark_hidden_if_dot_prefixed(parent);
     }
     let raw = serde_json::to_string_pretty(index)
         .map_err(|err| format!("failed to serialize workspace index: {err}"))?;
@@ -2737,7 +2815,7 @@ fn write_workspace_index(root: &Path, index: &WorkspaceIndexDto) -> Result<(), S
             return Ok(());
         }
     }
-    fs::write(path, raw).map_err(|err| format!("failed to write workspace index: {err}"))
+    fs::write(&path, raw).map_err(|err| format!("failed to write workspace index: {err}"))
 }
 
 fn read_workspace_index(root: &Path) -> Result<WorkspaceIndexDto, String> {
@@ -5710,7 +5788,16 @@ mod tests {
                 return explicit;
             }
         }
-        "python3".to_string()
+        // Windows ships `python` (often a py-launcher shim); POSIX distros
+        // typically expose `python3` and leave bare `python` to point at 2.x.
+        #[cfg(target_os = "windows")]
+        {
+            "python".to_string()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            "python3".to_string()
+        }
     }
 
     fn server_dir() -> PathBuf {

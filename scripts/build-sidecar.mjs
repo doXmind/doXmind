@@ -32,12 +32,13 @@ function rustHostTriple() {
 
 function resolvePython() {
   if (fs.existsSync(VENV_PYTHON)) return VENV_PYTHON;
-  console.error(
-    `\nNo venv at ${VENV_PYTHON}.\n` +
-      `Create it first:\n` +
-      `  python3 -m venv server/.venv\n` +
-      `  server/.venv/bin/pip install -r server/requirements.txt pyinstaller\n`
-  );
+  const hint =
+    process.platform === "win32"
+      ? "  py -3 -m venv server\\.venv\n" +
+        "  server\\.venv\\Scripts\\pip install -r server\\requirements.txt pyinstaller\n"
+      : "  python3 -m venv server/.venv\n" +
+        "  server/.venv/bin/pip install -r server/requirements.txt pyinstaller\n";
+  console.error(`\nNo venv at ${VENV_PYTHON}.\nCreate it first:\n${hint}`);
   process.exit(1);
 }
 

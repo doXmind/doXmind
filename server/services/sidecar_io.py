@@ -22,6 +22,17 @@ from typing import Any
 
 import markdown
 
+# NOTE: Windows does not honor the POSIX leading-dot hidden convention, so
+# `.foo.doxmind` sidecars show up next to user documents in Explorer. We
+# considered flipping FILE_ATTRIBUTE_HIDDEN on every sidecar write, but
+# Win32 `CreateFile` with `CREATE_ALWAYS` (which Python's `open(mode="w")`
+# / `Path.write_text` lowers to) rejects existing files that carry the
+# hidden bit with ERROR_ACCESS_DENIED. That would break legitimate external
+# write paths (sync tools, manual edits, our own tests). Per-file hiding is
+# therefore intentionally NOT applied. The workspace-level `.doxmind/`
+# directory IS still hidden by the desktop runtime (Rust side) because
+# directory hiding has no analogous overwrite problem.
+
 SIDECAR_VERSION = 2
 """
 Bumped 1 → 2 alongside the CJK math-content gate (ADR 0006). v1 sidecars
@@ -242,16 +253,21 @@ def atomic_write(target: Path, data: bytes) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.parent / f".{target.name}.tmp-{uuid.uuid4().hex}"
     try:
-        tmp.write_bytes(data)
-        fd = os.open(tmp, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
+        # Single open: write, flush, fsync on the same handle. Windows
+        # rejects ``os.fsync`` on an ``O_RDONLY`` descriptor with EBADF,
+        # so the earlier write-then-reopen-readonly pattern was broken on
+        # Windows. Doing the fsync on the writable handle is portable.
+        with open(tmp, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
         tmp.replace(target)
     finally:
         if tmp.exists():
             tmp.unlink(missing_ok=True)
+    # Directory fsync is a POSIX guarantee; Windows lacks an equivalent and
+    # rejects opening a directory for read, so the try/except is the cross-
+    # platform behavior — POSIX gets the durability boost, Windows no-ops.
     try:
         dir_fd = os.open(target.parent, os.O_RDONLY)
         try:

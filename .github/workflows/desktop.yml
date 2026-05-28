@@ -1,0 +1,66 @@
+name: Desktop installer
+
+# Builds the Tauri desktop bundle (NSIS installer on Windows). Heavier than
+# the regular CI lint/type-check/pytest matrix because it pulls in the Rust
+# toolchain and runs PyInstaller, so it runs only on pushes to main, tag
+# pushes, and on manual dispatch — not on every PR.
+#
+# macOS is intentionally not included here: tauri.conf.json declares a
+# `Developer ID Application` signing identity that lives only on the
+# release machine. Add a macos job here once the signing cert + notary
+# credentials are wired into GitHub Secrets.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  windows:
+    name: Windows (NSIS)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - name: Create Python venv with PyInstaller
+        shell: pwsh
+        run: |
+          python -m venv server\.venv
+          server\.venv\Scripts\pip install --upgrade pip
+          server\.venv\Scripts\pip install -r server\requirements.txt pyinstaller
+
+      - name: Build sidecar + Tauri NSIS bundle
+        run: npm run build:desktop
+
+      - name: Upload NSIS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: doxmind-windows-nsis
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 14

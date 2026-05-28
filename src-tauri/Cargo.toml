@@ -55,3 +55,12 @@ objc2-foundation = { version = "0.3", features = [
     "NSGeometry",
     "NSURL",
 ] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# Used to flip FILE_ATTRIBUTE_HIDDEN on `.doxmind` sidecars after atomic
+# writes — Windows doesn't honor the POSIX leading-dot hidden convention,
+# so without this the sidecars show up next to user documents in Explorer.
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+] }
