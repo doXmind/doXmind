@@ -3319,6 +3319,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
             // the existing open_window_for_target flow (focuses an existing
             // window if the file is already showing, otherwise spawns a new
             // one).
+            #[cfg(target_os = "macos")]
             RunEvent::Opened { urls } => {
                 let pending: tauri::State<'_, PendingOpenPaths> = handle.state();
                 let mut added = false;

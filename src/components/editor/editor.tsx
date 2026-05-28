@@ -502,10 +502,17 @@ export function Editor({
         const appWindow = getCurrentWindow();
         return appWindow.onCloseRequested(async (event) => {
           if (closingAfterFlush) return;
-          event.preventDefault();
-          await saveCurrentNow();
           closingAfterFlush = true;
-          await appWindow.close();
+          event.preventDefault();
+          try {
+            await Promise.race([
+              saveCurrentNow(),
+              new Promise<void>((resolve) => window.setTimeout(resolve, 1500)),
+            ]);
+          } catch (error) {
+            console.error("[Editor] failed to save before close", error);
+          }
+          await appWindow.destroy();
         });
       })
       .then((unlisten) => {
