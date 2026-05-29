@@ -104,7 +104,12 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   const justCreatedFileId = useFileStore((s) => s.justCreatedFileId);
   const clearJustCreatedFileId = useFileStore((s) => s.clearJustCreatedFileId);
 
-  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(new Set());
+  // Folders start collapsed: opening a workspace shows only the first level
+  // (the root's direct children); deeper folders expand one level per click.
+  // We track the EXPANDED set (empty = everything collapsed) rather than a
+  // collapsed set so a freshly opened folder doesn't dump its whole nested
+  // subtree into the sidebar.
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   // Tracks the in-flight folder drag source so dragover handlers can compute
   // D1 verdicts before the drop event (where `getData` becomes readable).
@@ -143,15 +148,15 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   const rootFiles = useMemo(() => getFilesInFolder(null), [files, getFilesInFolder]);
   const allFolders = useMemo(() => files.filter((f) => f.isFolder), [files]);
 
-  const hasExpandedFolders = allFolders.some((f) => !collapsedFolderIds.has(f.id));
+  const hasExpandedFolders = allFolders.some((f) => expandedFolderIds.has(f.id));
 
   useImperativeHandle(
     ref,
     () => ({
-      collapseAll: () => setCollapsedFolderIds(new Set(allFolders.map((f) => f.id))),
+      collapseAll: () => setExpandedFolderIds(new Set()),
       hasExpandedFolders: () => hasExpandedFolders,
     }),
-    [allFolders, hasExpandedFolders]
+    [hasExpandedFolders]
   );
 
   // Build a D1-shaped tree snapshot from the file store. The policy module
@@ -178,10 +183,10 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     onFolderDragLeave: cancelHoverExpand,
     cancel: cancelHoverExpandTimer,
   } = useHoverExpand((folderId) => {
-    setCollapsedFolderIds((prev) => {
-      if (!prev.has(folderId)) return prev;
+    setExpandedFolderIds((prev) => {
+      if (prev.has(folderId)) return prev;
       const next = new Set(prev);
-      next.delete(folderId);
+      next.add(folderId);
       return next;
     });
   });
@@ -359,7 +364,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     // expand callback finds the folder already open, but skipping the
     // schedule avoids a useless setState while the user drags inside an
     // already-expanded folder.
-    if (collapsedFolderIds.has(folderId)) {
+    if (!expandedFolderIds.has(folderId)) {
       scheduleHoverExpand(folderId);
     } else {
       cancelHoverExpandTimer();
@@ -797,7 +802,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   const renderFolder = (folder: FileItemType) => {
     const folderFiles = getFilesInFolder(folder.id);
     const childFolders = getFolders(folder.id);
-    const isCollapsed = collapsedFolderIds.has(folder.id);
+    const isCollapsed = !expandedFolderIds.has(folder.id);
     const isActiveFolder = activeParentId === folder.id;
     const hasChildren = folderFiles.length > 0 || childFolders.length > 0;
 
@@ -860,7 +865,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
               onDragStart={(e) => handleFolderDragStart(e, folder.id)}
               onDragEnd={handleDragEnd}
               onClick={() => {
-                setCollapsedFolderIds((prev) => {
+                setExpandedFolderIds((prev) => {
                   const next = new Set(prev);
                   if (next.has(folder.id)) next.delete(folder.id);
                   else next.add(folder.id);
