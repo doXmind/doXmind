@@ -8,6 +8,7 @@ import {
   type MouseEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -43,6 +44,12 @@ import { rangeToMarkdown } from "@/lib/markdown-selection";
 import { useDatabaseStore } from "@/stores/database-store";
 import { eventBus } from "@/lib/events";
 import { perfMark, perfMeasure, perfSync } from "@/lib/perf";
+
+// Per-file scroll memory keyed by fileId, kept at module scope so it survives
+// MarkdownRuntime remounts — the workspace swaps in a skeleton (unmounting the
+// runtime) whenever a file's content is still loading, which would discard any
+// per-instance state. Missing entry => start the file at the top.
+const scrollPositions = new Map<string, number>();
 
 interface MarkdownRuntimeProps {
   file: FileItem;
@@ -401,6 +408,8 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       initialFileIdRef.current = null;
       lastContentRef.current = editor.getHTML();
       prevDbIdsRef.current = extractDatabaseIds(file.content, "initialMount");
+      // (Re)mount: restore this file's remembered scroll, or top if unseen.
+      restoreScrollTop(scrollAreaRef.current, scrollPositions.get(file.id) ?? 0);
       return;
     }
 
@@ -434,9 +443,10 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
 
       domObserver?.start();
 
-      if (scrollAreaRef.current) {
-        scrollAreaRef.current.scrollTop = 0;
-      }
+      // Restore this file's remembered scroll position, or start at the top
+      // for a file we haven't shown before. restoreScrollTop re-applies across
+      // a couple of frames so it survives post-setContent layout settling.
+      restoreScrollTop(scrollAreaRef.current, scrollPositions.get(file.id) ?? 0);
 
       rafId = requestAnimationFrame(() => {
         rafId = undefined;
@@ -469,6 +479,10 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   // Late-content / external-edit reconcile.
   useEffect(() => {
     if (!editor) return;
+    // A file switch is handled by the effect above, which banks/restores the
+    // per-file scroll position. Bail during a switch so this reconcile doesn't
+    // re-apply the previous file's scrollTop (the cross-file scroll leak).
+    if (isFileSwitchingRef.current) return;
     const editorHTML = editor.getHTML();
     const isEmpty =
       editorHTML === "" ||
@@ -623,6 +637,25 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
     },
     [editor, isEditing, activateEdit]
   );
+
+  // Persist the current file's scroll position on the way out — this effect's
+  // cleanup runs both on a hot switch (file.id changes, runtime reused) and on
+  // unmount (the workspace tears the runtime down behind a loading skeleton).
+  // We read scrollTop directly rather than listening for scroll events, which
+  // don't fire for programmatic scrolls in the embedded webview, and capture
+  // the element at setup so the cleanup still has it during DOM teardown.
+  useLayoutEffect(() => {
+    // `editor` is a dep so this re-runs once the editor is ready and the
+    // ScrollArea is actually mounted (the early `if (!editor)` return means the
+    // ref is null on the first pass). Capturing the element here — rather than
+    // reading scrollAreaRef.current in the cleanup — keeps the reference stable
+    // through the hot-switch/unmount teardown, when React nulls the ref.
+    const scrollEl = scrollAreaRef.current;
+    const fileId = file.id;
+    return () => {
+      if (scrollEl) scrollPositions.set(fileId, scrollEl.scrollTop);
+    };
+  }, [file.id, editor]);
 
   if (!editor) {
     return <MarkdownSkeleton file={{ name: file.name, outline: file.outline }} />;
