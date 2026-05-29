@@ -4,6 +4,7 @@ import { ThemeProvider } from "next-themes";
 import { MotionConfig } from "framer-motion";
 import { useThemeManager } from "@/hooks/use-theme-manager";
 import { NativeMenuListener } from "@/components/native-menu-listener";
+import { WorkspaceWatch } from "@/components/workspace-watch";
 import { AppearanceInjector } from "@/components/appearance-injector";
 
 function ThemeInitializer() {
@@ -25,6 +26,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <ThemeInitializer />
         <AppearanceInjector />
         <NativeMenuListener />
+        <WorkspaceWatch />
         {children}
       </MotionConfig>
     </ThemeProvider>

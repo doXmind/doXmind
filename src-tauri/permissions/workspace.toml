@@ -46,4 +46,6 @@ commands.allow = [
   "dock_set_recents",
   "save_window_pdf",
   "take_pending_open_paths",
+  "workspace_watch",
+  "workspace_unwatch",
 ]

@@ -30,6 +30,7 @@ env_logger = "0.11"
 window-vibrancy = "0.6"
 uuid = { version = "1", features = ["v4"] }
 trash = "5"
+notify-debouncer-mini = "0.7.0"
 
 [features]
 # Enables tests that spawn `python3` to verify byte-identical sidecar

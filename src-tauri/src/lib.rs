@@ -16,10 +16,12 @@ use std::net::TcpListener;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{cmp, collections::BTreeMap, collections::HashMap};
 
 use doxmind_sidecar::{DocMeta, DocPayload, DocumentOutlineItem, ReadResult, Source, SourceState};
+use notify_debouncer_mini::notify::{RecommendedWatcher, RecursiveMode};
+use notify_debouncer_mini::{new_debouncer, DebounceEventResult, Debouncer};
 use serde::{Deserialize, Serialize};
 use tauri::{
     AppHandle, Emitter, LogicalPosition, Manager, RunEvent, Url, WebviewUrl, WebviewWindow,
@@ -145,6 +147,56 @@ impl WindowRegistry {
                 None
             }
         })
+    }
+}
+
+/// A per-window filesystem watcher. Dropping the [`Debouncer`] stops its
+/// background watch thread, so replacing or removing an entry tears the old
+/// watcher down. A window watches at most one root at a time — the folder it
+/// currently has open.
+type WorkspaceDebouncer = Debouncer<RecommendedWatcher>;
+
+/// Live workspace watchers keyed by Tauri window label, each tagged with the
+/// root it watches. Each folder-mode window registers one watch; the entry is
+/// replaced when it opens a different folder and cleared when it stops watching
+/// or is destroyed.
+struct WatcherRegistry {
+    watchers: Mutex<HashMap<String, (String, WorkspaceDebouncer)>>,
+}
+
+impl WatcherRegistry {
+    fn new() -> Self {
+        Self {
+            watchers: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Install (or replace) the watcher for `label`. The previous debouncer,
+    /// if any, is dropped here — stopping the old watch thread.
+    fn set(&self, label: &str, root: String, debouncer: WorkspaceDebouncer) {
+        if let Ok(mut map) = self.watchers.lock() {
+            map.insert(label.to_string(), (root, debouncer));
+        }
+    }
+
+    /// Remove the watcher for `label` only if it is still watching `root`.
+    /// Ordering-safe: a stop racing behind a fresh `set` for a new root (a
+    /// folder switch fires unwatch+watch as two un-ordered IPC calls) leaves
+    /// the new watcher untouched.
+    fn clear_root(&self, label: &str, root: &str) {
+        if let Ok(mut map) = self.watchers.lock() {
+            if map.get(label).is_some_and(|(stored, _)| stored.as_str() == root) {
+                map.remove(label);
+            }
+        }
+    }
+
+    /// Unconditionally drop the watcher for `label` — used when the window is
+    /// destroyed, where any watch it owned should go regardless of root.
+    fn clear(&self, label: &str) {
+        if let Ok(mut map) = self.watchers.lock() {
+            map.remove(label);
+        }
     }
 }
 
@@ -2603,6 +2655,124 @@ fn is_hidden_sidecar_name(name: &str) -> bool {
     name.starts_with('.') && name.ends_with(".doxmind")
 }
 
+/// Sidecar files and the transient siblings doXmind writes next to them:
+/// `.Foo.doxmind` plus its `.lock`, `.bak`, and `.corrupt-*` variants. All are
+/// hidden and none is a user-visible document, so a watch event on one must
+/// never trigger a sidebar re-scan.
+fn is_sidecar_adjacent(name: &str) -> bool {
+    name.starts_with('.') && name.contains(".doxmind")
+}
+
+/// Whether a filesystem event under the watched root should trigger a sidebar
+/// re-scan. Mirrors the scan's own ignore rules (`is_ignored_scan_dir` /
+/// hidden sidecars) so internal sidecar writes and build/VCS directories don't
+/// cause churn. Events on the root itself, or on paths outside it, are ignored.
+fn watch_path_is_relevant(root: &Path, path: &Path) -> bool {
+    let Ok(rel) = path.strip_prefix(root) else {
+        return false;
+    };
+    let mut saw_component = false;
+    let mut components = rel.components().peekable();
+    while let Some(component) = components.next() {
+        if let Component::Normal(os) = component {
+            saw_component = true;
+            let name = os.to_string_lossy();
+            if is_ignored_scan_dir(&name) {
+                return false;
+            }
+            let is_leaf = components.peek().is_none();
+            if is_leaf && is_sidecar_adjacent(&name) {
+                return false;
+            }
+        }
+    }
+    saw_component
+}
+
+/// Debounce window for filesystem events: batch a burst of changes (e.g. a
+/// multi-file copy) into a single re-scan signal.
+const WATCH_DEBOUNCE_MS: u64 = 400;
+
+/// Event name broadcast to the frontend when a watched workspace changes on
+/// disk. Carries the originating root so each window can match it against the
+/// folder it has open before re-scanning.
+const WORKSPACE_CHANGED_EVENT: &str = "workspace://changed";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceChangedPayload {
+    root: String,
+}
+
+/// Start (or replace) a recursive filesystem watch on `root` for the calling
+/// window. On a debounced batch containing any change the workspace scan would
+/// surface, broadcasts [`WORKSPACE_CHANGED_EVENT`] carrying the original `root`
+/// string — every window receives it but only those showing that exact folder
+/// act on it. The watch is replaced when the window opens a different folder,
+/// and torn down by `workspace_unwatch` or on window destroy.
+#[tauri::command]
+fn workspace_watch(
+    app: AppHandle,
+    window: WebviewWindow,
+    registry: tauri::State<'_, WatcherRegistry>,
+    root: String,
+) -> Result<(), String> {
+    let watch_root = fs::canonicalize(&root)
+        .map_err(|err| format!("failed to resolve workspace root for watching: {err}"))?;
+    if !watch_root.is_dir() {
+        return Err("workspace root is not a directory".to_string());
+    }
+
+    // Echo the caller's original `root` string back in the payload (not the
+    // canonical one) so the frontend's equality check against its stored
+    // `rootPath` is an exact round-trip regardless of symlink normalisation.
+    // The same string tags the registry entry so `workspace_unwatch` can match
+    // it.
+    let registry_root = root.clone();
+    let emit_root = root;
+    let filter_root = watch_root.clone();
+    let app_handle = app.clone();
+    let mut debouncer = new_debouncer(
+        Duration::from_millis(WATCH_DEBOUNCE_MS),
+        move |result: DebounceEventResult| match result {
+            Ok(events) => {
+                let relevant = events
+                    .iter()
+                    .any(|event| watch_path_is_relevant(&filter_root, &event.path));
+                if relevant {
+                    let _ = app_handle.emit(
+                        WORKSPACE_CHANGED_EVENT,
+                        WorkspaceChangedPayload {
+                            root: emit_root.clone(),
+                        },
+                    );
+                }
+            }
+            Err(err) => log::warn!("[watch] debouncer error: {err}"),
+        },
+    )
+    .map_err(|err| format!("failed to create filesystem watcher: {err}"))?;
+
+    debouncer
+        .watcher()
+        .watch(&watch_root, RecursiveMode::Recursive)
+        .map_err(|err| format!("failed to watch workspace root: {err}"))?;
+
+    registry.set(window.label(), registry_root, debouncer);
+    Ok(())
+}
+
+/// Stop watching `root` for the calling window. Idempotent, and a no-op if the
+/// window has since moved on to a different root (see [`WatcherRegistry::clear_root`]).
+#[tauri::command]
+fn workspace_unwatch(
+    window: WebviewWindow,
+    registry: tauri::State<'_, WatcherRegistry>,
+    root: String,
+) {
+    registry.clear_root(window.label(), &root);
+}
+
 fn is_markdown_file(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
@@ -3147,6 +3317,11 @@ fn create_editor_window(
             if let Some(registry) = close_handle.try_state::<WindowRegistry>() {
                 registry.clear(&owned_label);
             }
+            // Tear down any filesystem watcher this window owned so its watch
+            // thread doesn't outlive the window.
+            if let Some(watchers) = close_handle.try_state::<WatcherRegistry>() {
+                watchers.clear(&owned_label);
+            }
         }
     });
 
@@ -3352,6 +3527,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
         .manage(BackendUrl(backend_url.clone()))
         .manage(backend_state)
         .manage(WindowRegistry::new())
+        .manage(WatcherRegistry::new())
         .manage(pending_open_paths)
         .manage(InitScript(init_script.clone()))
         .invoke_handler(tauri::generate_handler![
@@ -3396,7 +3572,9 @@ window.__TAURI_PLATFORM__ = "{platform}";
             dock_set_recents,
             current_window_open_target,
             save_window_pdf,
-            take_pending_open_paths
+            take_pending_open_paths,
+            workspace_watch,
+            workspace_unwatch
         ])
         .setup(move |app| {
             // Spawn the backend.
@@ -6481,5 +6659,51 @@ mod tests {
         assert!(err.contains("must end in .md"), "unexpected error: {err}");
         // Source untouched.
         assert!(workspace.path.join("notes.txt").exists());
+    }
+
+    #[test]
+    fn watch_filter_flags_real_documents_and_folders() {
+        let root = Path::new("/ws");
+        assert!(watch_path_is_relevant(root, Path::new("/ws/Notes.md")));
+        assert!(watch_path_is_relevant(root, Path::new("/ws/sub/Report.pdf")));
+        assert!(watch_path_is_relevant(root, Path::new("/ws/Budget.xlsx")));
+        // A newly created folder changes the tree.
+        assert!(watch_path_is_relevant(root, Path::new("/ws/new-folder")));
+        // A leading-dot document name is still a document the scan surfaces.
+        assert!(watch_path_is_relevant(root, Path::new("/ws/.hidden-note.md")));
+    }
+
+    #[test]
+    fn watch_filter_ignores_sidecars_index_and_build_dirs() {
+        let root = Path::new("/ws");
+        // Sidecars and the transient siblings doXmind writes on every save.
+        assert!(!watch_path_is_relevant(root, Path::new("/ws/.Notes.doxmind")));
+        assert!(!watch_path_is_relevant(root, Path::new("/ws/.Notes.doxmind.lock")));
+        assert!(!watch_path_is_relevant(root, Path::new("/ws/.Notes.doxmind.bak")));
+        assert!(!watch_path_is_relevant(
+            root,
+            Path::new("/ws/.Notes.doxmind.corrupt-1700000000")
+        ));
+        // Hidden index directory and ignored build/VCS directories.
+        assert!(!watch_path_is_relevant(root, Path::new("/ws/.doxmind/index.json")));
+        assert!(!watch_path_is_relevant(root, Path::new("/ws/.git/HEAD")));
+        assert!(!watch_path_is_relevant(
+            root,
+            Path::new("/ws/node_modules/pkg/index.js")
+        ));
+        // The root itself, and anything outside it, are never relevant.
+        assert!(!watch_path_is_relevant(root, root));
+        assert!(!watch_path_is_relevant(root, Path::new("/other/Notes.md")));
+    }
+
+    #[test]
+    fn sidecar_adjacent_covers_lock_bak_and_corrupt() {
+        assert!(is_sidecar_adjacent(".Foo.doxmind"));
+        assert!(is_sidecar_adjacent(".Foo.doxmind.lock"));
+        assert!(is_sidecar_adjacent(".Foo.doxmind.bak"));
+        assert!(is_sidecar_adjacent(".Foo.doxmind.corrupt-1700000000"));
+        assert!(!is_sidecar_adjacent("Foo.md"));
+        assert!(!is_sidecar_adjacent(".DS_Store"));
+        assert!(!is_sidecar_adjacent("doxmind-notes.md"));
     }
 }
