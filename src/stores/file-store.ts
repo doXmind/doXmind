@@ -954,20 +954,10 @@ export const useFileStore = create<FileState>()(
       setCurrentFile: (id: string | null) => {
         if (get().currentFileId === id) return;
         set({ currentFileId: id });
-
-        // Record real disk-backed documents as recents. `openFile` only fires
-        // for loose files opened by path, so without this the recent-documents
-        // list never reflects files opened inside a workspace (sidebar clicks,
-        // quick switcher, deep links all route through setCurrentFile). Skip
-        // transient buffers, folders, and anything without a disk relPath.
-        if (!id || id.startsWith(TRANSIENT_ID_PREFIX)) return;
-        const state = get();
-        const file = state.files.find((f) => f.id === id);
-        const relPath = file?.storageHandle?.relPath;
-        if (!file || file.isFolder || !state.rootPath || !relPath) return;
-        const absolutePath = `${state.rootPath.replace(/\/+$/, "")}/${relPath.replace(/^\/+/, "")}`;
-        set((s) => ({ recents: rememberRecent({ kind: "file", path: absolutePath }, s) }));
-        void syncRecentsToDock(get().recents);
+        // Documents opened inside a workspace are intentionally NOT recorded as
+        // recents — they're represented by their workspace folder (recorded in
+        // openFolder), VSCode-style. Only standalone files opened by path
+        // (openFile) and folders are remembered.
       },
 
       renameFile: async (id: string, name: string) => {

@@ -612,7 +612,7 @@
     "preview": "预览",
     "stratigraphyHeader": "层叠",
     "stratigraphyOldestHint": "最旧 ↓",
-    "stratigraphyLastDocs": "最近 {count} 份文档",
+    "stratigraphyLastDocs": "最近打开 {count} 项",
     "stratigraphyEmptyTitle": "暂无层叠",
     "stratigraphyEmptyBody": "打开一个文件开始堆叠。",
     "firstRunTag": "欢迎使用 doxmind。",

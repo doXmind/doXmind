@@ -3,7 +3,7 @@
 // i18n keys consumed by this component (assumed present at welcome.<key>):
 //   stratigraphyHeader        "stratigraphy"
 //   stratigraphyOldestHint    "oldest ↓"
-//   stratigraphyLastDocs      "last {count} documents"
+//   stratigraphyLastDocs      "last {count} opened"
 //   stratigraphyWordsSuffix   "w"
 //   firstRunTag               "Welcome to doxmind."
 //   firstRunHeading           "A quiet place to write, on your disk."
@@ -206,28 +206,30 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
   const t = useTranslations("welcome");
 
   const layers = useMemo<StratigraphyLayer[]>(() => {
-    if (recentFiles.length > 0) {
-      return recentFiles.slice(0, LAYER_LIMIT).map((file) => ({
-        key: file.absolutePath,
-        title: file.name,
-        subtitle: file.workspacePath,
-        preview: file.preview,
-        words: file.wordCount,
-        when: file.lastOpened ? formatRelativeTime(file.lastOpened) : file.documentType,
-        isDocument: true,
-        onActivate: () => onOpenRecentFile(file),
-      }));
-    }
-    return recentWorkspaces.slice(0, LAYER_LIMIT).map((workspace) => ({
+    // VSCode-style precedence: recent workspaces (folders) come first, then any
+    // standalone files opened on their own. Documents opened inside a workspace
+    // aren't recorded individually — the workspace folder represents them.
+    const folderLayers: StratigraphyLayer[] = recentWorkspaces.map((workspace) => ({
       key: workspace.path,
       title: workspace.name,
       subtitle: workspace.parent,
       preview: "",
       words: 0,
-      when: workspace.path,
+      when: workspace.parent,
       isDocument: false,
       onActivate: () => onOpenRecentWorkspace(workspace.path),
     }));
+    const fileLayers: StratigraphyLayer[] = recentFiles.map((file) => ({
+      key: file.absolutePath,
+      title: file.name,
+      subtitle: file.workspacePath,
+      preview: file.preview,
+      words: file.wordCount,
+      when: file.lastOpened ? formatRelativeTime(file.lastOpened) : file.documentType,
+      isDocument: true,
+      onActivate: () => onOpenRecentFile(file),
+    }));
+    return [...folderLayers, ...fileLayers].slice(0, LAYER_LIMIT);
   }, [recentFiles, recentWorkspaces, onOpenRecentFile, onOpenRecentWorkspace]);
 
   // First-run = brand-new user with no document or workspace history at all.
@@ -287,7 +289,7 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
                     key={layer.key}
                     layer={layer}
                     index={index}
-                    isActive={index === 0 && recentFiles.length > 0}
+                    isActive={index === 0}
                     isFirst={index === 0}
                   />
                 ))}

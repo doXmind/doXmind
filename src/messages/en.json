@@ -612,7 +612,7 @@
     "preview": "Preview",
     "stratigraphyHeader": "stratigraphy",
     "stratigraphyOldestHint": "oldest ↓",
-    "stratigraphyLastDocs": "last {count} documents",
+    "stratigraphyLastDocs": "last {count} opened",
     "stratigraphyEmptyTitle": "No layers yet",
     "stratigraphyEmptyBody": "Open a file to start the stack.",
     "firstRunTag": "Welcome to doxmind.",

@@ -61,8 +61,20 @@ export function WelcomeScreen() {
   }, [recentsRaw, openTarget, rootPath]);
 
   const recentFiles = useMemo<WelcomeRecentFile[]>(() => {
+    // Only standalone files belong here — a file that lives inside a recent
+    // workspace is represented by that workspace folder (VSCode-style), so we
+    // drop it. This also sweeps out documents that older builds recorded as
+    // file recents before workspace docs stopped being tracked individually.
+    const workspaceDirs = recentsRaw
+      .filter((entry) => entry.kind === "folder")
+      .map((entry) => entry.path.replace(/\/+$/, ""));
+    const isInsideWorkspace = (filePath: string) =>
+      workspaceDirs.some((dir) => filePath === dir || filePath.startsWith(`${dir}/`));
     return recentsRaw
-      .filter((entry) => entry.kind === "file" && entry.path !== openFilePath)
+      .filter(
+        (entry) =>
+          entry.kind === "file" && entry.path !== openFilePath && !isInsideWorkspace(entry.path)
+      )
       .slice(0, RECENT_FILE_LIMIT)
       .map((entry) => {
         const { name, parent } = workspaceLabel(entry.path);
