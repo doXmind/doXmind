@@ -15,15 +15,18 @@ use std::io;
 use std::net::TcpListener;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::{cmp, collections::BTreeMap, collections::HashMap};
 
 use doxmind_sidecar::{DocMeta, DocPayload, DocumentOutlineItem, ReadResult, Source, SourceState};
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use tauri::{
-    AppHandle, Emitter, LogicalPosition, Manager, RunEvent, Url, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder, WindowEvent,
+    AppHandle, Emitter, EventTarget, LogicalPosition, Manager, RunEvent, Url, WebviewUrl,
+    WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
@@ -146,6 +149,203 @@ impl WindowRegistry {
             }
         })
     }
+}
+
+/// Debounce window for collapsing a burst of filesystem events into a single
+/// `workspace://changed` emit. The watcher event = "workspace may be dirty";
+/// the frontend's `workspace_scan` re-scan is the source of truth, so a coarse
+/// debounce is all we need. ~400 ms matches the issue's target.
+const WORKSPACE_WATCH_DEBOUNCE: Duration = Duration::from_millis(400);
+
+/// Hard ceiling on how long a single coalesce window may grow under a
+/// continuous event stream. Without it, events arriving faster than the
+/// debounce gap would reset the timer forever and starve the emit. Bounds
+/// worst-case latency so the sidebar still refreshes within the ~1 s target.
+const WORKSPACE_WATCH_MAX_COALESCE: Duration = Duration::from_millis(800);
+
+/// One live watcher per window. The `RecommendedWatcher` is held to keep the
+/// OS watch alive; dropping it stops watching. The drain thread that owns the
+/// event receiver exits on its own when the watcher (and thus the sender) is
+/// dropped, so removing the entry from the map is the whole teardown.
+struct WorkspaceWatch {
+    _watcher: RecommendedWatcher,
+    /// The exact (raw) root string the frontend passed to `workspace_watch`.
+    /// Used as the swap-safe teardown identity: the frontend passes the same
+    /// raw string to `workspace_unwatch`, so we match on it directly and never
+    /// have to re-canonicalize (which would fail if the folder was deleted).
+    key: String,
+}
+
+/// Per-window filesystem watchers, keyed by Tauri window label. Each window
+/// watches only its own workspace root, so a window showing folder A never
+/// refreshes because folder B changed.
+struct WorkspaceWatchers {
+    by_label: Mutex<HashMap<String, WorkspaceWatch>>,
+}
+
+impl WorkspaceWatchers {
+    fn new() -> Self {
+        Self {
+            by_label: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn remove(&self, label: &str) {
+        if let Ok(mut map) = self.by_label.lock() {
+            map.remove(label);
+        }
+    }
+
+    /// Remove the watcher for `label` only if its key still matches `key`. No-op
+    /// if the entry was already replaced by a watcher for a different folder —
+    /// this is what keeps a late folder-A teardown from killing a live folder-B
+    /// watcher during a swap. Matching on the raw caller key (not a re-derived
+    /// canonical path) means a deleted/renamed folder can never escalate this
+    /// into an unconditional remove.
+    fn remove_if_key(&self, label: &str, key: &str) {
+        if let Ok(mut map) = self.by_label.lock() {
+            if map.get(label).map(|w| w.key.as_str()) == Some(key) {
+                map.remove(label);
+            }
+        }
+    }
+}
+
+/// Whether a single path segment is one the scan ignores or that the watcher
+/// should treat as noise. Mirrors the scan's ignore model (`is_ignored_scan_dir`
+/// / `is_hidden_sidecar_name`) and extends it for the full hidden-sidecar family
+/// so a sidecar `.lock` / `.bak` / `.corrupt-*` write — or any write inside the
+/// `.doxmind/` index dir — never bounces back as a refresh.
+fn is_ignored_watch_segment(name: &str) -> bool {
+    // The `.doxmind/` index directory and any ignored/generated dir.
+    if name == ".doxmind" || is_ignored_scan_dir(name) {
+        return true;
+    }
+    // Hidden sidecar family: `.foo.doxmind`, plus the `.lock` / `.bak` /
+    // `.corrupt-*` siblings that hang off it. `is_hidden_sidecar_name` only
+    // catches the exact `.doxmind` suffix, so widen it here.
+    name.starts_with('.') && name.contains(".doxmind")
+}
+
+/// Whether an event path under the workspace root is "interesting" enough to
+/// trigger a re-scan. notify delivers absolute paths, so we test only the
+/// segments *below* the watch root — the scan likewise only inspects the leaf
+/// name of each child entry, never the ancestor path. Without this the root's
+/// own path segments (e.g. a workspace living under `~/build/` or `~/.git-bare/`)
+/// would spuriously match the ignore list and silence every event.
+///
+/// If the path can't be placed under the root (no shared prefix — shouldn't
+/// happen for a recursive watch on the canonical `root`, but possible if a
+/// backend reports a path via a different symlink/mount alias), we treat it as
+/// relevant rather than scanning its absolute ancestors: the worst case is one
+/// extra re-scan, whereas the alternative would silently drop real events for
+/// any workspace nested under an ignore-listed directory name.
+///
+/// Main `.md` saves are not filtered here; they produce one debounced re-scan,
+/// which is fine.
+fn watch_path_is_relevant(root: &Path, path: &Path) -> bool {
+    let Ok(segments) = path.strip_prefix(root) else {
+        return true;
+    };
+    for component in segments.components() {
+        if let Component::Normal(part) = component {
+            if is_ignored_watch_segment(&part.to_string_lossy()) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Returns true if any path in the event batch is relevant. notify reports the
+/// affected paths per event; a rename/move carries both endpoints. We keep the
+/// event if *any* endpoint is interesting.
+fn watch_event_is_relevant(root: &Path, event: &notify::Event) -> bool {
+    // Access/metadata-only churn is noise (e.g. mtime bumps from reads). Keep
+    // structural changes: create / modify-content / remove / rename.
+    match event.kind {
+        EventKind::Access(_) => false,
+        EventKind::Any
+        | EventKind::Other
+        | EventKind::Create(_)
+        | EventKind::Modify(_)
+        | EventKind::Remove(_) => event.paths.iter().any(|p| watch_path_is_relevant(root, p)),
+    }
+}
+
+/// Spawn a recursive watcher on `root` (canonical) and a drain thread that
+/// debounces event bursts and emits `workspace://changed` (with `{ root }`) to
+/// the owning window only. `key` is the raw caller-supplied root string, stored
+/// as the teardown identity. Returns the `WorkspaceWatch` whose lifetime keeps
+/// both alive.
+fn spawn_workspace_watch(
+    app: &AppHandle,
+    label: String,
+    root: PathBuf,
+    key: String,
+) -> Result<WorkspaceWatch, String> {
+    let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+    let mut watcher = notify::recommended_watcher(move |res| {
+        // The receiver lives in the drain thread; once that thread (and the
+        // watcher) is gone the send fails and we simply stop forwarding.
+        let _ = tx.send(res);
+    })
+    .map_err(|err| format!("failed to create watcher: {err}"))?;
+    watcher
+        .watch(&root, RecursiveMode::Recursive)
+        .map_err(|err| format!("failed to watch {}: {err}", root.display()))?;
+
+    let app = app.clone();
+    let emit_root = root.to_string_lossy().into_owned();
+    let coalesce_root = root.clone();
+    thread::spawn(move || {
+        // Block for the first relevant event, then coalesce everything that
+        // arrives within the debounce window into one emit.
+        while let Ok(first) = rx.recv() {
+            if !first
+                .map(|e| watch_event_is_relevant(&coalesce_root, &e))
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            // Coalesce: keep draining while events keep arriving within the
+            // debounce gap, but cap the total coalesce window so a continuous
+            // stream (relevant or not) can never starve the emit past the
+            // ~1 s budget. We don't inspect drained events — any further change
+            // is already covered by the single re-scan this emit triggers.
+            let deadline = Instant::now() + WORKSPACE_WATCH_MAX_COALESCE;
+            loop {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    break;
+                }
+                let gap = cmp::min(WORKSPACE_WATCH_DEBOUNCE, remaining);
+                if rx.recv_timeout(gap).is_err() {
+                    break;
+                }
+            }
+
+            // Per-window delivery: in Tauri v2 a bare `emit` broadcasts to every
+            // window, so we target this window's webview explicitly. Combined
+            // with the frontend re-registering on root change, a window showing
+            // folder A never refreshes because folder B changed (AC #3).
+            let _ = app.emit_to(
+                EventTarget::webview_window(&label),
+                "workspace://changed",
+                WorkspaceChangedPayload { root: &emit_root },
+            );
+        }
+    });
+
+    Ok(WorkspaceWatch {
+        _watcher: watcher,
+        key,
+    })
+}
+
+#[derive(Serialize, Clone)]
+struct WorkspaceChangedPayload<'a> {
+    root: &'a str,
 }
 
 /// Queue of file paths the OS asked us to open — populated from CLI args at
@@ -2040,6 +2240,66 @@ fn workspace_scan(root: String) -> Result<WorkspaceScanResultDto, String> {
     })
 }
 
+/// Normalize a raw root string into the stable key used to identify a watcher.
+/// Trims a single trailing path separator so `~/x` and `~/x/` map to the same
+/// watcher and don't cause a redundant drop+respawn.
+fn workspace_watch_key(root: &str) -> &str {
+    root.strip_suffix(std::path::MAIN_SEPARATOR)
+        .unwrap_or(root)
+}
+
+/// Start watching `root` for the calling window. Replaces any existing watcher
+/// for that window (opening a different folder in the same window swaps the
+/// watch). A no-op early-out if the same root is already watched avoids
+/// tearing down and rebuilding the OS watch on redundant calls.
+#[tauri::command]
+fn workspace_watch(
+    app: AppHandle,
+    window: WebviewWindow,
+    root: String,
+    watchers: tauri::State<'_, WorkspaceWatchers>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let key = workspace_watch_key(&root).to_string();
+
+    // Hold the lock across check → canonicalize → spawn → insert so a concurrent
+    // watch for the same window can't slip a second watcher in between. The
+    // early-out runs before canonicalizing, so a redundant re-watch never pays
+    // an fs syscall and never fails just because the (already-watched) folder
+    // briefly stops resolving. canonicalize and spawn only register OS state on
+    // success; on error we return without mutating the map, leaving any existing
+    // watcher intact.
+    let mut map = watchers
+        .by_label
+        .lock()
+        .map_err(|_| "watcher registry poisoned".to_string())?;
+    if map.get(&label).map(|w| w.key.as_str()) == Some(key.as_str()) {
+        return Ok(());
+    }
+    let canonical = canonical_workspace_root(&root)?;
+    let watch = spawn_workspace_watch(&app, label.clone(), canonical, key)?;
+    // Replacing the entry drops the prior watcher, which stops its drain thread.
+    map.insert(label, watch);
+    Ok(())
+}
+
+/// Stop watching for the calling window. Idempotent. `root` scopes the removal
+/// to the watcher the caller believes is active: when the frontend swaps folder
+/// A → B, the teardown for A and the setup for B race across IPC, and an A-late
+/// unwatch must not tear down the freshly-installed B watcher. We match on the
+/// raw caller key, so a deleted/renamed folder (whose path no longer
+/// canonicalizes) still tears down precisely its own watcher and never another.
+/// Window teardown uses `WorkspaceWatchers::remove` directly for unconditional
+/// "stop everything" semantics.
+#[tauri::command]
+fn workspace_unwatch(
+    window: WebviewWindow,
+    root: String,
+    watchers: tauri::State<'_, WorkspaceWatchers>,
+) {
+    watchers.remove_if_key(window.label(), workspace_watch_key(&root));
+}
+
 #[tauri::command]
 fn workspace_index_rebuild(root: String) -> Result<WorkspaceIndexDto, String> {
     let root = canonical_workspace_root(&root)?;
@@ -3147,6 +3407,11 @@ fn create_editor_window(
             if let Some(registry) = close_handle.try_state::<WindowRegistry>() {
                 registry.clear(&owned_label);
             }
+            // Drop this window's filesystem watcher so it stops emitting into a
+            // dead window and the OS watch is released.
+            if let Some(watchers) = close_handle.try_state::<WorkspaceWatchers>() {
+                watchers.remove(&owned_label);
+            }
         }
     });
 
@@ -3352,6 +3617,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
         .manage(BackendUrl(backend_url.clone()))
         .manage(backend_state)
         .manage(WindowRegistry::new())
+        .manage(WorkspaceWatchers::new())
         .manage(pending_open_paths)
         .manage(InitScript(init_script.clone()))
         .invoke_handler(tauri::generate_handler![
@@ -3374,6 +3640,8 @@ window.__TAURI_PLATFORM__ = "{platform}";
             workspace_read_excel_doc_state,
             workspace_write_excel_parsed_cache,
             workspace_scan,
+            workspace_watch,
+            workspace_unwatch,
             workspace_index_rebuild,
             workspace_index_read,
             workspace_markdown_search,
