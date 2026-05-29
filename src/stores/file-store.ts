@@ -217,13 +217,22 @@ function getAdapter(state: Pick<FileState, "rootPath">): StorageAdapter {
   return createStorageAdapter({ disk: { root: state.rootPath } });
 }
 
-const RECENTS_LIMIT = 8;
+// Cap files and folders independently so frequently-opened documents don't
+// evict workspace history from the shared recents list (and vice versa).
+const RECENTS_FILE_LIMIT = 16;
+const RECENTS_FOLDER_LIMIT = 12;
 
 function rememberRecent(entry: RecentEntry, state: Pick<FileState, "recents">): RecentEntry[] {
-  return [
+  const deduped = [
     entry,
     ...state.recents.filter((r) => !(r.kind === entry.kind && r.path === entry.path)),
-  ].slice(0, RECENTS_LIMIT);
+  ];
+  let files = 0;
+  let folders = 0;
+  // Preserves overall recency order (newest first) while bounding each kind.
+  return deduped.filter((r) =>
+    r.kind === "file" ? ++files <= RECENTS_FILE_LIMIT : ++folders <= RECENTS_FOLDER_LIMIT
+  );
 }
 
 function forgetRecent(entry: RecentEntry, state: Pick<FileState, "recents">): RecentEntry[] {
@@ -945,6 +954,20 @@ export const useFileStore = create<FileState>()(
       setCurrentFile: (id: string | null) => {
         if (get().currentFileId === id) return;
         set({ currentFileId: id });
+
+        // Record real disk-backed documents as recents. `openFile` only fires
+        // for loose files opened by path, so without this the recent-documents
+        // list never reflects files opened inside a workspace (sidebar clicks,
+        // quick switcher, deep links all route through setCurrentFile). Skip
+        // transient buffers, folders, and anything without a disk relPath.
+        if (!id || id.startsWith(TRANSIENT_ID_PREFIX)) return;
+        const state = get();
+        const file = state.files.find((f) => f.id === id);
+        const relPath = file?.storageHandle?.relPath;
+        if (!file || file.isFolder || !state.rootPath || !relPath) return;
+        const absolutePath = `${state.rootPath.replace(/\/+$/, "")}/${relPath.replace(/^\/+/, "")}`;
+        set((s) => ({ recents: rememberRecent({ kind: "file", path: absolutePath }, s) }));
+        void syncRecentsToDock(get().recents);
       },
 
       renameFile: async (id: string, name: string) => {
