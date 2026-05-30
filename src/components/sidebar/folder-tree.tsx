@@ -94,7 +94,6 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   const currentFolderId = useFileStore((s) => s.currentFolderId);
   const getFolders = useFileStore((s) => s.getFolders);
   const getFilesInFolder = useFileStore((s) => s.getFilesInFolder);
-  const getSubPages = useFileStore((s) => s.getSubPages);
   const setCurrentFolder = useFileStore((s) => s.setCurrentFolder);
   const moveFileToFolder = useFileStore((s) => s.moveFileToFolder);
   const importExternalFile = useFileStore((s) => s.importExternalFile);
@@ -784,21 +783,6 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     };
   }, [folderMenu, emptyMenu, folderMenuFocus, emptyMenuFocus]);
 
-  // Recursive renderer for files and their sub-pages
-  const renderFileWithSubPages = (file: FileItemType) => {
-    const subPages = getSubPages(file.id);
-    return (
-      <div key={file.id}>
-        <FileItem file={file} />
-        {subPages.length > 0 && (
-          <div className="ml-4 space-y-0.5 border-l border-border/50 pl-1">
-            {subPages.map(renderFileWithSubPages)}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   const renderFolder = (folder: FileItemType) => {
     const folderFiles = getFilesInFolder(folder.id);
     const childFolders = getFolders(folder.id);
@@ -889,7 +873,9 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         {!isCollapsed && hasChildren && (
           <div className="ml-6 space-y-0.5 pl-1.5">
             {childFolders.map((child) => renderFolder(child))}
-            {folderFiles.map((file) => renderFileWithSubPages(file))}
+            {folderFiles.map((file) => (
+              <FileItem key={file.id} file={file} />
+            ))}
           </div>
         )}
       </div>
@@ -913,7 +899,9 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     >
       <div className="space-y-0.5">
         {folderRows}
-        {rootFiles.map((file) => renderFileWithSubPages(file))}
+        {rootFiles.map((file) => (
+          <FileItem key={file.id} file={file} />
+        ))}
       </div>
 
       {files.length === 0 && (

@@ -190,7 +190,6 @@ interface FileState {
   }) => Promise<string>;
   setCurrentFolder: (folderId: string | null) => void;
   getFilesInFolder: (folderId: string | null) => FileItem[];
-  getSubPages: (fileId: string) => FileItem[];
   getFolders: (parentId?: string | null) => FileItem[];
   getFolderAncestors: (folderId: string) => FileItem[];
 
@@ -777,7 +776,7 @@ export const useFileStore = create<FileState>()(
         options?: { documentType?: "markdown" | "pdf" | "excel" }
       ) => {
         try {
-          // Validate parentId exists (folder or file for sub-pages); fall back to root if stale
+          // Validate parentId (a folder) exists; fall back to root if stale
           const validParentId =
             parentId && get().files.some((f) => f.id === parentId) ? parentId : null;
 
@@ -1397,12 +1396,6 @@ export const useFileStore = create<FileState>()(
       getFilesInFolder: (folderId: string | null) => {
         const { files, sortBy } = get();
         const filtered = files.filter((f) => !f.isFolder && f.parentId === folderId);
-        return sortFilesByOption(filtered, sortBy);
-      },
-
-      getSubPages: (fileId: string) => {
-        const { files, sortBy } = get();
-        const filtered = files.filter((f) => !f.isFolder && f.parentId === fileId);
         return sortFilesByOption(filtered, sortBy);
       },
 

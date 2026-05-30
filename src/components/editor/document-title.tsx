@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { Smile, FilePlus, ImagePlus } from "lucide-react";
+import { Smile, ImagePlus } from "lucide-react";
 import { useFileStore } from "@/stores/file-store";
-import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { CoverPickerModal } from "./cover-picker-modal";
 import { cn } from "@/lib/utils";
@@ -13,7 +12,7 @@ interface DocumentTitleProps {
 }
 
 export function DocumentTitle({ fileId }: DocumentTitleProps) {
-  const { getFile, setFileIcon, createFile, setCoverImage } = useFileStore();
+  const { getFile, setFileIcon, setCoverImage } = useFileStore();
   const file = getFile(fileId);
   const icon = file?.icon ?? null;
   const hasCover = !!file?.coverImageUrl;
@@ -22,15 +21,6 @@ export function DocumentTitle({ fileId }: DocumentTitleProps) {
   const [isHovered, setIsHovered] = useState(false);
   const iconButtonRef = useRef<HTMLButtonElement>(null);
   const addIconButtonRef = useRef<HTMLButtonElement>(null);
-
-  const handleCreateSubPage = useCallback(async () => {
-    try {
-      const newFileId = await createFile("Untitled.md", "", fileId);
-      navigateToEditorFile(newFileId);
-    } catch {
-      // silently ignore if creation fails
-    }
-  }, [createFile, fileId]);
 
   const handleEmojiSelect = useCallback(
     (emoji: string | null) => {
@@ -76,13 +66,6 @@ export function DocumentTitle({ fileId }: DocumentTitleProps) {
             <span>Add cover</span>
           </button>
         )}
-        <button
-          onClick={handleCreateSubPage}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-        >
-          <FilePlus className="h-3.5 w-3.5" />
-          <span>New sub-page</span>
-        </button>
       </div>
 
       {/* Emoji icon — only when set */}
