@@ -2,6 +2,7 @@
 
 import { useEditor, EditorContent, type Editor as TiptapEditor } from "@tiptap/react";
 import { TextSelection } from "@tiptap/pm/state";
+import { AnimatePresence, motion } from "framer-motion";
 import type { EditorView } from "@tiptap/pm/view";
 import {
   type CSSProperties,
@@ -683,20 +684,26 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
               <DocumentTitle fileId={file.id} />
               <div className="relative">
                 <EditorContent editor={editor} />
-                {isSwitching && (
-                  <div
-                    className="animate-in fade-in-0 pointer-events-none absolute inset-0 bg-background duration-150"
-                    aria-hidden="true"
-                    data-testid="markdown-switch-overlay"
-                  >
-                    {/* DocumentTitle is already painted outside the overlay,
-                        so skip the skeleton's own title row. The overlay
-                        feeds the same cached outline that the page-level
-                        loader uses, so hot-switching to a previously-seen
-                        doc shows its real heading text immediately. */}
-                    <MarkdownSkeletonContent file={{ name: file.name, outline: file.outline }} />
-                  </div>
-                )}
+                <AnimatePresence>
+                  {isSwitching && (
+                    <motion.div
+                      className="pointer-events-none absolute inset-0 bg-background"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.18, ease: "easeOut" }}
+                      aria-hidden="true"
+                      data-testid="markdown-switch-overlay"
+                    >
+                      {/* DocumentTitle is already painted outside the overlay,
+                          so skip the skeleton's own title row. The overlay
+                          feeds the same cached outline that the page-level
+                          loader uses, so hot-switching to a previously-seen
+                          doc shows its real heading text immediately. */}
+                      <MarkdownSkeletonContent file={{ name: file.name, outline: file.outline }} />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
           </ScrollArea>
