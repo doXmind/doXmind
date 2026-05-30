@@ -125,7 +125,7 @@ interface FileState {
   loadedContentIds: Set<string>;
 
   // File actions
-  loadFiles: () => Promise<void>;
+  loadFiles: (options?: { silent?: boolean }) => Promise<void>;
   loadFileContent: (fileId: string, options?: { force?: boolean }) => Promise<void>;
   openFolder: (root: string) => Promise<void>;
   openFile: (absolutePath: string) => Promise<void>;
@@ -371,6 +371,26 @@ function fileFromEntry(entry: WorkspaceEntry, existingReadModel?: LoadedReadMode
   };
 }
 
+// Whether two FileItems are identical in every field the sidebar/editor
+// renders. Deliberately excludes content (loaded lazily) and createdAt/
+// updatedAt (the scan stamps those with `new Date()` every call, so they
+// always differ and are not displayed meaningfully). Used by loadFiles to
+// reuse object identity for unchanged files across a re-scan.
+function sameScanFields(a: FileItem, b: FileItem): boolean {
+  return (
+    a.name === b.name &&
+    a.isFolder === b.isFolder &&
+    a.parentId === b.parentId &&
+    a.position === b.position &&
+    a.isFavorite === b.isFavorite &&
+    a.icon === b.icon &&
+    a.coverImageUrl === b.coverImageUrl &&
+    a.coverPosition === b.coverPosition &&
+    a.documentType === b.documentType &&
+    a.storageHandle?.path === b.storageHandle?.path
+  );
+}
+
 function parentHandleForId(
   files: FileItem[],
   parentId: string | null | undefined
@@ -403,7 +423,8 @@ export const useFileStore = create<FileState>()(
       selectedFileIds: new Set<string>(),
       loadedContentIds: new Set<string>(),
 
-      loadFiles: async () => {
+      loadFiles: async (options) => {
+        const silent = options?.silent ?? false;
         const target = get().openTarget;
         // Welcome screen — no I/O, but mark synced so consumers stop waiting.
         if (target === "none") {
@@ -427,7 +448,9 @@ export const useFileStore = create<FileState>()(
           return;
         }
         const rootBeforeLoad = get().rootPath;
-        set({ isLoading: true });
+        // Silent refreshes (the filesystem watcher) skip the loading flag so a
+        // background re-scan never flickers the sidebar's loading state.
+        if (!silent) set({ isLoading: true });
         try {
           const adapter = getAdapter(get());
           const entries = await adapter.list();
@@ -452,9 +475,28 @@ export const useFileStore = create<FileState>()(
               }
             }
 
-            const files: FileItem[] = entries.map((entry) =>
-              fileFromEntry(entry, prevReadModelMap.get(entry.handle.id))
-            );
+            const previousById = new Map(state.files.map((f) => [f.id, f] as const));
+            const files: FileItem[] = entries.map((entry) => {
+              const built = fileFromEntry(entry, prevReadModelMap.get(entry.handle.id));
+              const prev = previousById.get(built.id);
+              // Reuse the previous object when nothing the UI renders has
+              // changed, so selectors like `files.find(id === current)` keep a
+              // stable reference. Without this, every background re-scan —
+              // including our own autosave rewriting the .md — hands the editor
+              // a brand-new object and forces a full re-render (the jank).
+              return prev && sameScanFields(prev, built) ? prev : built;
+            });
+
+            // Nothing structural changed (a self-save, or an external edit to a
+            // file's contents that the scan doesn't surface): leave state
+            // untouched so no component re-renders. The identity reuse above
+            // makes this a cheap reference check.
+            const filesUnchanged =
+              files.length === state.files.length &&
+              files.every((file, index) => file === state.files[index]);
+            if (filesUnchanged) {
+              return { isSynced: true, isLoading: false };
+            }
 
             // Clear currentFileId / currentFolderId if they no longer exist
             const validCurrentFileId =

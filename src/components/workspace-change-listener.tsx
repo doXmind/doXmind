@@ -35,7 +35,10 @@ export function WorkspaceChangeListener() {
     // Re-scan via the same path the Refresh button uses. loadFiles() preserves
     // selection / expanded state, so a refresh doesn't reset the tree.
     const refresh = debounce(() => {
-      void useFileStore.getState().loadFiles();
+      // Silent: a background re-scan must not toggle the sidebar's loading
+      // state, and loadFiles preserves object identity for unchanged files so
+      // the open editor doesn't re-render on every external change / autosave.
+      void useFileStore.getState().loadFiles({ silent: true });
     }, REFRESH_DEBOUNCE_MS);
 
     void (async () => {
