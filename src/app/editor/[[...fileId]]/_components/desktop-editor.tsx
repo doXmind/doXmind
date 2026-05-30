@@ -18,6 +18,7 @@ import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { isMarkdownFile } from "@/lib/document-types";
 import { MINDLINES_WIDTH } from "@/lib/constants";
 import { MarkdownSkeleton } from "@/components/workspace/markdown-skeleton";
+import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 export function DesktopEditor() {
@@ -161,16 +162,41 @@ export function DesktopEditor() {
                 <div className="relative flex h-full min-w-0 flex-col overflow-hidden">
                   <ErrorBoundary>
                     {currentFile ? (
-                      isCurrentFileLoaded ? (
-                        <DocumentWorkspace
-                          file={currentFile}
-                          reservedRightInset={outlineContentGutterPx}
-                        />
-                      ) : (
-                        <MarkdownSkeleton
-                          file={{ name: currentFile.name, outline: currentFile.outline }}
-                        />
-                      )
+                      // Crossfade between the loading skeleton and the editor so
+                      // a first open / file switch fades instead of snapping.
+                      // `mode="wait"` keeps a single element in flow (no layout
+                      // doubling); `initial={false}` skips animating the very
+                      // first mount.
+                      <AnimatePresence mode="wait" initial={false}>
+                        {isCurrentFileLoaded ? (
+                          <motion.div
+                            key="document"
+                            className="h-full"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.18, ease: "easeOut" }}
+                          >
+                            <DocumentWorkspace
+                              file={currentFile}
+                              reservedRightInset={outlineContentGutterPx}
+                            />
+                          </motion.div>
+                        ) : (
+                          <motion.div
+                            key="skeleton"
+                            className="h-full"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.18, ease: "easeOut" }}
+                          >
+                            <MarkdownSkeleton
+                              file={{ name: currentFile.name, outline: currentFile.outline }}
+                            />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     ) : !isSynced && currentFileId ? (
                       <MarkdownSkeleton />
                     ) : openTarget === "folder" ? (
