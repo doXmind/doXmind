@@ -504,7 +504,8 @@ html.is-tauri-macos .settings-surface {
 }
 
 html.is-tauri-macos .desktop-chrome-header {
-  grid-template-columns: max(var(--files-sidebar-width, 304px), 124px) minmax(0, 1fr) auto;
+  /* grid-template-columns is set inline on the header (it branches on the
+     macOS-Tauri flag and wins over this rule anyway); see unified-header.tsx. */
   background: var(--content-surface-bg);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;

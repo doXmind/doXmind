@@ -128,13 +128,18 @@ export function UnifiedHeader() {
         data-sidebar-open={hasOpenTarget && isFilesSidebarOpen ? "" : undefined}
         className="desktop-chrome-header relative z-20 grid h-14 shrink-0 items-center text-foreground"
         style={{
-          // On macOS Tauri the native traffic-light cluster floats over the
-          // top-left ~78px of the WebView. The first column must never shrink
-          // below that, or the title in col-start-2 slides under the buttons
-          // when the sidebar is collapsed.
+          // The sidebar toggle button floats over the top-left of the header
+          // (absolute-positioned), so when the sidebar is collapsed the first
+          // column must stay wide enough to clear it — otherwise the title in
+          // col-start-2 slides under the toggle. On macOS Tauri the toggle is
+          // pushed right of the native traffic-light cluster (~78px) and ends
+          // at ~120px (92px left-controls padding + its 28px width), so reserve
+          // 124px. Elsewhere the toggle sits near the edge (12px padding + 28px
+          // width) and ends at ~40px, so 44px is enough. (Inline is the single
+          // source of truth for the grid; it overrides any stylesheet rule.)
           gridTemplateColumns: isMacTauri
-            ? "max(var(--files-sidebar-width, 0px), 78px) minmax(0, 1fr)"
-            : "var(--files-sidebar-width, 0px) minmax(0, 1fr)",
+            ? "max(var(--files-sidebar-width, 0px), 124px) minmax(0, 1fr)"
+            : "max(var(--files-sidebar-width, 0px), 44px) minmax(0, 1fr)",
         }}
       >
         <div
@@ -180,10 +185,10 @@ export function UnifiedHeader() {
 
         <div
           // Intentionally NOT a drag region: when the sidebar is collapsed
-          // this column's left edge sits at x=78px, overlapping the right
-          // 14px of the macOS traffic-light cluster. Tauri's drag.js only
-          // inspects e.target, so a drag-region here would swallow clicks
-          // landing on that overlap. The inner children below still carry
+          // this column's left edge sits at x=124px, just past the floating
+          // sidebar toggle (which ends at ~120px). Tauri's drag.js only
+          // inspects e.target, so a drag-region on this wrapper could swallow
+          // clicks near that boundary. The inner children below still carry
           // data-tauri-drag-region, so the body of the header remains
           // draggable everywhere they cover.
           className={cn(
