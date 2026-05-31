@@ -5,6 +5,7 @@ import { MotionConfig } from "framer-motion";
 import { useThemeManager } from "@/hooks/use-theme-manager";
 import { NativeMenuListener } from "@/components/native-menu-listener";
 import { WorkspaceChangeListener } from "@/components/workspace-change-listener";
+import { ContextMenuGuard } from "@/components/context-menu-guard";
 import { AppearanceInjector } from "@/components/appearance-injector";
 
 function ThemeInitializer() {
@@ -27,6 +28,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <AppearanceInjector />
         <NativeMenuListener />
         <WorkspaceChangeListener />
+        <ContextMenuGuard />
         {children}
       </MotionConfig>
     </ThemeProvider>
