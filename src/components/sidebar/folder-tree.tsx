@@ -88,6 +88,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   const t = useTranslations("sidebar");
 
   const files = useFileStore((s) => s.files);
+  const openTarget = useFileStore((s) => s.openTarget);
   const activeParentId = useFileStore(
     (s) => s.files.find((file) => file.id === s.currentFileId)?.parentId ?? null
   );
@@ -655,14 +656,20 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     [t, handleRefresh, onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder]
   );
 
-  const buildEmptyMenu = useCallback(
-    (): EmptyMenuItem[] => [
-      {
-        id: "refresh",
-        label: t("refresh"),
-        icon: <RefreshCw className="mr-2 h-4 w-4" />,
-        onClick: handleRefresh,
-      },
+  const buildEmptyMenu = useCallback((): EmptyMenuItem[] => {
+    const refresh: EmptyMenuItem = {
+      id: "refresh",
+      label: t("refresh"),
+      icon: <RefreshCw className="mr-2 h-4 w-4" />,
+      onClick: handleRefresh,
+    };
+    // In single-file mode the rail represents one loose file; the workspace
+    // root is just the file's parent directory. Offering create actions here
+    // would spray new files into that directory — the same reason the header
+    // create buttons are hidden in file mode (see workspace-header.tsx).
+    if (openTarget === "file") return [refresh];
+    return [
+      refresh,
       {
         id: "new-file",
         label: t("newDocument"),
@@ -687,9 +694,8 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         icon: <FolderPlus className="mr-2 h-4 w-4" />,
         onClick: () => onCreateFolder(null),
       },
-    ],
-    [t, handleRefresh, onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder]
-  );
+    ];
+  }, [t, openTarget, handleRefresh, onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder]);
 
   // Position helpers — clamp to viewport so menus don't overflow.
   const positionForMouse = (clientX: number, clientY: number, w: number, h: number) => {
