@@ -89,6 +89,34 @@ describe("useFileStore disk workspace", () => {
     ]);
   });
 
+  it("shows the on-disk filename in the tree, not a diverging frontmatter title", async () => {
+    // Regression: the tree must follow the filename the user renames. Preferring
+    // the frontmatter `title` made renames silently revert to a stale title
+    // (e.g. "Untitled-N"), since rename moves the file but never rewrites it.
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "workspace_scan") {
+        return {
+          root: "/workspace",
+          documents: [
+            {
+              id: "doc-1",
+              idSource: "frontmatter",
+              path: "Report.md",
+              name: "Report.md",
+              title: "Untitled-1",
+              hasSidecar: true,
+            },
+          ],
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await useFileStore.getState().loadFiles();
+
+    expect(useFileStore.getState().getFile("doc-1")?.name).toBe("Report");
+  });
+
   it("keeps the folder workspace and recent entry when refreshing the current folder", async () => {
     useFileStore.setState({
       openTarget: "folder",
@@ -343,6 +371,119 @@ describe("useFileStore disk workspace", () => {
         payload: expect.objectContaining({ html: "<p>New</p>", markdown: "New" }),
       })
     );
+  });
+
+  it("keeps the new filename after rename even when the returned title is stale", async () => {
+    // Renaming a doc moves the file but never rewrites its frontmatter `title`,
+    // so doc_rename returns the *old* title. The tree must reflect the new
+    // filename, otherwise the name snaps back to "Untitled-N" after Enter.
+    useFileStore.setState({
+      files: [
+        {
+          id: "doc-1",
+          name: "Untitled-1",
+          content: "",
+          isFolder: false,
+          parentId: null,
+          position: 0,
+          isFavorite: false,
+          icon: null,
+          coverImageUrl: null,
+          coverPosition: 0.5,
+          createdAt: now,
+          updatedAt: now,
+          wordCount: 0,
+          preview: "",
+          storageHandle: { mode: "disk", id: "doc-1", kind: "document", relPath: "Untitled-1.md" },
+        },
+      ],
+    });
+    invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
+      if (command === "doc_rename") {
+        expect(payload).toMatchObject({
+          root: "/workspace",
+          oldPath: "Untitled-1.md",
+          newPath: "Report.md",
+        });
+        return {
+          id: "doc-1",
+          idSource: "frontmatter",
+          path: "Report.md",
+          name: "Report.md",
+          title: "Untitled-1", // stale: rename leaves frontmatter untouched
+          hasSidecar: true,
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await useFileStore.getState().renameFile("doc-1", "Report.md");
+
+    expect(useFileStore.getState().getFile("doc-1")?.name).toBe("Report");
+  });
+
+  it("keeps the .pdf extension and carries selection when renaming a PDF", async () => {
+    // A PDF's display name has no extension, so the rename can arrive defaulted
+    // to ".md". The adapter must restore the real ".pdf", and the active
+    // selection must follow the new path-derived id.
+    useFileStore.setState({
+      currentFileId: "pdf-old",
+      loadedContentIds: new Set(["pdf-old"]),
+      files: [
+        {
+          id: "pdf-old",
+          name: "Spec",
+          content: "",
+          isFolder: false,
+          parentId: null,
+          position: 0,
+          isFavorite: false,
+          icon: null,
+          coverImageUrl: null,
+          coverPosition: 0.5,
+          createdAt: now,
+          updatedAt: now,
+          wordCount: 0,
+          preview: "",
+          documentType: "pdf",
+          storageHandle: {
+            mode: "disk",
+            id: "pdf-old",
+            kind: "document",
+            relPath: "Spec.pdf",
+            documentType: "pdf",
+          },
+        },
+      ],
+    });
+    invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
+      if (command === "doc_rename") {
+        expect(payload).toMatchObject({
+          root: "/workspace",
+          oldPath: "Spec.pdf",
+          newPath: "Report.pdf", // ".md" default restored to ".pdf"
+        });
+        return {
+          id: "pdf-new",
+          idSource: "path",
+          path: "Report.pdf",
+          name: "Report.pdf",
+          title: "Report",
+          documentType: "pdf",
+          hasSidecar: true,
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    // The sidebar hands the store a ".md"-defaulted name; the adapter corrects it.
+    await useFileStore.getState().renameFile("pdf-old", "Report.md");
+
+    const state = useFileStore.getState();
+    expect(state.getFile("pdf-new")?.name).toBe("Report");
+    expect(state.getFile("pdf-old")).toBeUndefined();
+    expect(state.currentFileId).toBe("pdf-new");
+    expect(state.loadedContentIds.has("pdf-new")).toBe(true);
   });
 
   it("deletes documents through workspace delete commands", async () => {

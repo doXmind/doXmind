@@ -1042,8 +1042,7 @@ def write_doc(path: Path, payload: dict[str, Any]) -> None:
 
 def move_document_pair(root: str, old_path: str, new_path: str) -> dict[str, Any]:
     workspace = canonical_workspace_root(root)
-    ensure_markdown_path(old_path)
-    ensure_markdown_path(new_path)
+    ensure_same_document_extension(old_path, new_path)
     source = resolve_existing_workspace_path(workspace, old_path)
     destination = resolve_workspace_path_for_write(workspace, new_path)
     if destination.exists():
@@ -1208,6 +1207,26 @@ def ensure_pdf_path(path: str) -> None:
 def ensure_excel_path(path: str) -> None:
     if Path(path).suffix.lower() not in (".xlsx", ".xlsm"):
         raise ValueError(f"document path must end in .xlsx or .xlsm: {path}")
+
+
+WORKSPACE_DOCUMENT_SUFFIXES = {".md", ".markdown", ".pdf", ".xlsx", ".xlsm"}
+
+
+def ensure_same_document_extension(old_path: str, new_path: str) -> None:
+    """A rename or in-place move may target any document type, but must not
+    change the file's type: the destination keeps the source's extension so a
+    ``.pdf`` can't silently become a ``.md``. Mirrors the Tauri backend's
+    ``ensure_same_document_extension`` so both runtimes honour the contract."""
+    old_ext = Path(old_path).suffix.lower()
+    new_ext = Path(new_path).suffix.lower()
+    for ext, path in ((old_ext, old_path), (new_ext, new_path)):
+        if ext not in WORKSPACE_DOCUMENT_SUFFIXES:
+            raise ValueError(
+                "document path must end in .md, .markdown, .pdf, .xlsx, or .xlsm: "
+                f"{path}"
+            )
+    if old_ext != new_ext:
+        raise ValueError(f"cannot change document type on move: {old_path} -> {new_path}")
 
 
 def resolve_existing_workspace_path(root: Path, rel_path: str) -> Path:
