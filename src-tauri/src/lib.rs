@@ -2739,6 +2739,38 @@ fn ensure_excel_path(path: &str) -> Result<(), String> {
     }
 }
 
+/// The lowercased extension of a workspace document, or an error if the path
+/// isn't a supported document type. Unlike `ensure_markdown_path`, this accepts
+/// every first-class type so PDF/Excel can be renamed and moved too.
+fn workspace_document_extension(path: &str) -> Result<String, String> {
+    let extension = Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .unwrap_or_default();
+    match extension.as_str() {
+        "md" | "markdown" | "pdf" | "xlsx" | "xlsm" => Ok(extension),
+        _ => Err(format!(
+            "document path must end in .md, .markdown, .pdf, .xlsx, or .xlsm: {path}"
+        )),
+    }
+}
+
+/// A rename or in-place move may target any document type, but must never
+/// change the file's type — the destination keeps the source's extension so a
+/// `.pdf` can't silently become a `.md`. Legitimate callers (sidebar rename,
+/// drag-move) always preserve the extension; this guards a malformed request.
+fn ensure_same_document_extension(old_path: &str, new_path: &str) -> Result<(), String> {
+    let old_ext = workspace_document_extension(old_path)?;
+    let new_ext = workspace_document_extension(new_path)?;
+    if old_ext != new_ext {
+        return Err(format!(
+            "cannot change document type on move: {old_path} -> {new_path}"
+        ));
+    }
+    Ok(())
+}
+
 fn resolve_existing_workspace_path(root: &Path, path: &str) -> Result<PathBuf, String> {
     let relative = validate_relative_path(path)?;
     let candidate = root.join(relative);
@@ -3190,8 +3222,7 @@ fn move_document_pair(
     new_path: &str,
 ) -> Result<WorkspaceDocumentDto, String> {
     let root = canonical_workspace_root(root)?;
-    ensure_markdown_path(old_path)?;
-    ensure_markdown_path(new_path)?;
+    ensure_same_document_extension(old_path, new_path)?;
 
     let source = resolve_existing_workspace_path(&root, old_path)?;
     if !source.is_file() {
@@ -4135,6 +4166,54 @@ mod tests {
         assert_eq!(blocks.len(), 1);
         let (block_id, slot) = blocks.iter().next().expect("one block");
         (block_id.as_str(), slot)
+    }
+
+    #[test]
+    fn move_document_pair_renames_pdf_and_keeps_extension() {
+        let workspace = TempWorkspace::new("rename-pdf");
+        let pdf_path = workspace.path.join("Spec.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n% rename test\n%%EOF\n").expect("write pdf");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&pdf_path);
+        fs::write(&sidecar_path, br#"{"id":"pdf"}"#).expect("write sidecar");
+
+        let dto =
+            move_document_pair(&workspace.root(), "Spec.pdf", "Report.pdf").expect("rename pdf");
+
+        assert_eq!(dto.path, "Report.pdf");
+        assert_eq!(dto.document_type, "pdf");
+        assert!(!pdf_path.exists());
+        assert!(workspace.path.join("Report.pdf").exists());
+        // The hidden sidecar travels with the document (pair atomicity).
+        assert!(!sidecar_path.exists());
+        assert!(doxmind_sidecar::sidecar_path_for(&workspace.path.join("Report.pdf")).exists());
+    }
+
+    #[test]
+    fn move_document_pair_renames_xlsx_and_keeps_extension() {
+        let workspace = TempWorkspace::new("rename-xlsx");
+        let xlsx_path = workspace.path.join("Budget.xlsx");
+        fs::write(&xlsx_path, b"PK\x03\x04 workbook").expect("write xlsx");
+
+        let dto =
+            move_document_pair(&workspace.root(), "Budget.xlsx", "Q1.xlsx").expect("rename xlsx");
+
+        assert_eq!(dto.path, "Q1.xlsx");
+        assert_eq!(dto.document_type, "excel");
+        assert!(!xlsx_path.exists());
+        assert!(workspace.path.join("Q1.xlsx").exists());
+    }
+
+    #[test]
+    fn move_document_pair_rejects_type_change() {
+        let workspace = TempWorkspace::new("rename-type-change");
+        let pdf_path = workspace.path.join("Spec.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+
+        let err = move_document_pair(&workspace.root(), "Spec.pdf", "Spec.md")
+            .expect_err("type change must be rejected");
+
+        assert!(err.contains("cannot change document type"), "got: {err}");
+        assert!(pdf_path.exists(), "source must be untouched on rejection");
     }
 
     #[test]

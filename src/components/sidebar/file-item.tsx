@@ -240,14 +240,26 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
 
   const handleRename = async () => {
     const trimmedName = newName.trim();
-    const fullName = trimmedName ? withOriginalExtension(file.name, trimmedName) : "";
-    if (trimmedName && fullName !== file.name) {
-      try {
-        await renameFile(file.id, fullName);
-      } catch (error) {
-        log.error("Failed to rename file", error);
-        notify.error(t("failedToRename"));
-      }
+    // Bail on empty or unchanged names before any I/O. Compare against the
+    // displayed (extension-stripped) name — that's what the input shows.
+    if (!trimmedName || trimmedName === getNameWithoutExtension(file.name)) {
+      setIsRenaming(false);
+      return;
+    }
+    // The display name has its extension stripped, so recover the real filename
+    // from the storage handle. Deriving the extension from the stripped display
+    // name would default every type to ".md" and the backend would reject a
+    // .pdf/.xlsx rename.
+    const currentFilename =
+      file.storageHandle?.relPath?.split("/").pop() ||
+      file.storageHandle?.path?.split("/").pop() ||
+      file.name;
+    const fullName = withOriginalExtension(currentFilename, trimmedName);
+    try {
+      await renameFile(file.id, fullName);
+    } catch (error) {
+      log.error("Failed to rename file", error);
+      notify.error(t("failedToRename"));
     }
     setIsRenaming(false);
   };

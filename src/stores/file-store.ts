@@ -390,6 +390,17 @@ function sameScanFields(a: FileItem, b: FileItem): boolean {
   );
 }
 
+// Move an id-keyed set entry from oldId to newId. A rename changes a file's
+// path, and path-derived ids (PDF/Excel, and markdown without a frontmatter id)
+// change with it; markdown with a frontmatter id keeps its id, so this no-ops.
+function migrateIdInSet(ids: Set<string>, oldId: string, newId: string): Set<string> {
+  if (oldId === newId || !ids.has(oldId)) return ids;
+  const next = new Set(ids);
+  next.delete(oldId);
+  next.add(newId);
+  return next;
+}
+
 function parentHandleForId(
   files: FileItem[],
   parentId: string | null | undefined
@@ -905,6 +916,7 @@ export const useFileStore = create<FileState>()(
               loadedContentIds: new Set([...state.loadedContentIds, content.handle.id]),
             }));
           } else if (updatedEntry) {
+            const newId = updatedEntry.handle.id;
             set((state) => ({
               files: sortFilesByOption(
                 state.files.map((item) =>
@@ -917,6 +929,12 @@ export const useFileStore = create<FileState>()(
                 ),
                 state.sortBy
               ),
+              // A rename changes the path, so path-derived ids (PDF/Excel) change
+              // too. Carry the open-file selection and loaded-content marker onto
+              // the new id so renaming the active file doesn't deselect it when
+              // the next scan drops the old id.
+              currentFileId: state.currentFileId === id ? newId : state.currentFileId,
+              loadedContentIds: migrateIdInSet(state.loadedContentIds, id, newId),
             }));
           }
         } catch (error) {

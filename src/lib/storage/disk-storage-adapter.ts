@@ -394,7 +394,7 @@ export class DiskStorageAdapter implements StorageAdapter {
     const currentPath = requireHandlePath(handle);
     const newPath = siblingPath(
       currentPath,
-      handle.kind === "folder" ? name : ensureMarkdownExtension(name)
+      handle.kind === "folder" ? name : renameLeafPreservingExtension(currentPath, name)
     );
     if (newPath === currentPath) {
       return handle.kind === "folder"
@@ -643,7 +643,11 @@ function entryFromDocument(doc: WorkspaceDocumentDto): WorkspaceEntry {
       relPath: doc.path,
     },
     kind: "document",
-    name: doc.title || stripDocumentExtension(doc.name),
+    // The file tree shows the filename — the on-disk source of truth the user
+    // renames. Preferring the frontmatter `title` here made renames silently
+    // revert: rename only moves the file, never rewrites `title`, so the
+    // post-rename DTO refresh re-read the stale title (e.g. "Untitled-N").
+    name: stripDocumentExtension(doc.name),
     parent: parentPath ? folderHandle(parentPath) : null,
     position: 0,
     createdAt: now,
@@ -727,6 +731,16 @@ function trimSlashes(path: string): string {
 
 function ensureMarkdownExtension(name: string): string {
   return /\.(md|markdown)$/i.test(name) ? name : `${name}.md`;
+}
+
+// A document rename changes only the base name; the file keeps its original
+// type. The new name may arrive with the wrong extension (the sidebar's display
+// name has none, so callers default it to ".md") — strip whatever document
+// extension came in and re-apply the source file's, so a .pdf/.xlsx can never
+// be collapsed into a .md.
+function renameLeafPreservingExtension(currentPath: string, name: string): string {
+  const sourceExt = basename(currentPath).match(/\.(md|markdown|pdf|xlsx|xlsm)$/i)?.[0] ?? ".md";
+  return `${stripDocumentExtension(basename(name))}${sourceExt}`;
 }
 
 function ensurePdfExtension(name: string): string {
