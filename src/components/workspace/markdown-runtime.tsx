@@ -22,7 +22,6 @@ import { EditorContextMenu } from "@/components/editor/editor-context-menu";
 import { SearchBar } from "@/components/editor/search-bar";
 import { StatusBar } from "@/components/editor/status-bar";
 import { DocumentTitle } from "@/components/editor/document-title";
-import { PageCover } from "@/components/editor/page-cover";
 import { BlockHandle } from "@/components/editor/block-handle";
 import { TableHandles } from "@/components/editor/table-handles";
 import { getEditorExtensions, defaultEditorProps } from "@/components/editor/editor-extensions";
@@ -672,7 +671,6 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
             data-editor-scroll
             onMouseDown={handleContentMouseDown}
           >
-            <PageCover fileId={file.id} />
             <div
               className={cn(
                 "editor-page-frame relative",
@@ -681,7 +679,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
               )}
               style={pageFrameStyle}
             >
-              <DocumentTitle fileId={file.id} />
+              <DocumentTitle />
               <div className="relative">
                 <EditorContent editor={editor} />
                 <AnimatePresence>

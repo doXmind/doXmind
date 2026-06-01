@@ -65,7 +65,7 @@ export function PageLinkNodeView({ node }: NodeViewProps) {
   const [previewPos, setPreviewPos] = useState<{ left: number; top: number } | null>(null);
 
   const displayTitle = file?.name || pageTitle || "Untitled";
-  const displayIcon = file?.icon || pageIcon;
+  const displayIcon = pageIcon;
   const isDeleted = !file && pageId;
 
   const handleClick = () => {
@@ -173,15 +173,6 @@ export function PageLinkNodeView({ node }: NodeViewProps) {
                 "animate-in fade-in-0 slide-in-from-top-1 duration-150"
               )}
             >
-              {file.coverImageUrl ? (
-                <div
-                  className="h-[120px] w-full bg-muted bg-cover"
-                  style={{
-                    backgroundImage: `url(${file.coverImageUrl})`,
-                    backgroundPosition: `center ${file.coverPosition * 100}%`,
-                  }}
-                />
-              ) : null}
               <div className="px-5 py-4">
                 <div className="flex items-center gap-2.5">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center text-[20px] leading-none">

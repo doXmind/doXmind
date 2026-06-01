@@ -155,7 +155,6 @@ function toWorkspaceIndexEntry(entry: WorkspaceEntry): WorkspaceIndexEntry {
     path: entry.handle.relPath ?? entry.handle.path ?? null,
     parent: entry.parent,
     preview: entry.preview,
-    icon: entry.icon,
     updatedAt: entry.updatedAt,
   };
 }
