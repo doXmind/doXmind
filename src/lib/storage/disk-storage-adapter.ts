@@ -46,9 +46,6 @@ interface WorkspaceDocumentDto {
   title?: string | null;
   documentType?: WorkspaceDocumentType;
   hasSidecar: boolean;
-  icon?: string | null;
-  cover?: string | null;
-  coverPosition?: number | null;
   favorite?: boolean | null;
 }
 
@@ -656,9 +653,6 @@ function entryFromDocument(doc: WorkspaceDocumentDto): WorkspaceEntry {
     wordCount: 0,
     documentType: doc.documentType ?? documentTypeFromPath(doc.path),
     isFavorite: doc.favorite ?? false,
-    icon: doc.icon ?? null,
-    coverImageUrl: doc.cover ?? null,
-    coverPosition: doc.coverPosition ?? 0.5,
   };
 }
 
@@ -677,9 +671,6 @@ function folderEntryFromPath(path: string): WorkspaceEntry {
     preview: "",
     wordCount: 0,
     isFavorite: false,
-    icon: null,
-    coverImageUrl: null,
-    coverPosition: 0.5,
   };
 }
 

@@ -465,11 +465,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       )}
 
       <div className="relative flex h-5 w-5 flex-shrink-0 items-center justify-center">
-        {file.icon ? (
-          <span className="flex h-5 w-5 items-center justify-center text-sm md:text-xs">
-            {file.icon}
-          </span>
-        ) : isPdfFile(file) ? (
+        {isPdfFile(file) ? (
           <PdfGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
         ) : isExcelFile(file) ? (
           <SpreadsheetGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
