@@ -287,8 +287,6 @@ export function BrowsingRuntime({
               )}
               style={pageFrameStyle}
             >
-              {/* Reserve the thin top strip above the H1 (mirrors the editor view). */}
-              <div className="h-7" aria-hidden="true" />
               <div
                 ref={contentRef}
                 className="ProseMirror doxmind-browsing-prose"

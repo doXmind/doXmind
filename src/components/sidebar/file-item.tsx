@@ -437,7 +437,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       onMouseEnter={handleMouseEnterPrefetch}
       onMouseLeave={cancelHoverPrefetch}
       className={cn(
-        "group/file relative flex cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-3 py-2.5 transition-colors duration-150 ease-out md:h-7 md:px-2.5 md:py-1",
+        "group/file relative flex cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-3 py-2.5 transition-colors duration-150 ease-out md:h-7 md:px-1.5 md:py-1",
         "select-none active:scale-[0.98] md:active:scale-100", // Touch feedback on mobile, prevent text selection
         isSelected
           ? "bg-primary/10 dark:bg-primary/20"

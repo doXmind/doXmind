@@ -106,10 +106,10 @@ export default function SettingsPage() {
       >
         <Link
           href="/editor"
-          className="inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground"
+          aria-label={t("backToEditor")}
+          className="inline-flex items-center text-[12.5px] text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          {t("backToEditor")}
         </Link>
         <span className="text-[13px] font-semibold text-foreground">{t("pageTitle")}</span>
       </div>
@@ -120,13 +120,6 @@ export default function SettingsPage() {
           active={active}
           onJump={jump}
           heading={t("railHeading")}
-          footer={
-            <>
-              {t("railFooterLine1")}
-              <br />
-              {t("railFooterLine2")}
-            </>
-          }
         />
 
         <main>

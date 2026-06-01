@@ -137,7 +137,7 @@ export function WorkspaceSwitcher({ label, titleAttr }: WorkspaceSwitcherProps) 
             )}
             aria-label={t("switchWorkspace")}
           >
-            <span className="text-ui-sm min-w-0 flex-1 truncate font-semibold leading-none text-[var(--sidebar-title)]">
+            <span className="text-ui-base min-w-0 flex-1 truncate font-semibold leading-5 text-[var(--sidebar-title)]">
               {label}
             </span>
             <ChevronDown
