@@ -3,7 +3,6 @@ import { persist } from "zustand/middleware";
 import { storeLogger } from "@/lib/logger";
 import { eventBus } from "@/lib/events";
 import { syncDatabasesForDocument } from "@/stores/database-store";
-import { useEditorStore } from "@/stores/editor-store";
 import type { FileItem } from "@/types";
 import { documentTypeFromName } from "@/lib/document-types";
 import {
@@ -152,11 +151,8 @@ interface FileState {
   materializeTransient: (absolutePath: string) => Promise<string>;
   discardTransient: () => void;
 
-  // Favorites & Icons
+  // Favorites
   toggleFavorite: (fileId: string) => Promise<void>;
-  setFileIcon: (fileId: string, icon: string | null) => Promise<void>;
-  setCoverImage: (fileId: string, url: string | null) => Promise<void>;
-  setCoverPosition: (fileId: string, position: number) => Promise<void>;
   getFavorites: () => FileItem[];
   getRecentFiles: (limit?: number) => FileItem[];
 
@@ -358,9 +354,6 @@ function fileFromEntry(entry: WorkspaceEntry, existingReadModel?: LoadedReadMode
     parentId: entry.parent?.id ?? null,
     position: entry.position || 0,
     isFavorite: entry.isFavorite || false,
-    icon: entry.icon || null,
-    coverImageUrl: entry.coverImageUrl || null,
-    coverPosition: entry.coverPosition ?? 0.5,
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
     wordCount: entry.wordCount || 0,
@@ -382,9 +375,6 @@ function sameScanFields(a: FileItem, b: FileItem): boolean {
     a.parentId === b.parentId &&
     a.position === b.position &&
     a.isFavorite === b.isFavorite &&
-    a.icon === b.icon &&
-    a.coverImageUrl === b.coverImageUrl &&
-    a.coverPosition === b.coverPosition &&
     a.documentType === b.documentType &&
     a.storageHandle?.path === b.storageHandle?.path
   );
@@ -710,9 +700,6 @@ export const useFileStore = create<FileState>()(
             parentId: null,
             position: 0,
             isFavorite: false,
-            icon: null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
             createdAt: now,
             updatedAt: now,
             wordCount: 0,
@@ -732,9 +719,6 @@ export const useFileStore = create<FileState>()(
             parentId: null,
             position: 0,
             isFavorite: content.meta?.favorite ?? false,
-            icon: content.meta?.icon ?? null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
             createdAt: content.meta?.created || now,
             updatedAt: content.meta?.updated || now,
             wordCount: 0,
@@ -1066,9 +1050,6 @@ export const useFileStore = create<FileState>()(
           parentId: null,
           position: 0,
           isFavorite: false,
-          icon: null,
-          coverImageUrl: null,
-          coverPosition: 0.5,
           createdAt: now,
           updatedAt: now,
           wordCount: 0,
@@ -1189,88 +1170,6 @@ export const useFileStore = create<FileState>()(
               f.id === fileId ? { ...f, isFavorite: !newFavorite } : f
             ),
           }));
-        }
-      },
-
-      setFileIcon: async (fileId: string, icon: string | null) => {
-        const file = get().files.find((f) => f.id === fileId);
-        if (!file) return;
-
-        // Optimistic update
-        set((state) => ({
-          files: state.files.map((f) => (f.id === fileId ? { ...f, icon } : f)),
-        }));
-
-        const editor = useEditorStore.getState();
-        editor.setSaving(true);
-        try {
-          await getAdapter(get()).write(handleForFile(file), {
-            meta: { id: file.id, icon },
-          });
-          editor.setLastSavedAt(new Date().toISOString());
-        } catch (error) {
-          log.error("Failed to set file icon", error);
-          // Revert on error
-          set((state) => ({
-            files: state.files.map((f) => (f.id === fileId ? { ...f, icon: file.icon } : f)),
-          }));
-        } finally {
-          editor.setSaving(false);
-        }
-      },
-
-      setCoverImage: async (fileId: string, url: string | null) => {
-        const file = get().files.find((f) => f.id === fileId);
-        if (!file) return;
-
-        set((state) => ({
-          files: state.files.map((f) => (f.id === fileId ? { ...f, coverImageUrl: url } : f)),
-        }));
-
-        const editor = useEditorStore.getState();
-        editor.setSaving(true);
-        try {
-          await getAdapter(get()).write(handleForFile(file), {
-            meta: { id: file.id, cover: url },
-          });
-          editor.setLastSavedAt(new Date().toISOString());
-        } catch (error) {
-          log.error("Failed to set cover image", error);
-          set((state) => ({
-            files: state.files.map((f) =>
-              f.id === fileId ? { ...f, coverImageUrl: file.coverImageUrl } : f
-            ),
-          }));
-        } finally {
-          editor.setSaving(false);
-        }
-      },
-
-      setCoverPosition: async (fileId: string, position: number) => {
-        const file = get().files.find((f) => f.id === fileId);
-        if (!file) return;
-
-        const clamped = Math.max(0, Math.min(1, position));
-        set((state) => ({
-          files: state.files.map((f) => (f.id === fileId ? { ...f, coverPosition: clamped } : f)),
-        }));
-
-        const editor = useEditorStore.getState();
-        editor.setSaving(true);
-        try {
-          await getAdapter(get()).write(handleForFile(file), {
-            meta: { id: file.id, cover_position: clamped },
-          });
-          editor.setLastSavedAt(new Date().toISOString());
-        } catch (error) {
-          log.error("Failed to set cover position", error);
-          set((state) => ({
-            files: state.files.map((f) =>
-              f.id === fileId ? { ...f, coverPosition: file.coverPosition } : f
-            ),
-          }));
-        } finally {
-          editor.setSaving(false);
         }
       },
 

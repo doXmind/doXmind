@@ -863,7 +863,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
                 });
               }}
               onContextMenu={(e) => handleFolderContextMenu(e, folder)}
-              className="flex h-7 w-full cursor-pointer select-none items-center gap-2 px-2.5 text-sm"
+              className="flex h-7 w-full cursor-pointer select-none items-center gap-2 px-1.5 text-sm"
             >
               {isCollapsed ? (
                 <Folder className="h-[18px] w-[18px] shrink-0 text-[var(--sidebar-icon)] transition-colors group-hover/folder:text-[var(--sidebar-text)]" />
@@ -892,7 +892,11 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
 
   return (
     <div
-      className="flex min-h-full flex-col"
+      // `grow` (not just min-h-full) so the tree reliably fills the scroll
+      // viewport even with only a few files — otherwise the blank space below
+      // the last row falls outside this onContextMenu and right-click there
+      // does nothing.
+      className="flex min-h-full grow flex-col"
       onContextMenu={handleEmptyAreaContextMenu}
       onDragOver={(e) => {
         e.preventDefault();
@@ -982,9 +986,9 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
                   folderMenuReady &&
                     (item.destructive
                       ? "hover:bg-destructive/10"
-                      : "hover:bg-accent hover:text-accent-foreground"),
+                      : "hover:bg-[var(--sidebar-hover)]"),
                   folderMenuFocus === index &&
-                    (item.destructive ? "bg-destructive/10" : "bg-accent text-accent-foreground")
+                    (item.destructive ? "bg-destructive/10" : "bg-[var(--sidebar-active)]")
                 )}
               >
                 {item.icon}
@@ -1016,8 +1020,8 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
                 }}
                 className={cn(
                   "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
-                  "hover:bg-accent hover:text-accent-foreground",
-                  emptyMenuFocus === index && "bg-accent text-accent-foreground"
+                  "hover:bg-[var(--sidebar-hover)]",
+                  emptyMenuFocus === index && "bg-[var(--sidebar-active)]"
                 )}
               >
                 {item.icon}

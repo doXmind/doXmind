@@ -66,7 +66,6 @@
     --sidebar-active-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
     --sidebar-active-border: rgba(15, 23, 42, 0.1);
     --chrome-material-bg: rgba(250, 250, 251, 0.62);
-    --chrome-pill-bg: rgba(255, 255, 255, 0.62);
     --chrome-border: rgba(26, 28, 31, 0.1);
     --content-surface-bg: hsl(var(--background));
     --editor-content-width: 966px;
@@ -168,7 +167,6 @@
     --sidebar-active-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
     --sidebar-active-border: rgba(255, 255, 255, 0.055);
     --chrome-material-bg: rgba(22, 22, 22, 0.55);
-    --chrome-pill-bg: rgba(255, 255, 255, 0.06);
     --chrome-border: rgba(255, 255, 255, 0.075);
     --content-surface-bg: hsl(var(--background));
 
@@ -404,7 +402,9 @@ samp,
 }
 
 .sidebar-glass {
-  background: var(--sidebar-translucent-bg);
+  /* The tint comes from .desktop-content-canvas behind the sidebar, so the
+     sidebar and the card gap render as the exact same surface — no brighter
+     vibrancy strip showing through the gap. */
   backdrop-filter: blur(22px) saturate(1.12);
   -webkit-backdrop-filter: blur(22px) saturate(1.12);
 }
@@ -425,24 +425,43 @@ samp,
 
 .desktop-window-shell {
   min-height: 0;
+  --content-card-gap: 8px;
+  --content-card-radius: 14px;
 }
 
 .desktop-content-surface {
   background: var(--content-surface-bg);
 }
 
+/* Floating content card: with the sidebar open, the header's content column
+   and the editor surface read as one rounded panel inset from the sidebar by
+   a small gap. The header column rounds the card's top-left; the editor
+   surface rounds the bottom-left. The gap + a hairline left border replace the
+   old hard right-angle seam between sidebar and editor. */
 .desktop-chrome-content-panel,
 .desktop-content-with-sidebar {
   background: var(--content-surface-bg);
+  margin-left: var(--content-card-gap);
+  border-left: 1px solid var(--chrome-border);
 }
 
 .desktop-chrome-content-panel {
-  border-top-left-radius: 18px;
+  border-top-left-radius: var(--content-card-radius);
+  border-bottom: 1px solid var(--chrome-border);
   overflow: hidden;
 }
 
 .desktop-content-with-sidebar {
   border-top-left-radius: 0;
+  border-bottom-left-radius: var(--content-card-radius);
+}
+
+/* The surface the editor card floats on. Painted with the sidebar tint (over
+   native vibrancy on macOS, since the translucent value carries the wallpaper
+   through) so the sidebar, the gap, and the card's rounded-corner reveals are
+   one continuous tone — the card is the only thing that stands apart. */
+.desktop-content-canvas {
+  background: var(--sidebar-translucent-bg);
 }
 
 .desktop-chrome-header {
@@ -463,8 +482,19 @@ samp,
   background: var(--chrome-border);
 }
 
-.desktop-chrome-header[data-borderless]::after {
+/* In card mode the content panel draws its own bottom divider, and a
+   full-width line would cut across the sidebar gap — so drop the header's
+   hairline whenever the card is showing (or on the borderless welcome). */
+.desktop-chrome-header[data-borderless]::after,
+.desktop-chrome-header[data-sidebar-open]::after {
   display: none;
+}
+
+/* The header's left band (sidebar region + card gap) is one solid sidebar
+   tint; the content panel paints the card surface on top from the gap edge
+   rightward. Solid (not a gradient) so the gap matches the sidebar exactly. */
+.desktop-chrome-header[data-sidebar-open] {
+  background: var(--sidebar-translucent-bg);
 }
 
 .desktop-header-button {
@@ -512,21 +542,16 @@ html.is-tauri-macos .desktop-chrome-header {
 }
 
 html.is-tauri-macos .desktop-chrome-header[data-sidebar-open] {
-  background: linear-gradient(
-    to right,
-    var(--sidebar-translucent-bg) 0,
-    var(--sidebar-translucent-bg) var(--files-sidebar-width, 304px),
-    var(--content-surface-bg) var(--files-sidebar-width, 304px),
-    var(--content-surface-bg) 100%
-  );
-}
-
-html.is-tauri-macos .desktop-chrome-header::after {
-  left: var(--files-sidebar-width, 304px);
+  /* Solid sidebar tint over the native vibrancy for the whole left band; the
+     content panel covers the card area. Matches .desktop-content-canvas so the
+     gap reads as sidebar, not a brighter vibrancy seam. */
+  background: var(--sidebar-translucent-bg);
 }
 
 html.is-tauri-macos .desktop-chrome-left-controls {
-  padding-left: 92px;
+  /* Traffic lights start at x=12 (aligned with the sidebar's file/title left
+     edge); clear the ~52px cluster + a small gap before the toggle. */
+  padding-left: 76px;
 }
 
 html.is-tauri-macos .sidebar-glass {

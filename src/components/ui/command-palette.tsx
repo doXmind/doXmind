@@ -404,7 +404,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-[var(--sidebar-hover)] hover:text-foreground"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -463,8 +463,8 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
                         "flex w-full items-center gap-3 px-4 py-2 text-sm",
                         "transition-colors duration-75",
                         isSelected
-                          ? "bg-accent text-accent-foreground"
-                          : "text-foreground hover:bg-accent/50"
+                          ? "bg-[var(--sidebar-active)] text-foreground"
+                          : "text-foreground hover:bg-[var(--sidebar-hover)]"
                       )}
                       onClick={() => cmd.action()}
                       onMouseEnter={() => setSelectedIndex(currentIndex)}

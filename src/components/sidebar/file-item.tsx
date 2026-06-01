@@ -437,7 +437,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       onMouseEnter={handleMouseEnterPrefetch}
       onMouseLeave={cancelHoverPrefetch}
       className={cn(
-        "group/file relative flex cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-3 py-2.5 transition-colors duration-150 ease-out md:h-7 md:px-2.5 md:py-1",
+        "group/file relative flex cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-3 py-2.5 transition-colors duration-150 ease-out md:h-7 md:px-1.5 md:py-1",
         "select-none active:scale-[0.98] md:active:scale-100", // Touch feedback on mobile, prevent text selection
         isSelected
           ? "bg-primary/10 dark:bg-primary/20"
@@ -465,11 +465,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       )}
 
       <div className="relative flex h-5 w-5 flex-shrink-0 items-center justify-center">
-        {file.icon ? (
-          <span className="flex h-5 w-5 items-center justify-center text-sm md:text-xs">
-            {file.icon}
-          </span>
-        ) : isPdfFile(file) ? (
+        {isPdfFile(file) ? (
           <PdfGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
         ) : isExcelFile(file) ? (
           <SpreadsheetGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />

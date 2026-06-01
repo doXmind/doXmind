@@ -135,7 +135,7 @@ const notionDark: ThemeDefinition = {
     mutedForeground: "0 0% 60%",
     accent: "198 73% 52%", // Notion blue #2EAADC
     accentForeground: "0 0% 100%",
-    destructive: "0 62.8% 30.6%",
+    destructive: "0 91% 71%", // bright red (#f87171) — readable as destructive text on the dark popover
     destructiveForeground: "0 0% 95%",
     border: "0 0% 21%", // #373737
     borderSubtle: "0 0% 16%",

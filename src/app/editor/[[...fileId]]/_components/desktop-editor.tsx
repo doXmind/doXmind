@@ -101,7 +101,7 @@ export function DesktopEditor() {
 
           <div className="flex min-h-0 flex-1">
             <div
-              className="grid min-h-0 flex-1"
+              className="desktop-content-canvas grid min-h-0 flex-1"
               style={{
                 gridTemplateColumns: `${filesSidebarColPx}px ${filesHandleColPx}px minmax(0, 1fr)`,
                 transition: filesGridTransition,
@@ -118,6 +118,7 @@ export function DesktopEditor() {
                 {!isFocusMode && hasOpenTarget && isFilesSidebarOpen && (
                   <ResizeHandle
                     side="left"
+                    showSeparator={false}
                     onResize={(delta) => setFilesSidebarWidth(filesSidebarWidth + delta)}
                     onDoubleClick={() => resetPanelWidths()}
                   />

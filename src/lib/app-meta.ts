@@ -7,6 +7,6 @@ export const APP_VERSION = (packageJson as { version: string }).version;
 // for the About panel.
 export const APP_BUILD = new Date().toISOString().slice(0, 10);
 
-export const APP_ENGINE = "Tauri 2 · Rust";
+export const APP_PROVIDER = "Waxis Inc.";
 
 export const APP_CHANNEL = "Stable";

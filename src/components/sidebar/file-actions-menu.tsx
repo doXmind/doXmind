@@ -152,9 +152,8 @@ export function FileActionsMenuItems({
       "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
       destructive && "text-destructive",
       contextMenuReady &&
-        (destructive ? "hover:bg-destructive/10" : "hover:bg-accent hover:text-accent-foreground"),
-      focusIndex === index &&
-        (destructive ? "bg-destructive/10" : "bg-accent text-accent-foreground")
+        (destructive ? "hover:bg-destructive/10" : "hover:bg-[var(--sidebar-hover)]"),
+      focusIndex === index && (destructive ? "bg-destructive/10" : "bg-[var(--sidebar-active)]")
     );
 
   return (

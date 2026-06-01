@@ -143,7 +143,7 @@ export function FilesSidebar() {
   };
 
   return (
-    <div className="sidebar-glass flex h-full flex-col border-r border-[var(--sidebar-active-border)] text-[var(--sidebar-text)]">
+    <div className="sidebar-glass flex h-full flex-col text-[var(--sidebar-text)]">
       <WorkspaceHeader
         onCreateFile={() => handleCreateFile(null)}
         onCreatePdf={() => handleCreatePdf(null)}
@@ -158,7 +158,7 @@ export function FilesSidebar() {
         {/* min-h-full lets FolderTree's spacer reach the bottom of the
             scroll viewport so right-clicks on empty space below the
             last row still hit the empty-area context menu. */}
-        <div className="flex min-h-full flex-col px-2.5 pb-3 pt-2">
+        <div className="flex min-h-full flex-col px-1.5 pb-3 pt-2">
           {isLoading && !isSynced ? (
             <FileListSkeleton />
           ) : (
@@ -175,10 +175,10 @@ export function FilesSidebar() {
 
       <BulkActionBar />
 
-      <div className="px-3 pb-3 pt-2">
+      <div className="px-1.5 pb-3 pt-2">
         <Link
           href="/settings"
-          className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-2.5 font-semibold text-[var(--sidebar-text)] transition-colors hover:bg-[var(--sidebar-hover)]"
+          className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-1.5 font-semibold text-[var(--sidebar-text)] transition-colors hover:bg-[var(--sidebar-hover)]"
         >
           <Settings className="h-4 w-4 text-[var(--sidebar-icon)]" />
           {t("settings")}
