@@ -78,3 +78,27 @@ describe("markdownToHtml mermaid + math", () => {
     expect(html).toContain("$$5 to $$10");
   });
 });
+
+describe("markdownToHtml raw-HTML sentinel (issue #149)", () => {
+  it("wraps a raw-HTML badge block in a rawHtml sentinel", () => {
+    const html = markdownToHtml('<p align="center"><img src="b.svg"></p>');
+    expect(html).toContain("data-raw-html=");
+  });
+
+  it("does NOT wrap comment placeholders (pdf/excel/database)", () => {
+    const html = markdownToHtml('<!-- pdf-block id="a" src="s.pdf" -->');
+    expect(html).not.toContain("data-raw-html");
+    expect(html).toContain("<!-- pdf-block");
+  });
+
+  it("does NOT wrap a <details> toggle block", () => {
+    const html = markdownToHtml("<details>\n<summary>S</summary>\n\nbody\n\n</details>");
+    expect(html).not.toContain("data-raw-html");
+  });
+
+  it("does NOT wrap a columns div", () => {
+    const html = markdownToHtml('<div data-columns="2">\n\nx\n\n</div>');
+    expect(html).not.toContain("data-raw-html");
+    expect(html).toContain("data-columns");
+  });
+});

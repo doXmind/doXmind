@@ -26,6 +26,7 @@ const norm = (s: string) => s.replace(/\n+$/, "");
 
 const FAITHFUL_DOCS = [
   "CONTEXT.md",
+  "README.md", // heavy raw HTML (centered badge rows) — preserved via the rawHtml node
   "docs/adr/0006-feature-scope-typora-notion.md",
   "docs/adr/0004-custom-block-registry-split-and-correlation.md",
   "docs/adr/0002-hybrid-hydration-for-custom-blocks.md",
@@ -61,16 +62,59 @@ describe("source preservation — untouched docs round-trip byte-identical", () 
   });
 });
 
-describe("source preservation — safe degradation", () => {
-  it("raw-HTML doc (README) does not crash and stays valid markdown", () => {
-    const body = stripFrontmatter(readFileSync(resolve(REPO, "README.md"), "utf8"));
+describe("source preservation — raw HTML survives as one block", () => {
+  it("a centered badge row round-trips byte-identical", () => {
+    const body = [
+      "# Title",
+      "",
+      '<p align="center">',
+      '  <a href="https://x.com"><img src="b.svg" alt="badge" /></a>',
+      "</p>",
+      "",
+      "A normal paragraph after the badges.",
+    ].join("\n");
     const editor = makeEditor(body);
     const out = getMd(editor);
     editor.destroy();
-    expect(typeof out).toBe("string");
-    expect(out).toContain("doXmind");
+    expect(norm(out)).toBe(norm(body));
   });
 
+  it("a <details> toggle (multi-token block) round-trips byte-identical", () => {
+    const body = [
+      "# FAQ",
+      "",
+      "<details>",
+      "<summary>Does it work?</summary>",
+      "",
+      "Yes, it does.",
+      "",
+      "</details>",
+      "",
+      "Closing note.",
+    ].join("\n");
+    const editor = makeEditor(body);
+    const out = getMd(editor);
+    editor.destroy();
+    expect(norm(out)).toBe(norm(body));
+  });
+
+  it("editing prose around a raw-HTML block leaves the HTML verbatim", () => {
+    const body = [
+      '<div align="center"><img src="logo.png" width="900" /></div>',
+      "",
+      "Edit me.",
+    ].join("\n");
+    const editor = makeEditor(body);
+    expect(norm(getMd(editor))).toBe(norm(body));
+    // Append to the trailing paragraph; the raw-HTML block must not change.
+    editor.commands.insertContentAt(editor.state.doc.content.size, " more");
+    const out = getMd(editor);
+    editor.destroy();
+    expect(out).toContain('<div align="center"><img src="logo.png" width="900" /></div>');
+  });
+});
+
+describe("source preservation — safe degradation", () => {
   it("transient/empty doc falls back without a baseline", () => {
     const editor = new Editor({ extensions: getEditorExtensions(), content: "<p>hello</p>" });
     editor.commands.setSourceBaseline(null);

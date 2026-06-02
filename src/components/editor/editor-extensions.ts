@@ -35,6 +35,7 @@ import { BlockHandleExtension } from "@/extensions/block-handle-extension";
 import { BlockColorExtension } from "@/extensions/block-color-extension";
 import { AtomBlockLiftPlugin } from "@/extensions/atom-block-lift-plugin";
 import { SourcePreservation } from "@/extensions/source-preservation";
+import { RawHtml } from "@/extensions/raw-html";
 import { customBlockTipTapExtensions } from "@/extensions/registry";
 import type { Extensions } from "@tiptap/react";
 
@@ -121,6 +122,10 @@ export function getEditorExtensions(): Extensions {
 
     // Code blocks with syntax highlighting (custom Notion-style)
     CustomCodeBlock,
+
+    // Raw-HTML passthrough: a raw-HTML block survives as one atom node so it
+    // round-trips byte-identical (see source preservation).
+    RawHtml,
 
     // Custom Block Extensions registry — Self-contained (mermaid, callout, math,
     // toggle, page-link) and External-reference (pdf-block, excel-block) blocks.

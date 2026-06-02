@@ -212,9 +212,69 @@ pub fn markdown_to_html(body: &str) -> String {
     opts.insert(CmarkOptions::ENABLE_TASKLISTS);
     opts.insert(CmarkOptions::ENABLE_HEADING_ATTRIBUTES);
     let parser = CmarkParser::new_ext(body, opts);
+    let events = wrap_raw_html_blocks(parser);
     let mut html = String::with_capacity(body.len());
-    cmark_html::push_html(&mut html, parser);
+    cmark_html::push_html(&mut html, events.into_iter());
     html
+}
+
+/// Wrap each raw-HTML block in a `<div data-raw-html="…">` sentinel so the
+/// editor imports it as a single rawHtml atom node (preserved byte-identical
+/// by source preservation) instead of flattening it into images/links. Block
+/// raw HTML arrives as a run of consecutive `Event::Html`; inline HTML
+/// (`Event::InlineHtml`) is left untouched. The original markup is stored,
+/// HTML-attribute-escaped, in the attribute. See `src/extensions/raw-html.ts`.
+/// Raw-HTML blocks owned by other editor blocks, which must pass through
+/// untouched: HTML-comment placeholders (pdf-block / excel-block / database),
+/// `<details>` (toggle), and `<div data-column(s)>` (columns).
+fn is_claimed_raw_html(raw: &str) -> bool {
+    let head = raw.trim_start();
+    let lower = head.to_ascii_lowercase();
+    head.starts_with("<!--")
+        || head.starts_with("</") // structural closing tag (e.g. columns/toggle close)
+        || lower.starts_with("<details")
+        || raw.contains("data-column")
+}
+
+fn wrap_raw_html_blocks<'a>(
+    parser: impl Iterator<Item = CmarkEvent<'a>>,
+) -> Vec<CmarkEvent<'a>> {
+    let mut out: Vec<CmarkEvent<'a>> = Vec::new();
+    let mut buffer = String::new();
+    let flush = |buffer: &mut String, out: &mut Vec<CmarkEvent<'a>>| {
+        if buffer.is_empty() {
+            return;
+        }
+        let raw = buffer.trim_end_matches('\n');
+        if is_claimed_raw_html(raw) {
+            // Owned by another block (comment placeholders, toggle, columns) —
+            // pass through verbatim so those importers still see it.
+            out.push(CmarkEvent::Html(CowStr::Boxed(
+                buffer.clone().into_boxed_str(),
+            )));
+            buffer.clear();
+            return;
+        }
+        let escaped = raw
+            .replace('&', "&amp;")
+            .replace('"', "&quot;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;");
+        let sentinel = format!("<div data-raw-html=\"{escaped}\" data-type=\"raw-html\"></div>\n");
+        out.push(CmarkEvent::Html(CowStr::Boxed(sentinel.into_boxed_str())));
+        buffer.clear();
+    };
+    for event in parser {
+        match event {
+            CmarkEvent::Html(text) => buffer.push_str(&text),
+            other => {
+                flush(&mut buffer, &mut out);
+                out.push(other);
+            }
+        }
+    }
+    flush(&mut buffer, &mut out);
+    out
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1095,6 +1155,41 @@ mod tests {
     fn markdown_to_html_empty_string() {
         assert_eq!(markdown_to_html(""), "");
         assert_eq!(markdown_to_html("   \n  "), "");
+    }
+
+    #[test]
+    fn markdown_to_html_wraps_raw_html_block_in_sentinel() {
+        let html = markdown_to_html("Intro\n\n<div align=\"center\">\n  <img src=\"x.png\">\n</div>\n\nAfter\n");
+        // The raw-HTML block becomes a single sentinel div carrying the escaped
+        // original markup; the surrounding paragraphs are untouched.
+        assert!(html.contains("data-raw-html=\""), "expected sentinel: {html}");
+        assert!(html.contains("&lt;div align=&quot;center&quot;&gt;"), "escaped markup: {html}");
+        assert!(html.contains("<p>Intro</p>"));
+        assert!(html.contains("<p>After</p>"));
+        // Exactly one sentinel for one raw-HTML block.
+        assert_eq!(html.matches("data-raw-html=").count(), 1);
+    }
+
+    #[test]
+    fn markdown_to_html_leaves_plain_markdown_without_sentinel() {
+        let html = markdown_to_html("# Title\n\nA paragraph with *emphasis*.\n");
+        assert!(!html.contains("data-raw-html"));
+    }
+
+    #[test]
+    fn markdown_to_html_does_not_wrap_claimed_raw_html() {
+        // Comment placeholders (pdf/excel/database), toggle, and columns are
+        // owned by other blocks and must pass through unwrapped.
+        let comment = markdown_to_html("<!-- pdf-block id=\"a\" src=\"s.pdf\" -->\n");
+        assert!(!comment.contains("data-raw-html"));
+        assert!(comment.contains("<!-- pdf-block"));
+
+        let toggle = markdown_to_html("<details>\n<summary>S</summary>\n\nbody\n\n</details>\n");
+        assert!(!toggle.contains("data-raw-html"));
+
+        let columns = markdown_to_html("<div data-columns=\"2\">\n\nx\n\n</div>\n");
+        assert!(!columns.contains("data-raw-html"));
+        assert!(columns.contains("data-columns"));
     }
 
     // ---- date formatter ----

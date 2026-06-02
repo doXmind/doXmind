@@ -7,6 +7,41 @@ import { marked } from "marked";
 
 import { containsCjk } from "@/extensions/math/cjk";
 
+// Raw-HTML blocks that other extensions already own — must NOT be wrapped as a
+// rawHtml passthrough or those features break: HTML-comment placeholders
+// (pdf-block / excel-block / database), `<details>` (toggle), and
+// `<div data-column(s)>` (columns). Genuine user raw HTML (badge rows, etc.)
+// carries none of these markers.
+export function isClaimedRawHtml(raw: string): boolean {
+  const head = raw.trimStart();
+  return (
+    head.startsWith("<!--") ||
+    head.startsWith("</") || // structural closing tag (columns/toggle close)
+    /^<details[\s>]/i.test(head) ||
+    /data-column/.test(raw)
+  );
+}
+
+// Configure marked to wrap raw-HTML blocks in a sentinel so they import as a
+// single rawHtml atom node (preserved byte-identical by source preservation)
+// rather than being flattened into images/links with the layout dropped.
+marked.use({
+  renderer: {
+    html(token: string | { raw?: string; text?: string }): string {
+      const original = typeof token === "string" ? token : (token.raw ?? token.text ?? "");
+      const raw = original.replace(/\n+$/, "");
+      if (isClaimedRawHtml(raw)) return original; // pass through untouched
+      if (!raw.trim()) return "";
+      const escaped = raw
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      return `<div data-raw-html="${escaped}" data-type="raw-html"></div>`;
+    },
+  },
+});
+
 // Configure marked to handle mermaid code fences
 marked.use({
   renderer: {

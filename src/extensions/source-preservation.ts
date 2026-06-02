@@ -89,15 +89,47 @@ export function lexSourceBlocks(
   const tokens = lexer(body);
   const raws: string[] = [];
   let leading = "";
+  // A `<details>` (toggle) or `<div data-columns>` (columns) block becomes a
+  // single editor node, but marked emits it as several tokens (open tag, inner
+  // markdown, close tag). Merge those back into one source block so block
+  // counts line up with the document and the whole structure round-trips.
+  const tagBalance = (s: string) => {
+    const opens = (s.match(/<(?:details|div)(?=[\s>/])/gi) || []).length;
+    const closes = (s.match(/<\/(?:details|div)>/gi) || []).length;
+    return opens - closes;
+  };
+  let group: string | null = null;
+  let depth = 0;
   for (const token of tokens) {
     if (token.type === "space") {
-      if (raws.length) raws[raws.length - 1] += token.raw;
+      if (group !== null) group += token.raw;
+      else if (raws.length) raws[raws.length - 1] += token.raw;
       else leading += token.raw;
       continue;
+    }
+    if (group !== null) {
+      group += token.raw;
+      depth += tagBalance(token.raw);
+      if (depth <= 0) {
+        raws.push(group);
+        group = null;
+        depth = 0;
+      }
+      continue;
+    }
+    if (token.type === "html") {
+      const balance = tagBalance(token.raw);
+      if (balance > 0) {
+        group = leading + token.raw;
+        leading = "";
+        depth = balance;
+        continue;
+      }
     }
     raws.push(leading + token.raw);
     leading = "";
   }
+  if (group !== null) raws.push(group); // unbalanced container — flush as-is
   return raws;
 }
 
