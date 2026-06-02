@@ -18,9 +18,8 @@ doXmind 把同一套 **markdown → 编辑器 HTML** 转换实现了**三遍**�
 2. **当前分叉记录在案**（24 例：14 一致、3 外观、7 语义）。语义分叉是真正要收敛的目标，按性质分两类处理：
    - **明确的 bug（与方向无关，应尽快修）**：Python 不渲染 `~~删除线~~`（缺 GFM strikethrough）；Python 把 2 空格缩进的嵌套列表拍平成同级。这些只影响 web/dev 路径，但都是错误行为。
    - **表达差异（需配合编辑器层 + 方向决策）**：task list（Python 出 `data-type=taskList`，Rust/marked 出 GFM `<input>`）；`$math$` 与 `mermaid` 在 marked 里直接成节点、在 Rust/Python 里留作文本/代码块（靠编辑器迁移插件 / parseHTML 兜底）。收敛这些要先定权威实现。
-3. **权威实现的最终收敛**是后续工作，绑定迁移方向：
-   - 若留 Tauri：**Rust 为权威**，退役 Python 的 markdown 代码（Python 只留 PDF/Excel），前端直接复用后端 HTML 而非用 `marked` 再导一遍。
-   - 若走 Electron：markdown 核心回到**单份 TS 实现**，编辑器打开与浏览预览共用，Python 只留 PDF/Excel。
+3. **方向已定：Rust 为权威**（留 Tauri）。Rust 已是唯一的*生产*（Tauri 运行时）markdown→HTML 引擎，本 ADR 的 conformance 基线把 Python 与 `marked` 钉住防漂移——这就是该决定当下安全、不破坏现状的实质，#152 据此收尾。
+   - **真正折叠成单份实现是后续工作，见 #154。** 之所以不能简单删掉另外两份：Python `markdown_to_html` 是 web/dev（浏览器 / `npm run dev`）的编辑器打开路径（该进程内没有 Rust），前端 `marked` 还用于模板新建文件与源保留 lexer。要收敛到一份，须把 Rust 核心做成 **CLI/wasm** 给 Python 服务和前端共用，再删除两者——这是与 Tauri→Electron 迁移耦合的工程，单列 #154 跟踪。
 
 **理由**：
 
