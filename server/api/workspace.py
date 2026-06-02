@@ -23,10 +23,12 @@ from pydantic import BaseModel, Field
 from send2trash import send2trash
 
 from services.sidecar_io import (
+    SIDECAR_VERSION,
     Corrupt,
     CorruptSidecarError,
     Loaded,
     atomic_write,
+    hash_markdown,
     markdown_to_html,
     now_iso,
     parse_frontmatter,
@@ -406,7 +408,52 @@ def workspace_markdown_search(root: str, query: str, limit: Any = None) -> list[
     return results
 
 
+def read_html_doc(path: Path) -> dict[str, Any]:
+    # #139: an .html file's body IS the editor HTML — no frontmatter, no
+    # markdown_to_html. The sidecar caches the last-saved editor HTML + carries
+    # extras; the hash detects external edits. The browsing view sanitizes the
+    # raw HTML (via _render_browsing_from_html).
+    raw = path.read_text(encoding="utf-8")
+    current_hash = hash_markdown(raw)
+    sidecar = read_sidecar(sidecar_path_for(path))
+
+    editor_html = raw
+    extras: Any = None
+    source_state = "sidecar_missing"
+    legacy_source = "markdown"
+    doc_id = str(uuid.uuid4())
+
+    if isinstance(sidecar, Loaded):
+        data = sidecar.data
+        sidecar_id = data.get("id")
+        if isinstance(sidecar_id, str) and sidecar_id.strip():
+            doc_id = sidecar_id
+        extras_val = data.get("extras")
+        extras = extras_val if isinstance(extras_val, dict) else None
+        if data.get("version") == SIDECAR_VERSION and data.get("markdown_hash") == current_hash:
+            editor_html = data.get("html") or raw
+            source_state = "sidecar_fresh"
+            legacy_source = "sidecar"
+        else:
+            # External edit: editor HTML is the file body; extras carry (#147).
+            source_state = "sidecar_stale"
+
+    return _document_read_response(
+        editor_html=editor_html,
+        markdown=raw,
+        meta={"id": doc_id},
+        extras=extras,
+        legacy_source=legacy_source,
+        source_state=source_state,
+        correlation=None,
+        markdown_html=raw,
+    )
+
+
 def read_doc(path: Path) -> dict[str, Any]:
+    if is_html_file(path):
+        return read_html_doc(path)
+
     from services.block_correlation import BlockCorrelation, CorrelationReport
     from services.external_ref_blocks import default_external_ref_block_registry
     from services.markdown_document_state import (
@@ -1033,7 +1080,37 @@ def doc_import_external(
     return document_dto_for_path(workspace, destination)
 
 
+def write_html_doc(path: Path, payload: dict[str, Any]) -> None:
+    # #139: the .html file body IS the editor HTML (`html` = getHTML()); write
+    # it verbatim with no frontmatter. The sidecar caches it + carries extras.
+    meta = dict(payload.get("meta") or {})
+    doc_id = str(meta.get("id") or "").strip()
+    if not doc_id:
+        raise ValueError("document id is required")
+    html = str(payload.get("html") or "")
+    atomic_write(path, html.encode("utf-8"))
+
+    sidecar: dict[str, Any] = {
+        "version": SIDECAR_VERSION,
+        "id": doc_id,
+        "html": html,
+        "markdown_hash": hash_markdown(html),
+        "updated_at": now_iso(),
+    }
+    extras = payload.get("extras")
+    if extras is not None:
+        sidecar["extras"] = extras
+    atomic_write(
+        sidecar_path_for(path),
+        json.dumps(sidecar, indent=2, ensure_ascii=False).encode(),
+    )
+
+
 def write_doc(path: Path, payload: dict[str, Any]) -> None:
+    if is_html_file(path):
+        write_html_doc(path, payload)
+        return
+
     from services.markdown_document_state import DocumentSnapshot, MarkdownDocumentState
 
     snapshot = DocumentSnapshot(
@@ -1273,6 +1350,8 @@ def document_dto_for_path(root: Path, path: Path) -> dict[str, Any]:
         document_type = "pdf"
     elif is_excel_file(path):
         document_type = "excel"
+    elif is_html_file(path):
+        document_type = "html"
     else:
         document_type = "markdown"
     if document_type == "markdown":
@@ -1359,8 +1438,19 @@ def is_excel_file(path: Path) -> bool:
     return path.suffix.lower() in {".xlsx", ".xlsm"}
 
 
+def is_html_file(path: Path) -> bool:
+    # HTML is a text document type whose file body IS the editor HTML — no
+    # frontmatter, no markdown conversion (#139).
+    return path.suffix.lower() in {".html", ".htm"}
+
+
 def is_workspace_document_file(path: Path) -> bool:
-    return is_markdown_file(path) or is_pdf_file(path) or is_excel_file(path)
+    return (
+        is_markdown_file(path)
+        or is_pdf_file(path)
+        or is_excel_file(path)
+        or is_html_file(path)
+    )
 
 
 def relative_path_string(root: Path, path: Path) -> str:

@@ -662,8 +662,10 @@ pub async fn write_doc(md_path: impl AsRef<Path>, payload: &DocPayload) -> Resul
     }
     let md_path = md_path.as_ref();
     let md_content = if is_html_file(md_path) {
-        // HTML: the body IS the editor HTML; write it verbatim, no frontmatter.
-        payload.markdown.clone()
+        // HTML: the file body IS the editor HTML (`payload.html` = getHTML()),
+        // written verbatim with no frontmatter. `payload.markdown` (getMarkdown)
+        // is irrelevant for an html document.
+        payload.html.clone()
     } else {
         // doXmind does not own the user's frontmatter (#148): preserve the
         // existing head byte-for-byte and never inject one. The typed meta is
@@ -1229,7 +1231,9 @@ mod tests {
             &p,
             &DocPayload {
                 html: body.into(),
-                markdown: body.into(),
+                // getMarkdown of an html doc is irrelevant and must NOT be what
+                // lands on disk — the .html is the editor HTML (`html` field).
+                markdown: "# Edited\n\ncontent".into(),
                 meta: DocMeta::new("html-1"),
                 extras: Some(serde_json::json!({"k": 1})),
             },
@@ -1237,9 +1241,11 @@ mod tests {
         .await
         .unwrap();
 
-        // The .html on disk is the editor HTML verbatim — no injected head.
+        // The .html on disk is the editor HTML (`payload.html`) verbatim — not
+        // the markdown serialization, and no injected frontmatter.
         let on_disk = std::fs::read_to_string(&p).unwrap();
-        assert_eq!(on_disk, format!("{body}\n").trim_end_matches('\n'));
+        assert_eq!(on_disk, body);
+        assert!(!on_disk.contains("# Edited"));
         assert!(!on_disk.contains("---"));
 
         let r = read_doc(&p).await.unwrap();

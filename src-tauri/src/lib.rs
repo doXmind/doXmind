@@ -401,7 +401,7 @@ fn normalize_open_path(path: &str) -> Option<String> {
         return None;
     }
     let lower = abs.to_string_lossy().to_ascii_lowercase();
-    let supported = [".md", ".markdown", ".pdf", ".xlsx", ".xlsm"]
+    let supported = [".md", ".markdown", ".pdf", ".xlsx", ".xlsm", ".html", ".htm"]
         .iter()
         .any(|ext| lower.ends_with(ext));
     if !supported {
@@ -2919,8 +2919,15 @@ fn is_excel_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn is_html_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "html" | "htm"))
+        .unwrap_or(false)
+}
+
 fn is_workspace_document_file(path: &Path) -> bool {
-    is_markdown_file(path) || is_pdf_file(path) || is_excel_file(path)
+    is_markdown_file(path) || is_pdf_file(path) || is_excel_file(path) || is_html_file(path)
 }
 
 fn document_dto_for_path(
@@ -2931,6 +2938,8 @@ fn document_dto_for_path(
         "pdf"
     } else if is_excel_file(path) {
         "excel"
+    } else if is_html_file(path) {
+        "html"
     } else {
         "markdown"
     }
