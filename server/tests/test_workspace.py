@@ -181,7 +181,11 @@ def test_external_markdown_edit_invalidates_sidecar(sync_client, tmp_path):
     assert "<h1>External</h1>" in read["editorHtml"]
     assert "<h1>External</h1>" in read["browsingHtml"]
     assert read["outline"] == [{"id": "external", "depth": 1, "text": "External"}]
-    assert read["extras"] is None
+    # #147: a stale read re-derives HTML but carries sidecar `extras` through —
+    # the markdown hash governs only HTML freshness, never data retention. Orphan
+    # gating (no `<!-- database:id -->` marker in the body) happens downstream in
+    # the frontend, not by erasing data at read time.
+    assert read["extras"] == {"databases": {"d1": {"rows": []}}}
 
 
 def test_browsing_html_strips_unsafe_raw_html_in_http_fallback(sync_client, tmp_path):
