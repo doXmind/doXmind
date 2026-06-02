@@ -234,6 +234,9 @@ fn is_claimed_raw_html(raw: &str) -> bool {
         || head.starts_with("</") // structural closing tag (e.g. columns/toggle close)
         || lower.starts_with("<details")
         || raw.contains("data-column")
+        // Any editor-owned node marker (task lists, etc.) is claimed by its own
+        // parseHTML and must not be swallowed as a rawHtml passthrough.
+        || raw.contains("data-type=")
 }
 
 fn wrap_raw_html_blocks<'a>(

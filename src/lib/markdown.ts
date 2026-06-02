@@ -18,7 +18,10 @@ export function isClaimedRawHtml(raw: string): boolean {
     head.startsWith("<!--") ||
     head.startsWith("</") || // structural closing tag (columns/toggle close)
     /^<details[\s>]/i.test(head) ||
-    /data-column/.test(raw)
+    /data-column/.test(raw) ||
+    // Any editor-owned node marker (task lists, etc.) is claimed by its own
+    // parseHTML and must not be swallowed as a rawHtml passthrough.
+    /data-type=/.test(raw)
   );
 }
 

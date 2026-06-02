@@ -43,6 +43,9 @@ class _RawHtmlSentinelPostprocessor(RawHtmlPostprocessor):
             or head.startswith("</")  # structural closing tag (columns/toggle close)
             or lower.startswith("<details")
             or "data-column" in html
+            # Any editor-owned node marker (task lists, etc.) is claimed by its
+            # own parseHTML and must not be swallowed as a rawHtml passthrough.
+            or "data-type=" in html
         )
         if not claimed and self.isblocklevel(html.strip()):
             raw = html.rstrip("\n")

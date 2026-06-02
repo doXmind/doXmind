@@ -49,3 +49,13 @@ def test_columns_div_is_not_wrapped() -> None:
     out = markdown_to_html('<div data-columns="2">\n\ncontent\n\n</div>\n')
     assert "data-raw-html" not in out
     assert "data-columns" in out
+
+
+def test_task_lists_are_not_wrapped() -> None:
+    # render_task_lists pre-renders `- [ ]` into `<ul data-type="taskList">`
+    # HTML claimed by the taskList node — it must not be wrapped.
+    out = markdown_to_html("# Lists\n\n- [ ] Todo\n- [x] Done\n")
+    assert "data-raw-html" not in out
+    assert '<ul data-type="taskList">' in out
+    assert '<li data-type="taskItem" data-checked="false"><p>Todo</p></li>' in out
+    assert '<li data-type="taskItem" data-checked="true"><p>Done</p></li>' in out
