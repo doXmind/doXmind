@@ -52,4 +52,29 @@ describe("markdownToHtml mermaid + math", () => {
     expect(html).toContain('data-type="block-math"');
     expect(html).toContain("E=mc^2");
   });
+
+  it("converts block math that follows a text line without a blank line", () => {
+    const html = markdownToHtml("Intro line\n$$\nE=mc^2\n$$\nAfter");
+    expect(html).toContain('data-type="block-math"');
+  });
+
+  // issue #149: marked's blockMath `start` used to fire on any `$$`, breaking a
+  // paragraph mid-line and re-lexing inline `` `$$x$$` `` code as a math block.
+  it("does NOT turn $$ inside an inline code span into block math", () => {
+    const html = markdownToHtml("Use ``$$E=mc^2$$`` to write block math.");
+    expect(html).not.toContain('data-type="block-math"');
+    expect(html).toContain("<code>$$E=mc^2$$</code>");
+  });
+
+  it("keeps single-backtick code with $ as code, not math", () => {
+    const html = markdownToHtml("Use `$x^2$` for inline math.");
+    expect(html).not.toContain("data-type=");
+    expect(html).toContain("<code>$x^2$</code>");
+  });
+
+  it("leaves stray mid-line $$ as literal text", () => {
+    const html = markdownToHtml("the cost is $$5 to $$10 dollars");
+    expect(html).not.toContain('data-type="block-math"');
+    expect(html).toContain("$$5 to $$10");
+  });
 });

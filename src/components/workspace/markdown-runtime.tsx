@@ -428,6 +428,8 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       initialFileIdRef.current = null;
       lastContentRef.current = editor.getHTML();
       prevDbIdsRef.current = extractDatabaseIds(file.content, "initialMount");
+      // Capture the original Markdown so untouched blocks round-trip verbatim.
+      editor.commands.setSourceBaseline(file.contentMarkdown ?? null);
       // (Re)mount: restore this file's remembered scroll, or top if unseen.
       restoreScrollTop(scrollAreaRef.current, scrollPositions.get(file.id) ?? 0);
       return;
@@ -459,6 +461,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       );
       lastContentRef.current = editor.getHTML();
       prevDbIdsRef.current = extractDatabaseIds(file.content, "fileSwitch");
+      editor.commands.setSourceBaseline(file.contentMarkdown ?? null);
       editor.emit("update", { editor, transaction: editor.state.tr, appendedTransactions: [] });
 
       domObserver?.start();
@@ -529,6 +532,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
         { bytes: file.content?.length ?? 0, branch: "lateContent" }
       );
       lastContentRef.current = editor.getHTML();
+      editor.commands.setSourceBaseline(file.contentMarkdown ?? null);
       editor.emit("update", { editor, transaction: editor.state.tr, appendedTransactions: [] });
 
       domObserver?.start();

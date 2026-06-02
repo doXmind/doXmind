@@ -34,6 +34,7 @@ import { BlockSelectionExtension } from "@/extensions/block-selection-extension"
 import { BlockHandleExtension } from "@/extensions/block-handle-extension";
 import { BlockColorExtension } from "@/extensions/block-color-extension";
 import { AtomBlockLiftPlugin } from "@/extensions/atom-block-lift-plugin";
+import { SourcePreservation } from "@/extensions/source-preservation";
 import { customBlockTipTapExtensions } from "@/extensions/registry";
 import type { Extensions } from "@tiptap/react";
 
@@ -57,6 +58,10 @@ export function getEditorExtensions(): Extensions {
     // Markdown serialization (schema-aware editor.getMarkdown() / editor.markdown.parse())
     Markdown,
 
+    // Block-level source preservation: untouched blocks round-trip byte-identical
+    // (wraps getMarkdown — must come after Markdown so it captures the real one).
+    SourcePreservation,
+
     // Text enhancements
     Underline,
     TextStyle,
@@ -76,6 +81,16 @@ export function getEditorExtensions(): Extensions {
       openOnClick: false,
       HTMLAttributes: {
         class: "text-primary underline underline-offset-2 cursor-pointer",
+      },
+      // TipTap's default isAllowedUri rejects scheme-less relative paths that
+      // contain a slash (e.g. `docs/adr/0001.md`), silently dropping the link
+      // mark on parse and corrupting doc-to-doc links. Allow any scheme-less
+      // (relative) URL — it cannot carry a dangerous scheme — and defer to the
+      // built-in allowlist only when an explicit scheme is present, so
+      // javascript:/vbscript:/data: stay blocked.
+      isAllowedUri: (url, ctx) => {
+        if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) return true;
+        return ctx.defaultValidate(url);
       },
     }),
 

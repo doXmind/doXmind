@@ -49,7 +49,12 @@ marked.use({
       name: "blockMath",
       level: "block" as const,
       start(src: string) {
-        return src.match(/\$\$/)?.index;
+        // Only treat `$$` that begins its own line as block math. Returning the
+        // index of any `$$` (e.g. one inside an inline `` `$$x$$` `` code span)
+        // makes marked truncate the paragraph there and re-lex it as block math,
+        // destroying the code span. `$$` mid-line is left to inline handling.
+        const m = src.match(/(?:^|\n)[ \t]*\$\$/);
+        return m && m.index !== undefined ? m.index + m[0].length - 2 : undefined;
       },
       tokenizer(src: string) {
         const match = src.match(/^\$\$([\s\S]*?)\$\$/);
