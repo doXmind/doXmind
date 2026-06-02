@@ -33,8 +33,9 @@ from services.sidecar_io import (
     CorruptSidecarError,
     Loaded,
     Missing,
+    assemble_md,
     atomic_write,
-    build_md_with_frontmatter,
+    extract_frontmatter_block,
     hash_markdown,
     markdown_to_html,
     now_iso,
@@ -344,9 +345,13 @@ class MarkdownDocumentState:
         meta = dict(snapshot.meta)
         if not str(meta.get("id") or "").strip():
             raise ValueError("document id is required")
-        meta.setdefault("updated", now_iso())
 
-        md_content = build_md_with_frontmatter(meta, snapshot.markdown)
+        # doXmind does not own the user's frontmatter (#148): preserve the
+        # existing head byte-for-byte and never inject one. The typed meta is
+        # NOT serialized into the `.md` — identity lives in the sidecar below.
+        existing = path.read_text(encoding="utf-8") if path.exists() else None
+        head = extract_frontmatter_block(existing) if existing is not None else None
+        md_content = assemble_md(head, snapshot.markdown)
         atomic_write(path, md_content.encode("utf-8"))
 
         sidecar: dict[str, Any] = {

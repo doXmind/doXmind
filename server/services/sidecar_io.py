@@ -240,6 +240,36 @@ def build_md_with_frontmatter(meta: dict[str, Any], body: str) -> str:
     return f"---\n{chr(10).join(lines)}\n---\n\n{trimmed_body}\n"
 
 
+def extract_frontmatter_block(raw: str) -> str | None:
+    """Verbatim frontmatter block (``---\\n...\\n---``, delimiters included, no
+    trailing newline) at the start of ``raw``, or ``None`` if there is none.
+
+    Byte-exact: never reorders, reserializes, or trims the head, so a
+    hand-authored frontmatter (key order, comments, quoting) round-trips
+    untouched. doXmind does not own the user's frontmatter (#148).
+    """
+    if not (raw.startswith("---\n") or raw.startswith("---\r\n")):
+        return None
+    nl = raw.find("\n")
+    if nl == -1:
+        return None
+    offset = nl + 1
+    for line in raw[offset:].splitlines(keepends=True):
+        if line.rstrip("\r\n") == "---":
+            return raw[: offset + 3]  # include the closing "---"
+        offset += len(line)
+    return None  # unterminated frontmatter — treat as no head
+
+
+def assemble_md(head: str | None, body: str) -> str:
+    """Assemble the ``.md``: a preserved head (if any) + a normalized body.
+    Never injects a frontmatter block when ``head`` is ``None`` (#148)."""
+    body = body.rstrip("\n")
+    if head is not None:
+        return f"{head}\n\n{body}\n" if body else f"{head}\n"
+    return f"{body}\n" if body else ""
+
+
 def read_sidecar(path: Path) -> SidecarReadResult:
     try:
         raw = path.read_bytes()

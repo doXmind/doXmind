@@ -592,7 +592,12 @@ pub async fn write_doc(md_path: impl AsRef<Path>, payload: &DocPayload) -> Resul
         return Err(Error::MissingId);
     }
     let md_path = md_path.as_ref();
-    let md_content = build_md_with_frontmatter(&payload.meta, &payload.markdown)?;
+    // doXmind does not own the user's frontmatter (#148): preserve the existing
+    // head byte-for-byte and never inject one. The typed meta is NOT serialized
+    // into the `.md` — identity lives in the sidecar below.
+    let existing = tokio::fs::read_to_string(md_path).await.ok();
+    let head = existing.as_deref().and_then(extract_frontmatter_block);
+    let md_content = assemble_md(head, &payload.markdown);
 
     atomic_write(md_path, md_content.as_bytes()).await?;
 
@@ -646,12 +651,37 @@ fn value_to_meta(value: serde_json::Value) -> DocMeta {
         .unwrap_or_else(|_| DocMeta::new(new_id()))
 }
 
-fn build_md_with_frontmatter(meta: &DocMeta, body: &str) -> Result<String> {
-    let yaml = serde_yaml::to_string(meta).map_err(Error::FrontmatterSerialize)?;
-    let yaml = yaml.trim_end_matches('\n');
-    // Always write a trailing newline after the body for POSIX-friendliness.
-    let trimmed_body = body.trim_end_matches('\n');
-    Ok(format!("---\n{yaml}\n---\n\n{trimmed_body}\n"))
+/// Return the verbatim frontmatter block (`---\n...\n---`, delimiters included,
+/// no trailing newline) at the very start of `raw`, or `None` if there is no
+/// frontmatter. Byte-exact: never reorders, reserializes, or trims the head, so
+/// hand-authored frontmatter (key order, comments, quoting) round-trips
+/// untouched (#148).
+fn extract_frontmatter_block(raw: &str) -> Option<&str> {
+    if !(raw.starts_with("---\n") || raw.starts_with("---\r\n")) {
+        return None;
+    }
+    let open_len = raw.find('\n').map(|n| n + 1)?; // bytes through the opening "---\n"
+    let mut offset = open_len;
+    for line in raw[open_len..].split_inclusive('\n') {
+        let content = line.trim_end_matches(['\n', '\r']);
+        if content == "---" {
+            return Some(&raw[..offset + content.len()]);
+        }
+        offset += line.len();
+    }
+    None // unterminated frontmatter — treat as no head
+}
+
+/// Assemble the `.md`: the preserved head (if any) + a normalized body. Never
+/// injects a frontmatter block when `head` is `None`.
+fn assemble_md(head: Option<&str>, body: &str) -> String {
+    let body = body.trim_end_matches('\n');
+    match (head, body.is_empty()) {
+        (Some(h), false) => format!("{h}\n\n{body}\n"),
+        (Some(h), true) => format!("{h}\n"),
+        (None, false) => format!("{body}\n"),
+        (None, true) => String::new(),
+    }
 }
 
 enum SidecarRead {
@@ -945,8 +975,11 @@ mod tests {
         assert_eq!(r.editor_html, "<p>rich <strong>html</strong></p>");
         assert_eq!(r.browsing_html.trim(), "<p>rich <strong>html</strong></p>");
         assert_eq!(r.markdown.trim(), "rich **html**");
-        assert_eq!(r.meta.id, "doc-1");
-        assert_eq!(r.meta.title.as_deref(), Some("Doc 1"));
+        assert_eq!(r.meta.id, "doc-1"); // identity via the sidecar
+        // #148: a doXmind-authored new file gets no frontmatter, so meta (title)
+        // is not written into the `.md`; the title lives in the filename.
+        assert!(std::fs::read_to_string(&p).unwrap().starts_with("rich"));
+        assert!(r.meta.title.is_none());
         assert_eq!(
             r.extras.unwrap()["databases"]["d1"]["rows"],
             serde_json::json!([])
@@ -1044,6 +1077,56 @@ mod tests {
             .browsing_html
             .contains("<h1 id=\"markdown-source\">Markdown Source</h1>"));
         assert!(!r.browsing_html.contains("Editor Only"));
+    }
+
+    #[tokio::test]
+    async fn write_does_not_inject_frontmatter_into_a_plain_file() {
+        // #148: doXmind must never add a `---` block to a file that has none,
+        // and must never write document identity (`id`) into the `.md`.
+        let dir = td();
+        let p = dir.path().join("Plain.md");
+        write_doc(
+            &p,
+            &DocPayload {
+                html: "<p>hello</p>".into(),
+                markdown: "hello".into(),
+                meta: DocMeta::new("doc-1"),
+                extras: None,
+            },
+        )
+        .await
+        .unwrap();
+        let on_disk = std::fs::read_to_string(&p).unwrap();
+        assert!(!on_disk.starts_with("---"), "no frontmatter injected: {on_disk:?}");
+        assert!(!on_disk.contains("id:"), "id must not be written into the .md: {on_disk:?}");
+        assert_eq!(on_disk, "hello\n");
+        // identity still resolves via the sidecar
+        assert_eq!(read_doc(&p).await.unwrap().meta.id, "doc-1");
+    }
+
+    #[tokio::test]
+    async fn write_preserves_hand_authored_frontmatter_verbatim() {
+        // #148: a hand-authored head (custom key order, comments, quoting) must
+        // survive open->save byte-identical; doXmind does not own it.
+        let dir = td();
+        let p = dir.path().join("Authored.md");
+        let original =
+            "---\n# my notes\ntitle: \"Quoted\"\ntags: [a, b]\nid: legacy-1\n---\n\n# Body\n";
+        std::fs::write(&p, original).unwrap();
+        // Simulate a body-only save (the editor never edits the head).
+        write_doc(
+            &p,
+            &DocPayload {
+                html: "<h1>Body</h1>".into(),
+                markdown: "# Body".into(),
+                meta: DocMeta::new("legacy-1"),
+                extras: None,
+            },
+        )
+        .await
+        .unwrap();
+        let on_disk = std::fs::read_to_string(&p).unwrap();
+        assert_eq!(on_disk, original, "frontmatter head must be byte-identical");
     }
 
     #[tokio::test]
@@ -1156,7 +1239,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn round_trip_preserves_extras_and_unknown_meta_keys() {
+    async fn new_file_persists_extras_in_sidecar_not_frontmatter() {
+        // #148: doXmind no longer authors a `.md` head. For a new file, meta
+        // (title, custom keys) is NOT written into the markdown; sidecar
+        // `extras` still persist. Unknown frontmatter keys are preserved only
+        // when they already exist in the user's file (see
+        // `write_preserves_hand_authored_frontmatter_verbatim`).
         let dir = td();
         let p = dir.path().join("doc.md");
         let mut meta = DocMeta::new("doc-1");
@@ -1176,13 +1264,15 @@ mod tests {
         .await
         .unwrap();
 
+        let on_disk = std::fs::read_to_string(&p).unwrap();
+        assert!(!on_disk.contains("---"), "no frontmatter authored: {on_disk:?}");
+        assert!(!on_disk.contains("custom_field"));
+
         let r = read_doc(&p).await.unwrap();
         assert_eq!(r.source, Source::Sidecar);
-        assert_eq!(r.meta.title.as_deref(), Some("Hello"));
-        assert_eq!(
-            r.meta.extras.get("custom_field"),
-            Some(&serde_json::json!("yes"))
-        );
+        assert!(r.meta.title.is_none());
+        assert_eq!(r.meta.extras.get("custom_field"), None);
+        // Sidecar-only extras still round-trip.
         assert_eq!(r.extras, Some(serde_json::json!({"k": 1})));
     }
 
