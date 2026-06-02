@@ -18,6 +18,7 @@ export function isClaimedRawHtml(raw: string): boolean {
     head.startsWith("<!--") ||
     head.startsWith("</") || // structural closing tag (columns/toggle close)
     /^<details[\s>]/i.test(head) ||
+    /^<pre[\s>]/i.test(head) || // fenced code block — a CodeBlock node, not raw HTML
     /data-column/.test(raw) ||
     // Any editor-owned node marker (task lists, etc.) is claimed by its own
     // parseHTML and must not be swallowed as a rawHtml passthrough.
