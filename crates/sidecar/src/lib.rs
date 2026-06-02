@@ -483,7 +483,14 @@ pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
                 browsing_renderer_version: browsing.renderer_version,
             });
         }
-        SidecarRead::Loaded(_) => {
+        SidecarRead::Loaded(side) => {
+            // Stale sidecar: the markdown changed, so the editor HTML is
+            // re-derived from the body — but the markdown hash governs ONLY
+            // HTML freshness. Sidecar-only `extras` (the sole home for
+            // database-block data) are carried through regardless; which
+            // entries survive is gated downstream by the `<!-- ... -->`
+            // markers still present in the body. Dropping them here would let
+            // the next save erase them permanently (#147).
             let editor_html = markdown_to_html(&body);
             let is_empty = browsing.html.is_empty();
             return Ok(ReadResult {
@@ -496,7 +503,7 @@ pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
                     body
                 },
                 meta,
-                extras: None,
+                extras: side.extras,
                 correlation: None,
                 source: if is_empty {
                     Source::Empty
@@ -943,6 +950,39 @@ mod tests {
         assert_eq!(
             r.extras.unwrap()["databases"]["d1"]["rows"],
             serde_json::json!([])
+        );
+    }
+
+    #[tokio::test]
+    async fn stale_sidecar_carries_extras_through() {
+        // #147: when the .md is edited externally so the hash mismatches, the
+        // editor HTML is re-derived from markdown BUT sidecar-only `extras`
+        // (the sole home for database-block data) must survive — otherwise the
+        // next save erases them permanently.
+        let dir = td();
+        let p = dir.path().join("doc.md");
+        let payload = DocPayload {
+            html: "<p>old <!-- database:db1 --></p>".into(),
+            markdown: "old\n\n<!-- database:db1 -->\n".into(),
+            meta: DocMeta::new("doc-1"),
+            extras: Some(serde_json::json!({"databases": {"db1": {"rows": [1, 2, 3]}}})),
+        };
+        write_doc(&p, &payload).await.unwrap();
+        // External edit: change the body but keep the database marker.
+        std::fs::write(
+            &p,
+            "---\nid: doc-1\n---\n\n# Edited externally\n\n<!-- database:db1 -->\n",
+        )
+        .unwrap();
+
+        let r = read_doc(&p).await.unwrap();
+        assert_eq!(r.source_state, SourceState::SidecarStale);
+        // HTML re-derived from the new markdown:
+        assert!(r.html.contains("<h1>Edited externally</h1>"));
+        // …but the database extras survive the stale read:
+        assert_eq!(
+            r.extras.expect("extras must survive a stale read")["databases"]["db1"]["rows"],
+            serde_json::json!([1, 2, 3])
         );
     }
 
