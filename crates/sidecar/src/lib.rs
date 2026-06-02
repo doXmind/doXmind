@@ -446,11 +446,25 @@ fn unique_id(base: String, seen_ids: &mut HashMap<String, usize>) -> String {
 
 /// Read a `.md` file plus optional sibling sidecar; return what the editor
 /// should display.
+/// True for `.html` / `.htm`. HTML is a text document type whose file body IS
+/// the editor HTML — there is no Markdown body and no frontmatter, so it skips
+/// the `markdown_to_html` + frontmatter machinery the Markdown path uses.
+pub fn is_html_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "html" | "htm"))
+        .unwrap_or(false)
+}
+
 pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
     let md_path = md_path.as_ref();
     let raw = tokio::fs::read_to_string(md_path)
         .await
         .map_err(|e| Error::ReadFailed(md_path.to_path_buf(), e))?;
+
+    if is_html_file(md_path) {
+        return read_html_doc(md_path, raw).await;
+    }
 
     let (mut meta, body) = parse_frontmatter(&raw)?;
 
@@ -583,6 +597,61 @@ pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
     })
 }
 
+/// Read an HTML document. The file body IS the editor HTML — no frontmatter,
+/// no `markdown_to_html`. The sidecar still caches the last-saved editor HTML
+/// and carries `extras`; the hash detects external edits. The read-only
+/// browsing view is the raw HTML (the frontend sanitizes it before injecting).
+async fn read_html_doc(path: &Path, raw: String) -> Result<ReadResult> {
+    let current_hash = hash_markdown(&raw);
+    let sidecar_path = sidecar_path_for(path);
+    let version = BROWSING_RENDERER_VERSION.to_string();
+
+    let (editor_html, extras, source, source_state, id) = match read_sidecar(&sidecar_path).await? {
+        SidecarRead::Loaded(side)
+            if side.version == SIDECAR_VERSION && side.markdown_hash == current_hash =>
+        {
+            (side.html, side.extras, Source::Sidecar, SourceState::SidecarFresh, side.id)
+        }
+        // Stale: the file changed externally, so the editor HTML is the file
+        // body; sidecar-only extras carry through regardless (see #147).
+        SidecarRead::Loaded(side) => (
+            raw.clone(),
+            side.extras,
+            Source::Markdown,
+            SourceState::SidecarStale,
+            side.id,
+        ),
+        SidecarRead::Corrupt => (
+            raw.clone(),
+            None,
+            Source::Markdown,
+            SourceState::SidecarCorrupt,
+            new_id(),
+        ),
+        SidecarRead::Missing => (
+            raw.clone(),
+            None,
+            Source::Markdown,
+            SourceState::SidecarMissing,
+            new_id(),
+        ),
+    };
+
+    Ok(ReadResult {
+        html: editor_html.clone(),
+        editor_html,
+        browsing_html: raw.clone(),
+        markdown: raw,
+        meta: DocMeta::new(id),
+        extras,
+        correlation: None,
+        source,
+        source_state,
+        outline: Vec::new(),
+        browsing_renderer_version: version,
+    })
+}
+
 /// Write a `.md` + sidecar pair. Always writes the `.md` first, then the
 /// sidecar. If the sidecar write fails, the `.md` is left in its updated
 /// state and the error is bubbled — callers can retry the sidecar; a stale
@@ -592,12 +661,17 @@ pub async fn write_doc(md_path: impl AsRef<Path>, payload: &DocPayload) -> Resul
         return Err(Error::MissingId);
     }
     let md_path = md_path.as_ref();
-    // doXmind does not own the user's frontmatter (#148): preserve the existing
-    // head byte-for-byte and never inject one. The typed meta is NOT serialized
-    // into the `.md` — identity lives in the sidecar below.
-    let existing = tokio::fs::read_to_string(md_path).await.ok();
-    let head = existing.as_deref().and_then(extract_frontmatter_block);
-    let md_content = assemble_md(head, &payload.markdown);
+    let md_content = if is_html_file(md_path) {
+        // HTML: the body IS the editor HTML; write it verbatim, no frontmatter.
+        payload.markdown.clone()
+    } else {
+        // doXmind does not own the user's frontmatter (#148): preserve the
+        // existing head byte-for-byte and never inject one. The typed meta is
+        // NOT serialized into the `.md` — identity lives in the sidecar below.
+        let existing = tokio::fs::read_to_string(md_path).await.ok();
+        let head = existing.as_deref().and_then(extract_frontmatter_block);
+        assemble_md(head, &payload.markdown)
+    };
 
     atomic_write(md_path, md_content.as_bytes()).await?;
 
@@ -1127,6 +1201,52 @@ mod tests {
         .unwrap();
         let on_disk = std::fs::read_to_string(&p).unwrap();
         assert_eq!(on_disk, original, "frontmatter head must be byte-identical");
+    }
+
+    #[tokio::test]
+    async fn html_doc_reads_file_body_as_editor_html() {
+        // #139: an .html file's body IS the editor HTML — no frontmatter parse,
+        // no markdown_to_html.
+        let dir = td();
+        let p = dir.path().join("page.html");
+        std::fs::write(&p, "<h1>Title</h1>\n<p>Hello <em>world</em></p>\n").unwrap();
+
+        let r = read_doc(&p).await.unwrap();
+        assert_eq!(r.source_state, SourceState::SidecarMissing);
+        assert_eq!(r.editor_html, "<h1>Title</h1>\n<p>Hello <em>world</em></p>\n");
+        // The body is preserved verbatim (no `---` frontmatter, no `<p>`-wrapping).
+        assert_eq!(r.markdown, "<h1>Title</h1>\n<p>Hello <em>world</em></p>\n");
+    }
+
+    #[tokio::test]
+    async fn html_doc_write_then_read_roundtrips_via_sidecar() {
+        // #139: saving writes the editor HTML verbatim to the .html file (no
+        // frontmatter), and the sidecar caches it + carries extras.
+        let dir = td();
+        let p = dir.path().join("page.html");
+        let body = "<h1>Edited</h1>\n<p>content</p>";
+        write_doc(
+            &p,
+            &DocPayload {
+                html: body.into(),
+                markdown: body.into(),
+                meta: DocMeta::new("html-1"),
+                extras: Some(serde_json::json!({"k": 1})),
+            },
+        )
+        .await
+        .unwrap();
+
+        // The .html on disk is the editor HTML verbatim — no injected head.
+        let on_disk = std::fs::read_to_string(&p).unwrap();
+        assert_eq!(on_disk, format!("{body}\n").trim_end_matches('\n'));
+        assert!(!on_disk.contains("---"));
+
+        let r = read_doc(&p).await.unwrap();
+        assert_eq!(r.source_state, SourceState::SidecarFresh);
+        assert_eq!(r.editor_html, body);
+        assert_eq!(r.meta.id, "html-1");
+        assert_eq!(r.extras, Some(serde_json::json!({"k": 1})));
     }
 
     #[tokio::test]
