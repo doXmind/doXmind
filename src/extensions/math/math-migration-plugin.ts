@@ -135,6 +135,20 @@ function processInlineMath(text: string, schema: Schema): PMNode[] {
 }
 
 /**
+ * Code is verbatim: `$...$` inside an inline code span or a code block is
+ * literal syntax, not math. Descending into either turns docs that *explain*
+ * math (e.g. a fenced block showing `$$x$$`) into actual rendered math. Skip
+ * code-marked text nodes, and stop descent into code-block subtrees entirely.
+ */
+function isCodeText(node: PMNode): boolean {
+  return node.isText === true && node.marks.some((mark) => mark.type.name === "code");
+}
+
+function isCodeBlock(node: PMNode): boolean {
+  return node.type.name === "codeBlock";
+}
+
+/**
  * Check if a document contains any text nodes with math delimiters
  */
 function documentNeedsMigration(doc: PMNode): boolean {
@@ -142,6 +156,8 @@ function documentNeedsMigration(doc: PMNode): boolean {
 
   doc.descendants((node) => {
     if (needsMigration) return false; // Stop early if already found
+    if (isCodeBlock(node)) return false; // verbatim — never math
+    if (isCodeText(node)) return true;
 
     if (node.isText && node.text) {
       if (containsMathDelimiters(node.text)) {
@@ -199,6 +215,8 @@ export function createMathMigrationPlugin() {
       }> = [];
 
       newState.doc.descendants((node, pos) => {
+        if (isCodeBlock(node)) return false; // verbatim — never math
+        if (isCodeText(node)) return true;
         if (node.isText && node.text && containsMathDelimiters(node.text)) {
           const newNodes = processTextWithMath(node.text, schema);
           if (newNodes.length > 0) {

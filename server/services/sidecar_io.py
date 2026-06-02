@@ -21,6 +21,43 @@ from pathlib import Path
 from typing import Any
 
 import markdown
+from markdown.postprocessors import RawHtmlPostprocessor
+
+
+class _RawHtmlSentinelPostprocessor(RawHtmlPostprocessor):
+    """Wrap each block-level raw-HTML block in a ``<div data-raw-html="…">``
+    sentinel so the editor imports it as a single rawHtml atom node, kept
+    byte-identical by source preservation, instead of flattening it into
+    images/links. Inline raw HTML is left untouched. Mirrors the marked and
+    Rust importers; see ``src/extensions/raw-html.ts``.
+    """
+
+    def stash_to_string(self, text: object) -> str:
+        html = str(text)
+        head = html.lstrip()
+        lower = head.lower()
+        # Raw HTML owned by other blocks (comment placeholders, toggle,
+        # columns) must pass through untouched.
+        claimed = (
+            head.startswith("<!--")
+            or head.startswith("</")  # structural closing tag (columns/toggle close)
+            or lower.startswith("<details")
+            or "data-column" in html
+            # Any editor-owned node marker (task lists, etc.) is claimed by its
+            # own parseHTML and must not be swallowed as a rawHtml passthrough.
+            or "data-type=" in html
+        )
+        if not claimed and self.isblocklevel(html.strip()):
+            raw = html.rstrip("\n")
+            escaped = (
+                raw.replace("&", "&amp;")
+                .replace('"', "&quot;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+            return f'<div data-raw-html="{escaped}" data-type="raw-html"></div>'
+        return html
+
 
 # NOTE: Windows does not honor the POSIX leading-dot hidden convention, so
 # `.foo.doxmind` sidecars show up next to user documents in Explorer. We
@@ -129,9 +166,13 @@ def markdown_to_html(md: str) -> str:
     No `codehilite` extension — TipTap can't parse the wrapper spans it
     emits; the frontend uses lowlight for syntax highlighting instead.
     """
-    return markdown.markdown(
-        render_task_lists(md), extensions=["tables", "fenced_code", "sane_lists"]
+    converter = markdown.Markdown(extensions=["tables", "fenced_code", "sane_lists"])
+    # Replace the built-in raw-HTML restorer with the sentinel-wrapping one
+    # (same name + priority so it slots into the existing pipeline).
+    converter.postprocessors.register(
+        _RawHtmlSentinelPostprocessor(converter), "raw_html", 30
     )
+    return converter.convert(render_task_lists(md))
 
 
 def parse_yaml_scalar(value: str) -> Any:
