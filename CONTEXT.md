@@ -104,6 +104,8 @@ _Avoid_: trash document，soft delete，archive。删除就是删除，恢复是
 
 **功能广度：> Typora，< Notion。** 底线是任何标准 markdown 文件在 doXmind 里的**浏览体验**至少和 Typora 等同；上限是不要把 Notion 整套块系统全搬过来，因为那会让产品变重、跑题。两条原则冲突时，优先保 markdown 浏览。例：math 自动识别（`$x$`、`$$...$$`）在表格 cell 里**不**触发——cell 内的 `$` 多数是金额、占位符、Shell 变量，把它们识别成公式破坏 markdown 浏览体验，收益远小于代价。详见 [docs/adr/0006-feature-scope-typora-notion.md](docs/adr/0006-feature-scope-typora-notion.md)。
 
+**markdown→HTML 转换目前有三份实现**：Rust（`crates/sidecar`，Tauri 运行时）、Python（`server/`，web/dev + 遗留）、前端 `marked`（`src/lib/markdown.ts`，浏览预览）。功能分工合理（Rust 管 markdown 核心、Python 管 PDF/Excel），但转换层重复且会漂移。已用 `conformance/`（共享语料 + 三份快照 + 各语言 pinning 测试）固化一致性基线并记录现存分叉；收敛到单一权威实现是后续工作，绑定 Tauri-vs-Electron 方向。详见 [docs/adr/0009-markdown-html-conformance.md](docs/adr/0009-markdown-html-conformance.md)。
+
 ## Flagged ambiguities
 
 - **"document"** 早期被用来同时指 markdown、PDF、Excel 三种文件——已解决：只有 markdown 是 **Document**，PDF/Excel 是 **Second-class file**。
