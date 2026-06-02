@@ -76,6 +76,27 @@ export function MarkdownGlyph({ className, ...rest }: GlyphProps) {
   );
 }
 
+export function HtmlGlyph({ className, ...rest }: GlyphProps) {
+  // "</>" angle-bracket mark — the universal "this is markup" cue, in an
+  // amber accent so it sits apart from Markdown's neutral mark and PDF's red.
+  return (
+    <DocumentSheet
+      className={className}
+      accentClassName="text-amber-600 dark:text-amber-500"
+      {...rest}
+    >
+      <path
+        d="M10.2 12.6 7.8 15l2.4 2.4M13.8 12.6 16.2 15l-2.4 2.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </DocumentSheet>
+  );
+}
+
 export function PdfGlyph({ className, ...rest }: GlyphProps) {
   // "PDF" wordmark in a rounded badge — Adobe-style red tag so it reads as
   // "this is a PDF" at a glance, even at 14px.

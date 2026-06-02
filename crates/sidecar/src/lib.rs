@@ -538,6 +538,148 @@ pub async fn write_doc(md_path: impl AsRef<Path>, payload: &DocPayload) -> Resul
     Ok(())
 }
 
+/// Read an `.html` / `.htm` document plus its optional sidecar.
+///
+/// HTML is rendered faithfully and edited in place, so the whole file is the
+/// unit of state — there is no markdown render or body/shell split. The editor
+/// receives the document verbatim; the sidecar only carries the stable id and
+/// the external-edit hash. Mirrors `HtmlDocumentState` in the Python sidecar.
+pub async fn read_html_doc(path: impl AsRef<Path>) -> Result<ReadResult> {
+    let path = path.as_ref();
+    let raw = tokio::fs::read_to_string(path)
+        .await
+        .map_err(|e| Error::ReadFailed(path.to_path_buf(), e))?;
+    let current_hash = hash_markdown(&raw);
+
+    let mut sidecar_id: Option<String> = None;
+    let mut source_state = SourceState::SidecarMissing;
+    if let SidecarRead::Loaded(side) = read_sidecar(&sidecar_path_for(path)).await? {
+        if !side.id.trim().is_empty() {
+            sidecar_id = Some(side.id.clone());
+        }
+        source_state = if side.version == SIDECAR_VERSION && side.markdown_hash == current_hash {
+            SourceState::SidecarFresh
+        } else {
+            SourceState::SidecarStale
+        };
+    }
+    if raw.trim().is_empty() {
+        source_state = SourceState::Empty;
+    }
+
+    let mut meta = DocMeta::new(sidecar_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()));
+    meta.title = html_doc_title(path);
+    meta.updated = Some(now_iso8601());
+
+    let outline = extract_html_outline(&raw);
+    Ok(ReadResult {
+        html: raw.clone(),
+        editor_html: raw,
+        browsing_html: String::new(),
+        markdown: String::new(),
+        meta,
+        extras: None,
+        correlation: None,
+        source: Source::Sidecar,
+        source_state,
+        outline,
+        browsing_renderer_version: BROWSING_RENDERER_VERSION.to_string(),
+    })
+}
+
+/// Write an `.html` document verbatim plus its sidecar. The editor serializes
+/// the whole document (doctype + head + body) so the round-trip is lossless.
+pub async fn write_html_doc(path: impl AsRef<Path>, html: &str, meta: &DocMeta) -> Result<()> {
+    if meta.id.trim().is_empty() {
+        return Err(Error::MissingId);
+    }
+    let path = path.as_ref();
+    atomic_write(path, html.as_bytes()).await?;
+
+    let sidecar = SidecarFile {
+        version: SIDECAR_VERSION,
+        id: meta.id.clone(),
+        html: html.to_string(),
+        markdown_hash: hash_markdown(html),
+        updated_at: now_iso8601(),
+        extras: None,
+    };
+    let sidecar_json = serde_json::to_vec_pretty(&sidecar).map_err(Error::SidecarSerialize)?;
+    atomic_write(&sidecar_path_for(path), &sidecar_json).await?;
+    Ok(())
+}
+
+fn html_doc_title(path: &Path) -> Option<String> {
+    path.file_stem().map(|s| s.to_string_lossy().into_owned())
+}
+
+/// Extract an `h1`–`h6` outline from raw HTML with a minimal tag scanner
+/// (no HTML-parser dependency). Mirrors the Python `_outline_from_html`.
+pub fn extract_html_outline(html: &str) -> Vec<DocumentOutlineItem> {
+    let bytes = html.as_bytes();
+    let mut outline: Vec<DocumentOutlineItem> = Vec::new();
+    let mut seen_ids: HashMap<String, usize> = HashMap::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] != b'<' {
+            i += 1;
+            continue;
+        }
+        // Match an opening heading tag: <h1..6 optionally followed by attrs '>'.
+        if i + 2 < bytes.len()
+            && (bytes[i + 1] == b'h' || bytes[i + 1] == b'H')
+            && (b'1'..=b'6').contains(&bytes[i + 2])
+            && (i + 3 >= bytes.len()
+                || bytes[i + 3] == b'>'
+                || bytes[i + 3].is_ascii_whitespace())
+        {
+            let depth = bytes[i + 2] - b'0';
+            // Find end of the opening tag.
+            let open_end = match html[i..].find('>') {
+                Some(rel) => i + rel + 1,
+                None => break,
+            };
+            // Find the matching close tag of the same level.
+            let close_tag = format!("</h{depth}");
+            let rest = &html[open_end..];
+            let lower = rest.to_ascii_lowercase();
+            if let Some(rel_close) = lower.find(&close_tag) {
+                let inner = &rest[..rel_close];
+                let text = strip_html_tags(inner);
+                if !text.is_empty() {
+                    let base = slugify_heading(&text);
+                    let id = unique_id(base, &mut seen_ids);
+                    outline.push(DocumentOutlineItem {
+                        id,
+                        depth,
+                        text,
+                    });
+                }
+                i = open_end + rel_close;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    outline
+}
+
+/// Strip tags from an HTML fragment and collapse whitespace — enough for
+/// heading text extraction.
+fn strip_html_tags(fragment: &str) -> String {
+    let mut out = String::with_capacity(fragment.len());
+    let mut in_tag = false;
+    for ch in fragment.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(ch),
+            _ => {}
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 // ---------------------------------------------------------------------------
 // internals
 // ---------------------------------------------------------------------------
@@ -1117,5 +1259,77 @@ mod tests {
             format_unix_seconds_utc(1_709_208_000),
             "2024-02-29T12:00:00Z"
         );
+    }
+
+    // ---- HTML documents ----
+
+    const HTML_DOC: &str = "<!doctype html>\n<html lang=\"en\">\n<head>\n<title>My Title</title>\n<style>x{}</style>\n</head>\n<body class=\"doc\">\n<h1>Hello</h1>\n<p>World</p>\n</body>\n</html>\n";
+
+    #[test]
+    fn extract_html_outline_collects_headings() {
+        let outline = extract_html_outline("<h1>Hello</h1><p>x</p><h2>Sub <em>title</em></h2>");
+        assert_eq!(outline.len(), 2);
+        assert_eq!(outline[0].depth, 1);
+        assert_eq!(outline[0].text, "Hello");
+        assert_eq!(outline[0].id, "hello");
+        assert_eq!(outline[1].depth, 2);
+        assert_eq!(outline[1].text, "Sub title");
+    }
+
+    #[tokio::test]
+    async fn read_html_doc_returns_document_verbatim() {
+        let dir = td();
+        let p = write_md(dir.path(), "Page.html", HTML_DOC);
+        let result = read_html_doc(&p).await.unwrap();
+        assert_eq!(result.editor_html, HTML_DOC);
+        assert_eq!(result.markdown, "");
+        assert_eq!(result.source_state, SourceState::SidecarMissing);
+        assert_eq!(result.outline.len(), 1);
+        assert_eq!(result.outline[0].text, "Hello");
+    }
+
+    #[tokio::test]
+    async fn write_html_doc_is_verbatim_and_reopen_is_fresh() {
+        let dir = td();
+        let p = dir.path().join("Page.html");
+        let mut meta = DocMeta::new("doc-1");
+        meta.title = Some("Page".into());
+
+        let edited = HTML_DOC.replace("<p>World</p>", "<p>World edited</p>");
+        write_html_doc(&p, &edited, &meta).await.unwrap();
+
+        let disk = std::fs::read_to_string(&p).unwrap();
+        assert_eq!(disk, edited);
+        assert!(disk.contains("<title>My Title</title>"));
+
+        let reopened = read_html_doc(&p).await.unwrap();
+        assert_eq!(reopened.source_state, SourceState::SidecarFresh);
+        assert_eq!(reopened.meta.id, "doc-1");
+        assert_eq!(reopened.editor_html, edited);
+    }
+
+    #[tokio::test]
+    async fn external_edit_marks_html_sidecar_stale() {
+        let dir = td();
+        let p = dir.path().join("Page.html");
+        let meta = DocMeta::new("doc-2");
+        write_html_doc(&p, HTML_DOC, &meta).await.unwrap();
+        assert_eq!(
+            read_html_doc(&p).await.unwrap().source_state,
+            SourceState::SidecarFresh
+        );
+
+        std::fs::write(&p, HTML_DOC.replace("World", "EXTERNAL")).unwrap();
+        let stale = read_html_doc(&p).await.unwrap();
+        assert_eq!(stale.source_state, SourceState::SidecarStale);
+        assert!(stale.editor_html.contains("EXTERNAL"));
+    }
+
+    #[tokio::test]
+    async fn write_html_doc_rejects_empty_id() {
+        let dir = td();
+        let p = dir.path().join("Page.html");
+        let err = write_html_doc(&p, HTML_DOC, &DocMeta::new("")).await;
+        assert!(matches!(err, Err(Error::MissingId)));
     }
 }

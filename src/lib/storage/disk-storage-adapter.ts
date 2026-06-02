@@ -120,10 +120,14 @@ export class DiskStorageAdapter implements StorageAdapter {
         }),
       { path: requireHandlePath(handle) }
     );
-    const editorHtml = unwrapCjkMath(unwrapMathInTableCells(result.editorHtml ?? result.html));
+    const rawEditorHtml = result.editorHtml ?? result.html;
+    // HTML docs are rendered verbatim (not parsed through TipTap), so the
+    // markdown-specific math unwrapping must not touch them.
+    const editorHtml =
+      docType === "html" ? rawEditorHtml : unwrapCjkMath(unwrapMathInTableCells(rawEditorHtml));
     const browsingHtml = result.browsingHtml ?? editorHtml;
     return {
-      handle: this.handleFromRead(handle, result),
+      handle: this.handleFromRead(handle, result, docType),
       name: basename(handle.path || handle.relPath || result.meta.title || "Untitled.md"),
       html: editorHtml,
       editorHtml,
@@ -135,7 +139,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       sourceState: result.sourceState ?? legacySourceToState(result.source),
       outline: result.outline ?? [],
       browsingRendererVersion: result.browsingRendererVersion,
-      documentType: "markdown",
+      documentType: docType,
       updatedAt: result.meta.updated || new Date().toISOString(),
       correlation: result.correlation ?? null,
     };
@@ -260,7 +264,8 @@ export class DiskStorageAdapter implements StorageAdapter {
       payload,
     });
 
-    const nextHandle = this.handleFromRead(handle, result);
+    const docType = handle.documentType ?? documentTypeFromPath(requireHandlePath(handle));
+    const nextHandle = this.handleFromRead(handle, result, docType);
     const editorHtml = result.editorHtml ?? result.html;
     const browsingHtml = result.browsingHtml ?? editorHtml;
     return {
@@ -276,7 +281,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       sourceState: result.sourceState ?? legacySourceToState(result.source),
       outline: result.outline ?? [],
       browsingRendererVersion: result.browsingRendererVersion,
-      documentType: "markdown",
+      documentType: docType,
       updatedAt: result.meta.updated || new Date().toISOString(),
       correlation: result.correlation ?? null,
     };
@@ -538,14 +543,18 @@ export class DiskStorageAdapter implements StorageAdapter {
     return joinPath(this.requireRoot(), relPath);
   }
 
-  private handleFromRead(handle: DocumentHandle, result: DocReadResultDto): DocumentHandle {
+  private handleFromRead(
+    handle: DocumentHandle,
+    result: DocReadResultDto,
+    docType: WorkspaceDocumentType
+  ): DocumentHandle {
     const relPath = handle.relPath ?? handle.path ?? null;
     return {
       ...handle,
       mode: "disk",
       id: result.meta.id || handle.id,
       kind: "document",
-      documentType: "markdown",
+      documentType: docType,
       path: relPath,
       relPath,
     };
@@ -730,7 +739,8 @@ function ensureMarkdownExtension(name: string): string {
 // extension came in and re-apply the source file's, so a .pdf/.xlsx can never
 // be collapsed into a .md.
 function renameLeafPreservingExtension(currentPath: string, name: string): string {
-  const sourceExt = basename(currentPath).match(/\.(md|markdown|pdf|xlsx|xlsm)$/i)?.[0] ?? ".md";
+  const sourceExt =
+    basename(currentPath).match(/\.(md|markdown|html?|pdf|xlsx|xlsm)$/i)?.[0] ?? ".md";
   return `${stripDocumentExtension(basename(name))}${sourceExt}`;
 }
 
@@ -747,12 +757,13 @@ function stripMarkdownExtension(name: string): string {
 }
 
 function stripDocumentExtension(name: string): string {
-  return name.replace(/\.(md|markdown|pdf|xlsx|xlsm)$/i, "");
+  return name.replace(/\.(md|markdown|html?|pdf|xlsx|xlsm)$/i, "");
 }
 
 function documentTypeFromPath(path: string): WorkspaceDocumentType {
   if (/\.pdf$/i.test(path)) return "pdf";
   if (/\.(xlsx|xlsm)$/i.test(path)) return "excel";
+  if (/\.html?$/i.test(path)) return "html";
   return "markdown";
 }
 

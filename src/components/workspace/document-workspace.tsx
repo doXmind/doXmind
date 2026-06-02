@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { MarkdownRuntime } from "@/components/workspace/markdown-runtime";
 import { MarkdownSkeleton } from "@/components/workspace/markdown-skeleton";
-import { isExcelFile, isMarkdownFile, isPdfFile } from "@/lib/document-types";
+import { isExcelFile, isHtmlFile, isMarkdownFile, isPdfFile } from "@/lib/document-types";
 import { type FileItem } from "@/stores/file-store";
 
 const PdfEditorWorkspace = dynamic(
@@ -22,6 +22,14 @@ const ExcelEditorWorkspace = dynamic(
   { ssr: false, loading: () => <MarkdownSkeleton /> }
 );
 
+const HtmlRuntime = dynamic(
+  () =>
+    import("@/components/workspace/html-runtime").then((m) => ({
+      default: m.HtmlRuntime,
+    })),
+  { ssr: false, loading: () => <MarkdownSkeleton /> }
+);
+
 interface DocumentWorkspaceProps {
   file: FileItem;
   reservedRightInset?: number;
@@ -33,6 +41,11 @@ export function DocumentWorkspace({ file, reservedRightInset = 0 }: DocumentWork
   }
   if (isExcelFile(file)) {
     return <ExcelEditorWorkspace file={file} />;
+  }
+  // HTML renders faithfully (real HTML + CSS) in a sandboxed iframe and is
+  // edited in place — NOT through the TipTap schema (issue #139).
+  if (isHtmlFile(file)) {
+    return <HtmlRuntime file={file} />;
   }
   if (isMarkdownFile(file)) {
     return <MarkdownRuntime file={file} reservedRightInset={reservedRightInset} />;

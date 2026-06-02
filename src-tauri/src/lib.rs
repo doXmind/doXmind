@@ -401,7 +401,7 @@ fn normalize_open_path(path: &str) -> Option<String> {
         return None;
     }
     let lower = abs.to_string_lossy().to_ascii_lowercase();
-    let supported = [".md", ".markdown", ".pdf", ".xlsx", ".xlsm"]
+    let supported = [".md", ".markdown", ".html", ".htm", ".pdf", ".xlsx", ".xlsm"]
         .iter()
         .any(|ext| lower.ends_with(ext));
     if !supported {
@@ -799,7 +799,18 @@ fn workspace_default_root() -> Result<String, String> {
 
 #[tauri::command]
 async fn doc_read(path: String) -> Result<ReadResultDto, String> {
-    doxmind_sidecar::read_doc(PathBuf::from(path))
+    let path = PathBuf::from(path);
+    if is_html_file(&path) {
+        let mut result = doxmind_sidecar::read_html_doc(&path)
+            .await
+            .map_err(|err| err.to_string())?;
+        // HTML id is path-derived + stable (see html_doc_id); overriding here
+        // keeps it identical across read/scan/write so the client never sees
+        // the document "switch" on save.
+        result.meta.id = html_doc_id(&path);
+        return Ok(ReadResultDto::from(result));
+    }
+    doxmind_sidecar::read_doc(path)
         .await
         .map(ReadResultDto::from)
         .map_err(|err| err.to_string())
@@ -819,6 +830,9 @@ async fn doc_write_workspace(
     payload: DocWriteInputDto,
 ) -> Result<ReadResultDto, String> {
     let root = canonical_workspace_root(&root)?;
+    if is_html_file(Path::new(&path)) {
+        return doc_write_workspace_html(&root, &path, payload).await;
+    }
     ensure_markdown_path(&path)?;
     let path = resolve_workspace_path_for_write(&root, &path)?;
 
@@ -923,6 +937,58 @@ async fn doc_write_workspace(
         source_state: "sidecar_fresh".to_string(),
         outline: browsing.outline,
         browsing_renderer_version: browsing.renderer_version,
+    })
+}
+
+/// HTML branch of `doc_write_workspace`. The editor serializes the whole
+/// document; it is written back verbatim (lossless round-trip). The sidecar
+/// only carries the stable id and external-edit hash.
+async fn doc_write_workspace_html(
+    root: &Path,
+    rel_path: &str,
+    payload: DocWriteInputDto,
+) -> Result<ReadResultDto, String> {
+    ensure_html_path(rel_path)?;
+    let path = resolve_workspace_path_for_write(root, rel_path)?;
+
+    let mut incoming_title: Option<String> = None;
+    if let Some(serde_json::Value::Object(map)) = payload.meta {
+        if let Some(title) = map.get("title").and_then(|v| v.as_str()) {
+            incoming_title = Some(title.to_string());
+        }
+    }
+
+    // Deterministic path-derived id (matches read/scan) so identity is stable.
+    let mut meta = DocMeta::new(html_doc_id(&path));
+    meta.title = incoming_title
+        .or_else(|| payload.name.clone())
+        .or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned()));
+    meta.updated = Some(doxmind_sidecar::now_iso8601());
+
+    let html = payload.html.unwrap_or_default();
+    doxmind_sidecar::write_html_doc(&path, &html, &meta)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let source_state = if html.trim().is_empty() {
+        "empty"
+    } else {
+        "sidecar_fresh"
+    }
+    .to_string();
+    let outline = doxmind_sidecar::extract_html_outline(&html);
+    Ok(ReadResultDto {
+        html: html.clone(),
+        editor_html: html,
+        browsing_html: String::new(),
+        markdown: String::new(),
+        meta,
+        extras: None,
+        correlation: None,
+        source: "sidecar".to_string(),
+        source_state,
+        outline,
+        browsing_renderer_version: doxmind_sidecar::BROWSING_RENDERER_VERSION.to_string(),
     })
 }
 
@@ -2717,6 +2783,17 @@ fn ensure_markdown_path(path: &str) -> Result<(), String> {
     }
 }
 
+fn ensure_html_path(path: &str) -> Result<(), String> {
+    let extension = Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase());
+    match extension.as_deref() {
+        Some("html") | Some("htm") => Ok(()),
+        _ => Err(format!("document path must end in .html or .htm: {path}")),
+    }
+}
+
 fn ensure_pdf_path(path: &str) -> Result<(), String> {
     let extension = Path::new(path)
         .extension()
@@ -2749,9 +2826,9 @@ fn workspace_document_extension(path: &str) -> Result<String, String> {
         .map(|ext| ext.to_ascii_lowercase())
         .unwrap_or_default();
     match extension.as_str() {
-        "md" | "markdown" | "pdf" | "xlsx" | "xlsm" => Ok(extension),
+        "md" | "markdown" | "html" | "htm" | "pdf" | "xlsx" | "xlsm" => Ok(extension),
         _ => Err(format!(
-            "document path must end in .md, .markdown, .pdf, .xlsx, or .xlsm: {path}"
+            "document path must end in .md, .markdown, .html, .htm, .pdf, .xlsx, or .xlsm: {path}"
         )),
     }
 }
@@ -2919,8 +2996,18 @@ fn is_excel_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn is_html_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| {
+            let lowered = ext.to_ascii_lowercase();
+            matches!(lowered.as_str(), "html" | "htm")
+        })
+        .unwrap_or(false)
+}
+
 fn is_workspace_document_file(path: &Path) -> bool {
-    is_markdown_file(path) || is_pdf_file(path) || is_excel_file(path)
+    is_markdown_file(path) || is_html_file(path) || is_pdf_file(path) || is_excel_file(path)
 }
 
 fn document_dto_for_path(
@@ -2931,6 +3018,8 @@ fn document_dto_for_path(
         "pdf"
     } else if is_excel_file(path) {
         "excel"
+    } else if is_html_file(path) {
+        "html"
     } else {
         "markdown"
     }
@@ -2948,6 +3037,15 @@ fn document_dto_for_path(
                 meta,
             ),
         }
+    } else if document_type == "html" {
+        // Match read/write: canonical path-derived id, stable across the three.
+        (
+            html_doc_id(path),
+            "path".to_string(),
+            path.file_stem()
+                .map(|name| name.to_string_lossy().into_owned()),
+            ScanFrontmatter::default(),
+        )
     } else {
         (
             stable_path_id(&relative_path),
@@ -3054,6 +3152,15 @@ fn stable_path_id(path: &str) -> String {
         hash = hash.wrapping_mul(0x100000001b3);
     }
     format!("path:{hash:016x}")
+}
+
+/// Deterministic id for an HTML document, derived from its canonical absolute
+/// path. HTML has no frontmatter to hold a portable id, so the path is the
+/// identity; canonicalizing keeps scan/read/write agreeing even when the path
+/// reaches them through a symlink. Mirrors `html_doc_id` in the Python sidecar.
+fn html_doc_id(path: &Path) -> String {
+    let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    stable_path_id(&canonical.to_string_lossy())
 }
 
 fn rebuild_workspace_index(root: &Path) -> Result<WorkspaceIndexDto, String> {

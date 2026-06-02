@@ -3,6 +3,7 @@
 import { MoreHorizontal, Check, X, CheckSquare, Square } from "lucide-react";
 import {
   CsvGlyph,
+  HtmlGlyph,
   MarkdownGlyph,
   PdfGlyph,
   SpreadsheetGlyph,
@@ -30,6 +31,7 @@ import { ConfirmModal } from "@/components/ui/confirm-modal";
 import {
   getDisplayName,
   isExcelFile,
+  isHtmlFile,
   isPdfFile,
   withOriginalExtension,
 } from "@/lib/document-types";
@@ -469,6 +471,8 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
           <PdfGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
         ) : isExcelFile(file) ? (
           <SpreadsheetGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
+        ) : isHtmlFile(file) ? (
+          <HtmlGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
         ) : /\.csv$/i.test(file.name) ? (
           <CsvGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
         ) : (

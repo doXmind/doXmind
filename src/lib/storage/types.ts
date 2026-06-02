@@ -1,7 +1,7 @@
 export type WorkspaceMode = "disk";
 
 export type WorkspaceEntryKind = "document" | "folder";
-export type WorkspaceDocumentType = "markdown" | "pdf" | "excel";
+export type WorkspaceDocumentType = "markdown" | "html" | "pdf" | "excel";
 
 export interface DocumentHandle {
   mode: WorkspaceMode;

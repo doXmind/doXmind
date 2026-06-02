@@ -402,6 +402,9 @@ def workspace_markdown_search(root: str, query: str, limit: Any = None) -> list[
 
 
 def read_doc(path: Path) -> dict[str, Any]:
+    if is_html_file(path):
+        return read_html_doc(path)
+
     from services.block_correlation import BlockCorrelation, CorrelationReport
     from services.external_ref_blocks import default_external_ref_block_registry
     from services.markdown_document_state import (
@@ -469,6 +472,86 @@ def read_doc(path: Path) -> dict[str, Any]:
         correlation=correlation,
         markdown_html=outcome.html,
     )
+
+
+def read_html_doc(path: Path) -> dict[str, Any]:
+    """Read a first-class HTML document.
+
+    The portable file *is* HTML and is rendered faithfully + edited in place,
+    so the editor receives the whole document verbatim — no markdown render,
+    no body/shell split. The heading outline is still derived for the rail.
+    """
+    from services.html_document_state import HtmlDocumentState
+
+    outcome = HtmlDocumentState().read(path)
+    editor_html = outcome.editor_html
+    # HTML has no frontmatter to hold a stable id; derive it deterministically
+    # from the path so it never churns across read/scan/write (a changing id
+    # makes the client think the document switched — see #139 follow-up).
+    meta = dict(outcome.meta)
+    meta["id"] = html_doc_id(path)
+    return {
+        "html": editor_html,
+        "editorHtml": editor_html,
+        "browsingHtml": "",
+        "markdown": "",
+        "meta": meta,
+        "extras": None,
+        "source": "sidecar",
+        "sourceState": outcome.source_state,
+        "outline": _outline_from_html(editor_html),
+        "browsingRendererVersion": BROWSING_RENDERER_VERSION,
+        "correlation": None,
+    }
+
+
+class _HtmlOutlineParser(HTMLParser):
+    """Collect h1–h6 heading text for the document outline."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.headings: list[tuple[int, str]] = []
+        self._depth: int | None = None
+        self._buf: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if len(tag) == 2 and tag[0] in "hH" and tag[1] in "123456":
+            self._depth = int(tag[1])
+            self._buf = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._depth is not None and len(tag) == 2 and tag[0] in "hH" and tag[1] in "123456":
+            text = "".join(self._buf).strip()
+            if text:
+                self.headings.append((self._depth, text))
+            self._depth = None
+            self._buf = []
+
+    def handle_data(self, data: str) -> None:
+        if self._depth is not None:
+            self._buf.append(data)
+
+
+def _outline_from_html(html: str) -> list[dict[str, Any]]:
+    if not html.strip():
+        return []
+    parser = _HtmlOutlineParser()
+    parser.feed(html)
+    parser.close()
+    seen: dict[str, int] = {}
+    outline: list[dict[str, Any]] = []
+    for depth, text in parser.headings:
+        base = _slugify_heading(text)
+        count = seen.get(base, 0) + 1
+        seen[base] = count
+        outline.append(
+            {
+                "id": base if count == 1 else f"{base}-{count}",
+                "depth": depth,
+                "text": text,
+            }
+        )
+    return outline
 
 
 def _document_read_response(
@@ -832,6 +915,8 @@ def write_doc_workspace(root: str, rel_path: str, payload: dict[str, Any]) -> di
     needed to refresh state after every save.
     """
     workspace = canonical_workspace_root(root)
+    if is_html_file(Path(rel_path)):
+        return write_html_doc_workspace(workspace, rel_path, payload)
     ensure_markdown_path(rel_path)
     path = resolve_workspace_path_for_write(workspace, rel_path)
 
@@ -886,6 +971,56 @@ def write_doc_workspace(root: str, rel_path: str, payload: dict[str, Any]) -> di
         source_state="sidecar_fresh",
         correlation=None,
     )
+
+
+def write_html_doc_workspace(
+    workspace: Path, rel_path: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Persist a first-class HTML document and return its post-write read model.
+
+    The editor serializes the whole document (doctype + head + body); it is
+    written back verbatim, so the round-trip is lossless. The sidecar only
+    carries the stable id and external-edit hash.
+    """
+    from services.html_document_state import HtmlDocumentSnapshot, HtmlDocumentState
+
+    ensure_html_path(rel_path)
+    path = resolve_workspace_path_for_write(workspace, rel_path)
+
+    if path.exists():
+        sidecar = read_sidecar(sidecar_path_for(path))
+        if isinstance(sidecar, Corrupt):
+            sidecar_path = sidecar_path_for(path)
+            forensic_path = _write_forensic_copy(sidecar_path, sidecar.raw)
+            raise CorruptSidecarError(sidecar_path, forensic_path, sidecar.reason)
+
+    # Deterministic path-derived id (matches read_html_doc + the scan DTO) so
+    # the document identity is stable across saves and never churns.
+    incoming_meta = dict(payload.get("meta") or {})
+    doc_id = html_doc_id(path)
+    meta: dict[str, Any] = {
+        "id": doc_id,
+        "title": incoming_meta.get("title") or payload.get("name") or path.stem,
+        "updated": now_iso(),
+    }
+
+    html = str(payload.get("html") or "")
+    HtmlDocumentState().write_full(path, HtmlDocumentSnapshot(html=html, meta=meta))
+    _invalidate_scan_cache(workspace)
+
+    return {
+        "html": html,
+        "editorHtml": html,
+        "browsingHtml": "",
+        "markdown": "",
+        "meta": meta,
+        "extras": None,
+        "source": "sidecar",
+        "sourceState": "empty" if not html.strip() else "sidecar_fresh",
+        "outline": _outline_from_html(html),
+        "browsingRendererVersion": BROWSING_RENDERER_VERSION,
+        "correlation": None,
+    }
 
 
 def doc_create(root: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1097,7 +1232,8 @@ def doc_delete(root: str, rel_path: str) -> dict[str, Any]:
         raise ValueError(f"document is not a file: {rel_path}")
     if not is_workspace_document_file(source):
         raise ValueError(
-            f"document path must end in .md, .markdown, .pdf, .xlsx, or .xlsm: {rel_path}"
+            "document path must end in .md, .markdown, .html, .htm, .pdf, "
+            f".xlsx, or .xlsm: {rel_path}"
         )
 
     sidecar_path = sidecar_path_for(source)
@@ -1199,6 +1335,11 @@ def ensure_markdown_path(path: str) -> None:
         raise ValueError(f"document path must end in .md or .markdown: {path}")
 
 
+def ensure_html_path(path: str) -> None:
+    if Path(path).suffix.lower() not in {".html", ".htm"}:
+        raise ValueError(f"document path must end in .html or .htm: {path}")
+
+
 def ensure_pdf_path(path: str) -> None:
     if Path(path).suffix.lower() != ".pdf":
         raise ValueError(f"document path must end in .pdf: {path}")
@@ -1209,7 +1350,7 @@ def ensure_excel_path(path: str) -> None:
         raise ValueError(f"document path must end in .xlsx or .xlsm: {path}")
 
 
-WORKSPACE_DOCUMENT_SUFFIXES = {".md", ".markdown", ".pdf", ".xlsx", ".xlsm"}
+WORKSPACE_DOCUMENT_SUFFIXES = {".md", ".markdown", ".html", ".htm", ".pdf", ".xlsx", ".xlsm"}
 
 
 def ensure_same_document_extension(old_path: str, new_path: str) -> None:
@@ -1222,8 +1363,8 @@ def ensure_same_document_extension(old_path: str, new_path: str) -> None:
     for ext, path in ((old_ext, old_path), (new_ext, new_path)):
         if ext not in WORKSPACE_DOCUMENT_SUFFIXES:
             raise ValueError(
-                "document path must end in .md, .markdown, .pdf, .xlsx, or .xlsm: "
-                f"{path}"
+                "document path must end in .md, .markdown, .html, .htm, .pdf, "
+                f".xlsx, or .xlsm: {path}"
             )
     if old_ext != new_ext:
         raise ValueError(f"cannot change document type on move: {old_path} -> {new_path}")
@@ -1258,6 +1399,8 @@ def document_dto_for_path(root: Path, path: Path) -> dict[str, Any]:
         document_type = "pdf"
     elif is_excel_file(path):
         document_type = "excel"
+    elif is_html_file(path):
+        document_type = "html"
     else:
         document_type = "markdown"
     if document_type == "markdown":
@@ -1265,6 +1408,12 @@ def document_dto_for_path(root: Path, path: Path) -> dict[str, Any]:
         frontmatter_id, title = parse_frontmatter_scan_fields(raw)
         id_source = "frontmatter" if frontmatter_id else "path"
         doc_id = frontmatter_id or stable_path_id(rel_path)
+    elif document_type == "html":
+        # Match read_html_doc / write_html_doc_workspace: derive the id from
+        # the canonical absolute path so it stays stable across scan/read/write.
+        id_source = "path"
+        doc_id = html_doc_id(path)
+        title = path.stem
     else:
         id_source = "path"
         doc_id = stable_path_id(rel_path)
@@ -1333,12 +1482,29 @@ def is_excel_file(path: Path) -> bool:
     return path.suffix.lower() in {".xlsx", ".xlsm"}
 
 
+def is_html_file(path: Path) -> bool:
+    return path.suffix.lower() in {".html", ".htm"}
+
+
 def is_workspace_document_file(path: Path) -> bool:
-    return is_markdown_file(path) or is_pdf_file(path) or is_excel_file(path)
+    return (
+        is_markdown_file(path)
+        or is_html_file(path)
+        or is_pdf_file(path)
+        or is_excel_file(path)
+    )
 
 
 def relative_path_string(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
+
+
+def html_doc_id(path: Path) -> str:
+    """Deterministic id for an HTML document, derived from its canonical
+    absolute path. HTML has no frontmatter to hold a portable id, so the path
+    is the identity; ``realpath`` keeps scan/read/write agreeing even when the
+    path reaches them through a symlink (e.g. macOS ``/var`` -> ``/private/var``)."""
+    return stable_path_id(os.path.realpath(str(path)))
 
 
 def stable_path_id(path: str) -> str:
