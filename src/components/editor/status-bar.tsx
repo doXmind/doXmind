@@ -41,8 +41,8 @@ export function StatusBar({ editor }: StatusBarProps) {
   }, [isSaving, isDirty, lastSavedAt]);
 
   return (
-    <div className="text-ui-xs flex items-center px-6 py-1.5 text-muted-foreground/60 md:px-12">
-      <div className="flex items-center gap-3">
+    <div className="text-ui-xs py-1.5 text-muted-foreground/60">
+      <div className="editor-content-frame flex items-center gap-3">
         {/* Save status */}
         {saveStatus === "saving" && (
           <span className="flex items-center gap-1">

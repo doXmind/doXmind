@@ -143,7 +143,9 @@ export function WelcomeScreen() {
     try {
       await openFolder(path);
     } catch (error) {
-      log.error("Failed to open recent workspace", error);
+      // Expected when a recent points at a deleted/moved folder — it's already
+      // pruned from recents. Warn (not error) so the dev overlay stays quiet.
+      log.warn("Failed to open recent workspace (removed from recents)", { path });
       const { title, description } = getErrorMessage(error);
       notify.error(title, { description });
     }
@@ -153,7 +155,11 @@ export function WelcomeScreen() {
     try {
       await openFile(file.absolutePath);
     } catch (error) {
-      log.error("Failed to open recent file", error);
+      // Expected when a recent points at a deleted/moved file — openFile already
+      // dropped it from recents. Warn (not error) so the dev overlay stays quiet.
+      log.warn("Failed to open recent file (removed from recents)", {
+        path: file.absolutePath,
+      });
       const { title, description } = getErrorMessage(error);
       notify.error(title, { description });
     }

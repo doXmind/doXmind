@@ -44,6 +44,9 @@ interface LayoutState {
   fontFamily: FontFamilyId;
   fontSize: "small" | "normal" | "large";
   lineHeight: "compact" | "normal" | "relaxed";
+  // When off, edits are kept in the editor but not written to disk until the
+  // user explicitly saves (⌘S). On by default.
+  autosaveEnabled: boolean;
 
   // Resizable panel widths (pixels)
   filesSidebarWidth: number; // Files sidebar width
@@ -91,6 +94,8 @@ interface LayoutState {
   setFontFamily: (font: FontFamilyId) => void;
   setFontSize: (size: "small" | "normal" | "large") => void;
   setLineHeight: (height: "compact" | "normal" | "relaxed") => void;
+  setAutosaveEnabled: (enabled: boolean) => void;
+  toggleAutosave: () => void;
 
   // Resizable panel actions
   setFilesSidebarWidth: (width: number) => void;
@@ -134,6 +139,7 @@ export const useLayoutStore = create<LayoutState>()(
       fontFamily: DEFAULT_FONT_FAMILY,
       fontSize: "normal" as const,
       lineHeight: "normal" as const,
+      autosaveEnabled: true,
 
       // Resizable panel widths
       filesSidebarWidth: 304,
@@ -268,6 +274,13 @@ export const useLayoutStore = create<LayoutState>()(
         set({ lineHeight: height });
       },
 
+      setAutosaveEnabled: (enabled: boolean) => {
+        set({ autosaveEnabled: enabled });
+      },
+      toggleAutosave: () => {
+        set((state) => ({ autosaveEnabled: !state.autosaveEnabled }));
+      },
+
       // Resizable panel actions
       setFilesSidebarWidth: (width: number) => {
         set({ filesSidebarWidth: Math.max(200, Math.min(400, width)) });
@@ -353,6 +366,7 @@ export const useLayoutStore = create<LayoutState>()(
         fontFamily: state.fontFamily,
         fontSize: state.fontSize,
         lineHeight: state.lineHeight,
+        autosaveEnabled: state.autosaveEnabled,
         filesSidebarWidth: state.filesSidebarWidth,
       }),
     }

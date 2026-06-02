@@ -435,9 +435,10 @@ samp,
 
 /* Floating content card: with the sidebar open, the header's content column
    and the editor surface read as one rounded panel inset from the sidebar by
-   a small gap. The header column rounds the card's top-left; the editor
-   surface rounds the bottom-left. The gap + a hairline left border replace the
-   old hard right-angle seam between sidebar and editor. */
+   a small gap. The header column carries the editor's content surface (so the
+   editor background reads continuously up through the header) and rounds the
+   card's top-left; the editor surface rounds the bottom-left. The gap + a
+   hairline left border replace the old hard right-angle seam. */
 .desktop-chrome-content-panel,
 .desktop-content-with-sidebar {
   background: var(--content-surface-bg);
@@ -447,7 +448,6 @@ samp,
 
 .desktop-chrome-content-panel {
   border-top-left-radius: var(--content-card-radius);
-  border-bottom: 1px solid var(--chrome-border);
   overflow: hidden;
 }
 
@@ -471,27 +471,8 @@ samp,
   -webkit-backdrop-filter: blur(22px) saturate(1.12);
 }
 
-.desktop-chrome-header::after {
-  content: "";
-  pointer-events: none;
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: var(--chrome-border);
-}
-
-/* In card mode the content panel draws its own bottom divider, and a
-   full-width line would cut across the sidebar gap — so drop the header's
-   hairline whenever the card is showing (or on the borderless welcome). */
-.desktop-chrome-header[data-borderless]::after,
-.desktop-chrome-header[data-sidebar-open]::after {
-  display: none;
-}
-
 /* The header's left band (sidebar region + card gap) is one solid sidebar
-   tint; the content panel paints the card surface on top from the gap edge
+   tint; the content panel paints the editor surface on top from the gap edge
    rightward. Solid (not a gradient) so the gap matches the sidebar exactly. */
 .desktop-chrome-header[data-sidebar-open] {
   background: var(--sidebar-translucent-bg);
@@ -518,10 +499,10 @@ html.is-tauri-macos .desktop-window-shell {
 
 /* Settings page is intentionally a solid paper surface — no native vibrancy
    bleed-through and no backdrop blur. The design treats it as a calm
-   document, not a chrome overlay. The Helvetica-led brand sans matches the
-   design's `--ui` stack so chrome reads consistently across the app; we
-   intentionally avoid `!important` here so descendants with `font-mono`
-   (paths, version, JetBrains Mono code) still win. */
+   document, not a chrome overlay. Its font is intentionally left to inherit
+   the app-wide editor font (set on body by AppearanceInjector) so the chosen
+   font applies here too; font-mono descendants (paths, version) still win via
+   their own !important rule. */
 .settings-surface,
 html.is-tauri-macos .settings-surface {
   background: hsl(var(--background));
@@ -529,22 +510,17 @@ html.is-tauri-macos .settings-surface {
   -webkit-backdrop-filter: none;
 }
 
-.settings-surface {
-  font-family: var(--brand-sans-stack);
-}
-
 html.is-tauri-macos .desktop-chrome-header {
   /* grid-template-columns is set inline on the header (it branches on the
-     macOS-Tauri flag and wins over this rule anyway); see unified-header.tsx. */
+     macOS-Tauri flag and wins over this rule anyway); see unified-header.tsx.
+     The editor side of the bar carries the editor's content surface so the
+     editor background reads continuously up through the header. */
   background: var(--content-surface-bg);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
 
 html.is-tauri-macos .desktop-chrome-header[data-sidebar-open] {
-  /* Solid sidebar tint over the native vibrancy for the whole left band; the
-     content panel covers the card area. Matches .desktop-content-canvas so the
-     gap reads as sidebar, not a brighter vibrancy seam. */
   background: var(--sidebar-translucent-bg);
 }
 

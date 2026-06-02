@@ -2,9 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { Check, ChevronDown, Monitor, Moon, Sun } from "lucide-react";
-import { useAppearanceStore } from "@/stores/appearance-store";
 import { useThemeManager } from "@/hooks/use-theme-manager";
-import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, getTheme } from "@/lib/themes/registry";
 import type { ThemeDefinition } from "@/lib/themes/types";
@@ -14,14 +12,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FlatCard, FlatRow, RowLabel, SettingsSection } from "../settings-atoms";
+import { FlatCard, SettingsSection } from "../settings-atoms";
 
 type Mode = "light" | "dark" | "system";
 
 export function AppearanceSection() {
   const t = useTranslations("settings");
-  const pointerCursors = useAppearanceStore((s) => s.pointerCursors);
-  const setPointerCursors = useAppearanceStore((s) => s.setPointerCursors);
   const {
     currentTheme,
     isSystemMode,
@@ -80,12 +76,6 @@ export function AppearanceSection() {
             </div>
           )}
         </div>
-      </FlatCard>
-      <FlatCard>
-        <FlatRow first>
-          <RowLabel title={t("usePointerCursors")} desc={t("usePointerCursorsDesc")} />
-          <Switch checked={pointerCursors} onCheckedChange={setPointerCursors} />
-        </FlatRow>
       </FlatCard>
     </SettingsSection>
   );
