@@ -46,6 +46,7 @@ import {
 import { cn, sha256Hex } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { perfAsync, perfMeasure, perfSync } from "@/lib/perf";
 import { isSwitchCacheStillValid } from "@/lib/switch-cache-validation";
 import { freshParsedCacheValue } from "@/lib/parsed-cache-freshness";
@@ -1218,6 +1219,43 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
     setEditorSaving,
     setLastSavedAt,
   ]);
+
+  // Awaitable flush of the pending edit-state, so the header's close prompt can
+  // save-then-close. Resolves true even on a read-only failure so closing isn't
+  // blocked on a document that can never be written.
+  const savePdfNow = useCallback(async (): Promise<boolean> => {
+    const { changedTextEdits, hasChanges } = collectChangedEdits();
+    if (!hasChanges || !adapter.writePdfEditorState || !file.storageHandle) return true;
+    const state = pdfEditorStateFromData(changedTextEdits, freeTextBoxes, highlightBoxes);
+    setEditorSaving(true);
+    try {
+      await adapter.writePdfEditorState(file.storageHandle, state);
+      setEditorDirty(false);
+      setLastSavedAt(new Date().toISOString());
+      return true;
+    } catch (error) {
+      if (!handleReadOnlyAutosaveError(error, readOnlySurfacedRef, notify.error)) {
+        console.error("Save failed", error);
+      }
+      return true;
+    } finally {
+      setEditorSaving(false);
+    }
+  }, [
+    collectChangedEdits,
+    adapter,
+    file.storageHandle,
+    freeTextBoxes,
+    highlightBoxes,
+    setEditorDirty,
+    setEditorSaving,
+    setLastSavedAt,
+  ]);
+
+  useEffect(() => {
+    useEditorRefStore.getState().setRequestSave(savePdfNow);
+    return () => useEditorRefStore.getState().setRequestSave(null);
+  }, [savePdfNow]);
 
   /**
    * Explicit export — triggered by the header dropdown via a window event

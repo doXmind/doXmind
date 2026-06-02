@@ -76,8 +76,80 @@ const DARK_STATUS: ThemeStatusTokens = {
   warningBorder: "rgba(210, 153, 34, 0.3)",
 };
 
+// ─── doXmind ─────────────────────────────────────────────────────────────────
+// The app's own theme: a strictly neutral monochrome — black, white, and gray
+// with no colour cast — in the spirit of ChatGPT's chrome. Destructive stays
+// red because it signals a real action; everything else is achromatic.
+const doxmind: ThemeDefinition = {
+  id: "doxmind",
+  name: "doXmind",
+  description: "doXmind's own monochrome — crisp black, white, and gray",
+  baseMode: "light",
+  tier: "free",
+  preview: { accentColor: "#212121", backgroundColor: "#FFFFFF", foregroundColor: "#212121" },
+  tokens: {
+    background: "0 0% 100%",
+    foreground: "0 0% 13%", // #212121 — ChatGPT-ish ink
+    card: "0 0% 100%",
+    cardForeground: "0 0% 13%",
+    popover: "0 0% 100%",
+    popoverForeground: "0 0% 13%",
+    primary: "0 0% 13%",
+    primaryForeground: "0 0% 100%",
+    secondary: "0 0% 96%", // hover / muted surface
+    secondaryForeground: "0 0% 13%",
+    muted: "0 0% 96%",
+    mutedForeground: "0 0% 45%", // #737373
+    accent: "0 0% 94%",
+    accentForeground: "0 0% 13%",
+    destructive: "0 84.2% 60.2%",
+    destructiveForeground: "0 0% 98%",
+    border: "0 0% 90%", // #E5E5E5
+    borderSubtle: "0 0% 93%",
+    input: "0 0% 90%",
+    ring: "0 0% 13%",
+    sidebar: "0 0% 98%", // #FAFAFA — quiet off-white rail
+  },
+  diff: LIGHT_DIFF,
+  status: LIGHT_STATUS,
+};
+
+const doxmindDark: ThemeDefinition = {
+  id: "doxmind-dark",
+  name: "doXmind",
+  description: "doXmind's own monochrome — charcoal, ash, and white",
+  baseMode: "dark",
+  tier: "free",
+  preview: { accentColor: "#ECECEC", backgroundColor: "#212121", foregroundColor: "#ECECEC" },
+  tokens: {
+    background: "0 0% 13%", // #212121
+    foreground: "0 0% 93%", // #ECECEC
+    card: "0 0% 16%",
+    cardForeground: "0 0% 93%",
+    popover: "0 0% 18%",
+    popoverForeground: "0 0% 93%",
+    primary: "0 0% 95%",
+    primaryForeground: "0 0% 13%",
+    secondary: "0 0% 18%",
+    secondaryForeground: "0 0% 90%",
+    muted: "0 0% 18%",
+    mutedForeground: "0 0% 60%",
+    accent: "0 0% 22%",
+    accentForeground: "0 0% 95%",
+    destructive: "0 91% 71%",
+    destructiveForeground: "0 0% 95%",
+    border: "0 0% 23%",
+    borderSubtle: "0 0% 18%",
+    input: "0 0% 23%",
+    ring: "0 0% 80%",
+    sidebar: "0 0% 9%", // #171717 — deeper rail
+  },
+  diff: DARK_DIFF,
+  status: DARK_STATUS,
+};
+
 // ─── Notion ──────────────────────────────────────────────────────────────────
-// Light: Notion's classic warm-white surface (doXmind default).
+// Light: Notion's classic warm-white surface.
 // Dark: Notion's actual dark mode — neutral charcoal stack.
 const notion: ThemeDefinition = {
   id: "notion",
@@ -635,6 +707,8 @@ const gruvboxDark: ThemeDefinition = {
 // ─── Registry ────────────────────────────────────────────────────────────────
 
 export const THEMES: Record<string, ThemeDefinition> = {
+  doxmind,
+  "doxmind-dark": doxmindDark,
   notion,
   "notion-dark": notionDark,
   "github-light": githubLight,
@@ -653,8 +727,8 @@ export const THEMES: Record<string, ThemeDefinition> = {
   "gruvbox-dark": gruvboxDark,
 };
 
-export const DEFAULT_LIGHT_THEME = "notion";
-export const DEFAULT_DARK_THEME = "notion-dark";
+export const DEFAULT_LIGHT_THEME = "doxmind";
+export const DEFAULT_DARK_THEME = "doxmind-dark";
 
 export const THEME_LIST = Object.values(THEMES);
 

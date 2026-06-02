@@ -98,10 +98,20 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   const initialFileIdRef = useRef<string | null>(file.id);
 
   const persistContent = useCallback(
-    async (content: string, contentMarkdown?: string) => {
+    async (content: string, contentMarkdown?: string, options?: { explicit?: boolean }) => {
       if (content === lastContentRef.current) {
         setDirty(false);
-        return;
+        return true;
+      }
+
+      // A transient ("New file") buffer is never autosaved to disk — like a
+      // VSCode untitled document it stays freely editable and dirty until the
+      // user explicitly saves (⌘S, or on window close). Keystroke flushes only
+      // keep the in-memory buffer current; only an explicit save opens the
+      // location picker and materializes the file onto disk.
+      if (isTransient && !options?.explicit) {
+        setTransientContent(content, contentMarkdown ?? "");
+        return true;
       }
 
       setSaving(true);
@@ -112,7 +122,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
           if (!transient) {
             lastContentRef.current = content;
             setDirty(false);
-            return;
+            return true;
           }
           const path = await pickNativeSaveLocation("Save as", transient.name, [
             { name: "Markdown", extensions: ["md"] },
@@ -124,7 +134,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
             // close-time `saveCurrentNow` early-returns on `content ===
             // lastContentRef.current`, silently dropping the typed buffer
             // when the user closes the window after cancelling.
-            return;
+            return false;
           }
           const latest = useFileStore.getState().transientFile;
           if (
@@ -140,7 +150,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
           setLastSavedAt(new Date().toISOString());
           setDirty(false);
           if (newId) navigateToEditorFile(newId);
-          return;
+          return true;
         }
 
         await updateFile(file.id, { content, contentMarkdown });
@@ -155,6 +165,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
           }
         }
         prevDbIdsRef.current = currentIds;
+        return true;
       } finally {
         setSaving(false);
       }
@@ -281,7 +292,11 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
     onUpdate: ({ editor }) => {
       if (isFileSwitchingRef.current) return;
       setDirty(true);
-      debouncedSave(editor);
+      // Autosave can be turned off from the "..." menu. When off, edits stay in
+      // the editor and are flushed only on an explicit save (⌘S) or on close.
+      if (useLayoutStore.getState().autosaveEnabled) {
+        debouncedSave(editor);
+      }
     },
     onSelectionUpdate: ({ editor }) => {
       const { from, to } = editor.state.selection;
@@ -340,14 +355,18 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   }, [editor]);
 
   useEffect(() => {
-    const saveCurrentNow = async () => {
-      if (!editor) return;
+    const saveCurrentNow = async (): Promise<boolean> => {
+      if (!editor) return true;
       const content = editor.getHTML();
-      if (content === lastContentRef.current) return;
+      if (content === lastContentRef.current) return true;
       const contentMarkdown = editor.getMarkdown();
       debouncedSave.cancel();
-      await persistContent(content, contentMarkdown);
+      return await persistContent(content, contentMarkdown, { explicit: true });
     };
+
+    // Expose an awaitable save so chrome (the header's close button) can
+    // save-then-close. Cleared on unmount.
+    useEditorRefStore.getState().setRequestSave(saveCurrentNow);
 
     const handleBeforeUnload = () => {
       void saveCurrentNow();
@@ -389,6 +408,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       window.removeEventListener("pagehide", handleBeforeUnload);
       window.removeEventListener("doxmind:save-now", handleSaveNow);
       unlistenClose?.();
+      useEditorRefStore.getState().setRequestSave(null);
     };
   }, [debouncedSave, editor, persistContent]);
 

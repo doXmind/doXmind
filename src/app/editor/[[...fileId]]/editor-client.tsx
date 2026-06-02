@@ -169,24 +169,22 @@ export function EditorClient() {
     document.title = currentFileName ? currentFileName.replace(/\.md$/i, "") : "doXmind";
   }, [currentFileName]);
 
-  // ?perf=1 in the URL turns on the in-app perf overlay for this session.
-  // The flag persists in localStorage so a refresh keeps the panel visible.
+  // ?perf=1 in the URL turns on the in-app perf overlay for this load only.
+  // We deliberately do NOT persist it: a stale localStorage flag used to keep
+  // the panel showing across every launch with no easy way to dismiss it. Now
+  // the URL param is the single source of truth, and any leftover flag from
+  // older builds is cleared on mount so the overlay never lingers.
   const [perfEnabled, setPerfEnabled] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const search = new URLSearchParams(window.location.search);
-    if (search.get("perf") === "1") {
-      try {
-        window.localStorage.setItem("DOXMIND_PERF", "1");
-      } catch {
-        // storage may be locked in some sandboxed contexts
-      }
-    }
+    const enabled = new URLSearchParams(window.location.search).get("perf") === "1";
     try {
-      setPerfEnabled(window.localStorage.getItem("DOXMIND_PERF") === "1");
+      if (enabled) window.localStorage.setItem("DOXMIND_PERF", "1");
+      else window.localStorage.removeItem("DOXMIND_PERF");
     } catch {
-      setPerfEnabled(false);
+      // storage may be locked in some sandboxed contexts
     }
+    setPerfEnabled(enabled);
   }, []);
 
   return (
@@ -204,7 +202,18 @@ export function EditorClient() {
       )}
       {isQuickSwitcherOpen && <QuickSwitcher />}
       {isPresentationMode && <PresentationMode />}
-      {perfEnabled && <PerfOverlay />}
+      {perfEnabled && (
+        <PerfOverlay
+          onClose={() => {
+            try {
+              window.localStorage.removeItem("DOXMIND_PERF");
+            } catch {
+              // storage may be locked in some sandboxed contexts
+            }
+            setPerfEnabled(false);
+          }}
+        />
+      )}
     </>
   );
 }

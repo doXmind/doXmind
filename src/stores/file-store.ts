@@ -552,6 +552,16 @@ export const useFileStore = create<FileState>()(
       },
 
       loadFileContent: async (fileId: string, options?: { force?: boolean }) => {
+        // Transient ("New file") buffers live only in memory — there is no disk
+        // path to read. A forced refresh (e.g. the window refocusing after the
+        // native save dialog closes) would otherwise call adapter.read() on a
+        // handle with no path and throw "Disk document handle is missing a path".
+        if (fileId.startsWith(TRANSIENT_ID_PREFIX)) {
+          set((state) => ({
+            loadedContentIds: new Set([...state.loadedContentIds, fileId]),
+          }));
+          return;
+        }
         const cacheHit = !options?.force && get().loadedContentIds.has(fileId);
         if (cacheHit) {
           // Surface cache hits in the perf log so the dev overlay can show
@@ -708,7 +718,16 @@ export const useFileStore = create<FileState>()(
             storageHandle: handle,
           };
         } else {
-          const content = await adapter.read(handle);
+          const content = await adapter.read(handle).catch((error: unknown) => {
+            // A recent that fails to open is almost always gone (deleted or
+            // moved) — the backend surfaces a generic "Load failed" rather than
+            // a specific ENOENT. Drop it from recents so the welcome list
+            // self-heals, then surface the error to the caller (which toasts).
+            // It re-adds itself the next time it opens successfully.
+            set((state) => ({ recents: forgetRecent({ kind: "file", path: trimmed }, state) }));
+            void syncRecentsToDock(get().recents);
+            throw error;
+          });
           syncDatabasesForContent(content);
           const readModel = readModelFromContent(content);
           looseFile = {

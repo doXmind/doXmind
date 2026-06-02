@@ -10,14 +10,13 @@ const STYLE_ID = "doxmind-appearance-style";
 interface AppearanceSnapshot {
   uiFontSize: number;
   codeFontSize: number;
-  pointerCursors: boolean;
   fontFamily: FontFamilyId;
 }
 
 /**
- * Writes user appearance preferences (UI/code font size, font family,
- * pointer-cursor preference) into a single dynamically-injected `<style>`
- * element on the document. Subscribing directly to the Zustand stores
+ * Writes user appearance preferences (UI/code font size, font family) into a
+ * single dynamically-injected `<style>` element on the document. Subscribing
+ * directly to the Zustand stores
  * (rather than re-rendering React on each change) keeps the entire UI
  * in sync without forcing a tree update.
  */
@@ -44,23 +43,6 @@ function buildCss(s: AppearanceSnapshot): string {
     rules.push(`html, body { font-family: ${familyStack} !important; }`);
   }
 
-  if (s.pointerCursors) {
-    rules.push(
-      `button:not([disabled]),
-       [role="button"]:not([aria-disabled="true"]),
-       a[href],
-       [role="link"],
-       [role="tab"],
-       [role="menuitem"],
-       [role="option"],
-       label[for],
-       summary,
-       select,
-       input[type="checkbox"],
-       input[type="radio"] { cursor: pointer; }`
-    );
-  }
-
   return rules.join("\n");
 }
 
@@ -70,7 +52,6 @@ function readSnapshot(): AppearanceSnapshot {
   return {
     uiFontSize: a.uiFontSize,
     codeFontSize: a.codeFontSize,
-    pointerCursors: a.pointerCursors,
     fontFamily: l.fontFamily,
   };
 }

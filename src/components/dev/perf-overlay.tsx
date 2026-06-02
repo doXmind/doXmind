@@ -54,7 +54,7 @@ function aggregate(records: PerfRecord[]): Group[] {
   return groups;
 }
 
-export function PerfOverlay() {
+export function PerfOverlay({ onClose }: { onClose?: () => void }) {
   const [groups, setGroups] = useState<Group[]>([]);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -119,6 +119,11 @@ export function PerfOverlay() {
           <button type="button" onClick={() => setCollapsed((c) => !c)} style={btn}>
             {collapsed ? "expand" : "hide"}
           </button>
+          {onClose && (
+            <button type="button" onClick={onClose} style={btn} aria-label="Turn off perf overlay">
+              ✕
+            </button>
+          )}
         </span>
       </div>
       {!collapsed && (

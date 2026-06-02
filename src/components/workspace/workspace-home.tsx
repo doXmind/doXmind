@@ -38,18 +38,13 @@ export function WorkspaceHome() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-background pt-6 text-foreground">
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center px-8 pb-20">
-        <div
-          className="font-brand-sans text-[13px] text-muted-foreground"
-          title={rootPath ?? undefined}
-        >
+        <div className="text-[13px] text-muted-foreground" title={rootPath ?? undefined}>
           {label ? t("eyebrow", { name: label }) : t("eyebrowFallback")}
         </div>
-        <h1 className="font-brand-sans mt-2 text-[30px] font-semibold leading-[1.15] text-foreground">
+        <h1 className="mt-2 text-[30px] font-semibold leading-[1.15] text-foreground">
           {t("heading")}
         </h1>
-        <p className="font-brand-sans mt-5 max-w-xl text-[15px] leading-7 text-muted-foreground">
-          {t("body")}
-        </p>
+        <p className="mt-5 max-w-xl text-[15px] leading-7 text-muted-foreground">{t("body")}</p>
 
         <div className="mt-10 border-t border-border pt-3">
           <Button
@@ -57,7 +52,7 @@ export function WorkspaceHome() {
             variant="ghost"
             size="sm"
             onClick={handleCreateNew}
-            className="gap-1.5 font-mono text-xs"
+            className="gap-1.5 text-xs"
           >
             <Plus className="h-3.5 w-3.5" />
             {t("newDocument")}

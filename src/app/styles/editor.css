@@ -1,19 +1,28 @@
 /* Editor Styles */
+
+/* Shared horizontal frame: the editor page content, the header title row, and
+   the status bar all sit in this same centered column so their left (and right)
+   edges line up. Width + centering only — no vertical padding — so it can wrap
+   chrome rows too. */
+.editor-content-frame,
 .editor-page-frame {
   /* Side gutter has to fit the floating block handle ([+] [⋮], 2 × 28px
      buttons + 6px content gap = 62px, see block-handle.tsx). Anything
      smaller and the handle clips into the sidebar / window edge. */
   --editor-page-x: 4rem;
-  --editor-outline-gutter: 0px;
   box-sizing: border-box;
   width: min(
-    calc(100% - (var(--editor-page-x) * 2) - var(--editor-outline-gutter)),
+    calc(100% - (var(--editor-page-x) * 2) - var(--editor-outline-gutter, 0px)),
     var(--editor-content-width)
   );
   margin-right: auto;
   margin-left: auto;
+  transform: translateX(calc(var(--editor-outline-gutter, 0px) / -2));
+}
+
+.editor-page-frame {
+  --editor-outline-gutter: 0px;
   padding: 0.5rem 0 1rem;
-  transform: translateX(calc(var(--editor-outline-gutter) / -2));
 }
 
 @media (min-width: 768px) {
