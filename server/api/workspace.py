@@ -354,7 +354,10 @@ def workspace_index_rebuild(root: str) -> dict[str, Any]:
 def workspace_index_from_documents(documents: list[dict[str, Any]]) -> dict[str, Any]:
     ids: dict[str, str] = {}
     for doc in documents:
-        if doc.get("documentType") == "markdown" and doc.get("idSource") == "frontmatter":
+        if doc.get("documentType") == "markdown" and doc.get("idSource") in (
+            "frontmatter",
+            "sidecar",
+        ):
             ids.setdefault(str(doc["id"]), str(doc["path"]))
     return {"version": 1, "ids": ids}
 
@@ -387,12 +390,14 @@ def workspace_markdown_search(root: str, query: str, limit: Any = None) -> list[
                 matches.append({"line": line_number, "preview": line.strip()[:240]})
         if matches:
             frontmatter_id, title = parse_frontmatter_scan_fields(raw)
+            # Identity precedence (#148): frontmatter -> sidecar -> path.
+            doc_id = frontmatter_id or _sidecar_id_for(path) or stable_path_id(rel_path)
             results.append(
                 {
-                    "id": frontmatter_id or stable_path_id(rel_path),
+                    "id": doc_id,
                     "path": rel_path,
                     "name": path.name,
-                    "title": title,
+                    "title": title or path.stem,
                     "matches": matches,
                 }
             )
@@ -1252,6 +1257,16 @@ def ensure_path_within_root(root: Path, path: Path) -> None:
         raise ValueError(f"path escapes workspace root: {path}")
 
 
+def _sidecar_id_for(path: Path) -> str | None:
+    """The id recorded in a document's sidecar, or None if absent/unreadable."""
+    sidecar = read_sidecar(sidecar_path_for(path))
+    if isinstance(sidecar, Loaded):
+        sidecar_id = sidecar.data.get("id")
+        if isinstance(sidecar_id, str) and sidecar_id.strip():
+            return sidecar_id
+    return None
+
+
 def document_dto_for_path(root: Path, path: Path) -> dict[str, Any]:
     rel_path = relative_path_string(root, path)
     if is_pdf_file(path):
@@ -1263,8 +1278,19 @@ def document_dto_for_path(root: Path, path: Path) -> dict[str, Any]:
     if document_type == "markdown":
         raw = path.read_text(encoding="utf-8")
         frontmatter_id, title = parse_frontmatter_scan_fields(raw)
-        id_source = "frontmatter" if frontmatter_id else "path"
-        doc_id = frontmatter_id or stable_path_id(rel_path)
+        title = title or path.stem  # #148: no authored frontmatter -> title is the filename
+        # Identity precedence (#148): legacy frontmatter id -> sidecar id ->
+        # path. doXmind no longer writes id into the `.md`, so for its own docs
+        # the canonical id lives in the sidecar and must be sourced from there.
+        if frontmatter_id:
+            id_source = "frontmatter"
+            doc_id = frontmatter_id
+        elif (sidecar_id := _sidecar_id_for(path)) is not None:
+            id_source = "sidecar"
+            doc_id = sidecar_id
+        else:
+            id_source = "path"
+            doc_id = stable_path_id(rel_path)
     else:
         id_source = "path"
         doc_id = stable_path_id(rel_path)

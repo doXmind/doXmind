@@ -395,9 +395,9 @@ def test_meta_id_is_backfilled_from_sidecar_when_disagreeing(tmp_path: Path) -> 
         ),
     )
 
-    raw = path.read_text(encoding="utf-8")
-    raw = raw.replace('id: "sidecar-id"', 'id: "frontmatter-id"')
-    path.write_text(raw, encoding="utf-8")
+    # #148: a new doc carries no frontmatter, so simulate a legacy/user file
+    # whose frontmatter id disagrees with the sidecar. The sidecar id wins.
+    path.write_text('---\nid: "frontmatter-id"\n---\n\nx edited\n', encoding="utf-8")
 
     outcome = state.read(path)
 
@@ -814,3 +814,28 @@ def test_read_cache_disabled_via_env(tmp_path: Path, monkeypatch) -> None:
     # (they're freshly computed each time, not clones of a cached entry).
     first.meta["id"] = "MUTATED"
     assert second.meta["id"] == "doc-1"
+
+
+def test_write_does_not_inject_frontmatter_into_a_plain_file(tmp_path: Path) -> None:
+    # #148: never add a `---` block to a file that has none; never write `id`.
+    state = MarkdownDocumentState()
+    path = tmp_path / "Plain.md"
+    state.write_full(
+        path, DocumentSnapshot(html="<p>hi</p>", markdown="hi", meta={"id": "doc-1"})
+    )
+    on_disk = path.read_text(encoding="utf-8")
+    assert on_disk == "hi\n"
+    assert "---" not in on_disk
+    assert "id:" not in on_disk
+
+
+def test_write_preserves_hand_authored_frontmatter_verbatim(tmp_path: Path) -> None:
+    # #148: a hand-authored head survives a body-only save byte-identical.
+    path = tmp_path / "Authored.md"
+    original = '---\n# my notes\ntitle: "Quoted"\ntags: [a, b]\nid: legacy-1\n---\n\n# Body\n'
+    path.write_text(original, encoding="utf-8")
+    state = MarkdownDocumentState()
+    state.write_full(
+        path, DocumentSnapshot(html="<h1>Body</h1>", markdown="# Body", meta={"id": "legacy-1"})
+    )
+    assert path.read_text(encoding="utf-8") == original
