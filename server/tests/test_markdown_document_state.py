@@ -50,6 +50,36 @@ def _pdf_placeholder(block_id: str) -> str:
     return f'<!-- pdf-block id="{block_id}" src="assets/spec.pdf" -->'
 
 
+def test_stale_sidecar_carries_extras_through(tmp_path: Path) -> None:
+    # #147: editing the .md externally (hash mismatch) re-derives the editor
+    # HTML from markdown, but sidecar-only `extras` (the sole home for
+    # database-block data) must survive the stale read — otherwise the next
+    # save erases them permanently. Uses the production-like wiring (correlator
+    # configured, no custom salvager) to exercise the real default path.
+    state = _state_with_correlator()
+    path = tmp_path / "Db.md"
+    state.write_full(
+        path,
+        DocumentSnapshot(
+            html="<p>old <!-- database:db1 --></p>",
+            markdown="old\n\n<!-- database:db1 -->",
+            meta={"id": "db-doc"},
+            extras={"databases": {"db1": {"rows": [1, 2, 3]}}},
+        ),
+    )
+    # External edit: change the body but keep the database marker.
+    path.write_text(
+        "---\nid: db-doc\n---\n\n# Edited externally\n\n<!-- database:db1 -->\n",
+        encoding="utf-8",
+    )
+
+    outcome = state.read(path)
+
+    assert isinstance(outcome, SidecarStale)
+    assert "Edited externally" in outcome.fresh_html  # HTML re-derived
+    assert outcome.salvaged_extras == {"databases": {"db1": {"rows": [1, 2, 3]}}}
+
+
 def test_used_sidecar_when_hash_matches(tmp_path: Path) -> None:
     state = MarkdownDocumentState()
     path = tmp_path / "Plan.md"
@@ -321,8 +351,9 @@ def test_sidecar_stale_when_hash_mismatches(tmp_path: Path) -> None:
 
     assert isinstance(outcome, SidecarStale)
     assert "<h1>External</h1>" in outcome.fresh_html
-    assert outcome.salvaged_extras == {}
-    assert outcome.discarded_slots == ["databases"]
+    # #147: the hash only re-derives HTML; sidecar-only extras carry through.
+    assert outcome.salvaged_extras == {"databases": {"d1": {"rows": []}}}
+    assert outcome.discarded_slots == []
     assert outcome.correlation is None
 
 
@@ -347,8 +378,9 @@ def test_sidecar_stale_when_version_mismatches(tmp_path: Path) -> None:
     outcome = state.read(path)
 
     assert isinstance(outcome, SidecarStale)
-    assert outcome.salvaged_extras == {}
-    assert outcome.discarded_slots == ["alpha"]
+    # #147: extras carry through a version-bump stale read too.
+    assert outcome.salvaged_extras == {"alpha": {"x": 1}}
+    assert outcome.discarded_slots == []
 
 
 def test_meta_id_is_backfilled_from_sidecar_when_disagreeing(tmp_path: Path) -> None:

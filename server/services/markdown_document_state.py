@@ -132,14 +132,25 @@ class Salvager(Protocol):
     ) -> tuple[dict[str, Any], list[str]]: ...
 
 
-class _DiscardAllSalvager:
+class _KeepAllSalvager:
+    """Default salvager: carry every `extras` slot through a stale read (#147).
+
+    The markdown hash governs only whether the cached editor HTML is reused or
+    re-derived — it must not decide whether `extras` survive. Which slots
+    actually persist is gated downstream by the `<!-- ... -->` markers still in
+    the body (registry blocks via the correlator, databases in the frontend),
+    so carrying everything through is safe: deleted markers still drop their
+    data, surviving markers keep theirs. Discarding here instead let the next
+    save permanently erase sidecar-only data (databases).
+    """
+
     def salvage(
         self,
         *,
         markdown_body: str,  # noqa: ARG002
         extras: dict[str, Any],
     ) -> tuple[dict[str, Any], list[str]]:
-        return {}, sorted(extras.keys())
+        return dict(extras), []
 
 
 class Correlator(Protocol):
@@ -201,7 +212,7 @@ class MarkdownDocumentState:
         salvager: Salvager | None = None,
         correlator: Correlator | None = None,
     ) -> None:
-        self._salvager: Salvager = salvager or _DiscardAllSalvager()
+        self._salvager: Salvager = salvager or _KeepAllSalvager()
         self._correlator = correlator
 
     def read(self, path: Path) -> ReadOutcome:
