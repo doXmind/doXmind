@@ -49,3 +49,24 @@ def test_no_frontmatter_is_parsed_from_html(tmp_path: Path) -> None:
     assert r["sourceState"] == "sidecar_missing"
     assert r["editorHtml"] == "<h1>Title</h1>\n<p>body</p>\n"
     assert r["markdown"] == "<h1>Title</h1>\n<p>body</p>\n"
+
+
+def test_write_doc_workspace_accepts_and_saves_html(tmp_path: Path) -> None:
+    # Regression (#139): the save entry point used to reject .html via
+    # ensure_markdown_path, so html opened but could not be saved.
+    from api.workspace import read_doc, write_doc_workspace
+
+    (tmp_path / "page.html").write_text("<p>old</p>", encoding="utf-8")
+    write_doc_workspace(
+        str(tmp_path),
+        "page.html",
+        {"html": "<h1>New</h1><p>body</p>", "markdown": "# ignored", "meta": {"id": "h1"}},
+    )
+
+    on_disk = (tmp_path / "page.html").read_text(encoding="utf-8")
+    assert on_disk == "<h1>New</h1><p>body</p>"  # editor HTML written verbatim
+    assert "# ignored" not in on_disk  # markdown serialization not leaked
+
+    r = read_doc(tmp_path / "page.html")
+    assert r["sourceState"] == "sidecar_fresh"
+    assert r["editorHtml"] == "<h1>New</h1><p>body</p>"

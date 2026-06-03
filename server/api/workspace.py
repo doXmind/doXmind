@@ -884,7 +884,7 @@ def write_doc_workspace(root: str, rel_path: str, payload: dict[str, Any]) -> di
     needed to refresh state after every save.
     """
     workspace = canonical_workspace_root(root)
-    ensure_markdown_path(rel_path)
+    ensure_text_document_path(rel_path)
     path = resolve_workspace_path_for_write(workspace, rel_path)
 
     # Merge incoming meta with existing sidecar/frontmatter so callers can
@@ -1279,6 +1279,13 @@ def validate_relative_path(path: str) -> Path:
 def ensure_markdown_path(path: str) -> None:
     if Path(path).suffix.lower() not in {".md", ".markdown"}:
         raise ValueError(f"document path must end in .md or .markdown: {path}")
+
+
+def ensure_text_document_path(path: str) -> None:
+    # Markdown and HTML are the text document types that share the read/write
+    # workspace path (#139). HTML routes to write_html_doc inside write_doc.
+    if Path(path).suffix.lower() not in {".md", ".markdown", ".html", ".htm"}:
+        raise ValueError(f"document path must end in .md, .markdown, .html, or .htm: {path}")
 
 
 def ensure_pdf_path(path: str) -> None:
