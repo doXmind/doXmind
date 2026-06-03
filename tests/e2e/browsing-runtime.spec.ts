@@ -33,8 +33,10 @@ test("Markdown opens in read mode and promotes to editable on click", async ({ p
   await expect(page.getByRole("link", { name: "Example link" })).toBeVisible();
 
   // Search highlights use the TipTap search extension's `.search-result`
-  // class (src/extensions/search/index.ts).
-  await page.getByRole("button", { name: /Find/ }).click();
+  // class (src/extensions/search/index.ts). The find bar opens via the
+  // Ctrl/Cmd+F shortcut (use-editor-keyboard-shortcuts.ts), not a toolbar
+  // button — the unified MarkdownRuntime has no standalone Find button.
+  await page.keyboard.press("ControlOrMeta+f");
   await page.getByLabel("Search text").fill("needle");
   await expect(page.locator(".search-result")).toHaveCount(3);
   // Still in read mode while searching.

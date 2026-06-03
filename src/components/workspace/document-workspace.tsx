@@ -3,8 +3,16 @@
 import dynamic from "next/dynamic";
 import { MarkdownRuntime } from "@/components/workspace/markdown-runtime";
 import { MarkdownSkeleton } from "@/components/workspace/markdown-skeleton";
-import { isExcelFile, isMarkdownFile, isPdfFile } from "@/lib/document-types";
+import { isExcelFile, isHtmlFile, isMarkdownFile, isPdfFile } from "@/lib/document-types";
 import { type FileItem } from "@/stores/file-store";
+
+const HtmlRuntime = dynamic(
+  () =>
+    import("@/components/workspace/html-runtime").then((m) => ({
+      default: m.HtmlRuntime,
+    })),
+  { ssr: false, loading: () => <MarkdownSkeleton /> }
+);
 
 const PdfEditorWorkspace = dynamic(
   () =>
@@ -33,6 +41,9 @@ export function DocumentWorkspace({ file, reservedRightInset = 0 }: DocumentWork
   }
   if (isExcelFile(file)) {
     return <ExcelEditorWorkspace file={file} />;
+  }
+  if (isHtmlFile(file)) {
+    return <HtmlRuntime file={file} reservedRightInset={reservedRightInset} />;
   }
   if (isMarkdownFile(file)) {
     return <MarkdownRuntime file={file} reservedRightInset={reservedRightInset} />;
