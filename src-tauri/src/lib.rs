@@ -819,7 +819,7 @@ async fn doc_write_workspace(
     payload: DocWriteInputDto,
 ) -> Result<ReadResultDto, String> {
     let root = canonical_workspace_root(&root)?;
-    ensure_markdown_path(&path)?;
+    ensure_text_document_path(&path)?;
     let path = resolve_workspace_path_for_write(&root, &path)?;
 
     // Merge incoming meta with the existing sidecar/frontmatter so callers
@@ -2713,6 +2713,21 @@ fn ensure_markdown_path(path: &str) -> Result<(), String> {
         Some("md") | Some("markdown") => Ok(()),
         _ => Err(format!(
             "document path must end in .md or .markdown: {path}"
+        )),
+    }
+}
+
+/// Markdown and HTML are the text document types that share the read/write
+/// workspace path (#139); HTML routes to the html branch inside `write_doc`.
+fn ensure_text_document_path(path: &str) -> Result<(), String> {
+    let extension = Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase());
+    match extension.as_deref() {
+        Some("md") | Some("markdown") | Some("html") | Some("htm") => Ok(()),
+        _ => Err(format!(
+            "document path must end in .md, .markdown, .html, or .htm: {path}"
         )),
     }
 }
