@@ -35,6 +35,7 @@ import { BlockHandleExtension } from "@/extensions/block-handle-extension";
 import { BlockColorExtension } from "@/extensions/block-color-extension";
 import { AtomBlockLiftPlugin } from "@/extensions/atom-block-lift-plugin";
 import { SourcePreservation } from "@/extensions/source-preservation";
+import { HtmlSourcePreservation } from "@/extensions/html-source-preservation";
 import { RawHtml } from "@/extensions/raw-html";
 import { customBlockTipTapExtensions } from "@/extensions/registry";
 import type { Extensions } from "@tiptap/react";
@@ -62,6 +63,10 @@ export function getEditorExtensions(): Extensions {
     // Block-level source preservation: untouched blocks round-trip byte-identical
     // (wraps getMarkdown — must come after Markdown so it captures the real one).
     SourcePreservation,
+
+    // The getHTML analogue for HTML documents (#139); inert unless a baseline
+    // is set, so it's harmless for markdown docs.
+    HtmlSourcePreservation,
 
     // Text enhancements
     Underline,
