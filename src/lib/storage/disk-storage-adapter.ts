@@ -135,7 +135,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       sourceState: result.sourceState ?? legacySourceToState(result.source),
       outline: result.outline ?? [],
       browsingRendererVersion: result.browsingRendererVersion,
-      documentType: "markdown",
+      documentType: docType,
       updatedAt: result.meta.updated || new Date().toISOString(),
       correlation: result.correlation ?? null,
     };
@@ -276,7 +276,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       sourceState: result.sourceState ?? legacySourceToState(result.source),
       outline: result.outline ?? [],
       browsingRendererVersion: result.browsingRendererVersion,
-      documentType: "markdown",
+      documentType: handle.documentType ?? documentTypeFromPath(requireHandlePath(handle)),
       updatedAt: result.meta.updated || new Date().toISOString(),
       correlation: result.correlation ?? null,
     };
@@ -545,7 +545,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       mode: "disk",
       id: result.meta.id || handle.id,
       kind: "document",
-      documentType: "markdown",
+      documentType: handle.documentType ?? documentTypeFromPath(relPath ?? ""),
       path: relPath,
       relPath,
     };
@@ -753,6 +753,7 @@ function stripDocumentExtension(name: string): string {
 function documentTypeFromPath(path: string): WorkspaceDocumentType {
   if (/\.pdf$/i.test(path)) return "pdf";
   if (/\.(xlsx|xlsm)$/i.test(path)) return "excel";
+  if (/\.html?$/i.test(path)) return "html";
   return "markdown";
 }
 
