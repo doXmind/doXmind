@@ -66,7 +66,7 @@ describe("StratigraphyWelcome", () => {
     expect(onCreateNew).toHaveBeenCalledOnce();
   });
 
-  it("shows recent files ahead of workspaces and opens the selected file", async () => {
+  it("shows recent folders before files and opens the selected file", async () => {
     const user = userEvent.setup();
     const onOpenRecentFile = vi.fn();
     const onOpenRecentWorkspace = vi.fn();
@@ -97,10 +97,18 @@ describe("StratigraphyWelcome", () => {
     );
 
     expect(screen.getByText(/stratigraphy/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Project\.md/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /notes/i })).not.toBeInTheDocument();
+    // VSCode-style precedence: recent folders render first, then standalone
+    // files — both are shown (stratigraphy.tsx renders `[...folders, ...files]`).
+    const folderButton = screen.getByRole("button", { name: /notes/i });
+    const fileButton = screen.getByRole("button", { name: /Project\.md/i });
+    expect(folderButton).toBeInTheDocument();
+    expect(fileButton).toBeInTheDocument();
+    // The folder layer precedes the file layer in the DOM.
+    expect(
+      folderButton.compareDocumentPosition(fileButton) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
 
-    await user.click(screen.getByRole("button", { name: /Project\.md/i }));
+    await user.click(fileButton);
 
     expect(onOpenRecentFile).toHaveBeenCalledWith(
       expect.objectContaining({ absolutePath: "/tmp/work/Project.md" })
