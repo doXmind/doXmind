@@ -30,6 +30,7 @@ import { useBlockKeyboardShortcuts } from "@/hooks/use-block-keyboard-shortcuts"
 import { useFileStore, type FileItem, TRANSIENT_ID_PREFIX } from "@/stores/file-store";
 import { pickNativeSaveLocation } from "@/lib/native-dialog";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
+import { isHtmlFile } from "@/lib/document-types";
 import { useEditorStore } from "@/stores/editor-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
@@ -430,6 +431,8 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       prevDbIdsRef.current = extractDatabaseIds(file.content, "initialMount");
       // Capture the original Markdown so untouched blocks round-trip verbatim.
       editor.commands.setSourceBaseline(file.contentMarkdown ?? null);
+      // #139: for an HTML doc, preserve its original HTML blocks on getHTML().
+      editor.commands.setHtmlBaseline(isHtmlFile(file) ? file.content : null);
       // (Re)mount: restore this file's remembered scroll, or top if unseen.
       restoreScrollTop(scrollAreaRef.current, scrollPositions.get(file.id) ?? 0);
       return;
@@ -462,6 +465,8 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       lastContentRef.current = editor.getHTML();
       prevDbIdsRef.current = extractDatabaseIds(file.content, "fileSwitch");
       editor.commands.setSourceBaseline(file.contentMarkdown ?? null);
+      // #139: for an HTML doc, preserve its original HTML blocks on getHTML().
+      editor.commands.setHtmlBaseline(isHtmlFile(file) ? file.content : null);
       editor.emit("update", { editor, transaction: editor.state.tr, appendedTransactions: [] });
 
       domObserver?.start();
@@ -533,6 +538,8 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       );
       lastContentRef.current = editor.getHTML();
       editor.commands.setSourceBaseline(file.contentMarkdown ?? null);
+      // #139: for an HTML doc, preserve its original HTML blocks on getHTML().
+      editor.commands.setHtmlBaseline(isHtmlFile(file) ? file.content : null);
       editor.emit("update", { editor, transaction: editor.state.tr, appendedTransactions: [] });
 
       domObserver?.start();
