@@ -348,6 +348,28 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   const activePageIndex =
     (activeTextBox ?? activeFreeTextBox ?? activeHighlightBox)?.pageIndex ?? currentPageIndex;
 
+  // Pre-group the editable objects by page so renderPage does O(1) lookups
+  // instead of re-filtering all three arrays for every mounted page on every
+  // render (which is O(boxes × pages) in the scroll modes).
+  const boxesByPage = useMemo(() => {
+    const map = new Map<
+      number,
+      { text: PdfTextBox[]; free: PdfFreeTextBox[]; highlight: PdfHighlightBox[] }
+    >();
+    const bucket = (pageIndex: number) => {
+      let entry = map.get(pageIndex);
+      if (!entry) {
+        entry = { text: [], free: [], highlight: [] };
+        map.set(pageIndex, entry);
+      }
+      return entry;
+    };
+    for (const box of textBoxes) bucket(box.pageIndex).text.push(box);
+    for (const box of freeTextBoxes) bucket(box.pageIndex).free.push(box);
+    for (const box of highlightBoxes) bucket(box.pageIndex).highlight.push(box);
+    return map;
+  }, [textBoxes, freeTextBoxes, highlightBoxes]);
+
   // Record a page's measured base size. PdfPageCanvas calls this once per page
   // after it paints; bail on no-op writes so we don't churn the fit-zoom math.
   const registerPageSize = useCallback((pageIndex: number, size: PageSize) => {
@@ -720,7 +742,12 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
       try {
         const pdfjs = getPdfjs();
         const doc = await pdfjs.getDocument({ data: new Uint8Array(sourceBytes) }).promise;
-        if (cancelled) return;
+        if (cancelled) {
+          // A rapid file switch resolved this load after it was abandoned;
+          // destroy the orphaned proxy so its worker transport isn't leaked.
+          void doc.destroy();
+          return;
+        }
         setPdfDoc(doc);
         setStatus("ready");
       } catch (error) {
@@ -1487,6 +1514,19 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
     return () => ro.disconnect();
   }, [zoomMode, viewMode, currentPageIndex, pageSizes]);
 
+  // Drop the selection when its page is no longer mounted — in single mode,
+  // paging away (or a mode switch) would otherwise leave an invisible "ghost"
+  // selection anchored to an unmounted page, with no overlay or toolbar but
+  // still the target of style/delete actions. Scroll modes keep every page
+  // mounted, so the selection rightly persists there.
+  useEffect(() => {
+    if (!activeObject) return;
+    if (viewMode === "single" && activePageIndex !== currentPageIndex) {
+      setActiveObject(null);
+      setActiveTextSelection(null);
+    }
+  }, [activeObject, activePageIndex, currentPageIndex, viewMode]);
+
   const floatingToolbarRect = computeFloatingToolbarRect({
     activeTextSelection,
     activeObject,
@@ -1507,9 +1547,10 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   // page's index so editing works on any page while scrolling.
   const renderPage = (pageIndex: number) => {
     const size = pageSizes[pageIndex];
-    const pageHighlightBoxes = highlightBoxes.filter((box) => box.pageIndex === pageIndex);
-    const pageFreeTextBoxes = freeTextBoxes.filter((box) => box.pageIndex === pageIndex);
-    const pageTextBoxes = textBoxes.filter((box) => box.pageIndex === pageIndex);
+    const group = boxesByPage.get(pageIndex);
+    const pageHighlightBoxes = group?.highlight ?? [];
+    const pageFreeTextBoxes = group?.free ?? [];
+    const pageTextBoxes = group?.text ?? [];
     const pageDraft =
       highlightDraft && highlightDraft.box.pageIndex === pageIndex ? highlightDraft : null;
     const isActivePage = Boolean(activeObject) && activePageIndex === pageIndex;
