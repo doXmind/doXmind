@@ -58,10 +58,15 @@
   font-size: 1.25em;
 }
 
-/* KaTeX display mode centering */
+/* KaTeX display mode — left-aligned to match Notion's equation block (Notion
+   does not center block equations). */
 .ProseMirror .katex-display {
   @apply my-0;
-  text-align: center;
+  text-align: left;
+}
+
+.ProseMirror .katex-display > .katex {
+  text-align: left;
 }
 
 /* Error state for invalid LaTeX */

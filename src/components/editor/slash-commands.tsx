@@ -803,7 +803,7 @@ const commands: CommandItem[] = [
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const nodeType = editor.state.selection.$from.parent.type.name;
-      editor.chain().updateAttributes(nodeType, { backgroundColor: "#fee2e2" }).run();
+      editor.chain().updateAttributes(nodeType, { backgroundColor: "#FDEBEC" }).run();
     },
   },
   {
@@ -817,7 +817,7 @@ const commands: CommandItem[] = [
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const nodeType = editor.state.selection.$from.parent.type.name;
-      editor.chain().updateAttributes(nodeType, { backgroundColor: "#dbeafe" }).run();
+      editor.chain().updateAttributes(nodeType, { backgroundColor: "#E7F3F8" }).run();
     },
   },
   {
@@ -831,7 +831,7 @@ const commands: CommandItem[] = [
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const nodeType = editor.state.selection.$from.parent.type.name;
-      editor.chain().updateAttributes(nodeType, { backgroundColor: "#dcfce7" }).run();
+      editor.chain().updateAttributes(nodeType, { backgroundColor: "#EDF3EC" }).run();
     },
   },
   {
@@ -845,7 +845,7 @@ const commands: CommandItem[] = [
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const nodeType = editor.state.selection.$from.parent.type.name;
-      editor.chain().updateAttributes(nodeType, { backgroundColor: "#fef3c7" }).run();
+      editor.chain().updateAttributes(nodeType, { backgroundColor: "#FBF3DB" }).run();
     },
   },
   {
@@ -859,7 +859,7 @@ const commands: CommandItem[] = [
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const nodeType = editor.state.selection.$from.parent.type.name;
-      editor.chain().updateAttributes(nodeType, { backgroundColor: "#f3e8ff" }).run();
+      editor.chain().updateAttributes(nodeType, { backgroundColor: "#F4F0F7" }).run();
     },
   },
   {
@@ -873,7 +873,7 @@ const commands: CommandItem[] = [
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const nodeType = editor.state.selection.$from.parent.type.name;
-      editor.chain().updateAttributes(nodeType, { backgroundColor: "#f3f4f6" }).run();
+      editor.chain().updateAttributes(nodeType, { backgroundColor: "#F1F1EF" }).run();
     },
   },
   {
@@ -1422,12 +1422,12 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
     default:
       if (item.category === "color") {
         const colorMap: Record<string, string> = {
-          "Red background": "#fee2e2",
-          "Blue background": "#dbeafe",
-          "Green background": "#dcfce7",
-          "Yellow background": "#fef3c7",
-          "Purple background": "#f3e8ff",
-          "Gray background": "#f3f4f6",
+          "Red background": "#FDEBEC",
+          "Blue background": "#E7F3F8",
+          "Green background": "#EDF3EC",
+          "Yellow background": "#FBF3DB",
+          "Purple background": "#F4F0F7",
+          "Gray background": "#F1F1EF",
         };
         const bg = colorMap[item.title];
         if (bg) {

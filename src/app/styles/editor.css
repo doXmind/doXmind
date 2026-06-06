@@ -35,7 +35,8 @@
 .ProseMirror {
   @apply min-h-[500px] pb-[50vh] pt-4 outline-none;
   font-size: 1rem;
-  line-height: 1.55;
+  /* Notion body rhythm: 16px / 24px == 1.5. */
+  line-height: 1.5;
 }
 
 .ProseMirror > * + * {
@@ -156,8 +157,12 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35);
 }
 
+/* Notion quote: upright (not italic), full text color, a solid left bar that
+   tracks the text color rather than a faint hairline. */
 .ProseMirror blockquote {
-  @apply border-l-[3px] border-foreground/15 pl-4 italic text-muted-foreground;
+  @apply border-l-[3px] border-foreground/85 text-foreground;
+  padding-left: 14px;
+  font-style: normal;
 }
 
 .ProseMirror .doxmind-callout-wrapper {
@@ -173,8 +178,9 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   width: 100%;
   min-height: 0;
   border-radius: 10px;
-  background: rgb(241, 241, 239);
-  padding: 10px 14px;
+  /* Notion callout surface: a warm near-white (rgb 249,248,247), 12px inset. */
+  background: rgb(249, 248, 247);
+  padding: 12px 14px;
   color: hsl(var(--foreground));
 }
 
@@ -186,7 +192,7 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
    (math, mermaid, image empty state). Matches callout bg so empty
    blocks read as inline content rather than floating cards. */
 .doxmind-block-placeholder {
-  background: rgb(241, 241, 239);
+  background: rgb(249, 248, 247);
 }
 
 .dark .doxmind-block-placeholder {
@@ -431,35 +437,56 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   user-select: none;
 }
 
+/* Notion divider: a single faint hairline (foreground @ ~16%) with modest
+   vertical breathing room, not a heavy border-token rule. */
 .ProseMirror hr {
-  @apply my-8 border-border;
+  @apply my-6 border-0 border-t;
+  border-top-color: hsl(var(--foreground) / 0.16);
 }
 
+/* Notion headings: semibold (600), tight line-height (~1.3), and only a
+   whisper of negative tracking on the largest size. Sizes are set explicitly
+   (not via text-2xl/text-xl) because those utilities are re-pointed at the
+   UI font-size slider in globals.css and would otherwise shrink editor
+   headings (H2→21px, H3→17px). Pin them to Notion's 30 / 24 / 20px. */
 .ProseMirror h1 {
-  @apply mb-4 mt-10 text-3xl font-bold tracking-tight;
-  letter-spacing: -0.02em;
-}
-
-.ProseMirror h2 {
-  @apply mb-3 mt-8 text-2xl font-bold;
-  letter-spacing: -0.015em;
-}
-
-.ProseMirror h3 {
-  @apply mb-2 mt-6 text-xl font-semibold;
+  @apply mb-1 mt-8 font-semibold;
+  font-size: 1.875rem;
+  line-height: 1.3;
   letter-spacing: -0.01em;
 }
 
+.ProseMirror h2 {
+  @apply mb-1 mt-6 font-semibold;
+  font-size: 1.5rem;
+  line-height: 1.3;
+}
+
+.ProseMirror h3 {
+  @apply mb-1 mt-5 font-semibold;
+  font-size: 1.25rem;
+  line-height: 1.3;
+}
+
+/* H4–H6 (markdown-only; Notion itself stops at 3 levels). Explicit rem sizes
+   so they descend gently and stay immune to the UI font-size slider that
+   re-points text-lg/base/sm. */
 .ProseMirror h4 {
-  @apply mb-2 mt-4 text-lg font-semibold;
+  @apply mb-1 mt-4 font-semibold;
+  font-size: 1.125rem;
+  line-height: 1.3;
 }
 
 .ProseMirror h5 {
-  @apply mb-1.5 mt-3 text-base font-semibold;
+  @apply mb-1 mt-3 font-semibold;
+  font-size: 1rem;
+  line-height: 1.3;
 }
 
 .ProseMirror h6 {
-  @apply mb-1 mt-2 text-sm font-semibold;
+  @apply mb-1 mt-2 font-semibold;
+  font-size: 0.875rem;
+  line-height: 1.3;
 }
 
 .ProseMirror a {
@@ -470,47 +497,77 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   @apply rounded bg-yellow-200 px-0.5 dark:bg-yellow-800;
 }
 
-/* Block text colors — dark mode overrides for Notion-style text colors */
-.dark [data-text-color="#92400e"] {
-  color: #fbbf24 !important;
-} /* Brown → amber-400 */
-.dark [data-text-color="#64748b"] {
-  color: #94a3b8 !important;
-} /* Gray → slate-400 */
-
-/* Block background colors — dark mode overrides for light pastels */
-.dark [data-bg-color="#f1f5f9"] {
-  background-color: rgba(100, 116, 139, 0.15) !important;
+/* Block text colors — dark-mode overrides. Keyed on Notion's light text-color
+   hexes (see block-actions.ts), each remapped to Notion's brighter dark-mode
+   ink so colored text stays legible on the dark surface. */
+.dark [data-text-color="#787774"] {
+  color: #9b9b9b !important;
 } /* Gray */
-.dark [data-bg-color="#fef3c7"] {
-  background-color: rgba(251, 191, 36, 0.15) !important;
-} /* Brown/Amber */
-.dark [data-bg-color="#fee2e2"] {
-  background-color: rgba(239, 68, 68, 0.15) !important;
+.dark [data-text-color="#9F6B53"] {
+  color: #ba856f !important;
+} /* Brown */
+.dark [data-text-color="#D44C47"] {
+  color: #df7165 !important;
 } /* Red */
-.dark [data-bg-color="#fce7f3"] {
-  background-color: rgba(236, 72, 153, 0.15) !important;
+.dark [data-text-color="#C14C8A"] {
+  color: #c76a99 !important;
 } /* Pink */
-.dark [data-bg-color="#ffedd5"] {
-  background-color: rgba(249, 115, 22, 0.15) !important;
+.dark [data-text-color="#D9730D"] {
+  color: #c77d48 !important;
 } /* Orange */
-.dark [data-bg-color="#fef9c3"] {
-  background-color: rgba(234, 179, 8, 0.15) !important;
+.dark [data-text-color="#CB912F"] {
+  color: #ca9849 !important;
 } /* Yellow */
-.dark [data-bg-color="#dcfce7"] {
-  background-color: rgba(34, 197, 94, 0.15) !important;
+.dark [data-text-color="#448361"] {
+  color: #529e72 !important;
 } /* Green */
-.dark [data-bg-color="#ccfbf1"] {
-  background-color: rgba(20, 184, 166, 0.15) !important;
+.dark [data-text-color="#2D9B87"] {
+  color: #4fa89a !important;
 } /* Teal */
-.dark [data-bg-color="#dbeafe"] {
-  background-color: rgba(59, 130, 246, 0.15) !important;
+.dark [data-text-color="#337EA9"] {
+  color: #519ec8 !important;
 } /* Blue */
-.dark [data-bg-color="#e0e7ff"] {
-  background-color: rgba(99, 102, 241, 0.15) !important;
+.dark [data-text-color="#5E5BC9"] {
+  color: #8a88d6 !important;
 } /* Indigo */
-.dark [data-bg-color="#f3e8ff"] {
-  background-color: rgba(168, 85, 247, 0.15) !important;
+.dark [data-text-color="#9065B0"] {
+  color: #a779c8 !important;
+} /* Purple */
+
+/* Block background colors — dark-mode overrides. Keyed on Notion's light bg
+   hexes, remapped to Notion's dark-mode tinted fills. */
+.dark [data-bg-color="#F1F1EF"] {
+  background-color: rgb(47, 47, 47) !important;
+} /* Gray */
+.dark [data-bg-color="#F4EEEE"] {
+  background-color: rgb(74, 50, 40) !important;
+} /* Brown */
+.dark [data-bg-color="#FDEBEC"] {
+  background-color: rgb(82, 46, 42) !important;
+} /* Red */
+.dark [data-bg-color="#FAF1F5"] {
+  background-color: rgb(78, 44, 60) !important;
+} /* Pink */
+.dark [data-bg-color="#FAEBDD"] {
+  background-color: rgb(92, 59, 35) !important;
+} /* Orange */
+.dark [data-bg-color="#FBF3DB"] {
+  background-color: rgb(86, 67, 40) !important;
+} /* Yellow */
+.dark [data-bg-color="#EDF3EC"] {
+  background-color: rgb(36, 61, 48) !important;
+} /* Green */
+.dark [data-bg-color="#E0EFEC"] {
+  background-color: rgb(22, 58, 54) !important;
+} /* Teal */
+.dark [data-bg-color="#E7F3F8"] {
+  background-color: rgb(20, 58, 78) !important;
+} /* Blue */
+.dark [data-bg-color="#E9E7F5"] {
+  background-color: rgb(42, 42, 80) !important;
+} /* Indigo */
+.dark [data-bg-color="#F4F0F7"] {
+  background-color: rgb(60, 45, 73) !important;
 } /* Purple */
 
 /* Task List */
@@ -531,7 +588,14 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
 }
 
 .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
-  @apply m-0 h-4 w-4 rounded border-border align-middle;
+  @apply m-0 rounded border-border align-middle;
+  /* Notion checkbox: 14px square, 3px radius, filled Notion-blue when checked
+     (accent-color keeps the native control but pins the brand blue instead of
+     the OS accent). */
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  accent-color: #2383e2;
 }
 
 /* Table */
@@ -540,11 +604,9 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   /* Clip the column-resize-handle (right:-2px) on the last column
      so it doesn't cause wrapper overflow / phantom scrollbar */
   overflow: clip;
-  /* Size to content rather than forcing 100% — short cells shouldn't be
-     stretched to fill the column. The table grows naturally up to the
-     wrapper width (max-width: 100%), and word-break on cells keeps long
-     content wrapping inside the cap. */
-  width: auto;
+  /* Notion tables span the full content column; columns distribute across the
+     available width rather than hugging their content. */
+  width: 100%;
   max-width: 100%;
   table-layout: auto;
 }
@@ -552,23 +614,17 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
 .ProseMirror th,
 .ProseMirror td {
   @apply relative text-left text-sm;
-  padding: 4px 8px;
-  border: 1px solid hsl(var(--foreground) / 0.08);
-  line-height: 1.4;
+  /* Notion cells: roomy padding + min-width so columns don't collapse, giving
+     the taller, breathable row height. */
+  padding: 7px 9px;
+  min-width: 60px;
+  border: 1px solid hsl(var(--foreground) / 0.094);
+  line-height: 1.5;
   vertical-align: top;
-  transition: border-color 0.15s ease;
   /* Force long URLs / unbroken tokens to wrap so a single cell can't push
      the whole table past the content column. */
   word-break: break-word;
   overflow-wrap: anywhere;
-}
-
-/* Active table: darker borders when cursor is inside.
-   Do NOT change border-width here — with border-collapse the extra
-   pixels accumulate across every cell and reflow the whole table. */
-.ProseMirror table.table-editing th,
-.ProseMirror table.table-editing td {
-  border-color: hsl(var(--foreground) / 0.3);
 }
 
 /* Remove paragraph/block margins inside table cells for Notion-like compact layout */
@@ -578,21 +634,25 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   margin-bottom: 0 !important;
 }
 
+/* Notion header row: a faint warm-gray fill, medium weight, full text color
+   (not muted). */
 .ProseMirror th {
-  @apply font-medium text-muted-foreground;
-  background: hsl(var(--foreground) / 0.04);
+  @apply font-medium text-foreground;
+  background: hsl(var(--foreground) / 0.035);
 }
 
-/* Table selected cell highlight (multi-select) */
+/* Notion cell selection: a clean blue ring around the cell. Multi-cell
+   selection adds a faint blue wash on top. */
 .ProseMirror td.selectedCell,
 .ProseMirror th.selectedCell {
-  background: hsl(210 100% 56% / 0.08);
+  background: rgba(35, 131, 226, 0.1);
 }
 
 .ProseMirror .selectedCell::after {
-  @apply pointer-events-none absolute inset-0;
+  @apply pointer-events-none absolute;
   content: "";
-  border: 1px solid hsl(210 100% 56% / 0.5);
+  inset: -1px;
+  border: 2px solid #2383e2;
   z-index: 2;
 }
 
@@ -608,7 +668,7 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   z-index: 5;
 }
 .ProseMirror.resize-cursor .column-resize-handle {
-  background-color: hsl(217 91% 60% / 0.7);
+  background-color: #2383e2;
 }
 
 /* Table wrapper — strictly bounded by the content column (Typora-style).
@@ -622,12 +682,13 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   overflow: hidden;
 }
 
-/* Table column/row highlight on handle hover */
+/* Table column/row highlight on handle hover — Notion uses a neutral gray
+   wash (not a brand-tinted one) to preview the row/column under the handle. */
 .ProseMirror td.table-col-highlight,
 .ProseMirror th.table-col-highlight,
 .ProseMirror td.table-row-highlight,
 .ProseMirror th.table-row-highlight {
-  background-color: hsl(var(--primary) / 0.06);
+  background-color: hsl(var(--foreground) / 0.045);
 }
 
 /* Selection - keep editor text selection in brand blue */
@@ -783,14 +844,16 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   transition: background-color 0.15s ease;
 }
 
-/* Visual divider between columns */
+/* Notion columns carry no persistent divider and no hover tint — the resting
+   state is just the gap. A faint hairline fades in only while hovering the
+   block, hinting at the column boundary without the heavy bordered look. */
 .ProseMirror .columns-wrapper > .column + .column {
-  border-left: 1.5px solid hsl(var(--border) / 0.5);
+  border-left: 1px solid transparent;
+  transition: border-color 0.15s ease;
 }
 
-/* Hover: subtle background on columns to show boundaries */
-.ProseMirror .columns-wrapper:hover > .column {
-  background-color: hsl(var(--accent) / 0.3);
+.ProseMirror .columns-wrapper:hover > .column + .column {
+  border-left-color: hsl(var(--border) / 0.5);
 }
 
 /* Remove extra top margin on first child inside a column */
