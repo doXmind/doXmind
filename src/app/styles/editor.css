@@ -160,7 +160,7 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
 /* Notion quote: upright (not italic), full text color, a solid left bar that
    tracks the text color rather than a faint hairline. */
 .ProseMirror blockquote {
-  @apply border-l-[3px] border-foreground/85 text-foreground;
+  @apply border-l-[3px] border-foreground text-foreground;
   padding-left: 14px;
   font-style: normal;
 }
@@ -180,7 +180,7 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   border-radius: 10px;
   /* Notion callout surface: a warm near-white (rgb 249,248,247), 12px inset. */
   background: rgb(249, 248, 247);
-  padding: 12px 14px;
+  padding: 12px;
   color: hsl(var(--foreground));
 }
 
@@ -215,7 +215,8 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  font-size: 20px;
+  /* Notion renders the callout emoji at ~21.6px. */
+  font-size: 21.6px;
   line-height: 1;
   outline: none;
   transition: background-color 120ms ease;
