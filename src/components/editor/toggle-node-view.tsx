@@ -2,8 +2,17 @@
 
 import type { MouseEvent } from "react";
 import { NodeViewWrapper, NodeViewContent, NodeViewProps } from "@tiptap/react";
-import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+/** Notion's disclosure marker is a small solid triangle (not a stroked
+ *  chevron); it rotates 90° when the toggle opens. */
+function DisclosureTriangle({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 12 12" width="12" height="12" className={className} aria-hidden="true">
+      <path d="M4 2.5 L8.5 6 L4 9.5 Z" fill="currentColor" />
+    </svg>
+  );
+}
 
 export function ToggleNodeView({ node, updateAttributes }: NodeViewProps) {
   const isOpen = node.attrs.open !== false;
@@ -35,8 +44,8 @@ export function ToggleNodeView({ node, updateAttributes }: NodeViewProps) {
           aria-expanded={isOpen}
           className="absolute left-0 top-0 flex h-7 w-6 select-none items-center justify-center text-muted-foreground/70 transition-colors hover:text-foreground"
         >
-          <ChevronRight
-            className={cn("h-3.5 w-3.5 transition-transform duration-150", isOpen && "rotate-90")}
+          <DisclosureTriangle
+            className={cn("transition-transform duration-150", isOpen && "rotate-90")}
           />
         </button>
 
