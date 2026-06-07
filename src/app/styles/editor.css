@@ -614,10 +614,12 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
 
 .ProseMirror th,
 .ProseMirror td {
-  @apply relative text-left text-sm;
-  /* Notion cells: roomy padding + min-width so columns don't collapse, giving
-     the taller, breathable row height. */
-  padding: 7px 9px;
+  @apply relative text-left;
+  /* Notion simple-table cells use full body text (16px), not a small size.
+     Set explicitly so the UI font-size slider (which re-points text-sm) can't
+     shrink table text. Roomy padding + min-width gives Notion's ~35px rows. */
+  font-size: 1rem;
+  padding: 6px 9px;
   min-width: 60px;
   border: 1px solid hsl(var(--foreground) / 0.094);
   line-height: 1.5;
