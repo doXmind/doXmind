@@ -12,10 +12,12 @@
    no line-number gutter; the code sits directly on a solid warm-gray fill
    (Notion light code surface == rgb 247,246,243). */
 .ProseMirror .code-block-container {
-  @apply overflow-hidden rounded-lg;
+  @apply overflow-hidden rounded-[10px];
   background: rgb(247, 246, 243);
-  --code-block-font-size: var(--ui-code-font-size-base);
-  --code-block-line-height: 1.45;
+  /* Notion sizes code at 0.85em (≈13.6px on the 16px body) with 1.5 leading —
+     a content-relative size, not the UI chrome code-font slider. */
+  --code-block-font-size: 0.85em;
+  --code-block-line-height: 1.5;
 }
 
 .dark .ProseMirror .code-block-container {

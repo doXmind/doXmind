@@ -438,11 +438,11 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   user-select: none;
 }
 
-/* Notion divider: a single faint hairline (foreground @ ~16%) with modest
-   vertical breathing room, not a heavy border-token rule. */
+/* Notion divider: a single 1px hairline at ~11% ink, sitting in a tight ~13px
+   block (≈6px breathing room each side) — not an airy 24px gap. */
 .ProseMirror hr {
-  @apply my-6 border-0 border-t;
-  border-top-color: hsl(var(--foreground) / 0.16);
+  @apply my-2 border-0 border-t;
+  border-top-color: hsl(var(--foreground) / 0.11);
 }
 
 /* Notion headings: semibold (600), tight line-height (~1.3), and only a
