@@ -83,12 +83,13 @@ export function WebBookmarkEmptyState({ onSubmit }: WebBookmarkEmptyStateProps) 
           }
         }}
         className={cn(
-          "doxmind-block-placeholder flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors",
+          // Matches the Notion media-placeholder bar: 10px radius, ~14px label.
+          "doxmind-block-placeholder flex w-full items-center gap-3 rounded-[10px] px-4 py-3 text-left transition-colors",
           !isOpen && "cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
         )}
       >
-        <Bookmark className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm text-muted-foreground">{t("addWebBookmark")}</span>
+        <Bookmark className="h-[18px] w-[18px] text-muted-foreground" />
+        <span className="text-[14px] text-muted-foreground">{t("addWebBookmark")}</span>
       </div>
 
       {/* Floating popup positioned below the header */}
