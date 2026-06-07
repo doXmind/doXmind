@@ -297,9 +297,10 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   line-height: 0;
 }
 
-/* Unified selected ring for non-text blocks (image, math, chart) */
+/* Unified selected ring for non-text blocks (image, math, chart). Notion marks
+   a selected block with its blue (#2383E2), not the neutral primary ink. */
 .block-selected-ring {
-  @apply rounded-lg ring-2 ring-primary/60 ring-offset-2 ring-offset-background;
+  @apply rounded-lg ring-2 ring-[#2383e2]/60 ring-offset-2 ring-offset-background;
 }
 
 .ProseMirror .image-container img {

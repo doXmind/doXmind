@@ -168,7 +168,7 @@
   right: 0;
   top: -1.5px;
   height: 3px;
-  background-color: hsl(var(--primary));
+  background-color: #2383e2;
   border-radius: 2px;
   pointer-events: none;
   z-index: 10;
@@ -184,7 +184,7 @@
   top: -4.5px;
   width: 9px;
   height: 9px;
-  border: 2px solid hsl(var(--primary));
+  border: 2px solid #2383e2;
   border-radius: 50%;
   background: hsl(var(--background));
   pointer-events: none;
@@ -200,7 +200,7 @@
   right: 0;
   bottom: -1.5px;
   height: 3px;
-  background-color: hsl(var(--primary));
+  background-color: #2383e2;
   border-radius: 2px;
   pointer-events: none;
   z-index: 10;
@@ -216,7 +216,7 @@
   bottom: -4.5px;
   width: 9px;
   height: 9px;
-  border: 2px solid hsl(var(--primary));
+  border: 2px solid #2383e2;
   border-radius: 50%;
   background: hsl(var(--background));
   pointer-events: none;
