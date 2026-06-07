@@ -454,7 +454,8 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   @apply mb-1 mt-8 font-semibold;
   font-size: 1.875rem;
   line-height: 1.3;
-  letter-spacing: -0.01em;
+  /* Notion headings use normal tracking (measured), not negative. */
+  letter-spacing: normal;
 }
 
 .ProseMirror h2 {
