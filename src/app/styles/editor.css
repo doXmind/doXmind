@@ -507,8 +507,15 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   @apply decoration-foreground/70;
 }
 
+/* Default highlight uses Notion's muted yellow (same as the yellow block
+   background), not a bright highlighter. */
 .ProseMirror mark {
-  @apply rounded bg-yellow-200 px-0.5 dark:bg-yellow-800;
+  @apply rounded px-0.5;
+  background-color: #fbf3db;
+}
+
+.dark .ProseMirror mark {
+  background-color: rgb(86, 67, 40);
 }
 
 /* Block text colors — dark-mode overrides. Keyed on Notion's light text-color
