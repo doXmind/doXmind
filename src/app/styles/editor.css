@@ -269,10 +269,14 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
 
 .ProseMirror code {
   @apply rounded bg-muted px-1 py-0.5 font-mono text-sm;
+  /* Notion's signature inline-code red. */
+  color: #eb5757;
 }
 
 .ProseMirror pre code {
   @apply bg-transparent p-0;
+  /* Code-block code keeps the syntax/foreground color, not the inline red. */
+  color: inherit;
 }
 
 /* Image Node View */
@@ -492,8 +496,15 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   line-height: 1.3;
 }
 
+/* Notion links: full text color with a faint underline that darkens on hover
+   (not a colored link). */
 .ProseMirror a {
-  @apply text-primary underline underline-offset-2 hover:opacity-80;
+  @apply text-foreground underline decoration-foreground/40 underline-offset-2;
+  text-decoration-thickness: 1px;
+}
+
+.ProseMirror a:hover {
+  @apply decoration-foreground/70;
 }
 
 .ProseMirror mark {
