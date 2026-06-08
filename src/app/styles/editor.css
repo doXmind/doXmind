@@ -696,21 +696,22 @@ body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
   background-color: hsl(var(--foreground) / 0.045);
 }
 
-/* Selection - keep editor text selection in brand blue */
+/* Editor text selection — Notion blue (#2383E2 family), matching the cell /
+   selection-ring / drag-indicator blue used elsewhere. */
 .ProseMirror ::selection {
-  background-color: rgba(46, 170, 220, 0.28);
+  background-color: rgba(35, 131, 226, 0.28);
 }
 
 .dark .ProseMirror ::selection {
-  background-color: rgba(46, 170, 220, 0.34);
+  background-color: rgba(35, 131, 226, 0.34);
 }
 
 .ProseMirror ::-moz-selection {
-  background-color: rgba(46, 170, 220, 0.28);
+  background-color: rgba(35, 131, 226, 0.28);
 }
 
 .dark .ProseMirror ::-moz-selection {
-  background-color: rgba(46, 170, 220, 0.34);
+  background-color: rgba(35, 131, 226, 0.34);
 }
 
 /* Bubble Menu Animation */
