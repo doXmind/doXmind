@@ -185,6 +185,8 @@
       "page": "Page",
       "linkToPage": "Link to Page",
       "linkToPageDesc": "Link to an existing page",
+      "mentionPage": "Mention Page",
+      "mentionPageDesc": "Inline reference to a page",
       "webBookmark": "Web Bookmark",
       "webBookmarkDesc": "Save a link as a visual bookmark",
       "database": "Database",

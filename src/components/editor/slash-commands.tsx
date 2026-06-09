@@ -313,6 +313,29 @@ const commands: CommandItem[] = [
       }, anchor);
     },
   },
+  {
+    title: "Mention Page",
+    description: "Inline reference to a page",
+    titleKey: "blockMenu.mentionPage",
+    descKey: "blockMenu.mentionPageDesc",
+    icon: <FileText className="h-4 w-4" />,
+    category: "basic",
+    searchKeywords: ["提及页面", "行内页面", "mention", "@"],
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      const { openPagePicker } = useEditorStore.getState();
+      const coords = editor.view.coordsAtPos(editor.state.selection.from);
+      const anchor = {
+        x: coords.left,
+        y: coords.top,
+        width: 0,
+        height: coords.bottom - coords.top,
+      };
+      openPagePicker((attrs) => {
+        editor.chain().focus().setPageMention(attrs).run();
+      }, anchor);
+    },
+  },
 
   // Lists
   {

@@ -185,6 +185,8 @@
       "page": "页面",
       "linkToPage": "页面链接",
       "linkToPageDesc": "链接到已有页面",
+      "mentionPage": "提及页面",
+      "mentionPageDesc": "行内引用一个页面",
       "webBookmark": "网页书签",
       "webBookmarkDesc": "将链接保存为可视化书签",
       "database": "数据库",
