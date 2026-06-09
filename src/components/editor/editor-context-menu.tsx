@@ -63,8 +63,11 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
       // Always own the editor's context menu (no native Cut/Copy/Paste, like
       // Notion). Resolve the target block; fall back to the current selection.
       const pos = blockStartPosAtCoords(editor, e.clientX, e.clientY);
+      // preventDefault (no stopPropagation) so the event still reaches the
+      // document-level ContextMenuGuard, which bails on defaultPrevented — the
+      // contract its comment documents. Stopping propagation would silently
+      // break that escape clause.
       e.preventDefault();
-      e.stopPropagation();
       setBlockPos(pos);
       setPosition({ x: e.clientX, y: e.clientY });
     };
