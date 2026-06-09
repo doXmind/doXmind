@@ -62,12 +62,6 @@
     "uploadImage": "上传图片",
     "dragOrPaste": "拖放或粘贴图片",
     "maxFileSize": "最大文件大小：{size}",
-    "contextMenu": {
-      "cut": "剪切",
-      "copy": "复制",
-      "paste": "粘贴",
-      "format": "格式"
-    },
     "presentation": {
       "enterPresentation": "演示",
       "exitPresentation": "退出演示",
@@ -396,8 +390,7 @@
       "imageUrl": "图片链接",
       "imageUrlPlaceholder": "https://example.com/image.png",
       "apply": "应用"
-    },
-    "contextMenuAria": "编辑器上下文菜单"
+    }
   },
   "sidebar": {
     "settings": "设置",

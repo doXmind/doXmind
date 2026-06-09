@@ -62,12 +62,6 @@
     "uploadImage": "Upload image",
     "dragOrPaste": "Drag & drop or paste an image",
     "maxFileSize": "Max file size: {size}",
-    "contextMenu": {
-      "cut": "Cut",
-      "copy": "Copy",
-      "paste": "Paste",
-      "format": "Format"
-    },
     "presentation": {
       "enterPresentation": "Present",
       "exitPresentation": "Exit presentation",
@@ -396,8 +390,7 @@
       "imageUrl": "Image URL",
       "imageUrlPlaceholder": "https://example.com/image.png",
       "apply": "Apply"
-    },
-    "contextMenuAria": "Editor context menu"
+    }
   },
   "sidebar": {
     "settings": "Settings",
