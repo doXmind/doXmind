@@ -536,7 +536,7 @@
     "uiFontSize": "界面字号",
     "uiFontSizeDesc": "调整 doXmind 界面的基础字号",
     "codeFontSize": "代码字号",
-    "codeFontSizeDesc": "调整代码、数学公式以及等宽文本的基础字号",
+    "codeFontSizeDesc": "调整行内代码、数学公式以及等宽文本的基础字号",
     "editorFontFamily": "编辑器字体",
     "editorFontFamilyDesc": "编辑器正文使用的字体",
     "editorLineSpacing": "编辑器行距",

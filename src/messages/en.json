@@ -536,7 +536,7 @@
     "uiFontSize": "UI font size",
     "uiFontSizeDesc": "Adjust the base size used for the doXmind UI",
     "codeFontSize": "Code font size",
-    "codeFontSizeDesc": "Adjust the base size used for code, math, and mono content",
+    "codeFontSizeDesc": "Adjust the base size used for inline code, math, and mono content",
     "editorFontFamily": "Editor font",
     "editorFontFamilyDesc": "Font used for document body in the editor",
     "editorLineSpacing": "Editor line spacing",
