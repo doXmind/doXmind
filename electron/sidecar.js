@@ -42,7 +42,14 @@ function resolvePython(repoRoot) {
  * @returns {import('node:child_process').ChildProcess}
  */
 function spawnSidecar({ repoRoot, port, packaged = false, resourcesPath = "" }) {
-  const env = { ...process.env, HOST: "127.0.0.1", PORT: String(port) };
+  const env = {
+    ...process.env,
+    HOST: "127.0.0.1",
+    PORT: String(port),
+    // run_sidecar.py's watchdog self-terminates when this pid dies — covers
+    // force-quit/crash, where 'will-quit' never fires and kill() never runs.
+    DOXMIND_PARENT_PID: String(process.pid),
+  };
   if (packaged) {
     const bin = path.join(resourcesPath, "doxmind-server", "doxmind-server");
     return spawn(bin, [], { env, stdio: ["ignore", "pipe", "pipe"] });
