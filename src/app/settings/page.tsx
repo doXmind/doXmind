@@ -8,12 +8,11 @@ import { SettingsRail } from "@/components/settings/settings-rail";
 import type { SettingsSectionDef } from "@/components/settings/settings-atoms";
 import { AppearanceSection } from "@/components/settings/sections/appearance-section";
 import { TypographySection } from "@/components/settings/sections/typography-section";
-import { WorkspaceSection } from "@/components/settings/sections/workspace-section";
 import { AboutSection } from "@/components/settings/sections/about-section";
 import { useIsTauri } from "@/hooks/use-is-tauri";
 import { cn } from "@/lib/utils";
 
-const SECTION_IDS = ["appearance", "typography", "workspace", "about"] as const;
+const SECTION_IDS = ["appearance", "typography", "about"] as const;
 type SectionId = (typeof SECTION_IDS)[number];
 
 const SECTION_ID_SET = new Set<string>(SECTION_IDS);
@@ -42,7 +41,6 @@ export default function SettingsPage() {
     () => [
       { id: "appearance", label: t("appearance") },
       { id: "typography", label: t("typography") },
-      { id: "workspace", label: t("workspace") },
       { id: "about", label: t("about") },
     ],
     [t]
@@ -106,10 +104,10 @@ export default function SettingsPage() {
       >
         <Link
           href="/editor"
-          className="inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground"
+          aria-label={t("backToEditor")}
+          className="inline-flex items-center text-[12.5px] text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          {t("backToEditor")}
         </Link>
         <span className="text-[13px] font-semibold text-foreground">{t("pageTitle")}</span>
       </div>
@@ -120,19 +118,11 @@ export default function SettingsPage() {
           active={active}
           onJump={jump}
           heading={t("railHeading")}
-          footer={
-            <>
-              {t("railFooterLine1")}
-              <br />
-              {t("railFooterLine2")}
-            </>
-          }
         />
 
         <main>
           <AppearanceSection />
           <TypographySection />
-          <WorkspaceSection />
           <AboutSection />
         </main>
       </div>

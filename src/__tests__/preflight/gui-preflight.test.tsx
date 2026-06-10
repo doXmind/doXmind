@@ -50,19 +50,6 @@ vi.mock("@/components/workspace/markdown-runtime", () => ({
   ),
 }));
 
-vi.mock("@/components/editor/editor", () => ({
-  Editor: ({ file, reservedRightInset }: { file: FileItem; reservedRightInset?: number }) => (
-    <div
-      data-testid="document-workspace"
-      data-document-type="markdown"
-      data-reserved-right-inset={reservedRightInset ?? 0}
-    >
-      {file.name}
-      <div data-testid="document-blocks" dangerouslySetInnerHTML={{ __html: file.content }} />
-    </div>
-  ),
-}));
-
 vi.mock("@/components/excel-editor/excel-editor-workspace", () => ({
   ExcelEditorWorkspace: ({ file }: { file: FileItem }) => {
     const [currencyFormatted, setCurrencyFormatted] = React.useState(false);
@@ -342,9 +329,6 @@ function file(overrides: Partial<FileItem>): FileItem {
     parentId: null,
     position: 0,
     isFavorite: false,
-    icon: null,
-    coverImageUrl: null,
-    coverPosition: 0.5,
     createdAt: now,
     updatedAt: now,
     wordCount: 2,

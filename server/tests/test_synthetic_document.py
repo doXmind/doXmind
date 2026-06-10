@@ -11,6 +11,7 @@ import json
 import logging
 import multiprocessing
 import re
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -350,6 +351,11 @@ def test_open_pdf_concurrent_legacy_migration_race(tmp_path):
     assert bak_path.read_bytes() == raw_before
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="sidecar_lock is a documented no-op on Windows (no fcntl); "
+    "see services/sidecar_lock.py",
+)
 def test_locked_sidecar_creates_and_keeps_lock_file(tmp_path):
     sidecar_path = tmp_path / ".Application.pdf.doxmind"
     lock_path = sidecar_path.parent / f"{sidecar_path.name}.lock"

@@ -15,15 +15,18 @@ use std::io;
 use std::net::TcpListener;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::{cmp, collections::BTreeMap, collections::HashMap};
 
 use doxmind_sidecar::{DocMeta, DocPayload, DocumentOutlineItem, ReadResult, Source, SourceState};
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use tauri::{
-    AppHandle, Emitter, LogicalPosition, Manager, RunEvent, Url, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder, WindowEvent,
+    AppHandle, Emitter, EventTarget, LogicalPosition, Manager, RunEvent, Url, WebviewUrl,
+    WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
@@ -148,6 +151,203 @@ impl WindowRegistry {
     }
 }
 
+/// Debounce window for collapsing a burst of filesystem events into a single
+/// `workspace://changed` emit. The watcher event = "workspace may be dirty";
+/// the frontend's `workspace_scan` re-scan is the source of truth, so a coarse
+/// debounce is all we need. ~400 ms matches the issue's target.
+const WORKSPACE_WATCH_DEBOUNCE: Duration = Duration::from_millis(400);
+
+/// Hard ceiling on how long a single coalesce window may grow under a
+/// continuous event stream. Without it, events arriving faster than the
+/// debounce gap would reset the timer forever and starve the emit. Bounds
+/// worst-case latency so the sidebar still refreshes within the ~1 s target.
+const WORKSPACE_WATCH_MAX_COALESCE: Duration = Duration::from_millis(800);
+
+/// One live watcher per window. The `RecommendedWatcher` is held to keep the
+/// OS watch alive; dropping it stops watching. The drain thread that owns the
+/// event receiver exits on its own when the watcher (and thus the sender) is
+/// dropped, so removing the entry from the map is the whole teardown.
+struct WorkspaceWatch {
+    _watcher: RecommendedWatcher,
+    /// The exact (raw) root string the frontend passed to `workspace_watch`.
+    /// Used as the swap-safe teardown identity: the frontend passes the same
+    /// raw string to `workspace_unwatch`, so we match on it directly and never
+    /// have to re-canonicalize (which would fail if the folder was deleted).
+    key: String,
+}
+
+/// Per-window filesystem watchers, keyed by Tauri window label. Each window
+/// watches only its own workspace root, so a window showing folder A never
+/// refreshes because folder B changed.
+struct WorkspaceWatchers {
+    by_label: Mutex<HashMap<String, WorkspaceWatch>>,
+}
+
+impl WorkspaceWatchers {
+    fn new() -> Self {
+        Self {
+            by_label: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn remove(&self, label: &str) {
+        if let Ok(mut map) = self.by_label.lock() {
+            map.remove(label);
+        }
+    }
+
+    /// Remove the watcher for `label` only if its key still matches `key`. No-op
+    /// if the entry was already replaced by a watcher for a different folder —
+    /// this is what keeps a late folder-A teardown from killing a live folder-B
+    /// watcher during a swap. Matching on the raw caller key (not a re-derived
+    /// canonical path) means a deleted/renamed folder can never escalate this
+    /// into an unconditional remove.
+    fn remove_if_key(&self, label: &str, key: &str) {
+        if let Ok(mut map) = self.by_label.lock() {
+            if map.get(label).map(|w| w.key.as_str()) == Some(key) {
+                map.remove(label);
+            }
+        }
+    }
+}
+
+/// Whether a single path segment is one the scan ignores or that the watcher
+/// should treat as noise. Mirrors the scan's ignore model (`is_ignored_scan_dir`
+/// / `is_hidden_sidecar_name`) and extends it for the full hidden-sidecar family
+/// so a sidecar `.lock` / `.bak` / `.corrupt-*` write — or any write inside the
+/// `.doxmind/` index dir — never bounces back as a refresh.
+fn is_ignored_watch_segment(name: &str) -> bool {
+    // The `.doxmind/` index directory and any ignored/generated dir.
+    if name == ".doxmind" || is_ignored_scan_dir(name) {
+        return true;
+    }
+    // Hidden sidecar family: `.foo.doxmind`, plus the `.lock` / `.bak` /
+    // `.corrupt-*` siblings that hang off it. `is_hidden_sidecar_name` only
+    // catches the exact `.doxmind` suffix, so widen it here.
+    name.starts_with('.') && name.contains(".doxmind")
+}
+
+/// Whether an event path under the workspace root is "interesting" enough to
+/// trigger a re-scan. notify delivers absolute paths, so we test only the
+/// segments *below* the watch root — the scan likewise only inspects the leaf
+/// name of each child entry, never the ancestor path. Without this the root's
+/// own path segments (e.g. a workspace living under `~/build/` or `~/.git-bare/`)
+/// would spuriously match the ignore list and silence every event.
+///
+/// If the path can't be placed under the root (no shared prefix — shouldn't
+/// happen for a recursive watch on the canonical `root`, but possible if a
+/// backend reports a path via a different symlink/mount alias), we treat it as
+/// relevant rather than scanning its absolute ancestors: the worst case is one
+/// extra re-scan, whereas the alternative would silently drop real events for
+/// any workspace nested under an ignore-listed directory name.
+///
+/// Main `.md` saves are not filtered here; they produce one debounced re-scan,
+/// which is fine.
+fn watch_path_is_relevant(root: &Path, path: &Path) -> bool {
+    let Ok(segments) = path.strip_prefix(root) else {
+        return true;
+    };
+    for component in segments.components() {
+        if let Component::Normal(part) = component {
+            if is_ignored_watch_segment(&part.to_string_lossy()) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Returns true if any path in the event batch is relevant. notify reports the
+/// affected paths per event; a rename/move carries both endpoints. We keep the
+/// event if *any* endpoint is interesting.
+fn watch_event_is_relevant(root: &Path, event: &notify::Event) -> bool {
+    // Access/metadata-only churn is noise (e.g. mtime bumps from reads). Keep
+    // structural changes: create / modify-content / remove / rename.
+    match event.kind {
+        EventKind::Access(_) => false,
+        EventKind::Any
+        | EventKind::Other
+        | EventKind::Create(_)
+        | EventKind::Modify(_)
+        | EventKind::Remove(_) => event.paths.iter().any(|p| watch_path_is_relevant(root, p)),
+    }
+}
+
+/// Spawn a recursive watcher on `root` (canonical) and a drain thread that
+/// debounces event bursts and emits `workspace://changed` (with `{ root }`) to
+/// the owning window only. `key` is the raw caller-supplied root string, stored
+/// as the teardown identity. Returns the `WorkspaceWatch` whose lifetime keeps
+/// both alive.
+fn spawn_workspace_watch(
+    app: &AppHandle,
+    label: String,
+    root: PathBuf,
+    key: String,
+) -> Result<WorkspaceWatch, String> {
+    let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+    let mut watcher = notify::recommended_watcher(move |res| {
+        // The receiver lives in the drain thread; once that thread (and the
+        // watcher) is gone the send fails and we simply stop forwarding.
+        let _ = tx.send(res);
+    })
+    .map_err(|err| format!("failed to create watcher: {err}"))?;
+    watcher
+        .watch(&root, RecursiveMode::Recursive)
+        .map_err(|err| format!("failed to watch {}: {err}", root.display()))?;
+
+    let app = app.clone();
+    let emit_root = root.to_string_lossy().into_owned();
+    let coalesce_root = root.clone();
+    thread::spawn(move || {
+        // Block for the first relevant event, then coalesce everything that
+        // arrives within the debounce window into one emit.
+        while let Ok(first) = rx.recv() {
+            if !first
+                .map(|e| watch_event_is_relevant(&coalesce_root, &e))
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            // Coalesce: keep draining while events keep arriving within the
+            // debounce gap, but cap the total coalesce window so a continuous
+            // stream (relevant or not) can never starve the emit past the
+            // ~1 s budget. We don't inspect drained events — any further change
+            // is already covered by the single re-scan this emit triggers.
+            let deadline = Instant::now() + WORKSPACE_WATCH_MAX_COALESCE;
+            loop {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    break;
+                }
+                let gap = cmp::min(WORKSPACE_WATCH_DEBOUNCE, remaining);
+                if rx.recv_timeout(gap).is_err() {
+                    break;
+                }
+            }
+
+            // Per-window delivery: in Tauri v2 a bare `emit` broadcasts to every
+            // window, so we target this window's webview explicitly. Combined
+            // with the frontend re-registering on root change, a window showing
+            // folder A never refreshes because folder B changed (AC #3).
+            let _ = app.emit_to(
+                EventTarget::webview_window(&label),
+                "workspace://changed",
+                WorkspaceChangedPayload { root: &emit_root },
+            );
+        }
+    });
+
+    Ok(WorkspaceWatch {
+        _watcher: watcher,
+        key,
+    })
+}
+
+#[derive(Serialize, Clone)]
+struct WorkspaceChangedPayload<'a> {
+    root: &'a str,
+}
+
 /// Queue of file paths the OS asked us to open — populated from CLI args at
 /// startup (Windows/Linux file associations pass paths as argv) and from
 /// `RunEvent::Opened` (macOS Finder "Open With" / drag-to-dock). Drained by
@@ -201,7 +401,7 @@ fn normalize_open_path(path: &str) -> Option<String> {
         return None;
     }
     let lower = abs.to_string_lossy().to_ascii_lowercase();
-    let supported = [".md", ".markdown", ".pdf", ".xlsx", ".xlsm"]
+    let supported = [".md", ".markdown", ".pdf", ".xlsx", ".xlsm", ".html", ".htm"]
         .iter()
         .any(|ext| lower.ends_with(ext));
     if !supported {
@@ -225,17 +425,34 @@ fn pick_free_port() -> u16 {
 }
 
 /// In dev mode, find a usable Python interpreter — preferring the project
-/// venv at `server/.venv/bin/python` so editable installs are picked up.
+/// venv so editable installs are picked up. The venv layout differs between
+/// platforms (POSIX: `bin/python`, Windows: `Scripts/python.exe`), and the
+/// system launcher is `python3` on POSIX vs `python` on Windows, so both
+/// the venv path and the fallback are platform-aware.
 #[cfg(debug_assertions)]
 fn resolve_python(server_dir: &std::path::Path) -> PathBuf {
     if let Ok(explicit) = std::env::var("DOXMIND_PYTHON") {
         return PathBuf::from(explicit);
     }
-    let venv = server_dir.join(".venv").join("bin").join("python");
+
+    let venv_dir = server_dir.join(".venv");
+    #[cfg(target_os = "windows")]
+    let venv = venv_dir.join("Scripts").join("python.exe");
+    #[cfg(not(target_os = "windows"))]
+    let venv = venv_dir.join("bin").join("python");
+
     if venv.exists() {
         return venv;
     }
-    PathBuf::from("python3")
+
+    #[cfg(target_os = "windows")]
+    {
+        PathBuf::from("python")
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        PathBuf::from("python3")
+    }
 }
 
 #[cfg(debug_assertions)]
@@ -602,7 +819,7 @@ async fn doc_write_workspace(
     payload: DocWriteInputDto,
 ) -> Result<ReadResultDto, String> {
     let root = canonical_workspace_root(&root)?;
-    ensure_markdown_path(&path)?;
+    ensure_text_document_path(&path)?;
     let path = resolve_workspace_path_for_write(&root, &path)?;
 
     // Merge incoming meta with the existing sidecar/frontmatter so callers
@@ -1424,7 +1641,64 @@ fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         let _ = fs::remove_file(&tmp);
         return Err(err);
     }
+    // Intentionally NOT setting FILE_ATTRIBUTE_HIDDEN on per-file sidecars
+    // here: Win32 `CreateFile` with `CREATE_ALWAYS` rejects hidden files
+    // with ERROR_ACCESS_DENIED, which would break external rewriters
+    // (sync tools, manual edits, third-party processes using the standard
+    // open-truncate-write pattern). Directory-level hiding is still
+    // applied where it's safe — see `write_workspace_index`.
     Ok(())
+}
+
+/// Best-effort: set FILE_ATTRIBUTE_HIDDEN on Windows for a *directory* whose
+/// name starts with `.`. Only safe for directories — see the comment in
+/// `atomic_write_bytes` for why we don't hide per-file sidecars on Windows.
+/// On POSIX the leading dot is already the hidden convention so this is a
+/// no-op. Failures are swallowed: visibility is cosmetic, never block writes.
+fn mark_hidden_if_dot_prefixed(path: &Path) {
+    let starts_with_dot = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|name| name.starts_with('.'))
+        .unwrap_or(false);
+    if !starts_with_dot {
+        return;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            GetFileAttributesW, SetFileAttributesW, FILE_ATTRIBUTE_HIDDEN,
+        };
+
+        // INVALID_FILE_ATTRIBUTES is documented as 0xFFFFFFFF. We inline the
+        // literal because the constant's module path has shifted across
+        // windows-sys versions.
+        const INVALID_FILE_ATTRIBUTES: u32 = u32::MAX;
+
+        let wide: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        // SAFETY: `wide` is a valid null-terminated UTF-16 string for the
+        // lifetime of the call; the Win32 APIs take a const pointer and do
+        // not retain it past return.
+        unsafe {
+            let attrs = GetFileAttributesW(wide.as_ptr());
+            if attrs == INVALID_FILE_ATTRIBUTES {
+                return;
+            }
+            if attrs & FILE_ATTRIBUTE_HIDDEN != 0 {
+                return;
+            }
+            let _ = SetFileAttributesW(wide.as_ptr(), attrs | FILE_ATTRIBUTE_HIDDEN);
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path; // silence unused-variable warning on POSIX
+    }
 }
 
 #[tauri::command]
@@ -1966,6 +2240,66 @@ fn workspace_scan(root: String) -> Result<WorkspaceScanResultDto, String> {
     })
 }
 
+/// Normalize a raw root string into the stable key used to identify a watcher.
+/// Trims a single trailing path separator so `~/x` and `~/x/` map to the same
+/// watcher and don't cause a redundant drop+respawn.
+fn workspace_watch_key(root: &str) -> &str {
+    root.strip_suffix(std::path::MAIN_SEPARATOR)
+        .unwrap_or(root)
+}
+
+/// Start watching `root` for the calling window. Replaces any existing watcher
+/// for that window (opening a different folder in the same window swaps the
+/// watch). A no-op early-out if the same root is already watched avoids
+/// tearing down and rebuilding the OS watch on redundant calls.
+#[tauri::command]
+fn workspace_watch(
+    app: AppHandle,
+    window: WebviewWindow,
+    root: String,
+    watchers: tauri::State<'_, WorkspaceWatchers>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let key = workspace_watch_key(&root).to_string();
+
+    // Hold the lock across check → canonicalize → spawn → insert so a concurrent
+    // watch for the same window can't slip a second watcher in between. The
+    // early-out runs before canonicalizing, so a redundant re-watch never pays
+    // an fs syscall and never fails just because the (already-watched) folder
+    // briefly stops resolving. canonicalize and spawn only register OS state on
+    // success; on error we return without mutating the map, leaving any existing
+    // watcher intact.
+    let mut map = watchers
+        .by_label
+        .lock()
+        .map_err(|_| "watcher registry poisoned".to_string())?;
+    if map.get(&label).map(|w| w.key.as_str()) == Some(key.as_str()) {
+        return Ok(());
+    }
+    let canonical = canonical_workspace_root(&root)?;
+    let watch = spawn_workspace_watch(&app, label.clone(), canonical, key)?;
+    // Replacing the entry drops the prior watcher, which stops its drain thread.
+    map.insert(label, watch);
+    Ok(())
+}
+
+/// Stop watching for the calling window. Idempotent. `root` scopes the removal
+/// to the watcher the caller believes is active: when the frontend swaps folder
+/// A → B, the teardown for A and the setup for B race across IPC, and an A-late
+/// unwatch must not tear down the freshly-installed B watcher. We match on the
+/// raw caller key, so a deleted/renamed folder (whose path no longer
+/// canonicalizes) still tears down precisely its own watcher and never another.
+/// Window teardown uses `WorkspaceWatchers::remove` directly for unconditional
+/// "stop everything" semantics.
+#[tauri::command]
+fn workspace_unwatch(
+    window: WebviewWindow,
+    root: String,
+    watchers: tauri::State<'_, WorkspaceWatchers>,
+) {
+    watchers.remove_if_key(window.label(), workspace_watch_key(&root));
+}
+
 #[tauri::command]
 fn workspace_index_rebuild(root: String) -> Result<WorkspaceIndexDto, String> {
     let root = canonical_workspace_root(&root)?;
@@ -2383,6 +2717,21 @@ fn ensure_markdown_path(path: &str) -> Result<(), String> {
     }
 }
 
+/// Markdown and HTML are the text document types that share the read/write
+/// workspace path (#139); HTML routes to the html branch inside `write_doc`.
+fn ensure_text_document_path(path: &str) -> Result<(), String> {
+    let extension = Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase());
+    match extension.as_deref() {
+        Some("md") | Some("markdown") | Some("html") | Some("htm") => Ok(()),
+        _ => Err(format!(
+            "document path must end in .md, .markdown, .html, or .htm: {path}"
+        )),
+    }
+}
+
 fn ensure_pdf_path(path: &str) -> Result<(), String> {
     let extension = Path::new(path)
         .extension()
@@ -2403,6 +2752,38 @@ fn ensure_excel_path(path: &str) -> Result<(), String> {
         Some("xlsx") | Some("xlsm") => Ok(()),
         _ => Err(format!("document path must end in .xlsx or .xlsm: {path}")),
     }
+}
+
+/// The lowercased extension of a workspace document, or an error if the path
+/// isn't a supported document type. Unlike `ensure_markdown_path`, this accepts
+/// every first-class type so PDF/Excel can be renamed and moved too.
+fn workspace_document_extension(path: &str) -> Result<String, String> {
+    let extension = Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .unwrap_or_default();
+    match extension.as_str() {
+        "md" | "markdown" | "pdf" | "xlsx" | "xlsm" => Ok(extension),
+        _ => Err(format!(
+            "document path must end in .md, .markdown, .pdf, .xlsx, or .xlsm: {path}"
+        )),
+    }
+}
+
+/// A rename or in-place move may target any document type, but must never
+/// change the file's type — the destination keeps the source's extension so a
+/// `.pdf` can't silently become a `.md`. Legitimate callers (sidebar rename,
+/// drag-move) always preserve the extension; this guards a malformed request.
+fn ensure_same_document_extension(old_path: &str, new_path: &str) -> Result<(), String> {
+    let old_ext = workspace_document_extension(old_path)?;
+    let new_ext = workspace_document_extension(new_path)?;
+    if old_ext != new_ext {
+        return Err(format!(
+            "cannot change document type on move: {old_path} -> {new_path}"
+        ));
+    }
+    Ok(())
 }
 
 fn resolve_existing_workspace_path(root: &Path, path: &str) -> Result<PathBuf, String> {
@@ -2553,8 +2934,15 @@ fn is_excel_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn is_html_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "html" | "htm"))
+        .unwrap_or(false)
+}
+
 fn is_workspace_document_file(path: &Path) -> bool {
-    is_markdown_file(path) || is_pdf_file(path) || is_excel_file(path)
+    is_markdown_file(path) || is_pdf_file(path) || is_excel_file(path) || is_html_file(path)
 }
 
 fn document_dto_for_path(
@@ -2565,6 +2953,8 @@ fn document_dto_for_path(
         "pdf"
     } else if is_excel_file(path) {
         "excel"
+    } else if is_html_file(path) {
+        "html"
     } else {
         "markdown"
     }
@@ -2727,6 +3117,10 @@ fn write_workspace_index(root: &Path, index: &WorkspaceIndexDto) -> Result<(), S
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|err| format!("failed to create workspace index directory: {err}"))?;
+        // The parent directory is `.doxmind/`. Its leading dot hides it on
+        // POSIX but not on Windows; flip FILE_ATTRIBUTE_HIDDEN so the workspace
+        // doesn't grow a visible doXmind folder next to the user's documents.
+        mark_hidden_if_dot_prefixed(parent);
     }
     let raw = serde_json::to_string_pretty(index)
         .map_err(|err| format!("failed to serialize workspace index: {err}"))?;
@@ -2737,7 +3131,7 @@ fn write_workspace_index(root: &Path, index: &WorkspaceIndexDto) -> Result<(), S
             return Ok(());
         }
     }
-    fs::write(path, raw).map_err(|err| format!("failed to write workspace index: {err}"))
+    fs::write(&path, raw).map_err(|err| format!("failed to write workspace index: {err}"))
 }
 
 fn read_workspace_index(root: &Path) -> Result<WorkspaceIndexDto, String> {
@@ -2852,8 +3246,7 @@ fn move_document_pair(
     new_path: &str,
 ) -> Result<WorkspaceDocumentDto, String> {
     let root = canonical_workspace_root(root)?;
-    ensure_markdown_path(old_path)?;
-    ensure_markdown_path(new_path)?;
+    ensure_same_document_extension(old_path, new_path)?;
 
     let source = resolve_existing_workspace_path(&root, old_path)?;
     if !source.is_file() {
@@ -3041,7 +3434,7 @@ fn create_editor_window(
     {
         builder = builder
             .title_bar_style(tauri::TitleBarStyle::Overlay)
-            .traffic_light_position(LogicalPosition::new(28.0, 30.0))
+            .traffic_light_position(LogicalPosition::new(12.0, 30.0))
             .hidden_title(true)
             .transparent(true);
     }
@@ -3068,6 +3461,11 @@ fn create_editor_window(
         if let WindowEvent::Destroyed = event {
             if let Some(registry) = close_handle.try_state::<WindowRegistry>() {
                 registry.clear(&owned_label);
+            }
+            // Drop this window's filesystem watcher so it stops emitting into a
+            // dead window and the OS watch is released.
+            if let Some(watchers) = close_handle.try_state::<WorkspaceWatchers>() {
+                watchers.remove(&owned_label);
             }
         }
     });
@@ -3274,6 +3672,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
         .manage(BackendUrl(backend_url.clone()))
         .manage(backend_state)
         .manage(WindowRegistry::new())
+        .manage(WorkspaceWatchers::new())
         .manage(pending_open_paths)
         .manage(InitScript(init_script.clone()))
         .invoke_handler(tauri::generate_handler![
@@ -3296,6 +3695,8 @@ window.__TAURI_PLATFORM__ = "{platform}";
             workspace_read_excel_doc_state,
             workspace_write_excel_parsed_cache,
             workspace_scan,
+            workspace_watch,
+            workspace_unwatch,
             workspace_index_rebuild,
             workspace_index_read,
             workspace_markdown_search,
@@ -3421,6 +3822,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
             // the existing open_window_for_target flow (focuses an existing
             // window if the file is already showing, otherwise spawns a new
             // one).
+            #[cfg(target_os = "macos")]
             RunEvent::Opened { urls } => {
                 let pending: tauri::State<'_, PendingOpenPaths> = handle.state();
                 let mut added = false;
@@ -3788,6 +4190,54 @@ mod tests {
         assert_eq!(blocks.len(), 1);
         let (block_id, slot) = blocks.iter().next().expect("one block");
         (block_id.as_str(), slot)
+    }
+
+    #[test]
+    fn move_document_pair_renames_pdf_and_keeps_extension() {
+        let workspace = TempWorkspace::new("rename-pdf");
+        let pdf_path = workspace.path.join("Spec.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n% rename test\n%%EOF\n").expect("write pdf");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&pdf_path);
+        fs::write(&sidecar_path, br#"{"id":"pdf"}"#).expect("write sidecar");
+
+        let dto =
+            move_document_pair(&workspace.root(), "Spec.pdf", "Report.pdf").expect("rename pdf");
+
+        assert_eq!(dto.path, "Report.pdf");
+        assert_eq!(dto.document_type, "pdf");
+        assert!(!pdf_path.exists());
+        assert!(workspace.path.join("Report.pdf").exists());
+        // The hidden sidecar travels with the document (pair atomicity).
+        assert!(!sidecar_path.exists());
+        assert!(doxmind_sidecar::sidecar_path_for(&workspace.path.join("Report.pdf")).exists());
+    }
+
+    #[test]
+    fn move_document_pair_renames_xlsx_and_keeps_extension() {
+        let workspace = TempWorkspace::new("rename-xlsx");
+        let xlsx_path = workspace.path.join("Budget.xlsx");
+        fs::write(&xlsx_path, b"PK\x03\x04 workbook").expect("write xlsx");
+
+        let dto =
+            move_document_pair(&workspace.root(), "Budget.xlsx", "Q1.xlsx").expect("rename xlsx");
+
+        assert_eq!(dto.path, "Q1.xlsx");
+        assert_eq!(dto.document_type, "excel");
+        assert!(!xlsx_path.exists());
+        assert!(workspace.path.join("Q1.xlsx").exists());
+    }
+
+    #[test]
+    fn move_document_pair_rejects_type_change() {
+        let workspace = TempWorkspace::new("rename-type-change");
+        let pdf_path = workspace.path.join("Spec.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+
+        let err = move_document_pair(&workspace.root(), "Spec.pdf", "Spec.md")
+            .expect_err("type change must be rejected");
+
+        assert!(err.contains("cannot change document type"), "got: {err}");
+        assert!(pdf_path.exists(), "source must be untouched on rejection");
     }
 
     #[test]
@@ -5709,7 +6159,16 @@ mod tests {
                 return explicit;
             }
         }
-        "python3".to_string()
+        // Windows ships `python` (often a py-launcher shim); POSIX distros
+        // typically expose `python3` and leave bare `python` to point at 2.x.
+        #[cfg(target_os = "windows")]
+        {
+            "python".to_string()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            "python3".to_string()
+        }
     }
 
     fn server_dir() -> PathBuf {

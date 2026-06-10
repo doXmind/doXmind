@@ -3,7 +3,7 @@
 // i18n keys consumed by this component (assumed present at welcome.<key>):
 //   stratigraphyHeader        "stratigraphy"
 //   stratigraphyOldestHint    "oldest ↓"
-//   stratigraphyLastDocs      "last {count} documents"
+//   stratigraphyLastDocs      "last {count} opened"
 //   stratigraphyWordsSuffix   "w"
 //   firstRunTag               "Welcome to doxmind."
 //   firstRunHeading           "A quiet place to write, on your disk."
@@ -65,8 +65,8 @@ interface FirstRunStateProps {
 function FirstRunState({ tag, heading, steps }: FirstRunStateProps) {
   return (
     <div className="flex flex-1 flex-col justify-center pb-12 pt-6">
-      <div className="font-brand-sans text-[13px] text-muted-foreground">{tag}</div>
-      <h1 className="font-brand-sans mt-2 text-[30px] font-semibold leading-[1.15] tracking-[-0.022em] text-foreground">
+      <div className="text-[13px] text-muted-foreground">{tag}</div>
+      <h1 className="mt-2 text-[30px] font-semibold leading-[1.15] tracking-[-0.022em] text-foreground">
         {heading}
       </h1>
 
@@ -77,7 +77,7 @@ function FirstRunState({ tag, heading, steps }: FirstRunStateProps) {
             <>
               <span
                 className={cn(
-                  "w-5 shrink-0 font-mono text-[11px] tabular-nums tracking-[0.02em] transition-colors duration-150",
+                  "w-5 shrink-0 text-[11px] tabular-nums tracking-[0.02em] transition-colors duration-150",
                   isInteractive
                     ? "text-muted-foreground group-hover:text-foreground group-focus-visible:text-foreground"
                     : "text-muted-foreground"
@@ -86,10 +86,10 @@ function FirstRunState({ tag, heading, steps }: FirstRunStateProps) {
                 {String(index + 1).padStart(2, "0")}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="font-brand-sans text-[15px] font-semibold tracking-[-0.012em] text-foreground">
+                <div className="text-[15px] font-semibold tracking-[-0.012em] text-foreground">
                   {step.title}
                 </div>
-                <div className="font-brand-sans mt-1 text-[14px] leading-snug text-muted-foreground">
+                <div className="mt-1 text-[14px] leading-snug text-muted-foreground">
                   {step.body}
                 </div>
               </div>
@@ -148,7 +148,7 @@ function HierarchyRow({ layer, index, isActive, isFirst }: HierarchyRowProps) {
       >
         <span
           className={cn(
-            "w-5 shrink-0 font-mono text-[11px] tabular-nums tracking-[0.02em]",
+            "w-5 shrink-0 text-[11px] tabular-nums tracking-[0.02em]",
             isActive ? "font-medium text-foreground" : "text-muted-foreground"
           )}
         >
@@ -157,7 +157,7 @@ function HierarchyRow({ layer, index, isActive, isFirst }: HierarchyRowProps) {
 
         <span
           className={cn(
-            "font-brand-sans min-w-0 flex-1 truncate text-[15px] leading-snug tracking-[-0.012em] text-foreground",
+            "min-w-0 flex-1 truncate text-[15px] leading-snug tracking-[-0.012em] text-foreground",
             isActive ? "font-medium" : "font-normal"
           )}
         >
@@ -166,7 +166,7 @@ function HierarchyRow({ layer, index, isActive, isFirst }: HierarchyRowProps) {
 
         <span
           className={cn(
-            "shrink-0 font-mono text-[11px] tabular-nums",
+            "shrink-0 text-[11px] tabular-nums",
             isActive ? "text-muted-foreground" : "text-muted-foreground/70"
           )}
         >
@@ -176,7 +176,7 @@ function HierarchyRow({ layer, index, isActive, isFirst }: HierarchyRowProps) {
         <span
           aria-hidden="true"
           className={cn(
-            "w-3.5 shrink-0 text-right font-mono text-[11px] leading-none text-foreground",
+            "w-3.5 shrink-0 text-right text-[11px] leading-none text-foreground",
             isActive ? "opacity-100" : "opacity-0"
           )}
         >
@@ -185,7 +185,7 @@ function HierarchyRow({ layer, index, isActive, isFirst }: HierarchyRowProps) {
       </button>
 
       {isActive && layer.preview ? (
-        <div className="font-brand-serif max-w-[40rem] pb-3 pl-10 pr-2 text-[14.5px] leading-relaxed text-muted-foreground">
+        <div className="max-w-[40rem] pb-3 pl-10 pr-2 text-[14.5px] leading-relaxed text-muted-foreground">
           {layer.preview}
         </div>
       ) : null}
@@ -206,28 +206,30 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
   const t = useTranslations("welcome");
 
   const layers = useMemo<StratigraphyLayer[]>(() => {
-    if (recentFiles.length > 0) {
-      return recentFiles.slice(0, LAYER_LIMIT).map((file) => ({
-        key: file.absolutePath,
-        title: file.name,
-        subtitle: file.workspacePath,
-        preview: file.preview,
-        words: file.wordCount,
-        when: file.lastOpened ? formatRelativeTime(file.lastOpened) : file.documentType,
-        isDocument: true,
-        onActivate: () => onOpenRecentFile(file),
-      }));
-    }
-    return recentWorkspaces.slice(0, LAYER_LIMIT).map((workspace) => ({
+    // VSCode-style precedence: recent workspaces (folders) come first, then any
+    // standalone files opened on their own. Documents opened inside a workspace
+    // aren't recorded individually — the workspace folder represents them.
+    const folderLayers: StratigraphyLayer[] = recentWorkspaces.map((workspace) => ({
       key: workspace.path,
       title: workspace.name,
       subtitle: workspace.parent,
       preview: "",
       words: 0,
-      when: workspace.path,
+      when: workspace.parent,
       isDocument: false,
       onActivate: () => onOpenRecentWorkspace(workspace.path),
     }));
+    const fileLayers: StratigraphyLayer[] = recentFiles.map((file) => ({
+      key: file.absolutePath,
+      title: file.name,
+      subtitle: file.workspacePath,
+      preview: file.preview,
+      words: file.wordCount,
+      when: file.lastOpened ? formatRelativeTime(file.lastOpened) : file.documentType,
+      isDocument: true,
+      onActivate: () => onOpenRecentFile(file),
+    }));
+    return [...folderLayers, ...fileLayers].slice(0, LAYER_LIMIT);
   }, [recentFiles, recentWorkspaces, onOpenRecentFile, onOpenRecentWorkspace]);
 
   // First-run = brand-new user with no document or workspace history at all.
@@ -264,14 +266,11 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
           />
         ) : (
           <>
-            <div className="flex items-baseline justify-between">
-              <div className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted-foreground">
+            <div className="flex items-baseline">
+              <div className="text-[10.5px] uppercase tracking-[0.16em] text-muted-foreground">
                 {t("stratigraphyHeader")}
                 <span className="mx-2 text-muted-foreground/60">{"·"}</span>
                 {t("stratigraphyLastDocs", { count: Math.max(layers.length, 1) })}
-              </div>
-              <div className="font-mono text-[10.5px] text-muted-foreground">
-                {t("stratigraphyOldestHint")}
               </div>
             </div>
 
@@ -287,7 +286,7 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
                     key={layer.key}
                     layer={layer}
                     index={index}
-                    isActive={index === 0 && recentFiles.length > 0}
+                    isActive={index === 0}
                     isFirst={index === 0}
                   />
                 ))}
@@ -304,7 +303,7 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
             variant="ghost"
             size="sm"
             onClick={onCreateNew}
-            className="gap-1.5 font-mono text-xs"
+            className="gap-1.5 text-xs"
           >
             <Plus className="h-3.5 w-3.5" />
             {t("actionNew")}
@@ -314,7 +313,7 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
             variant="ghost"
             size="sm"
             onClick={onOpenFolder}
-            className="gap-1.5 font-mono text-xs"
+            className="gap-1.5 text-xs"
           >
             <FolderOpen className="h-3.5 w-3.5" />
             {t("actionOpenFolder")}

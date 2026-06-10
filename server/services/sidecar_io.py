@@ -21,6 +21,55 @@ from pathlib import Path
 from typing import Any
 
 import markdown
+from markdown.postprocessors import RawHtmlPostprocessor
+
+
+class _RawHtmlSentinelPostprocessor(RawHtmlPostprocessor):
+    """Wrap each block-level raw-HTML block in a ``<div data-raw-html="…">``
+    sentinel so the editor imports it as a single rawHtml atom node, kept
+    byte-identical by source preservation, instead of flattening it into
+    images/links. Inline raw HTML is left untouched. Mirrors the marked and
+    Rust importers; see ``src/extensions/raw-html.ts``.
+    """
+
+    def stash_to_string(self, text: object) -> str:
+        html = str(text)
+        head = html.lstrip()
+        lower = head.lower()
+        # Raw HTML owned by other blocks (comment placeholders, toggle,
+        # columns) must pass through untouched.
+        claimed = (
+            head.startswith("<!--")
+            or head.startswith("</")  # structural closing tag (columns/toggle close)
+            or lower.startswith("<details")
+            or lower.startswith("<pre")  # fenced code block — a CodeBlock node, not raw HTML
+            or "data-column" in html
+            # Any editor-owned node marker (task lists, etc.) is claimed by its
+            # own parseHTML and must not be swallowed as a rawHtml passthrough.
+            or "data-type=" in html
+        )
+        if not claimed and self.isblocklevel(html.strip()):
+            raw = html.rstrip("\n")
+            escaped = (
+                raw.replace("&", "&amp;")
+                .replace('"', "&quot;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+            return f'<div data-raw-html="{escaped}" data-type="raw-html"></div>'
+        return html
+
+
+# NOTE: Windows does not honor the POSIX leading-dot hidden convention, so
+# `.foo.doxmind` sidecars show up next to user documents in Explorer. We
+# considered flipping FILE_ATTRIBUTE_HIDDEN on every sidecar write, but
+# Win32 `CreateFile` with `CREATE_ALWAYS` (which Python's `open(mode="w")`
+# / `Path.write_text` lowers to) rejects existing files that carry the
+# hidden bit with ERROR_ACCESS_DENIED. That would break legitimate external
+# write paths (sync tools, manual edits, our own tests). Per-file hiding is
+# therefore intentionally NOT applied. The workspace-level `.doxmind/`
+# directory IS still hidden by the desktop runtime (Rust side) because
+# directory hiding has no analogous overwrite problem.
 
 SIDECAR_VERSION = 2
 """
@@ -118,9 +167,13 @@ def markdown_to_html(md: str) -> str:
     No `codehilite` extension — TipTap can't parse the wrapper spans it
     emits; the frontend uses lowlight for syntax highlighting instead.
     """
-    return markdown.markdown(
-        render_task_lists(md), extensions=["tables", "fenced_code", "sane_lists"]
+    converter = markdown.Markdown(extensions=["tables", "fenced_code", "sane_lists"])
+    # Replace the built-in raw-HTML restorer with the sentinel-wrapping one
+    # (same name + priority so it slots into the existing pipeline).
+    converter.postprocessors.register(
+        _RawHtmlSentinelPostprocessor(converter), "raw_html", 30
     )
+    return converter.convert(render_task_lists(md))
 
 
 def parse_yaml_scalar(value: str) -> Any:
@@ -187,6 +240,36 @@ def build_md_with_frontmatter(meta: dict[str, Any], body: str) -> str:
     return f"---\n{chr(10).join(lines)}\n---\n\n{trimmed_body}\n"
 
 
+def extract_frontmatter_block(raw: str) -> str | None:
+    """Verbatim frontmatter block (``---\\n...\\n---``, delimiters included, no
+    trailing newline) at the start of ``raw``, or ``None`` if there is none.
+
+    Byte-exact: never reorders, reserializes, or trims the head, so a
+    hand-authored frontmatter (key order, comments, quoting) round-trips
+    untouched. doXmind does not own the user's frontmatter (#148).
+    """
+    if not (raw.startswith("---\n") or raw.startswith("---\r\n")):
+        return None
+    nl = raw.find("\n")
+    if nl == -1:
+        return None
+    offset = nl + 1
+    for line in raw[offset:].splitlines(keepends=True):
+        if line.rstrip("\r\n") == "---":
+            return raw[: offset + 3]  # include the closing "---"
+        offset += len(line)
+    return None  # unterminated frontmatter — treat as no head
+
+
+def assemble_md(head: str | None, body: str) -> str:
+    """Assemble the ``.md``: a preserved head (if any) + a normalized body.
+    Never injects a frontmatter block when ``head`` is ``None`` (#148)."""
+    body = body.rstrip("\n")
+    if head is not None:
+        return f"{head}\n\n{body}\n" if body else f"{head}\n"
+    return f"{body}\n" if body else ""
+
+
 def read_sidecar(path: Path) -> SidecarReadResult:
     try:
         raw = path.read_bytes()
@@ -242,16 +325,21 @@ def atomic_write(target: Path, data: bytes) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.parent / f".{target.name}.tmp-{uuid.uuid4().hex}"
     try:
-        tmp.write_bytes(data)
-        fd = os.open(tmp, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
+        # Single open: write, flush, fsync on the same handle. Windows
+        # rejects ``os.fsync`` on an ``O_RDONLY`` descriptor with EBADF,
+        # so the earlier write-then-reopen-readonly pattern was broken on
+        # Windows. Doing the fsync on the writable handle is portable.
+        with open(tmp, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
         tmp.replace(target)
     finally:
         if tmp.exists():
             tmp.unlink(missing_ok=True)
+    # Directory fsync is a POSIX guarantee; Windows lacks an equivalent and
+    # rejects opening a directory for read, so the try/except is the cross-
+    # platform behavior — POSIX gets the durability boost, Windows no-ops.
     try:
         dir_fd = os.open(target.parent, os.O_RDONLY)
         try:

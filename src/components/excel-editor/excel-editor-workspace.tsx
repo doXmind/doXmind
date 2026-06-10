@@ -153,6 +153,8 @@ import {
 } from "@/lib/excel/conditional-formats";
 import { cn } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
+import { useEditorStore } from "@/stores/editor-store";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { perfAsync, perfMeasure, perfSync } from "@/lib/perf";
 import { isSwitchCacheStillValid } from "@/lib/switch-cache-validation";
 
@@ -350,6 +352,17 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
 
   const xlsxBytesRef = useRef<Uint8Array | null>(null);
   const editorStateRef = useRef<ExcelEditorState | null>(null);
+  // Last editorState successfully written to the sidecar (or the on-disk
+  // baseline captured at load). Drives the shared dirty flag: anything newer
+  // than this is unsaved. Reference identity is enough — edits always produce
+  // new objects.
+  const savedExcelStateRef = useRef<ExcelEditorState | null>(null);
+  // Whether `savedExcelStateRef` holds a real load-time baseline yet. A plain
+  // `=== null` check can't serve as the "not captured" sentinel because a
+  // missing sidecar is a legitimately null baseline — conflating the two made
+  // the first user edit after a sidecar-less cold open get swallowed as the
+  // baseline (never persisted). Re-armed per (re)load.
+  const excelBaselineReadyRef = useRef(false);
   const editingRef = useRef<EditingCell | null>(null);
   const selectionRef = useRef<SelectionRange | null>(null);
   const cellGridRef = useRef<HTMLDivElement>(null);
@@ -472,6 +485,9 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     // re-runs this effect with a new file.id, and the new file's cold open
     // is just as write-sensitive as the first one.
     hydratingActiveSheetRef.current = true;
+    // Re-arm the baseline capture: the load handler below records this file's
+    // on-disk sidecar as the saved baseline before any user edit lands.
+    excelBaselineReadyRef.current = false;
     // Reset the read-only banner guard so a freshly-opened file gets its
     // own one-shot notice if its sidecar is also read-only.
     readOnlySurfacedRef.current = false;
@@ -597,6 +613,13 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
             ? { ...loadedSidecar, activeSheetId: resolvedActiveSheetId ?? undefined }
             : loadedSidecar;
         setWorkbook(parsed);
+        // Baseline is the sidecar exactly as it sits on disk (`loadedSidecar`),
+        // NOT the corrected `sidecar` we render. When a stale activeSheetId was
+        // corrected, the corrected state differs from this baseline, so the
+        // debounced writer flushes the correction to disk once; an unchanged or
+        // missing sidecar matches the baseline and stays write-free.
+        savedExcelStateRef.current = loadedSidecar;
+        excelBaselineReadyRef.current = true;
         setEditorState(sidecar);
         setActiveSheetId(resolvedActiveSheetId);
         setSelection(singleCellRange(0, 0));
@@ -831,24 +854,86 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     });
   }, []);
 
+  const setExcelDirty = useEditorStore((s) => s.setDirty);
+  const setExcelSaving = useEditorStore((s) => s.setSaving);
+  const setExcelLastSavedAt = useEditorStore((s) => s.setLastSavedAt);
+
   // Debounced sidecar persistence — collapses bursts of edits into a single
-  // disk write so we don't hammer the filesystem on every keystroke.
+  // disk write so we don't hammer the filesystem on every keystroke. Also
+  // drives the shared dirty flag so closing with unsaved edits can prompt.
   useEffect(() => {
     if (!editorState || !file.storageHandle || !adapter.writeExcelEditorState) return;
+    // Until the load handler captures this file's on-disk baseline, treat the
+    // current state as that baseline (defensive — the load path normally sets
+    // it before any editorState lands).
+    if (!excelBaselineReadyRef.current) {
+      savedExcelStateRef.current = editorState;
+      excelBaselineReadyRef.current = true;
+      setExcelDirty(false);
+      return;
+    }
+    if (editorState === savedExcelStateRef.current) {
+      setExcelDirty(false);
+      return;
+    }
+    setExcelDirty(true);
     const handle = file.storageHandle;
     const snapshot = editorState;
     const timeout = window.setTimeout(() => {
-      adapter.writeExcelEditorState!(handle, snapshot).catch((err) => {
-        // DOXMIND_SIDECAR_MIGRATE=off + legacy sidecar surfaces a stable
-        // read-only error. We tell the user once per file open so they
-        // can either unset the flag or restore from `<sidecar>.bak`;
-        // subsequent autosave failures for the same file stay silent.
-        if (handleReadOnlyAutosaveError(err, readOnlySurfacedRef, notify.error)) return;
-        console.error("[ExcelEditor] failed to persist sidecar", err);
-      });
+      setExcelSaving(true);
+      adapter.writeExcelEditorState!(handle, snapshot)
+        .then(() => {
+          savedExcelStateRef.current = snapshot;
+          setExcelDirty(false);
+          setExcelLastSavedAt(new Date().toISOString());
+        })
+        .catch((err) => {
+          // DOXMIND_SIDECAR_MIGRATE=off + legacy sidecar surfaces a stable
+          // read-only error. We tell the user once per file open so they
+          // can either unset the flag or restore from `<sidecar>.bak`;
+          // subsequent autosave failures for the same file stay silent.
+          if (handleReadOnlyAutosaveError(err, readOnlySurfacedRef, notify.error)) return;
+          console.error("[ExcelEditor] failed to persist sidecar", err);
+        })
+        .finally(() => setExcelSaving(false));
     }, SIDECAR_DEBOUNCE_MS);
     return () => window.clearTimeout(timeout);
-  }, [editorState, adapter, file.storageHandle]);
+  }, [
+    editorState,
+    adapter,
+    file.storageHandle,
+    setExcelDirty,
+    setExcelSaving,
+    setExcelLastSavedAt,
+  ]);
+
+  // Awaitable flush so the header's close prompt can save-then-close. Resolves
+  // true even on a read-only failure so closing isn't blocked.
+  const saveExcelNow = useCallback(async (): Promise<boolean> => {
+    const snapshot = editorStateRef.current;
+    if (!snapshot || !file.storageHandle || !adapter.writeExcelEditorState) return true;
+    if (snapshot === savedExcelStateRef.current) return true;
+    setExcelSaving(true);
+    try {
+      await adapter.writeExcelEditorState(file.storageHandle, snapshot);
+      savedExcelStateRef.current = snapshot;
+      setExcelDirty(false);
+      setExcelLastSavedAt(new Date().toISOString());
+      return true;
+    } catch (err) {
+      if (!handleReadOnlyAutosaveError(err, readOnlySurfacedRef, notify.error)) {
+        console.error("[ExcelEditor] failed to persist sidecar", err);
+      }
+      return true;
+    } finally {
+      setExcelSaving(false);
+    }
+  }, [file.storageHandle, adapter, setExcelDirty, setExcelSaving, setExcelLastSavedAt]);
+
+  useEffect(() => {
+    useEditorRefStore.getState().setRequestSave(saveExcelNow);
+    return () => useEditorRefStore.getState().setRequestSave(null);
+  }, [saveExcelNow]);
 
   // Bookkeeping mutation: mirror activeSheetId without polluting undo.
   //

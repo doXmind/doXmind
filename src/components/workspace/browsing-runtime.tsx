@@ -279,7 +279,6 @@ export function BrowsingRuntime({
             </div>
           )}
           <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1" data-browsing-scroll>
-            <StaticCover file={file} />
             <div
               className={cn(
                 "editor-page-frame relative",
@@ -288,7 +287,6 @@ export function BrowsingRuntime({
               )}
               style={pageFrameStyle}
             >
-              <StaticIcon icon={file.icon} />
               <div
                 ref={contentRef}
                 className="ProseMirror doxmind-browsing-prose"
@@ -325,36 +323,6 @@ export function BrowsingRuntime({
           />
         </div>
       </div>
-    </div>
-  );
-}
-
-function StaticCover({ file }: { file: FileItem }) {
-  if (!file.coverImageUrl) return null;
-  const isCssBackground = file.coverImageUrl.startsWith("linear-gradient(");
-  return (
-    <div className="mb-4 h-[200px] overflow-hidden md:h-[280px]" aria-hidden="true">
-      {isCssBackground ? (
-        <div className="h-full w-full" style={{ background: file.coverImageUrl }} />
-      ) : (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={file.coverImageUrl}
-          alt=""
-          className="h-full w-full object-cover"
-          style={{ objectPosition: `center ${(file.coverPosition ?? 0.5) * 100}%` }}
-          draggable={false}
-        />
-      )}
-    </div>
-  );
-}
-
-function StaticIcon({ icon }: { icon: string | null }) {
-  if (!icon) return <div className="h-7" aria-hidden="true" />;
-  return (
-    <div className="flex h-[68px] items-end pb-4" aria-hidden="true">
-      <span className="text-2xl leading-none">{icon}</span>
     </div>
   );
 }

@@ -240,14 +240,26 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
 
   const handleRename = async () => {
     const trimmedName = newName.trim();
-    const fullName = trimmedName ? withOriginalExtension(file.name, trimmedName) : "";
-    if (trimmedName && fullName !== file.name) {
-      try {
-        await renameFile(file.id, fullName);
-      } catch (error) {
-        log.error("Failed to rename file", error);
-        notify.error(t("failedToRename"));
-      }
+    // Bail on empty or unchanged names before any I/O. Compare against the
+    // displayed (extension-stripped) name — that's what the input shows.
+    if (!trimmedName || trimmedName === getNameWithoutExtension(file.name)) {
+      setIsRenaming(false);
+      return;
+    }
+    // The display name has its extension stripped, so recover the real filename
+    // from the storage handle. Deriving the extension from the stripped display
+    // name would default every type to ".md" and the backend would reject a
+    // .pdf/.xlsx rename.
+    const currentFilename =
+      file.storageHandle?.relPath?.split("/").pop() ||
+      file.storageHandle?.path?.split("/").pop() ||
+      file.name;
+    const fullName = withOriginalExtension(currentFilename, trimmedName);
+    try {
+      await renameFile(file.id, fullName);
+    } catch (error) {
+      log.error("Failed to rename file", error);
+      notify.error(t("failedToRename"));
     }
     setIsRenaming(false);
   };
@@ -425,7 +437,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       onMouseEnter={handleMouseEnterPrefetch}
       onMouseLeave={cancelHoverPrefetch}
       className={cn(
-        "group/file relative flex cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-3 py-2.5 transition-colors duration-150 ease-out md:h-7 md:px-2.5 md:py-1",
+        "group/file relative flex cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-3 py-2.5 transition-colors duration-150 ease-out md:h-7 md:px-1.5 md:py-1",
         "select-none active:scale-[0.98] md:active:scale-100", // Touch feedback on mobile, prevent text selection
         isSelected
           ? "bg-primary/10 dark:bg-primary/20"
@@ -453,11 +465,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       )}
 
       <div className="relative flex h-5 w-5 flex-shrink-0 items-center justify-center">
-        {file.icon ? (
-          <span className="flex h-5 w-5 items-center justify-center text-sm md:text-xs">
-            {file.icon}
-          </span>
-        ) : isPdfFile(file) ? (
+        {isPdfFile(file) ? (
           <PdfGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
         ) : isExcelFile(file) ? (
           <SpreadsheetGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />

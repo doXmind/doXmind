@@ -135,6 +135,20 @@ function processInlineMath(text: string, schema: Schema): PMNode[] {
 }
 
 /**
+ * Code is verbatim: `$...$` inside an inline code span or a code block is
+ * literal syntax, not math. Descending into either turns docs that *explain*
+ * math (e.g. a fenced block showing `$$x$$`) into actual rendered math. Skip
+ * code-marked text nodes, and stop descent into code-block subtrees entirely.
+ */
+function isCodeText(node: PMNode): boolean {
+  return node.isText === true && node.marks.some((mark) => mark.type.name === "code");
+}
+
+function isCodeBlock(node: PMNode): boolean {
+  return node.type.name === "codeBlock";
+}
+
+/**
  * Check if a document contains any text nodes with math delimiters
  */
 function documentNeedsMigration(doc: PMNode): boolean {
@@ -142,6 +156,8 @@ function documentNeedsMigration(doc: PMNode): boolean {
 
   doc.descendants((node) => {
     if (needsMigration) return false; // Stop early if already found
+    if (isCodeBlock(node)) return false; // verbatim — never math
+    if (isCodeText(node)) return true;
 
     if (node.isText && node.text) {
       if (containsMathDelimiters(node.text)) {
@@ -169,26 +185,16 @@ export function createMathMigrationPlugin() {
       const docChanged = transactions.some((tr) => tr.docChanged);
       if (!docChanged) return null;
 
-      // Check if this looks like a content replacement (setContent)
-      // vs a normal user edit
-      const isContentReplacement = transactions.some((tr) => {
-        // Large replacements that span most of the document
-        // or transactions without history (programmatic changes)
-        return (
-          tr.docChanged &&
-          (tr.getMeta("addToHistory") === false ||
-            (tr.steps.length > 0 &&
-              tr.steps.some((step) => {
-                const stepJson = step.toJSON();
-                // Check if it's replacing a large portion
-                return stepJson.from === 0 || stepJson.stepType === "replaceAround";
-              })))
+      // Steady-state fast path: once we've done at least one migration check,
+      // bail unless this looks like a programmatic content replacement. Avoids
+      // walking step JSON on every keystroke. `preventUpdate` is set by
+      // TipTap's setContent({ emitUpdate: false }); `addToHistory === false`
+      // catches other programmatic transactions.
+      if (migrationScheduled) {
+        const isProgrammatic = transactions.some(
+          (tr) => tr.getMeta("preventUpdate") === true || tr.getMeta("addToHistory") === false
         );
-      });
-
-      // Skip normal user edits to avoid re-triggering on every keystroke
-      if (!isContentReplacement && migrationScheduled) {
-        return null;
+        if (!isProgrammatic) return null;
       }
 
       // Check if migration is needed
@@ -209,6 +215,8 @@ export function createMathMigrationPlugin() {
       }> = [];
 
       newState.doc.descendants((node, pos) => {
+        if (isCodeBlock(node)) return false; // verbatim — never math
+        if (isCodeText(node)) return true;
         if (node.isText && node.text && containsMathDelimiters(node.text)) {
           const newNodes = processTextWithMath(node.text, schema);
           if (newNodes.length > 0) {

@@ -64,7 +64,7 @@ export function PagePickerPopover() {
     pagePickerCallback?.({
       pageId: file.id,
       pageTitle: file.name,
-      pageIcon: file.icon,
+      pageIcon: null,
     });
     handleClose();
   };
@@ -284,11 +284,7 @@ export function PagePickerPopover() {
               )}
             >
               <span className="flex h-5 w-5 shrink-0 items-center justify-center text-base">
-                {file.icon ? (
-                  <span>{file.icon}</span>
-                ) : (
-                  <FileText className="h-4 w-4 text-[#9b9a97] dark:text-[#8b8a87]" />
-                )}
+                <FileText className="h-4 w-4 text-[#9b9a97] dark:text-[#8b8a87]" />
               </span>
               <span className="min-w-0 flex-1 truncate">{file.name || "Untitled"}</span>
             </button>

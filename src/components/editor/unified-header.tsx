@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import {
   Search,
   MoreHorizontal,
@@ -7,8 +9,10 @@ import {
   Download,
   Keyboard,
   Palette,
-  CloudUpload,
+  Check,
   Loader2,
+  Save,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -17,6 +21,10 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { ThemePickerPanel } from "@/components/shared/shared-theme-toggle";
 import { cn, formatShortcut } from "@/lib/utils";
@@ -25,16 +33,21 @@ import { notify } from "@/lib/notifications";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
+import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { useIsTauri } from "@/hooks/use-is-tauri";
 import { getDisplayName, isExcelFile, isPdfFile } from "@/lib/document-types";
 import { exportMarkdownAsPdf } from "@/lib/markdown-pdf-export";
+import { navigateToEditorFile } from "@/lib/editor-navigation";
 
 export function UnifiedHeader() {
   const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
-  const isSearchBarOpen = useLayoutStore((s) => s.isSearchBarOpen);
   const toggleFilesSidebar = useLayoutStore((s) => s.toggleFilesSidebar);
   const toggleSearchBar = useLayoutStore((s) => s.toggleSearchBar);
+  const openCommandPalette = useLayoutStore((s) => s.openCommandPalette);
   const setKeyboardShortcutsOpen = useLayoutStore((s) => s.setKeyboardShortcutsOpen);
+  const autosaveEnabled = useLayoutStore((s) => s.autosaveEnabled);
+  const toggleAutosave = useLayoutStore((s) => s.toggleAutosave);
   const currentFile = useFileStore((s) =>
     s.currentFileId ? s.files.find((file) => file.id === s.currentFileId) : undefined
   );
@@ -44,6 +57,7 @@ export function UnifiedHeader() {
   const currentFileName = currentFile?.name;
   const isDirty = useEditorStore((s) => s.isDirty);
   const isSaving = useEditorStore((s) => s.isSaving);
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   const tSettings = useTranslations("settings");
   const t = useTranslations("editor");
 
@@ -120,61 +134,151 @@ export function UnifiedHeader() {
     toggleSearchBar();
   };
 
+  // Perform the actual close. A never-saved buffer or a loose single file has
+  // no workspace to fall back to, so closing returns to the welcome screen;
+  // inside an open folder we just deselect the file and land on the workspace
+  // home, keeping the folder (and its sidebar) open.
+  const performClose = () => {
+    const store = useFileStore.getState();
+    if (store.transientFile) {
+      store.discardTransient();
+    } else if (store.openTarget === "file") {
+      store.closeOpened();
+    }
+    navigateToEditorFile(null);
+  };
+
+  // Closing a document with unsaved changes asks first (VSCode-style). A clean
+  // document closes immediately.
+  const handleCloseDocument = () => {
+    if (useEditorStore.getState().isDirty) {
+      setCloseConfirmOpen(true);
+      return;
+    }
+    performClose();
+  };
+
+  const handleSaveAndClose = async () => {
+    const requestSave = useEditorRefStore.getState().requestSave;
+    const saved = requestSave ? await requestSave() : true;
+    // Save cancelled (e.g. the location picker was dismissed) — keep the
+    // document open so nothing is lost.
+    if (!saved) return;
+    setCloseConfirmOpen(false);
+    performClose();
+  };
+
+  const handleDiscardAndClose = () => {
+    setCloseConfirmOpen(false);
+    performClose();
+  };
+
   return (
     <>
       <header
         data-tauri-drag-region
-        data-borderless={!currentFileName ? "" : undefined}
         data-sidebar-open={hasOpenTarget && isFilesSidebarOpen ? "" : undefined}
-        className="desktop-chrome-header relative z-20 grid h-14 shrink-0 items-center text-foreground"
+        className="desktop-chrome-header relative z-20 grid h-11 shrink-0 items-center text-foreground"
         style={{
-          // On macOS Tauri the native traffic-light cluster floats over the
-          // top-left ~78px of the WebView. The first column must never shrink
-          // below that, or the title in col-start-2 slides under the buttons
-          // when the sidebar is collapsed.
-          gridTemplateColumns: isMacTauri
-            ? "max(var(--files-sidebar-width, 0px), 78px) minmax(0, 1fr)"
-            : "var(--files-sidebar-width, 0px) minmax(0, 1fr)",
+          // Column 1 tracks the sidebar width exactly (0 when collapsed) so
+          // column 2 is the SAME content region the editor surface uses below —
+          // that's what lets the header title share the editor's centered
+          // content frame and line up with the document text. The left controls
+          // (sidebar toggle / search) and macOS traffic lights float over the
+          // top-left as absolute siblings; the centered title clears them on
+          // its own, so no width reserve is needed here.
+          gridTemplateColumns: "var(--files-sidebar-width, 0px) minmax(0, 1fr)",
         }}
       >
         <div
-          data-tauri-drag-region
           className={cn(
-            "desktop-chrome-left-controls absolute left-0 top-0 z-10 flex h-full min-w-0 items-center gap-2",
+            "desktop-chrome-left-controls absolute left-0 top-0 z-10 flex h-full min-w-0 items-center gap-0.5",
             !isMacTauri && "pl-3"
           )}
         >
+          {isMacTauri && (
+            <>
+              {/* Two drag strips that physically avoid the macOS traffic-light
+                  cluster (centered at y=30, ~14px tall). Tauri's drag.js only
+                  checks e.target, so the bare container above must NOT carry
+                  data-tauri-drag-region — these siblings restore window-drag
+                  for the empty space around the buttons without ever sitting
+                  on top of the close/min/max controls. */}
+              <span
+                data-tauri-drag-region
+                aria-hidden
+                className="pointer-events-auto absolute inset-x-0 top-0 h-5"
+              />
+              <span
+                data-tauri-drag-region
+                aria-hidden
+                className="pointer-events-auto absolute inset-x-0 bottom-0 top-10"
+              />
+            </>
+          )}
           {hasOpenTarget && (
-            <Tooltip content={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")} side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="desktop-header-button h-7 w-7 rounded-md"
-                onClick={toggleFilesSidebar}
-                aria-label={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")}
+            <>
+              <Tooltip content={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")} side="bottom">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "desktop-header-button relative z-10 h-7 w-7 rounded-md",
+                    // The header centers its content at y=22, but the macOS
+                    // traffic lights are centered ~y=27 (bracketed empirically:
+                    // a +2px nudge read as too-high, +8px as too-low). +5px sits
+                    // the toggle level with the dots.
+                    isMacTauri && "top-[5px]"
+                  )}
+                  onClick={toggleFilesSidebar}
+                  aria-label={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")}
+                >
+                  <PanelLeft className="h-[13px] w-[13px]" />
+                </Button>
+              </Tooltip>
+
+              {/* Global search — opens the command palette (file names +
+                  cross-document content search), same as Cmd/Ctrl+K. */}
+              <Tooltip
+                content={t("searchTooltip", { shortcut: formatShortcut("Ctrl+K") })}
+                side="bottom"
               >
-                <PanelLeft className="h-[13px] w-[13px]" />
-              </Button>
-            </Tooltip>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "desktop-header-button relative z-10 h-7 w-7 rounded-md",
+                    isMacTauri && "top-[5px]"
+                  )}
+                  onClick={openCommandPalette}
+                  aria-label={t("searchTooltip", { shortcut: formatShortcut("Ctrl+K") })}
+                >
+                  <Search className="h-[15px] w-[15px]" />
+                </Button>
+              </Tooltip>
+            </>
           )}
         </div>
 
         <div
-          data-tauri-drag-region
+          // Intentionally NOT a drag region: when the sidebar is collapsed
+          // this column's left edge sits at x=124px, just past the floating
+          // sidebar toggle (which ends at ~120px). Tauri's drag.js only
+          // inspects e.target, so a drag-region on this wrapper could swallow
+          // clicks near that boundary. The inner children below still carry
+          // data-tauri-drag-region, so the body of the header remains
+          // draggable everywhere they cover.
           className={cn(
-            "col-start-2 flex h-full min-w-0 items-center px-4 md:px-6",
+            "relative col-start-2 h-full min-w-0",
             hasOpenTarget && isFilesSidebarOpen && "desktop-chrome-content-panel"
           )}
         >
-          <div
-            data-tauri-drag-region
-            className="flex h-full w-full min-w-0 max-w-none items-center justify-between gap-4"
-          >
-            <div data-tauri-drag-region className="flex min-w-0 justify-start">
+          <div data-tauri-drag-region className="editor-content-frame flex h-full items-center">
+            <div data-tauri-drag-region className="flex min-w-0 flex-1 justify-start">
               {title && (
                 <div
                   data-tauri-drag-region
-                  className="flex h-8 min-w-0 max-w-[min(520px,100%)] items-center gap-2 rounded-md"
+                  className="-ml-2.5 flex h-8 min-w-0 max-w-[min(520px,100%)] cursor-default items-center gap-1.5 rounded-md bg-foreground/[0.04] pl-2.5 pr-1.5 transition-colors hover:bg-[var(--sidebar-hover)]"
                   aria-label={title}
                 >
                   <span
@@ -183,126 +287,146 @@ export function UnifiedHeader() {
                   >
                     {title}
                   </span>
+                  {currentFileName && (
+                    <button
+                      type="button"
+                      onClick={handleCloseDocument}
+                      aria-label={t("closeDocument")}
+                      title={t("closeDocument")}
+                      className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               )}
             </div>
+          </div>
 
-            <div data-tauri-drag-region className="flex shrink-0 items-center justify-end gap-1.5">
-              {currentFileName && (
-                <>
-                  <Tooltip content={saveLabel} side="bottom">
-                    <div className="text-ui-xs flex h-7 items-center gap-1.5 rounded-md border border-[var(--chrome-border)] bg-[var(--chrome-pill-bg)] px-2 font-semibold text-muted-foreground">
-                      {isSaving ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                      ) : (
-                        <CloudUpload className="h-3.5 w-3.5 text-muted-foreground" />
-                      )}
-                      <span>{isDirty ? t("unsavedChanges") : t("saved")}</span>
-                    </div>
-                  </Tooltip>
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-ui-xs h-7 gap-1.5 rounded-md border border-[var(--chrome-border)] bg-[var(--chrome-pill-bg)] px-2 font-semibold text-foreground hover:bg-[var(--sidebar-hover)] hover:text-foreground"
-                        aria-label={t("export")}
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        <span className="hidden sm:inline">{t("export")}</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48">
-                      {isExcel ? (
-                        <DropdownMenuItem onClick={() => handleExport("xlsx")}>
-                          <Download className="mr-2 h-4 w-4" />
-                          Export as Excel
-                        </DropdownMenuItem>
-                      ) : (
-                        <>
-                          <DropdownMenuItem onClick={() => handleExport("markdown")}>
-                            <Download className="mr-2 h-4 w-4" />
-                            {t("exportAsMarkdown")}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleExport("pdf")}>
-                            <Download className="mr-2 h-4 w-4" />
-                            {t("exportAsPDF")}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleExport("docx")}>
-                            <Download className="mr-2 h-4 w-4" />
-                            {t("exportAsWord")}
-                          </DropdownMenuItem>
-                        </>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-
-                  <div className="h-5 w-px bg-[var(--chrome-border)]" />
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="desktop-header-button h-7 w-7 rounded-md"
-                        aria-label={tSettings("appearance")}
-                      >
-                        <Palette className="h-3.5 w-3.5" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-[280px] p-3">
-                      <ThemePickerPanel />
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-
-                  <Tooltip
-                    content={t("findTooltip", { shortcut: formatShortcut("Ctrl+F") })}
-                    side="bottom"
-                  >
+          {/* Options menu — pinned to the header's far-right corner (outside the
+              centered content frame), so only the title aligns to the content
+              column's left edge. */}
+          <div className="absolute right-4 top-0 flex h-full items-center md:right-6">
+            {currentFileName && (
+              <DropdownMenu>
+                <Tooltip content={t("moreTooltip")} side="bottom">
+                  <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className={cn(
-                        "desktop-header-button h-7 w-7 rounded-md",
-                        isSearchBarOpen && "bg-[var(--sidebar-active)] text-foreground"
-                      )}
-                      onClick={handleFind}
-                      aria-label={t("findTooltip", { shortcut: formatShortcut("Ctrl+F") })}
+                      className="desktop-header-button h-7 w-7 rounded-md bg-foreground/[0.04]"
+                      aria-label={t("moreActions")}
                     >
-                      <Search className="h-3.5 w-3.5" />
+                      <MoreHorizontal className="h-[15px] w-[15px]" />
                     </Button>
-                  </Tooltip>
+                  </DropdownMenuTrigger>
+                </Tooltip>
+                <DropdownMenuContent align="end" className="w-56">
+                  {/* Save state lives in the bottom status bar for Markdown;
+                        mirrored here because PDF/Excel have no status bar. */}
+                  <div className="text-ui-xs flex items-center gap-1.5 px-2 py-1.5 text-muted-foreground">
+                    {isSaving ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : isDirty ? (
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    ) : (
+                      <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-500" />
+                    )}
+                    <span>{saveLabel}</span>
+                  </div>
 
-                  <DropdownMenu>
-                    <Tooltip content={t("moreTooltip")} side="bottom">
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="desktop-header-button h-7 w-7 rounded-md"
-                          aria-label={t("moreActions")}
-                        >
-                          <MoreHorizontal className="h-3.5 w-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                    </Tooltip>
-                    <DropdownMenuContent align="end" className="w-56">
-                      <DropdownMenuItem onClick={() => setKeyboardShortcutsOpen(true)}>
-                        <Keyboard className="mr-2 h-4 w-4" />
-                        {t("keyboardShortcuts")}
-                        <span className="ml-auto text-xs text-muted-foreground">
-                          {formatShortcut("Ctrl+?")}
-                        </span>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </>
-              )}
-            </div>
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuItem
+                    onClick={() => window.dispatchEvent(new Event("doxmind:save-now"))}
+                  >
+                    <Save className="mr-2 h-4 w-4" />
+                    {t("save")}
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {formatShortcut("Ctrl+S")}
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => toggleAutosave()}>
+                    <Check
+                      className={cn("mr-2 h-4 w-4", autosaveEnabled ? "opacity-100" : "opacity-0")}
+                    />
+                    {t("autosave")}
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator />
+
+                  {isExcel ? (
+                    <DropdownMenuItem onClick={() => handleExport("xlsx")}>
+                      <Download className="mr-2 h-4 w-4" />
+                      Export as Excel
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <Download className="mr-2 h-4 w-4" />
+                        {t("export")}
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent>
+                        <DropdownMenuItem onClick={() => handleExport("markdown")}>
+                          Markdown
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleExport("pdf")}>PDF</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleExport("docx")}>
+                          Word
+                        </DropdownMenuItem>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  )}
+
+                  <DropdownMenuItem onClick={handleFind}>
+                    <Search className="mr-2 h-4 w-4" />
+                    {t("find")}
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {formatShortcut("Ctrl+F")}
+                    </span>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <Palette className="mr-2 h-4 w-4" />
+                      {tSettings("appearance")}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-[280px] p-3">
+                      <ThemePickerPanel />
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+
+                  <DropdownMenuItem onClick={() => setKeyboardShortcutsOpen(true)}>
+                    <Keyboard className="mr-2 h-4 w-4" />
+                    {t("keyboardShortcuts")}
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {formatShortcut("Ctrl+?")}
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
       </header>
+
+      <Modal open={closeConfirmOpen} onClose={() => setCloseConfirmOpen(false)}>
+        <ModalHeader onClose={() => setCloseConfirmOpen(false)}>
+          {t("closeUnsavedTitle")}
+        </ModalHeader>
+        <p className="text-sm text-muted-foreground">{t("closeUnsavedBody", { name: title })}</p>
+        <ModalFooter>
+          <Button variant="ghost" onClick={() => setCloseConfirmOpen(false)}>
+            {t("cancel")}
+          </Button>
+          <Button variant="outline" onClick={handleDiscardAndClose}>
+            {t("dontSave")}
+          </Button>
+          <Button onClick={handleSaveAndClose}>{t("save")}</Button>
+        </ModalFooter>
+      </Modal>
     </>
   );
 }

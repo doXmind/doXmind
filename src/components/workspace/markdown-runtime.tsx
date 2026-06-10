@@ -1,13 +1,15 @@
 "use client";
 
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, type Editor as TiptapEditor } from "@tiptap/react";
 import { TextSelection } from "@tiptap/pm/state";
+import { AnimatePresence, motion } from "framer-motion";
 import type { EditorView } from "@tiptap/pm/view";
 import {
   type CSSProperties,
   type MouseEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -20,7 +22,6 @@ import { EditorContextMenu } from "@/components/editor/editor-context-menu";
 import { SearchBar } from "@/components/editor/search-bar";
 import { StatusBar } from "@/components/editor/status-bar";
 import { DocumentTitle } from "@/components/editor/document-title";
-import { PageCover } from "@/components/editor/page-cover";
 import { BlockHandle } from "@/components/editor/block-handle";
 import { TableHandles } from "@/components/editor/table-handles";
 import { getEditorExtensions, defaultEditorProps } from "@/components/editor/editor-extensions";
@@ -30,6 +31,7 @@ import { useFileStore, type FileItem, TRANSIENT_ID_PREFIX } from "@/stores/file-
 import { pickNativeSaveLocation } from "@/lib/native-dialog";
 import { onShellCloseRequested } from "@/lib/shell/close";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
+import { isHtmlFile } from "@/lib/document-types";
 import { useEditorStore } from "@/stores/editor-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
@@ -44,6 +46,12 @@ import { rangeToMarkdown } from "@/lib/markdown-selection";
 import { useDatabaseStore } from "@/stores/database-store";
 import { eventBus } from "@/lib/events";
 import { perfMark, perfMeasure, perfSync } from "@/lib/perf";
+
+// Per-file scroll memory keyed by fileId, kept at module scope so it survives
+// MarkdownRuntime remounts — the workspace swaps in a skeleton (unmounting the
+// runtime) whenever a file's content is still loading, which would discard any
+// per-instance state. Missing entry => start the file at the top.
+const scrollPositions = new Map<string, number>();
 
 interface MarkdownRuntimeProps {
   file: FileItem;
@@ -92,10 +100,20 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   const initialFileIdRef = useRef<string | null>(file.id);
 
   const persistContent = useCallback(
-    async (content: string, contentMarkdown?: string) => {
+    async (content: string, contentMarkdown?: string, options?: { explicit?: boolean }) => {
       if (content === lastContentRef.current) {
         setDirty(false);
-        return;
+        return true;
+      }
+
+      // A transient ("New file") buffer is never autosaved to disk — like a
+      // VSCode untitled document it stays freely editable and dirty until the
+      // user explicitly saves (⌘S, or on window close). Keystroke flushes only
+      // keep the in-memory buffer current; only an explicit save opens the
+      // location picker and materializes the file onto disk.
+      if (isTransient && !options?.explicit) {
+        setTransientContent(content, contentMarkdown ?? "");
+        return true;
       }
 
       setSaving(true);
@@ -106,7 +124,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
           if (!transient) {
             lastContentRef.current = content;
             setDirty(false);
-            return;
+            return true;
           }
           const path = await pickNativeSaveLocation("Save as", transient.name, [
             { name: "Markdown", extensions: ["md"] },
@@ -118,7 +136,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
             // close-time `saveCurrentNow` early-returns on `content ===
             // lastContentRef.current`, silently dropping the typed buffer
             // when the user closes the window after cancelling.
-            return;
+            return false;
           }
           const latest = useFileStore.getState().transientFile;
           if (
@@ -134,7 +152,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
           setLastSavedAt(new Date().toISOString());
           setDirty(false);
           if (newId) navigateToEditorFile(newId);
-          return;
+          return true;
         }
 
         await updateFile(file.id, { content, contentMarkdown });
@@ -149,6 +167,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
           }
         }
         prevDbIdsRef.current = currentIds;
+        return true;
       } finally {
         setSaving(false);
       }
@@ -165,9 +184,14 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
     ]
   );
 
+  // Defer the two TipTap serializers (getHTML + getMarkdown each walk the doc)
+  // to the debounce-fire moment instead of running them on every keystroke.
   const debouncedSave = useMemo(
     () =>
-      debounce((content: string, contentMarkdown?: string) => {
+      debounce((editor: TiptapEditor) => {
+        if (editor.isDestroyed) return;
+        const content = editor.getHTML();
+        const contentMarkdown = editor.getMarkdown();
         void persistContent(content, contentMarkdown);
       }, EDITOR_DEBOUNCE_DELAY),
     [persistContent]
@@ -269,10 +293,12 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
     immediatelyRender: false,
     onUpdate: ({ editor }) => {
       if (isFileSwitchingRef.current) return;
-      const html = editor.getHTML();
-      const markdown = editor.getMarkdown();
       setDirty(true);
-      debouncedSave(html, markdown);
+      // Autosave can be turned off from the "..." menu. When off, edits stay in
+      // the editor and are flushed only on an explicit save (⌘S) or on close.
+      if (useLayoutStore.getState().autosaveEnabled) {
+        debouncedSave(editor);
+      }
     },
     onSelectionUpdate: ({ editor }) => {
       const { from, to } = editor.state.selection;
@@ -331,14 +357,18 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   }, [editor]);
 
   useEffect(() => {
-    const saveCurrentNow = async () => {
-      if (!editor) return;
+    const saveCurrentNow = async (): Promise<boolean> => {
+      if (!editor) return true;
       const content = editor.getHTML();
-      if (content === lastContentRef.current) return;
+      if (content === lastContentRef.current) return true;
       const contentMarkdown = editor.getMarkdown();
       debouncedSave.cancel();
-      await persistContent(content, contentMarkdown);
+      return await persistContent(content, contentMarkdown, { explicit: true });
     };
+
+    // Expose an awaitable save so chrome (the header's close button) can
+    // save-then-close. Cleared on unmount.
+    useEditorRefStore.getState().setRequestSave(saveCurrentNow);
 
     const handleBeforeUnload = () => {
       void saveCurrentNow();
@@ -362,6 +392,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       window.removeEventListener("pagehide", handleBeforeUnload);
       window.removeEventListener("doxmind:save-now", handleSaveNow);
       unlistenClose?.();
+      useEditorRefStore.getState().setRequestSave(null);
     };
   }, [debouncedSave, editor, persistContent]);
 
@@ -381,6 +412,12 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       initialFileIdRef.current = null;
       lastContentRef.current = editor.getHTML();
       prevDbIdsRef.current = extractDatabaseIds(file.content, "initialMount");
+      // Capture the original Markdown so untouched blocks round-trip verbatim.
+      editor.commands.setSourceBaseline(file.contentMarkdown ?? null);
+      // #139: for an HTML doc, preserve its original HTML blocks on getHTML().
+      editor.commands.setHtmlBaseline(isHtmlFile(file) ? file.content : null);
+      // (Re)mount: restore this file's remembered scroll, or top if unseen.
+      restoreScrollTop(scrollAreaRef.current, scrollPositions.get(file.id) ?? 0);
       return;
     }
 
@@ -410,13 +447,17 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       );
       lastContentRef.current = editor.getHTML();
       prevDbIdsRef.current = extractDatabaseIds(file.content, "fileSwitch");
+      editor.commands.setSourceBaseline(file.contentMarkdown ?? null);
+      // #139: for an HTML doc, preserve its original HTML blocks on getHTML().
+      editor.commands.setHtmlBaseline(isHtmlFile(file) ? file.content : null);
       editor.emit("update", { editor, transaction: editor.state.tr, appendedTransactions: [] });
 
       domObserver?.start();
 
-      if (scrollAreaRef.current) {
-        scrollAreaRef.current.scrollTop = 0;
-      }
+      // Restore this file's remembered scroll position, or start at the top
+      // for a file we haven't shown before. restoreScrollTop re-applies across
+      // a couple of frames so it survives post-setContent layout settling.
+      restoreScrollTop(scrollAreaRef.current, scrollPositions.get(file.id) ?? 0);
 
       rafId = requestAnimationFrame(() => {
         rafId = undefined;
@@ -449,6 +490,10 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   // Late-content / external-edit reconcile.
   useEffect(() => {
     if (!editor) return;
+    // A file switch is handled by the effect above, which banks/restores the
+    // per-file scroll position. Bail during a switch so this reconcile doesn't
+    // re-apply the previous file's scrollTop (the cross-file scroll leak).
+    if (isFileSwitchingRef.current) return;
     const editorHTML = editor.getHTML();
     const isEmpty =
       editorHTML === "" ||
@@ -475,6 +520,9 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
         { bytes: file.content?.length ?? 0, branch: "lateContent" }
       );
       lastContentRef.current = editor.getHTML();
+      editor.commands.setSourceBaseline(file.contentMarkdown ?? null);
+      // #139: for an HTML doc, preserve its original HTML blocks on getHTML().
+      editor.commands.setHtmlBaseline(isHtmlFile(file) ? file.content : null);
       editor.emit("update", { editor, transaction: editor.state.tr, appendedTransactions: [] });
 
       domObserver?.start();
@@ -604,6 +652,25 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
     [editor, isEditing, activateEdit]
   );
 
+  // Persist the current file's scroll position on the way out — this effect's
+  // cleanup runs both on a hot switch (file.id changes, runtime reused) and on
+  // unmount (the workspace tears the runtime down behind a loading skeleton).
+  // We read scrollTop directly rather than listening for scroll events, which
+  // don't fire for programmatic scrolls in the embedded webview, and capture
+  // the element at setup so the cleanup still has it during DOM teardown.
+  useLayoutEffect(() => {
+    // `editor` is a dep so this re-runs once the editor is ready and the
+    // ScrollArea is actually mounted (the early `if (!editor)` return means the
+    // ref is null on the first pass). Capturing the element here — rather than
+    // reading scrollAreaRef.current in the cleanup — keeps the reference stable
+    // through the hot-switch/unmount teardown, when React nulls the ref.
+    const scrollEl = scrollAreaRef.current;
+    const fileId = file.id;
+    return () => {
+      if (scrollEl) scrollPositions.set(fileId, scrollEl.scrollTop);
+    };
+  }, [file.id, editor]);
+
   if (!editor) {
     return <MarkdownSkeleton file={{ name: file.name, outline: file.outline }} />;
   }
@@ -618,7 +685,6 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
             data-editor-scroll
             onMouseDown={handleContentMouseDown}
           >
-            <PageCover fileId={file.id} />
             <div
               className={cn(
                 "editor-page-frame relative",
@@ -627,23 +693,29 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
               )}
               style={pageFrameStyle}
             >
-              <DocumentTitle fileId={file.id} />
+              <DocumentTitle />
               <div className="relative">
                 <EditorContent editor={editor} />
-                {isSwitching && (
-                  <div
-                    className="animate-in fade-in-0 pointer-events-none absolute inset-0 bg-background duration-150"
-                    aria-hidden="true"
-                    data-testid="markdown-switch-overlay"
-                  >
-                    {/* DocumentTitle is already painted outside the overlay,
-                        so skip the skeleton's own title row. The overlay
-                        feeds the same cached outline that the page-level
-                        loader uses, so hot-switching to a previously-seen
-                        doc shows its real heading text immediately. */}
-                    <MarkdownSkeletonContent file={{ name: file.name, outline: file.outline }} />
-                  </div>
-                )}
+                <AnimatePresence>
+                  {isSwitching && (
+                    <motion.div
+                      className="pointer-events-none absolute inset-0 bg-background"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.18, ease: "easeOut" }}
+                      aria-hidden="true"
+                      data-testid="markdown-switch-overlay"
+                    >
+                      {/* DocumentTitle is already painted outside the overlay,
+                          so skip the skeleton's own title row. The overlay
+                          feeds the same cached outline that the page-level
+                          loader uses, so hot-switching to a previously-seen
+                          doc shows its real heading text immediately. */}
+                      <MarkdownSkeletonContent file={{ name: file.name, outline: file.outline }} />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
           </ScrollArea>

@@ -18,17 +18,26 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 function resolvePython() {
   if (process.env.DOXMIND_PYTHON) return process.env.DOXMIND_PYTHON;
 
-  const venvPython = path.join(REPO_ROOT, "server", ".venv", "bin", "python");
+  const isWindows = process.platform === "win32";
+  const venvPython = isWindows
+    ? path.join(REPO_ROOT, "server", ".venv", "Scripts", "python.exe")
+    : path.join(REPO_ROOT, "server", ".venv", "bin", "python");
   if (fs.existsSync(venvPython)) return venvPython;
 
-  for (const candidate of ["python3", "python"]) {
+  // On Windows the standard launcher is `python`; on POSIX distros it's
+  // usually `python3` (and `python` may point at 2.x). Order accordingly.
+  const candidates = isWindows ? ["python", "python3"] : ["python3", "python"];
+  for (const candidate of candidates) {
     const result = spawnSync(candidate, ["--version"], { stdio: "ignore" });
     if (result.status === 0) return candidate;
   }
 
+  const venvHint = isWindows
+    ? "py -3 -m venv server\\.venv && server\\.venv\\Scripts\\pip install -r server\\requirements.txt"
+    : "python3 -m venv server/.venv && server/.venv/bin/pip install -r server/requirements.txt";
   console.error(
     "Could not find a Python interpreter. Create server/.venv first " +
-      "(python3 -m venv server/.venv && server/.venv/bin/pip install -r server/requirements.txt) " +
+      `(${venvHint}) ` +
       "or set DOXMIND_PYTHON to an explicit path."
   );
   process.exit(1);

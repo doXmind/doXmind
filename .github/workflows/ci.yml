@@ -16,8 +16,16 @@ env:
 
 jobs:
   frontend:
-    name: Frontend (lint + type-check + build)
-    runs-on: ubuntu-latest
+    name: Frontend (lint + type-check + build) — ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is intentionally not run on every push/PR — lint/type-check/
+        # build are OS-independent and Windows runners are slow. Validate the
+        # Windows desktop build on demand via the /build-windows PR comment
+        # (see desktop.yml). Re-add windows-latest here to restore matrix CI.
+        os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,8 +38,16 @@ jobs:
       - run: npm run build
 
   backend:
-    name: Backend (ruff + pytest)
-    runs-on: ubuntu-latest
+    name: Backend (ruff + pytest) — ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is intentionally not run on every push/PR — lint/type-check/
+        # build are OS-independent and Windows runners are slow. Validate the
+        # Windows desktop build on demand via the /build-windows PR comment
+        # (see desktop.yml). Re-add windows-latest here to restore matrix CI.
+        os: [ubuntu-latest]
     defaults:
       run:
         working-directory: server

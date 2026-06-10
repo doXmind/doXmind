@@ -11,7 +11,8 @@
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { Transaction } from "@tiptap/pm/state";
-import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import type { Node as ProseMirrorNode, Slice } from "@tiptap/pm/model";
+import { ReplaceAroundStep, ReplaceStep } from "@tiptap/pm/transform";
 
 /** Atom block types that should never be nested inside list items */
 const ATOM_BLOCK_TYPES = new Set([
@@ -34,6 +35,36 @@ interface NestedAtom {
   /** Position of the outermost list ancestor (depth 1 = top-level) */
   listPos: number;
   listNodeSize: number;
+}
+
+/**
+ * Cheap discriminator: only transactions that either insert a slice containing
+ * an atom block or structurally wrap existing content (ReplaceAroundStep) can
+ * land an atom inside a list-item. Typing, deletion, mark toggles, etc. can
+ * never produce that state, so we skip the full doc scan for them.
+ */
+function sliceContainsAtomBlock(slice: Slice): boolean {
+  let found = false;
+  slice.content.descendants((node) => {
+    if (found) return false;
+    if (ATOM_BLOCK_TYPES.has(node.type.name)) {
+      found = true;
+      return false;
+    }
+    return true;
+  });
+  return found;
+}
+
+function transactionsCouldNestAtom(transactions: readonly Transaction[]): boolean {
+  for (const tr of transactions) {
+    if (!tr.docChanged) continue;
+    for (const step of tr.steps) {
+      if (step instanceof ReplaceAroundStep) return true;
+      if (step instanceof ReplaceStep && sliceContainsAtomBlock(step.slice)) return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -130,6 +161,10 @@ export const AtomBlockLiftPlugin = Extension.create({
           // Only act when the document actually changed
           const docChanged = transactions.some((t) => t.docChanged);
           if (!docChanged) return null;
+
+          // Skip the full doc scan for transactions that can't produce a
+          // nested atom (typing, deletes, mark changes, …).
+          if (!transactionsCouldNestAtom(transactions)) return null;
 
           const { tr } = newState;
           return liftNestedAtomBlocks(newState.doc, tr);

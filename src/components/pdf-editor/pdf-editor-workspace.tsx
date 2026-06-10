@@ -9,12 +9,17 @@ import {
   Bold,
   ChevronLeft,
   ChevronRight,
+  Columns2,
+  GalleryVertical,
   GripVertical,
   Highlighter,
   Italic,
   Loader2,
+  Maximize,
   MousePointer2,
+  MoveHorizontal,
   Plus,
+  RectangleVertical,
   RotateCcw,
   Trash2,
   Type,
@@ -22,6 +27,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import type { PDFDocumentProxy } from "pdfjs-dist";
 import { notify } from "@/lib/notifications";
 import { handleReadOnlyAutosaveError } from "@/lib/storage/read-only-error";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
@@ -46,6 +52,7 @@ import {
 import { cn, sha256Hex } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { perfAsync, perfMeasure, perfSync } from "@/lib/perf";
 import { isSwitchCacheStillValid } from "@/lib/switch-cache-validation";
 import { freshParsedCacheValue } from "@/lib/parsed-cache-freshness";
@@ -197,6 +204,17 @@ interface PdfEditorWorkspaceProps {
 type Rect = { left: number; top: number; width: number; height: number };
 type SnapCandidate = { value: number; range: [number, number] };
 type PdfTool = "select" | "add-text";
+/**
+ * Page-display modes, mirroring Adobe's reader: a single page at a time,
+ * a continuous vertical scroll of every page, or a two-up scrolling spread.
+ */
+type PdfViewMode = "single" | "continuous" | "two-page";
+/**
+ * Zoom intent. `custom` honors the explicit zoom buttons; the two `fit-*`
+ * modes recompute `scale` from the viewport so a page (or its width) always
+ * fills the available space and tracks container resizes.
+ */
+type ZoomMode = "custom" | "fit-width" | "fit-page";
 type ActiveObject =
   | { kind: "text"; id: string }
   | { kind: "free-text"; id: string }
@@ -236,8 +254,11 @@ const HIGHLIGHT_COLOR_SWATCHES = [
 ];
 
 export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const pageContainerRef = useRef<HTMLDivElement>(null);
+  // One DOM node per rendered page, keyed by page index. Replaces the old
+  // single `pageContainerRef`: drag math, the rendered-block measurement and
+  // the floating toolbar all resolve the active object's page through this.
+  const pageElsRef = useRef<Map<number, HTMLDivElement | null>>(new Map());
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textEditsRef = useRef<Record<string, PdfTextBox>>({});
   const legacyEditsRef = useRef<Record<string, { text: string }>>({});
   const paragraphModeRef = useRef(false);
@@ -251,8 +272,15 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   const readOnlySurfacedRef = useRef(false);
   const rootPath = useFileStore((s) => s.rootPath);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [pageSize, setPageSize] = useState<PageSize>({ width: 0, height: 0 });
+  // Per-page base (scale-1) sizes, filled in as each page's canvas renders.
+  // PDF pages can differ in size, so drag bounds and the fit-zoom math read
+  // the specific page rather than a single document-wide value.
+  const [pageSizes, setPageSizes] = useState<Record<number, PageSize>>({});
+  const pageSizesRef = useRef<Record<number, PageSize>>({});
+  const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
+  // In scroll modes this is the page currently in view (derived from scroll
+  // position); in single mode it is the only rendered page.
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [textBoxes, setTextBoxes] = useState<PdfTextBox[]>([]);
   const [isTextModelHydrating, setIsTextModelHydrating] = useState(false);
@@ -281,6 +309,8 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   } | null>(null);
   const [highlightDraft, setHighlightDraft] = useState<HighlightDraft | null>(null);
   const [scale, setScale] = useState(1.2);
+  const [viewMode, setViewMode] = useState<PdfViewMode>("continuous");
+  const [zoomMode, setZoomMode] = useState<ZoomMode>("fit-width");
   const [tool, setTool] = useState<PdfTool>("select");
   const [activeRenderedBlock, setActiveRenderedBlock] = useState<{
     x: number;
@@ -296,8 +326,6 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
 
   const adapter = useMemo(() => createStorageAdapter({ disk: { root: rootPath } }), [rootPath]);
 
-  const pageFreeTextBoxes = freeTextBoxes.filter((box) => box.pageIndex === currentPageIndex);
-  const pageHighlightBoxes = highlightBoxes.filter((box) => box.pageIndex === currentPageIndex);
   const activeTextBox =
     activeObject?.kind === "text"
       ? (textBoxes.find((box) => box.id === activeObject.id) ?? null)
@@ -314,6 +342,46 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   const selectedTextStyle = activeTextLike
     ? textStyleForSelection(activeTextLike, activeTextSelection)
     : null;
+  // The page that owns the active object — drives the rendered-block
+  // measurement and the floating toolbar, which must resolve coordinates
+  // against the right page element now that several pages can be on screen.
+  const activePageIndex =
+    (activeTextBox ?? activeFreeTextBox ?? activeHighlightBox)?.pageIndex ?? currentPageIndex;
+
+  // Pre-group the editable objects by page so renderPage does O(1) lookups
+  // instead of re-filtering all three arrays for every mounted page on every
+  // render (which is O(boxes × pages) in the scroll modes).
+  const boxesByPage = useMemo(() => {
+    const map = new Map<
+      number,
+      { text: PdfTextBox[]; free: PdfFreeTextBox[]; highlight: PdfHighlightBox[] }
+    >();
+    const bucket = (pageIndex: number) => {
+      let entry = map.get(pageIndex);
+      if (!entry) {
+        entry = { text: [], free: [], highlight: [] };
+        map.set(pageIndex, entry);
+      }
+      return entry;
+    };
+    for (const box of textBoxes) bucket(box.pageIndex).text.push(box);
+    for (const box of freeTextBoxes) bucket(box.pageIndex).free.push(box);
+    for (const box of highlightBoxes) bucket(box.pageIndex).highlight.push(box);
+    return map;
+  }, [textBoxes, freeTextBoxes, highlightBoxes]);
+
+  // Record a page's measured base size. PdfPageCanvas calls this once per page
+  // after it paints; bail on no-op writes so we don't churn the fit-zoom math.
+  const registerPageSize = useCallback((pageIndex: number, size: PageSize) => {
+    pageSizesRef.current = { ...pageSizesRef.current, [pageIndex]: size };
+    setPageSizes((prev) => {
+      const existing = prev[pageIndex];
+      if (existing && existing.width === size.width && existing.height === size.height) {
+        return prev;
+      }
+      return { ...prev, [pageIndex]: size };
+    });
+  }, []);
 
   useEffect(() => {
     textEditsRef.current = textEdits;
@@ -327,26 +395,29 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
     paragraphModeRef.current = paragraphMode;
   }, [paragraphMode]);
 
-  // When paragraph mode is on, populate textBoxes for the current page from
+  // When paragraph mode is on, populate textBoxes for EVERY page from the
   // backend-derived paragraph boxes. Edits from textEdits are overlaid so the
-  // editor immediately reflects user changes & migrated v1 edits.
+  // editor immediately reflects user changes & migrated v1 edits. All pages
+  // are materialized (not just the one in view) because in the scroll modes
+  // any page can be edited without re-rendering the document.
   useEffect(() => {
     if (!paragraphMode) return;
-    const baseBoxes = paragraphBoxesByPage[currentPageIndex] ?? [];
     const overlay = textEditsRef.current ?? {};
-    const merged = baseBoxes.map((box) => {
-      const edit = overlay[box.id];
-      if (!edit) return box;
-      return {
-        ...box,
-        ...edit,
-        originalText: box.originalText,
-        originalLines: box.originalLines,
-        isParagraph: true,
-      };
-    });
+    const merged = Object.values(paragraphBoxesByPage)
+      .flat()
+      .map((box) => {
+        const edit = overlay[box.id];
+        if (!edit) return box;
+        return {
+          ...box,
+          ...edit,
+          originalText: box.originalText,
+          originalLines: box.originalLines,
+          isParagraph: true,
+        };
+      });
     setTextBoxes(merged);
-  }, [paragraphMode, paragraphBoxesByPage, currentPageIndex, textEdits]);
+  }, [paragraphMode, paragraphBoxesByPage, textEdits]);
 
   // Clear text-range selection when active object changes away from a text-like
   useEffect(() => {
@@ -413,7 +484,10 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
       setStatus("loading");
       setIsTextModelHydrating(true);
       setSourceBytes(null);
-      setPageSize({ width: 0, height: 0 });
+      setPdfDoc(null);
+      pageElsRef.current = new Map();
+      pageSizesRef.current = {};
+      setPageSizes({});
       setPageCount(0);
       setTextBoxes([]);
       setParagraphBoxesByPage({});
@@ -657,94 +731,99 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
     };
   }, [adapter, file.id, file.storageHandle]);
 
+  // Load the PDF document once per source. Every page renders from this shared
+  // proxy (see PdfPageCanvas), so we no longer re-parse the file for each page
+  // and zoom level the way the old single-page renderer did.
   useEffect(() => {
+    if (!sourceBytes) return;
     let cancelled = false;
-
-    async function renderCurrentPage() {
-      if (!sourceBytes) return;
-      setStatus("loading");
-      setActiveObject(null);
-
+    setStatus("loading");
+    (async () => {
       try {
         const pdfjs = getPdfjs();
-        const pdf = await pdfjs.getDocument({ data: new Uint8Array(sourceBytes) }).promise;
-        const page = await pdf.getPage(currentPageIndex + 1);
-        const baseViewport = page.getViewport({ scale: 1 });
-        const viewport = page.getViewport({ scale });
-        const canvas = canvasRef.current;
-        const context = canvas?.getContext("2d");
-        if (!canvas || !context || cancelled) return;
-        const outputScale = Math.max(window.devicePixelRatio || 1, 1);
-
-        canvas.width = Math.floor(viewport.width * outputScale);
-        canvas.height = Math.floor(viewport.height * outputScale);
-        canvas.style.width = `${viewport.width}px`;
-        canvas.style.height = `${viewport.height}px`;
-        context.clearRect(0, 0, canvas.width, canvas.height);
-
-        await page.render({
-          canvas,
-          canvasContext: context,
-          viewport,
-          transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined,
-        }).promise;
-
-        // Paragraph mode owns textBoxes via a separate effect; skip the
-        // single-run extraction so we don't clobber it.
-        if (paragraphModeRef.current) {
-          if (cancelled) return;
-          setPageSize({ width: baseViewport.width, height: baseViewport.height });
-          setStatus("ready");
+        const doc = await pdfjs.getDocument({ data: new Uint8Array(sourceBytes) }).promise;
+        if (cancelled) {
+          // A rapid file switch resolved this load after it was abandoned;
+          // destroy the orphaned proxy so its worker transport isn't leaked.
+          void doc.destroy();
           return;
         }
+        setPdfDoc(doc);
+        setStatus("ready");
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) setStatus("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceBytes]);
 
-        const textContent = await page.getTextContent();
+  // Single-run fallback (PyMuPDF sidecar offline): extract editable text boxes
+  // for EVERY page up front so editing works across the whole document, not
+  // only the page in view. Paragraph mode owns textBoxes via its own effect,
+  // so skip this entirely when the backend returned blocks.
+  useEffect(() => {
+    if (!pdfDoc || paragraphMode) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const pdfjs = getPdfjs();
         const migratedEdits: Record<string, PdfTextBox> = {};
         const currentTextEdits = textEditsRef.current ?? {};
         const currentLegacyEdits = legacyEditsRef.current ?? {};
-        const boxes = textContent.items.flatMap((item, index) => {
-          if (!isPdfTextItem(item)) return [];
-          const tx = pdfjs.Util.transform(baseViewport.transform, item.transform);
-          const fontSize = Math.max(Math.abs(tx[3]), item.height, 8);
-          const width = Math.max(item.width, 8);
-          const height = Math.max(fontSize * 1.15, 10);
-          const style = item.fontName ? textContent.styles[item.fontName] : undefined;
-          const id = `p${currentPageIndex}-t${index}`;
-          const originalBox: PdfTextBox = {
-            id,
-            pageIndex: currentPageIndex,
-            text: item.str,
-            originalText: item.str,
-            x: tx[4],
-            y: tx[5] - height * 0.78,
-            width,
-            height,
-            fontSize,
-            originalFontSize: fontSize,
-            fontName: item.fontName,
-            fontFamily: isPdfTextStyle(style) ? style.fontFamily : undefined,
-          };
-          const legacyText = currentLegacyEdits[id]?.text;
-          if (!currentTextEdits[id] && legacyText && legacyText !== originalBox.text) {
-            migratedEdits[id] = { ...originalBox, text: legacyText };
-          }
-          const storedEdit = currentTextEdits[id];
-          return [
-            {
+        const all: PdfTextBox[] = [];
+        for (let pageIndex = 0; pageIndex < pdfDoc.numPages; pageIndex += 1) {
+          const page = await pdfDoc.getPage(pageIndex + 1);
+          if (cancelled) return;
+          const baseViewport = page.getViewport({ scale: 1 });
+          const textContent = await page.getTextContent();
+          if (cancelled) return;
+          textContent.items.forEach((item, index) => {
+            if (!isPdfTextItem(item)) return;
+            const tx = pdfjs.Util.transform(baseViewport.transform, item.transform);
+            const fontSize = Math.max(Math.abs(tx[3]), item.height, 8);
+            const width = Math.max(item.width, 8);
+            const height = Math.max(fontSize * 1.15, 10);
+            const style = item.fontName ? textContent.styles[item.fontName] : undefined;
+            const id = `p${pageIndex}-t${index}`;
+            const originalBox: PdfTextBox = {
+              id,
+              pageIndex,
+              text: item.str,
+              originalText: item.str,
+              x: tx[4],
+              y: tx[5] - height * 0.78,
+              width,
+              height,
+              fontSize,
+              originalFontSize: fontSize,
+              fontName: item.fontName,
+              fontFamily: isPdfTextStyle(style) ? style.fontFamily : undefined,
+            };
+            const legacyText = currentLegacyEdits[id]?.text;
+            if (!currentTextEdits[id] && legacyText && legacyText !== originalBox.text) {
+              migratedEdits[id] = { ...originalBox, text: legacyText };
+            }
+            const storedEdit = currentTextEdits[id];
+            all.push({
               ...originalBox,
               ...storedEdit,
               id,
-              pageIndex: currentPageIndex,
+              pageIndex,
               originalText: originalBox.originalText,
               originalFontSize: storedEdit?.originalFontSize ?? originalBox.fontSize,
               text: storedEdit?.text ?? legacyText ?? originalBox.text,
-            },
-          ];
-        });
-
+            });
+          });
+          // Yield between pages so a long document doesn't block the first
+          // page's paint or stall input.
+          await yieldToNextFrame();
+          if (cancelled) return;
+        }
         if (cancelled) return;
-        setPageSize({ width: baseViewport.width, height: baseViewport.height });
-        setTextBoxes(boxes);
+        setTextBoxes(all);
         if (Object.keys(migratedEdits).length > 0) {
           setTextEdits((edits) => ({ ...edits, ...migratedEdits }));
           setLegacyEdits((edits) => {
@@ -755,35 +834,14 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
             return next;
           });
         }
-        setStatus("ready");
-        // Close the switch.firstPaint measure once per file open. The start
-        // mark is cleared so subsequent page renders (this effect re-fires on
-        // every page change) don't keep stamping new measures. Globals are
-        // typed via the Window augmentation in src/lib/perf.ts.
-        if (typeof window !== "undefined") {
-          const startMark = window.__doxmindSwitchStartMark;
-          const fileIdAtStart = window.__doxmindSwitchFileId;
-          if (startMark && fileIdAtStart) {
-            perfMeasure("doxmind.switch.firstPaint", startMark, undefined, {
-              fileId: fileIdAtStart,
-              documentType: "pdf",
-            });
-            window.__doxmindSwitchStartMark = undefined;
-            window.__doxmindSwitchFileId = undefined;
-          }
-        }
       } catch (error) {
         console.error(error);
-        if (!cancelled) setStatus("error");
       }
-    }
-
-    void renderCurrentPage();
-
+    })();
     return () => {
       cancelled = true;
     };
-  }, [currentPageIndex, scale, sourceBytes]);
+  }, [pdfDoc, paragraphMode]);
 
   const commitTextBoxEdit = (box: PdfTextBox) => {
     setTextEdits((edits) => {
@@ -961,6 +1019,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   const startBlockDrag = useCallback(
     (
       event: ReactPointerEvent<HTMLElement>,
+      pageIndex: number,
       base: { x: number; y: number },
       bounds: { width: number; height: number },
       apply: (next: { x: number; y: number }) => void,
@@ -970,19 +1029,23 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
       event.stopPropagation();
       const startClientX = event.clientX;
       const startClientY = event.clientY;
+      // Snap + clamp against the page the dragged object lives on; pages can
+      // differ in size, so this must be the specific page, not a global value.
+      const pageW = pageSizesRef.current[pageIndex]?.width ?? 0;
+      const pageH = pageSizesRef.current[pageIndex]?.height ?? 0;
       isDraggingBlockRef.current = true;
       setIsDraggingBlock(true);
       document.body.style.userSelect = "none";
 
       const xCandidates: SnapCandidate[] = [
-        { value: 0, range: [0, pageSize.height] },
-        { value: pageSize.width / 2, range: [0, pageSize.height] },
-        { value: pageSize.width, range: [0, pageSize.height] },
+        { value: 0, range: [0, pageH] },
+        { value: pageW / 2, range: [0, pageH] },
+        { value: pageW, range: [0, pageH] },
       ];
       const yCandidates: SnapCandidate[] = [
-        { value: 0, range: [0, pageSize.width] },
-        { value: pageSize.height / 2, range: [0, pageSize.width] },
-        { value: pageSize.height, range: [0, pageSize.width] },
+        { value: 0, range: [0, pageW] },
+        { value: pageH / 2, range: [0, pageW] },
+        { value: pageH, range: [0, pageW] },
       ];
       const pushCandidates = (key: string, bx: number, by: number, bw: number, bh: number) => {
         if (key === dragKey) return;
@@ -998,15 +1061,15 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
         );
       };
       for (const b of textBoxes) {
-        if (b.pageIndex !== currentPageIndex) continue;
+        if (b.pageIndex !== pageIndex) continue;
         pushCandidates(`text-${b.id}`, b.x, b.y, textBoxSelectionWidth(b), b.height);
       }
       for (const b of freeTextBoxes) {
-        if (b.pageIndex !== currentPageIndex) continue;
+        if (b.pageIndex !== pageIndex) continue;
         pushCandidates(`free-text-${b.id}`, b.x, b.y, freeTextSelectionWidth(b), b.height);
       }
       for (const b of highlightBoxes) {
-        if (b.pageIndex !== currentPageIndex) continue;
+        if (b.pageIndex !== pageIndex) continue;
         pushCandidates(`highlight-${b.id}`, b.x, b.y, b.width, b.height);
       }
 
@@ -1015,8 +1078,8 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
       const handleMove = (moveEvent: PointerEvent) => {
         const dx = (moveEvent.clientX - startClientX) / scale;
         const dy = (moveEvent.clientY - startClientY) / scale;
-        const maxX = Math.max(0, pageSize.width - bounds.width);
-        const maxY = Math.max(0, pageSize.height - bounds.height);
+        const maxX = Math.max(0, pageW - bounds.width);
+        const maxY = Math.max(0, pageH - bounds.height);
         const rawX = Math.max(0, Math.min(maxX, base.x + dx));
         const rawY = Math.max(0, Math.min(maxY, base.y + dy));
 
@@ -1061,18 +1124,10 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
       window.addEventListener("pointermove", handleMove);
       window.addEventListener("pointerup", handleUp);
     },
-    [
-      pageSize.height,
-      pageSize.width,
-      scale,
-      textBoxes,
-      freeTextBoxes,
-      highlightBoxes,
-      currentPageIndex,
-    ]
+    [scale, textBoxes, freeTextBoxes, highlightBoxes]
   );
 
-  const handlePagePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const handlePagePointerDown = (pageIndex: number, event: ReactPointerEvent<HTMLDivElement>) => {
     // Page-level pointerdown: handles tool actions on empty area.
     if (event.target !== event.currentTarget) {
       // If user clicked an inner overlay, that handler already ran.
@@ -1087,7 +1142,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
     if (tool === "add-text") {
       const box: PdfFreeTextBox = {
         id: `ft-${Date.now()}`,
-        pageIndex: currentPageIndex,
+        pageIndex,
         text: "New text",
         x: point.x,
         y: point.y,
@@ -1107,7 +1162,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
       // Shift+drag on empty area creates a freeform highlight rectangle.
       const box: PdfHighlightBox = {
         id: `hl-${Date.now()}`,
-        pageIndex: currentPageIndex,
+        pageIndex,
         x: point.x,
         y: point.y,
         width: 1,
@@ -1219,6 +1274,43 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
     setLastSavedAt,
   ]);
 
+  // Awaitable flush of the pending edit-state, so the header's close prompt can
+  // save-then-close. Resolves true even on a read-only failure so closing isn't
+  // blocked on a document that can never be written.
+  const savePdfNow = useCallback(async (): Promise<boolean> => {
+    const { changedTextEdits, hasChanges } = collectChangedEdits();
+    if (!hasChanges || !adapter.writePdfEditorState || !file.storageHandle) return true;
+    const state = pdfEditorStateFromData(changedTextEdits, freeTextBoxes, highlightBoxes);
+    setEditorSaving(true);
+    try {
+      await adapter.writePdfEditorState(file.storageHandle, state);
+      setEditorDirty(false);
+      setLastSavedAt(new Date().toISOString());
+      return true;
+    } catch (error) {
+      if (!handleReadOnlyAutosaveError(error, readOnlySurfacedRef, notify.error)) {
+        console.error("Save failed", error);
+      }
+      return true;
+    } finally {
+      setEditorSaving(false);
+    }
+  }, [
+    collectChangedEdits,
+    adapter,
+    file.storageHandle,
+    freeTextBoxes,
+    highlightBoxes,
+    setEditorDirty,
+    setEditorSaving,
+    setLastSavedAt,
+  ]);
+
+  useEffect(() => {
+    useEditorRefStore.getState().setRequestSave(savePdfNow);
+    return () => useEditorRefStore.getState().setRequestSave(null);
+  }, [savePdfNow]);
+
   /**
    * Explicit export — triggered by the header dropdown via a window event
    * (cross-component decoupling). Persists the latest state and downloads
@@ -1288,7 +1380,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
     }
 
     const compute = () => {
-      const page = pageContainerRef.current;
+      const page = pageElsRef.current.get(activePageIndex);
       if (!page) return;
 
       let next: { x: number; y: number; width: number; height: number } | null = null;
@@ -1339,20 +1431,322 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
       window.removeEventListener("scroll", handler, true);
       window.removeEventListener("resize", handler);
     };
-  }, [activeObject, scale, highlightBoxes, freeTextBoxes, textBoxes]);
+  }, [activeObject, activePageIndex, scale, highlightBoxes, freeTextBoxes, textBoxes]);
+
+  // Move to a page: in single mode this swaps the rendered page; in scroll
+  // modes it scrolls the page into view (the scroll-sync effect then keeps the
+  // toolbar's page counter in step as the user scrolls freely).
+  const goToPage = useCallback(
+    (pageIndex: number) => {
+      const clamped = clampPageIndex(pageIndex, pageCount);
+      setCurrentPageIndex(clamped);
+      if (viewMode !== "single") {
+        pageElsRef.current.get(clamped)?.scrollIntoView({ block: "start", behavior: "smooth" });
+      }
+    },
+    [pageCount, viewMode]
+  );
+
+  // Scroll modes: derive the "page in view" from whichever page is nearest the
+  // viewport's vertical center, so the page counter and thumbnail highlight
+  // track free scrolling.
+  useEffect(() => {
+    if (viewMode === "single") return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    let frame: number | null = null;
+    const update = () => {
+      frame = null;
+      const cRect = container.getBoundingClientRect();
+      const mid = cRect.top + cRect.height / 2;
+      let best = 0;
+      let bestDist = Infinity;
+      pageElsRef.current.forEach((el, idx) => {
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        const center = r.top + r.height / 2;
+        const dist = Math.abs(center - mid);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = idx;
+        }
+      });
+      setCurrentPageIndex((prev) => (prev === best ? prev : best));
+    };
+    const onScroll = () => {
+      if (frame === null) frame = requestAnimationFrame(update);
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    update();
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, [viewMode, pageCount, pdfDoc]);
+
+  // Fit-zoom: recompute the effective `scale` from the viewport so a page (or
+  // its width) fills the available space, and keep it in sync with container
+  // resizes. `custom` zoom opts out and honors the explicit zoom buttons.
+  useEffect(() => {
+    if (zoomMode === "custom") return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const cols = viewMode === "two-page" ? 2 : 1;
+    const GAP = 24;
+    const PAD_X = 64; // px-8 on both sides
+    const PAD_Y = 80; // py-10 on both sides
+    const compute = () => {
+      const size = pageSizesRef.current[currentPageIndex] ?? Object.values(pageSizesRef.current)[0];
+      if (!size || !size.width || !size.height) return;
+      const availW = container.clientWidth - PAD_X - (cols - 1) * GAP;
+      const widthScale = availW / (cols * size.width);
+      let next = widthScale;
+      if (zoomMode === "fit-page") {
+        const availH = container.clientHeight - PAD_Y;
+        next = Math.min(widthScale, availH / size.height);
+      }
+      next = Math.max(0.2, Math.min(4, next));
+      setScale((prev) => (Math.abs(prev - next) < 0.001 ? prev : next));
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [zoomMode, viewMode, currentPageIndex, pageSizes]);
+
+  // Drop the selection when its page is no longer mounted — in single mode,
+  // paging away (or a mode switch) would otherwise leave an invisible "ghost"
+  // selection anchored to an unmounted page, with no overlay or toolbar but
+  // still the target of style/delete actions. Scroll modes keep every page
+  // mounted, so the selection rightly persists there.
+  useEffect(() => {
+    if (!activeObject) return;
+    if (viewMode === "single" && activePageIndex !== currentPageIndex) {
+      setActiveObject(null);
+      setActiveTextSelection(null);
+    }
+  }, [activeObject, activePageIndex, currentPageIndex, viewMode]);
 
   const floatingToolbarRect = computeFloatingToolbarRect({
     activeTextSelection,
     activeObject,
     activeRenderedBlock,
-    pageContainerRef,
+    activePageEl: pageElsRef.current.get(activePageIndex) ?? null,
     scale,
   });
+
+  // Which pages to mount: a single page in single mode, every page in the
+  // scroll modes (continuous / two-page).
+  const visiblePageIndices =
+    viewMode === "single"
+      ? [clampPageIndex(currentPageIndex, pageCount)]
+      : Array.from({ length: Math.max(pageCount, 1) }, (_, i) => i);
+
+  // Render one page: its canvas plus the editing overlays scoped to that page.
+  // All coordinate-bearing pieces (drag, block selection, guides) key off this
+  // page's index so editing works on any page while scrolling.
+  const renderPage = (pageIndex: number) => {
+    const size = pageSizes[pageIndex];
+    const group = boxesByPage.get(pageIndex);
+    const pageHighlightBoxes = group?.highlight ?? [];
+    const pageFreeTextBoxes = group?.free ?? [];
+    const pageTextBoxes = group?.text ?? [];
+    const pageDraft =
+      highlightDraft && highlightDraft.box.pageIndex === pageIndex ? highlightDraft : null;
+    const isActivePage = Boolean(activeObject) && activePageIndex === pageIndex;
+    return (
+      <div
+        key={pageIndex}
+        ref={(el) => {
+          pageElsRef.current.set(pageIndex, el);
+        }}
+        data-pdf-page-index={pageIndex}
+        className={cn(
+          "relative bg-white shadow-[0_18px_60px_rgba(15,23,42,0.16)] ring-1 ring-black/10",
+          tool === "add-text" && "cursor-crosshair"
+        )}
+        style={{
+          width: size?.width ? size.width * scale : 720,
+          height: size?.height ? size.height * scale : 960,
+        }}
+        onPointerDown={(event) => handlePagePointerDown(pageIndex, event)}
+        onPointerMove={handlePagePointerMove}
+        onPointerUp={commitHighlightDraft}
+        onPointerLeave={commitHighlightDraft}
+      >
+        <PdfPageCanvas
+          pdfDoc={pdfDoc}
+          pageIndex={pageIndex}
+          scale={scale}
+          onMeasure={registerPageSize}
+        />
+
+        {status === "ready" && (
+          <>
+            {pageHighlightBoxes.map((box) => (
+              <HighlightObject
+                key={box.id}
+                box={box}
+                scale={scale}
+                active={activeObject?.kind === "highlight" && activeObject.id === box.id}
+                onSelect={() => setActiveObject({ kind: "highlight", id: box.id })}
+              />
+            ))}
+            {pageDraft && (
+              <HighlightObject
+                box={pageDraft.box}
+                scale={scale}
+                active
+                drafting
+                onSelect={() => undefined}
+              />
+            )}
+            {!isTextModelHydrating &&
+              pageTextBoxes.map((box) => (
+                <PdfExistingText
+                  key={box.id}
+                  box={box}
+                  scale={scale}
+                  active={activeObject?.kind === "text" && activeObject.id === box.id}
+                  onSelect={() => setActiveObject({ kind: "text", id: box.id })}
+                  onChange={(text) => updateTextBoxText(box.id, text)}
+                  onClear={() => setActiveObject(null)}
+                  pendingSelectionRestore={pendingSelectionRestore}
+                  onSelectionRestored={() => setPendingSelectionRestore(null)}
+                />
+              ))}
+            {pageFreeTextBoxes.map((box) => (
+              <FreeTextObject
+                key={box.id}
+                box={box}
+                scale={scale}
+                active={activeObject?.kind === "free-text" && activeObject.id === box.id}
+                onSelect={() => setActiveObject({ kind: "free-text", id: box.id })}
+                onChange={updateFreeText}
+                pendingSelectionRestore={pendingSelectionRestore}
+                onSelectionRestored={() => setPendingSelectionRestore(null)}
+              />
+            ))}
+            {isActivePage &&
+              (() => {
+                const blockBox = activeRenderedBlock;
+                if (!blockBox || !activeObject) return null;
+                const draggable =
+                  activeObject.kind === "free-text" ||
+                  activeObject.kind === "highlight" ||
+                  Boolean(activeObject.kind === "text" && activeTextBox?.isParagraph);
+                const onStartDrag = (event: ReactPointerEvent<HTMLElement>) => {
+                  if (activeObject.kind === "free-text" && activeFreeTextBox) {
+                    startBlockDrag(
+                      event,
+                      pageIndex,
+                      { x: activeFreeTextBox.x, y: activeFreeTextBox.y },
+                      {
+                        width: freeTextSelectionWidth(activeFreeTextBox),
+                        height: activeFreeTextBox.height,
+                      },
+                      (next) => updateFreeTextBox(activeFreeTextBox.id, next),
+                      `free-text-${activeFreeTextBox.id}`
+                    );
+                    return;
+                  }
+                  if (activeObject.kind === "highlight" && activeHighlightBox) {
+                    startBlockDrag(
+                      event,
+                      pageIndex,
+                      { x: activeHighlightBox.x, y: activeHighlightBox.y },
+                      {
+                        width: activeHighlightBox.width,
+                        height: activeHighlightBox.height,
+                      },
+                      (next) => updateHighlightBox(activeHighlightBox.id, next),
+                      `highlight-${activeHighlightBox.id}`
+                    );
+                    return;
+                  }
+                  if (activeObject.kind === "text" && activeTextBox?.isParagraph) {
+                    startBlockDrag(
+                      event,
+                      pageIndex,
+                      { x: activeTextBox.x, y: activeTextBox.y },
+                      { width: activeTextBox.width, height: activeTextBox.height },
+                      (next) => updateTextBox(activeTextBox.id, next),
+                      `text-${activeTextBox.id}`
+                    );
+                  }
+                };
+                return (
+                  <BlockSelectionOverlay
+                    block={blockBox}
+                    scale={scale}
+                    draggable={draggable}
+                    onStartDrag={onStartDrag}
+                  />
+                );
+              })()}
+            {isActivePage && dragGuides && (
+              <div
+                className="pointer-events-none absolute inset-0 z-40"
+                style={{ ["--guide" as string]: "#ff2d6d" }}
+              >
+                {dragGuides.vertical.map((g, i) => {
+                  const x = g.x * scale;
+                  const y0 = g.y0 * scale;
+                  const y1 = g.y1 * scale;
+                  return (
+                    <div key={`v-${i}`}>
+                      <div
+                        className="absolute"
+                        style={{
+                          left: x - 0.5,
+                          top: y0,
+                          width: 1,
+                          height: Math.max(1, y1 - y0),
+                          background: "var(--guide)",
+                          boxShadow:
+                            "0 0 0 0.5px rgba(255,255,255,0.65), 0 0 6px rgba(255,45,109,0.45)",
+                        }}
+                      />
+                      <GuideEndpoint cx={x} cy={y0} />
+                      <GuideEndpoint cx={x} cy={y1} />
+                    </div>
+                  );
+                })}
+                {dragGuides.horizontal.map((g, i) => {
+                  const y = g.y * scale;
+                  const x0 = g.x0 * scale;
+                  const x1 = g.x1 * scale;
+                  return (
+                    <div key={`h-${i}`}>
+                      <div
+                        className="absolute"
+                        style={{
+                          left: x0,
+                          top: y - 0.5,
+                          width: Math.max(1, x1 - x0),
+                          height: 1,
+                          background: "var(--guide)",
+                          boxShadow:
+                            "0 0 0 0.5px rgba(255,255,255,0.65), 0 0 6px rgba(255,45,109,0.45)",
+                        }}
+                      />
+                      <GuideEndpoint cx={x0} cy={y} />
+                      <GuideEndpoint cx={x1} cy={y} />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div
       data-testid="pdf-runtime"
-      className="relative flex min-h-0 flex-1 bg-muted/40 text-foreground"
+      className="relative flex h-full min-h-0 bg-muted/40 text-foreground"
       onPointerDown={() => {
         // background click clears selection
         setActiveObject(null);
@@ -1379,7 +1773,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
                   : "border-border/70 bg-card hover:border-primary/30"
               )}
               onPointerDown={(event) => event.stopPropagation()}
-              onClick={() => setCurrentPageIndex(pageIndex)}
+              onClick={() => goToPage(pageIndex)}
             >
               <PdfPageThumbnail
                 sourceBytes={sourceBytes}
@@ -1403,7 +1797,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
               size="icon"
               className="h-7 w-7 rounded-md"
               disabled={currentPageIndex <= 0}
-              onClick={() => setCurrentPageIndex((pageIndex) => Math.max(0, pageIndex - 1))}
+              onClick={() => goToPage(currentPageIndex - 1)}
             >
               <ChevronLeft className="h-3.5 w-3.5" />
             </Button>
@@ -1417,11 +1811,49 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
               size="icon"
               className="h-7 w-7 rounded-md"
               disabled={pageCount <= 0 || currentPageIndex >= pageCount - 1}
-              onClick={() =>
-                setCurrentPageIndex((pageIndex) => Math.min(pageCount - 1, pageIndex + 1))
-              }
+              onClick={() => goToPage(currentPageIndex + 1)}
             >
               <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+          <div className="mx-2 h-5 w-px bg-border" />
+          <Tooltip content="Single page" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-7 w-7 rounded-md",
+                viewMode === "single" && "bg-primary/10 text-primary"
+              )}
+              onClick={() => setViewMode("single")}
+            >
+              <RectangleVertical className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Continuous scroll" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-7 w-7 rounded-md",
+                viewMode === "continuous" && "bg-primary/10 text-primary"
+              )}
+              onClick={() => setViewMode("continuous")}
+            >
+              <GalleryVertical className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Two-page scroll" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-7 w-7 rounded-md",
+                viewMode === "two-page" && "bg-primary/10 text-primary"
+              )}
+              onClick={() => setViewMode("two-page")}
+            >
+              <Columns2 className="h-3.5 w-3.5" />
             </Button>
           </Tooltip>
           <div className="mx-2 h-5 w-px bg-border" />
@@ -1430,7 +1862,10 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
               variant="ghost"
               size="icon"
               className="h-7 w-7 rounded-md"
-              onClick={() => setScale((value) => Math.max(0.75, value - 0.1))}
+              onClick={() => {
+                setZoomMode("custom");
+                setScale((value) => Math.max(0.25, value - 0.1));
+              }}
             >
               <ZoomOut className="h-3.5 w-3.5" />
             </Button>
@@ -1443,9 +1878,38 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
               variant="ghost"
               size="icon"
               className="h-7 w-7 rounded-md"
-              onClick={() => setScale((value) => Math.min(2, value + 0.1))}
+              onClick={() => {
+                setZoomMode("custom");
+                setScale((value) => Math.min(4, value + 0.1));
+              }}
             >
               <ZoomIn className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Fit width" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-7 w-7 rounded-md",
+                zoomMode === "fit-width" && "bg-primary/10 text-primary"
+              )}
+              onClick={() => setZoomMode("fit-width")}
+            >
+              <MoveHorizontal className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Fit page" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-7 w-7 rounded-md",
+                zoomMode === "fit-page" && "bg-primary/10 text-primary"
+              )}
+              onClick={() => setZoomMode("fit-page")}
+            >
+              <Maximize className="h-3.5 w-3.5" />
             </Button>
           </Tooltip>
           <div className="mx-2 h-5 w-px bg-border" />
@@ -1457,198 +1921,35 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div ref={scrollContainerRef} className="relative min-h-0 flex-1 overflow-auto">
           <div className="flex min-h-full justify-center px-8 py-10">
             <div
-              ref={pageContainerRef}
               className={cn(
-                "relative bg-white shadow-[0_18px_60px_rgba(15,23,42,0.16)] ring-1 ring-black/10",
-                tool === "add-text" && "cursor-crosshair"
+                viewMode === "two-page"
+                  ? "grid grid-cols-2 items-start gap-6"
+                  : "flex flex-col items-center gap-8"
               )}
-              style={{
-                width: pageSize.width ? pageSize.width * scale : 720,
-                height: pageSize.height ? pageSize.height * scale : 960,
-              }}
-              onPointerDown={handlePagePointerDown}
-              onPointerMove={handlePagePointerMove}
-              onPointerUp={commitHighlightDraft}
-              onPointerLeave={commitHighlightDraft}
             >
-              <canvas ref={canvasRef} className="pointer-events-none absolute inset-0" />
-
-              {status === "ready" && (
-                <>
-                  {pageHighlightBoxes.map((box) => (
-                    <HighlightObject
-                      key={box.id}
-                      box={box}
-                      scale={scale}
-                      active={activeObject?.kind === "highlight" && activeObject.id === box.id}
-                      onSelect={() => setActiveObject({ kind: "highlight", id: box.id })}
-                    />
-                  ))}
-                  {highlightDraft && (
-                    <HighlightObject
-                      box={highlightDraft.box}
-                      scale={scale}
-                      active
-                      drafting
-                      onSelect={() => undefined}
-                    />
-                  )}
-                  {!isTextModelHydrating &&
-                    textBoxes.map((box) => (
-                      <PdfExistingText
-                        key={box.id}
-                        box={box}
-                        scale={scale}
-                        active={activeObject?.kind === "text" && activeObject.id === box.id}
-                        onSelect={() => setActiveObject({ kind: "text", id: box.id })}
-                        onChange={(text) => updateTextBoxText(box.id, text)}
-                        onClear={() => setActiveObject(null)}
-                        pendingSelectionRestore={pendingSelectionRestore}
-                        onSelectionRestored={() => setPendingSelectionRestore(null)}
-                      />
-                    ))}
-                  {pageFreeTextBoxes.map((box) => (
-                    <FreeTextObject
-                      key={box.id}
-                      box={box}
-                      scale={scale}
-                      active={activeObject?.kind === "free-text" && activeObject.id === box.id}
-                      onSelect={() => setActiveObject({ kind: "free-text", id: box.id })}
-                      onChange={updateFreeText}
-                      pendingSelectionRestore={pendingSelectionRestore}
-                      onSelectionRestored={() => setPendingSelectionRestore(null)}
-                    />
-                  ))}
-                  {(() => {
-                    const blockBox = activeRenderedBlock;
-                    if (!blockBox || !activeObject) return null;
-                    const draggable =
-                      activeObject.kind === "free-text" ||
-                      activeObject.kind === "highlight" ||
-                      Boolean(activeObject.kind === "text" && activeTextBox?.isParagraph);
-                    const onStartDrag = (event: ReactPointerEvent<HTMLElement>) => {
-                      if (activeObject.kind === "free-text" && activeFreeTextBox) {
-                        startBlockDrag(
-                          event,
-                          { x: activeFreeTextBox.x, y: activeFreeTextBox.y },
-                          {
-                            width: freeTextSelectionWidth(activeFreeTextBox),
-                            height: activeFreeTextBox.height,
-                          },
-                          (next) => updateFreeTextBox(activeFreeTextBox.id, next),
-                          `free-text-${activeFreeTextBox.id}`
-                        );
-                        return;
-                      }
-                      if (activeObject.kind === "highlight" && activeHighlightBox) {
-                        startBlockDrag(
-                          event,
-                          { x: activeHighlightBox.x, y: activeHighlightBox.y },
-                          {
-                            width: activeHighlightBox.width,
-                            height: activeHighlightBox.height,
-                          },
-                          (next) => updateHighlightBox(activeHighlightBox.id, next),
-                          `highlight-${activeHighlightBox.id}`
-                        );
-                        return;
-                      }
-                      if (activeObject.kind === "text" && activeTextBox?.isParagraph) {
-                        startBlockDrag(
-                          event,
-                          { x: activeTextBox.x, y: activeTextBox.y },
-                          { width: activeTextBox.width, height: activeTextBox.height },
-                          (next) => updateTextBox(activeTextBox.id, next),
-                          `text-${activeTextBox.id}`
-                        );
-                      }
-                    };
-                    return (
-                      <BlockSelectionOverlay
-                        block={blockBox}
-                        scale={scale}
-                        draggable={draggable}
-                        onStartDrag={onStartDrag}
-                      />
-                    );
-                  })()}
-                  {dragGuides && (
-                    <div
-                      className="pointer-events-none absolute inset-0 z-40"
-                      style={{ ["--guide" as string]: "#ff2d6d" }}
-                    >
-                      {dragGuides.vertical.map((g, i) => {
-                        const x = g.x * scale;
-                        const y0 = g.y0 * scale;
-                        const y1 = g.y1 * scale;
-                        return (
-                          <div key={`v-${i}`}>
-                            <div
-                              className="absolute"
-                              style={{
-                                left: x - 0.5,
-                                top: y0,
-                                width: 1,
-                                height: Math.max(1, y1 - y0),
-                                background: "var(--guide)",
-                                boxShadow:
-                                  "0 0 0 0.5px rgba(255,255,255,0.65), 0 0 6px rgba(255,45,109,0.45)",
-                              }}
-                            />
-                            <GuideEndpoint cx={x} cy={y0} />
-                            <GuideEndpoint cx={x} cy={y1} />
-                          </div>
-                        );
-                      })}
-                      {dragGuides.horizontal.map((g, i) => {
-                        const y = g.y * scale;
-                        const x0 = g.x0 * scale;
-                        const x1 = g.x1 * scale;
-                        return (
-                          <div key={`h-${i}`}>
-                            <div
-                              className="absolute"
-                              style={{
-                                left: x0,
-                                top: y - 0.5,
-                                width: Math.max(1, x1 - x0),
-                                height: 1,
-                                background: "var(--guide)",
-                                boxShadow:
-                                  "0 0 0 0.5px rgba(255,255,255,0.65), 0 0 6px rgba(255,45,109,0.45)",
-                              }}
-                            />
-                            <GuideEndpoint cx={x0} cy={y} />
-                            <GuideEndpoint cx={x1} cy={y} />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </>
-              )}
-
-              {status === "loading" && (
-                <div className="absolute inset-0 flex items-center justify-center bg-background/80">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              )}
-
-              {status === "error" && (
-                <div className="absolute inset-0 flex items-center justify-center bg-background p-8 text-center">
-                  <div>
-                    <p className="text-sm font-semibold">Could not open this PDF</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      The file is visible in doXmind, but the local binary reader failed.
-                    </p>
-                  </div>
-                </div>
-              )}
+              {pdfDoc && visiblePageIndices.map((pageIndex) => renderPage(pageIndex))}
             </div>
           </div>
+
+          {status === "loading" && !pdfDoc && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/40">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          )}
+
+          {status === "error" && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background p-8 text-center">
+              <div>
+                <p className="text-sm font-semibold">Could not open this PDF</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  The file is visible in doXmind, but the local binary reader failed.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -1676,13 +1977,13 @@ function computeFloatingToolbarRect({
   activeTextSelection,
   activeObject,
   activeRenderedBlock,
-  pageContainerRef,
+  activePageEl,
   scale,
 }: {
   activeTextSelection: ActiveTextSelection;
   activeObject: ActiveObject | null;
   activeRenderedBlock: { x: number; y: number; width: number; height: number } | null;
-  pageContainerRef: React.RefObject<HTMLDivElement | null>;
+  activePageEl: HTMLDivElement | null;
   scale: number;
 }): Rect | null {
   if (
@@ -1696,7 +1997,7 @@ function computeFloatingToolbarRect({
     return activeTextSelection.rect;
   }
 
-  const pageEl = pageContainerRef.current;
+  const pageEl = activePageEl;
   if (!pageEl || !activeRenderedBlock) return null;
   const pageRect = pageEl.getBoundingClientRect();
 
@@ -2136,6 +2437,91 @@ function BlockSelectionOverlay({
       )}
     </div>
   );
+}
+
+function PdfPageCanvas({
+  pdfDoc,
+  pageIndex,
+  scale,
+  onMeasure,
+}: {
+  pdfDoc: PDFDocumentProxy | null;
+  pageIndex: number;
+  scale: number;
+  onMeasure: (pageIndex: number, size: PageSize) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  // The in-flight render for this canvas. pdf.js rejects overlapping render()
+  // calls on one canvas, so a scale change must cancel and await the previous
+  // task before repainting.
+  const renderTaskRef = useRef<{ cancel: () => void; promise: Promise<void> } | null>(null);
+
+  useEffect(() => {
+    if (!pdfDoc) return;
+    let cancelled = false;
+    const canvas = canvasRef.current;
+    (async () => {
+      try {
+        const page = await pdfDoc.getPage(pageIndex + 1);
+        if (cancelled || !canvas) return;
+        if (renderTaskRef.current) {
+          renderTaskRef.current.cancel();
+          try {
+            await renderTaskRef.current.promise;
+          } catch {
+            // previous render cancelled — expected
+          }
+          if (cancelled) return;
+        }
+        const baseViewport = page.getViewport({ scale: 1 });
+        const viewport = page.getViewport({ scale });
+        const context = canvas.getContext("2d");
+        if (!context) return;
+        const outputScale = Math.max(window.devicePixelRatio || 1, 1);
+        canvas.width = Math.floor(viewport.width * outputScale);
+        canvas.height = Math.floor(viewport.height * outputScale);
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+        context.clearRect(0, 0, canvas.width, canvas.height);
+
+        const task = page.render({
+          canvas,
+          canvasContext: context,
+          viewport,
+          transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined,
+        });
+        renderTaskRef.current = task;
+        await task.promise;
+        if (cancelled) return;
+        onMeasure(pageIndex, { width: baseViewport.width, height: baseViewport.height });
+
+        // Close the one-shot switch.firstPaint measure when the first page
+        // paints; the guard clears the start mark so later pages don't re-stamp.
+        if (typeof window !== "undefined") {
+          const startMark = window.__doxmindSwitchStartMark;
+          const fileIdAtStart = window.__doxmindSwitchFileId;
+          if (startMark && fileIdAtStart) {
+            perfMeasure("doxmind.switch.firstPaint", startMark, undefined, {
+              fileId: fileIdAtStart,
+              documentType: "pdf",
+            });
+            window.__doxmindSwitchStartMark = undefined;
+            window.__doxmindSwitchFileId = undefined;
+          }
+        }
+      } catch (error) {
+        if (!cancelled && (error as { name?: string })?.name !== "RenderingCancelledException") {
+          console.error(error);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      renderTaskRef.current?.cancel();
+    };
+  }, [pdfDoc, pageIndex, scale, onMeasure]);
+
+  return <canvas ref={canvasRef} className="pointer-events-none absolute inset-0" />;
 }
 
 function PdfPageThumbnail({

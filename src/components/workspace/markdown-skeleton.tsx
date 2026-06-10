@@ -65,12 +65,10 @@ export function MarkdownSkeletonContent({
     <>
       {includeTitle && (
         <>
-          {/* DocumentTitle reserves h-7 above the H1 in the real layout. */}
-          <div className="h-7" aria-hidden="true" />
           {title ? (
-            <h1 className="text-foreground/70 mt-1 truncate text-3xl font-bold">{title}</h1>
+            <h1 className="mt-1 truncate text-3xl font-bold text-foreground/70">{title}</h1>
           ) : (
-            <div className="bg-muted/25 mt-1 h-9 w-2/3 rounded-md" />
+            <div className="mt-1 h-9 w-2/3 rounded-md bg-muted/25" />
           )}
         </>
       )}
@@ -119,9 +117,9 @@ function HeadingGhost({ depth, text }: { depth: number; text: string }) {
 function ParagraphBars() {
   return (
     <div className="mt-3 space-y-2.5" aria-hidden="true">
-      <div className="bg-muted/20 h-3.5 w-full rounded" />
-      <div className="bg-muted/20 h-3.5 w-[94%] rounded" />
-      <div className="bg-muted/20 h-3.5 w-[80%] rounded" />
+      <div className="h-3.5 w-full rounded bg-muted/20" />
+      <div className="h-3.5 w-[94%] rounded bg-muted/20" />
+      <div className="h-3.5 w-[80%] rounded bg-muted/20" />
     </div>
   );
 }
@@ -132,19 +130,19 @@ function GenericSkeletonBody({ includeTitle }: { includeTitle: boolean }) {
   return (
     <>
       <div className={`${includeTitle ? "mt-8" : ""} space-y-2.5`} aria-hidden="true">
-        <div className="bg-muted/20 h-3.5 w-full rounded" />
-        <div className="bg-muted/20 h-3.5 w-[96%] rounded" />
-        <div className="bg-muted/20 h-3.5 w-[88%] rounded" />
+        <div className="h-3.5 w-full rounded bg-muted/20" />
+        <div className="h-3.5 w-[96%] rounded bg-muted/20" />
+        <div className="h-3.5 w-[88%] rounded bg-muted/20" />
       </div>
-      <div className="bg-muted/25 mt-8 h-6 w-1/3 rounded" aria-hidden="true" />
+      <div className="mt-8 h-6 w-1/3 rounded bg-muted/25" aria-hidden="true" />
       <div className="mt-4 space-y-2.5" aria-hidden="true">
-        <div className="bg-muted/20 h-3.5 w-full rounded" />
-        <div className="bg-muted/20 h-3.5 w-[92%] rounded" />
-        <div className="bg-muted/20 h-3.5 w-[78%] rounded" />
+        <div className="h-3.5 w-full rounded bg-muted/20" />
+        <div className="h-3.5 w-[92%] rounded bg-muted/20" />
+        <div className="h-3.5 w-[78%] rounded bg-muted/20" />
       </div>
       <div className="mt-4 space-y-2.5" aria-hidden="true">
-        <div className="bg-muted/20 h-3.5 w-full rounded" />
-        <div className="bg-muted/20 h-3.5 w-[84%] rounded" />
+        <div className="h-3.5 w-full rounded bg-muted/20" />
+        <div className="h-3.5 w-[84%] rounded bg-muted/20" />
       </div>
     </>
   );

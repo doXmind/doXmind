@@ -1,7 +1,7 @@
 export type WorkspaceMode = "disk";
 
 export type WorkspaceEntryKind = "document" | "folder";
-export type WorkspaceDocumentType = "markdown" | "pdf" | "excel";
+export type WorkspaceDocumentType = "markdown" | "pdf" | "excel" | "html";
 
 export interface DocumentHandle {
   mode: WorkspaceMode;
@@ -71,9 +71,7 @@ export interface CorrelationReport {
 export interface DocumentMeta {
   id: string;
   title?: string | null;
-  icon?: string | null;
   favorite?: boolean | null;
-  cover?: string | null;
   created?: string | null;
   updated?: string | null;
   [key: string]: unknown;
@@ -91,9 +89,6 @@ export interface WorkspaceEntry {
   wordCount?: number;
   documentType?: WorkspaceDocumentType;
   isFavorite?: boolean;
-  icon?: string | null;
-  coverImageUrl?: string | null;
-  coverPosition?: number;
 }
 
 export interface StorageWriteInput {
@@ -455,7 +450,6 @@ export interface WorkspaceIndexEntry {
   path?: string | null;
   parent: DocumentHandle | null;
   preview?: string;
-  icon?: string | null;
   updatedAt: string;
 }
 

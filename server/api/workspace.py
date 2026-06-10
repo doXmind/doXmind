@@ -23,10 +23,12 @@ from pydantic import BaseModel, Field
 from send2trash import send2trash
 
 from services.sidecar_io import (
+    SIDECAR_VERSION,
     Corrupt,
     CorruptSidecarError,
     Loaded,
     atomic_write,
+    hash_markdown,
     markdown_to_html,
     now_iso,
     parse_frontmatter,
@@ -385,7 +387,10 @@ def workspace_index_rebuild(root: str) -> dict[str, Any]:
 def workspace_index_from_documents(documents: list[dict[str, Any]]) -> dict[str, Any]:
     ids: dict[str, str] = {}
     for doc in documents:
-        if doc.get("documentType") == "markdown" and doc.get("idSource") == "frontmatter":
+        if doc.get("documentType") == "markdown" and doc.get("idSource") in (
+            "frontmatter",
+            "sidecar",
+        ):
             ids.setdefault(str(doc["id"]), str(doc["path"]))
     return {"version": 1, "ids": ids}
 
@@ -418,12 +423,14 @@ def workspace_markdown_search(root: str, query: str, limit: Any = None) -> list[
                 matches.append({"line": line_number, "preview": line.strip()[:240]})
         if matches:
             frontmatter_id, title = parse_frontmatter_scan_fields(raw)
+            # Identity precedence (#148): frontmatter -> sidecar -> path.
+            doc_id = frontmatter_id or _sidecar_id_for(path) or stable_path_id(rel_path)
             results.append(
                 {
-                    "id": frontmatter_id or stable_path_id(rel_path),
+                    "id": doc_id,
                     "path": rel_path,
                     "name": path.name,
-                    "title": title,
+                    "title": title or path.stem,
                     "matches": matches,
                 }
             )
@@ -432,7 +439,52 @@ def workspace_markdown_search(root: str, query: str, limit: Any = None) -> list[
     return results
 
 
+def read_html_doc(path: Path) -> dict[str, Any]:
+    # #139: an .html file's body IS the editor HTML — no frontmatter, no
+    # markdown_to_html. The sidecar caches the last-saved editor HTML + carries
+    # extras; the hash detects external edits. The browsing view sanitizes the
+    # raw HTML (via _render_browsing_from_html).
+    raw = path.read_text(encoding="utf-8")
+    current_hash = hash_markdown(raw)
+    sidecar = read_sidecar(sidecar_path_for(path))
+
+    editor_html = raw
+    extras: Any = None
+    source_state = "sidecar_missing"
+    legacy_source = "markdown"
+    doc_id = str(uuid.uuid4())
+
+    if isinstance(sidecar, Loaded):
+        data = sidecar.data
+        sidecar_id = data.get("id")
+        if isinstance(sidecar_id, str) and sidecar_id.strip():
+            doc_id = sidecar_id
+        extras_val = data.get("extras")
+        extras = extras_val if isinstance(extras_val, dict) else None
+        if data.get("version") == SIDECAR_VERSION and data.get("markdown_hash") == current_hash:
+            editor_html = data.get("html") or raw
+            source_state = "sidecar_fresh"
+            legacy_source = "sidecar"
+        else:
+            # External edit: editor HTML is the file body; extras carry (#147).
+            source_state = "sidecar_stale"
+
+    return _document_read_response(
+        editor_html=editor_html,
+        markdown=raw,
+        meta={"id": doc_id},
+        extras=extras,
+        legacy_source=legacy_source,
+        source_state=source_state,
+        correlation=None,
+        markdown_html=raw,
+    )
+
+
 def read_doc(path: Path) -> dict[str, Any]:
+    if is_html_file(path):
+        return read_html_doc(path)
+
     from services.block_correlation import BlockCorrelation, CorrelationReport
     from services.external_ref_blocks import default_external_ref_block_registry
     from services.markdown_document_state import (
@@ -863,7 +915,7 @@ def write_doc_workspace(root: str, rel_path: str, payload: dict[str, Any]) -> di
     needed to refresh state after every save.
     """
     workspace = canonical_workspace_root(root)
-    ensure_markdown_path(rel_path)
+    ensure_text_document_path(rel_path)
     path = resolve_workspace_path_for_write(workspace, rel_path)
 
     # Merge incoming meta with existing sidecar/frontmatter so callers can
@@ -1059,7 +1111,37 @@ def doc_import_external(
     return document_dto_for_path(workspace, destination)
 
 
+def write_html_doc(path: Path, payload: dict[str, Any]) -> None:
+    # #139: the .html file body IS the editor HTML (`html` = getHTML()); write
+    # it verbatim with no frontmatter. The sidecar caches it + carries extras.
+    meta = dict(payload.get("meta") or {})
+    doc_id = str(meta.get("id") or "").strip()
+    if not doc_id:
+        raise ValueError("document id is required")
+    html = str(payload.get("html") or "")
+    atomic_write(path, html.encode("utf-8"))
+
+    sidecar: dict[str, Any] = {
+        "version": SIDECAR_VERSION,
+        "id": doc_id,
+        "html": html,
+        "markdown_hash": hash_markdown(html),
+        "updated_at": now_iso(),
+    }
+    extras = payload.get("extras")
+    if extras is not None:
+        sidecar["extras"] = extras
+    atomic_write(
+        sidecar_path_for(path),
+        json.dumps(sidecar, indent=2, ensure_ascii=False).encode(),
+    )
+
+
 def write_doc(path: Path, payload: dict[str, Any]) -> None:
+    if is_html_file(path):
+        write_html_doc(path, payload)
+        return
+
     from services.markdown_document_state import DocumentSnapshot, MarkdownDocumentState
 
     snapshot = DocumentSnapshot(
@@ -1073,8 +1155,7 @@ def write_doc(path: Path, payload: dict[str, Any]) -> None:
 
 def move_document_pair(root: str, old_path: str, new_path: str) -> dict[str, Any]:
     workspace = canonical_workspace_root(root)
-    ensure_markdown_path(old_path)
-    ensure_markdown_path(new_path)
+    ensure_same_document_extension(old_path, new_path)
     source = resolve_existing_workspace_path(workspace, old_path)
     destination = resolve_workspace_path_for_write(workspace, new_path)
     if destination.exists():
@@ -1292,6 +1373,13 @@ def ensure_markdown_path(path: str) -> None:
         raise ValueError(f"document path must end in .md or .markdown: {path}")
 
 
+def ensure_text_document_path(path: str) -> None:
+    # Markdown and HTML are the text document types that share the read/write
+    # workspace path (#139). HTML routes to write_html_doc inside write_doc.
+    if Path(path).suffix.lower() not in {".md", ".markdown", ".html", ".htm"}:
+        raise ValueError(f"document path must end in .md, .markdown, .html, or .htm: {path}")
+
+
 def ensure_pdf_path(path: str) -> None:
     if Path(path).suffix.lower() != ".pdf":
         raise ValueError(f"document path must end in .pdf: {path}")
@@ -1300,6 +1388,26 @@ def ensure_pdf_path(path: str) -> None:
 def ensure_excel_path(path: str) -> None:
     if Path(path).suffix.lower() not in (".xlsx", ".xlsm"):
         raise ValueError(f"document path must end in .xlsx or .xlsm: {path}")
+
+
+WORKSPACE_DOCUMENT_SUFFIXES = {".md", ".markdown", ".pdf", ".xlsx", ".xlsm"}
+
+
+def ensure_same_document_extension(old_path: str, new_path: str) -> None:
+    """A rename or in-place move may target any document type, but must not
+    change the file's type: the destination keeps the source's extension so a
+    ``.pdf`` can't silently become a ``.md``. Mirrors the Tauri backend's
+    ``ensure_same_document_extension`` so both runtimes honour the contract."""
+    old_ext = Path(old_path).suffix.lower()
+    new_ext = Path(new_path).suffix.lower()
+    for ext, path in ((old_ext, old_path), (new_ext, new_path)):
+        if ext not in WORKSPACE_DOCUMENT_SUFFIXES:
+            raise ValueError(
+                "document path must end in .md, .markdown, .pdf, .xlsx, or .xlsm: "
+                f"{path}"
+            )
+    if old_ext != new_ext:
+        raise ValueError(f"cannot change document type on move: {old_path} -> {new_path}")
 
 
 def resolve_existing_workspace_path(root: Path, rel_path: str) -> Path:
@@ -1325,19 +1433,42 @@ def ensure_path_within_root(root: Path, path: Path) -> None:
         raise ValueError(f"path escapes workspace root: {path}")
 
 
+def _sidecar_id_for(path: Path) -> str | None:
+    """The id recorded in a document's sidecar, or None if absent/unreadable."""
+    sidecar = read_sidecar(sidecar_path_for(path))
+    if isinstance(sidecar, Loaded):
+        sidecar_id = sidecar.data.get("id")
+        if isinstance(sidecar_id, str) and sidecar_id.strip():
+            return sidecar_id
+    return None
+
+
 def document_dto_for_path(root: Path, path: Path) -> dict[str, Any]:
     rel_path = relative_path_string(root, path)
     if is_pdf_file(path):
         document_type = "pdf"
     elif is_excel_file(path):
         document_type = "excel"
+    elif is_html_file(path):
+        document_type = "html"
     else:
         document_type = "markdown"
     if document_type == "markdown":
         raw = path.read_text(encoding="utf-8")
         frontmatter_id, title = parse_frontmatter_scan_fields(raw)
-        id_source = "frontmatter" if frontmatter_id else "path"
-        doc_id = frontmatter_id or stable_path_id(rel_path)
+        title = title or path.stem  # #148: no authored frontmatter -> title is the filename
+        # Identity precedence (#148): legacy frontmatter id -> sidecar id ->
+        # path. doXmind no longer writes id into the `.md`, so for its own docs
+        # the canonical id lives in the sidecar and must be sourced from there.
+        if frontmatter_id:
+            id_source = "frontmatter"
+            doc_id = frontmatter_id
+        elif (sidecar_id := _sidecar_id_for(path)) is not None:
+            id_source = "sidecar"
+            doc_id = sidecar_id
+        else:
+            id_source = "path"
+            doc_id = stable_path_id(rel_path)
     else:
         id_source = "path"
         doc_id = stable_path_id(rel_path)
@@ -1406,8 +1537,19 @@ def is_excel_file(path: Path) -> bool:
     return path.suffix.lower() in {".xlsx", ".xlsm"}
 
 
+def is_html_file(path: Path) -> bool:
+    # HTML is a text document type whose file body IS the editor HTML — no
+    # frontmatter, no markdown conversion (#139).
+    return path.suffix.lower() in {".html", ".htm"}
+
+
 def is_workspace_document_file(path: Path) -> bool:
-    return is_markdown_file(path) or is_pdf_file(path) or is_excel_file(path)
+    return (
+        is_markdown_file(path)
+        or is_pdf_file(path)
+        or is_excel_file(path)
+        or is_html_file(path)
+    )
 
 
 def relative_path_string(root: Path, path: Path) -> str:

@@ -17,9 +17,11 @@ from sqlalchemy.pool import StaticPool
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 # Sandbox the data dir so settings tests don't touch the real ~/.doxmind
-# directory sitting in the developer's home folder.
+# directory sitting in the developer's home folder. `Path.home()` honors
+# `HOME` on POSIX and `USERPROFILE` on Windows, so we override both.
 _TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="doxmind-test-"))
 os.environ["HOME"] = str(_TEST_DATA_DIR)
+os.environ["USERPROFILE"] = str(_TEST_DATA_DIR)
 os.environ["DEBUG"] = "true"
 
 import db.database as db_database  # noqa: E402

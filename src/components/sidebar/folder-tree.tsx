@@ -88,13 +88,13 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   const t = useTranslations("sidebar");
 
   const files = useFileStore((s) => s.files);
+  const openTarget = useFileStore((s) => s.openTarget);
   const activeParentId = useFileStore(
     (s) => s.files.find((file) => file.id === s.currentFileId)?.parentId ?? null
   );
   const currentFolderId = useFileStore((s) => s.currentFolderId);
   const getFolders = useFileStore((s) => s.getFolders);
   const getFilesInFolder = useFileStore((s) => s.getFilesInFolder);
-  const getSubPages = useFileStore((s) => s.getSubPages);
   const setCurrentFolder = useFileStore((s) => s.setCurrentFolder);
   const moveFileToFolder = useFileStore((s) => s.moveFileToFolder);
   const importExternalFile = useFileStore((s) => s.importExternalFile);
@@ -104,7 +104,12 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   const justCreatedFileId = useFileStore((s) => s.justCreatedFileId);
   const clearJustCreatedFileId = useFileStore((s) => s.clearJustCreatedFileId);
 
-  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(new Set());
+  // Folders start collapsed: opening a workspace shows only the first level
+  // (the root's direct children); deeper folders expand one level per click.
+  // We track the EXPANDED set (empty = everything collapsed) rather than a
+  // collapsed set so a freshly opened folder doesn't dump its whole nested
+  // subtree into the sidebar.
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   // Tracks the in-flight folder drag source so dragover handlers can compute
   // D1 verdicts before the drop event (where `getData` becomes readable).
@@ -143,15 +148,15 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   const rootFiles = useMemo(() => getFilesInFolder(null), [files, getFilesInFolder]);
   const allFolders = useMemo(() => files.filter((f) => f.isFolder), [files]);
 
-  const hasExpandedFolders = allFolders.some((f) => !collapsedFolderIds.has(f.id));
+  const hasExpandedFolders = allFolders.some((f) => expandedFolderIds.has(f.id));
 
   useImperativeHandle(
     ref,
     () => ({
-      collapseAll: () => setCollapsedFolderIds(new Set(allFolders.map((f) => f.id))),
+      collapseAll: () => setExpandedFolderIds(new Set()),
       hasExpandedFolders: () => hasExpandedFolders,
     }),
-    [allFolders, hasExpandedFolders]
+    [hasExpandedFolders]
   );
 
   // Build a D1-shaped tree snapshot from the file store. The policy module
@@ -178,10 +183,10 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     onFolderDragLeave: cancelHoverExpand,
     cancel: cancelHoverExpandTimer,
   } = useHoverExpand((folderId) => {
-    setCollapsedFolderIds((prev) => {
-      if (!prev.has(folderId)) return prev;
+    setExpandedFolderIds((prev) => {
+      if (prev.has(folderId)) return prev;
       const next = new Set(prev);
-      next.delete(folderId);
+      next.add(folderId);
       return next;
     });
   });
@@ -359,7 +364,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     // expand callback finds the folder already open, but skipping the
     // schedule avoids a useless setState while the user drags inside an
     // already-expanded folder.
-    if (collapsedFolderIds.has(folderId)) {
+    if (!expandedFolderIds.has(folderId)) {
       scheduleHoverExpand(folderId);
     } else {
       cancelHoverExpandTimer();
@@ -651,14 +656,20 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     [t, handleRefresh, onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder]
   );
 
-  const buildEmptyMenu = useCallback(
-    (): EmptyMenuItem[] => [
-      {
-        id: "refresh",
-        label: t("refresh"),
-        icon: <RefreshCw className="mr-2 h-4 w-4" />,
-        onClick: handleRefresh,
-      },
+  const buildEmptyMenu = useCallback((): EmptyMenuItem[] => {
+    const refresh: EmptyMenuItem = {
+      id: "refresh",
+      label: t("refresh"),
+      icon: <RefreshCw className="mr-2 h-4 w-4" />,
+      onClick: handleRefresh,
+    };
+    // In single-file mode the rail represents one loose file; the workspace
+    // root is just the file's parent directory. Offering create actions here
+    // would spray new files into that directory — the same reason the header
+    // create buttons are hidden in file mode (see workspace-header.tsx).
+    if (openTarget === "file") return [refresh];
+    return [
+      refresh,
       {
         id: "new-file",
         label: t("newDocument"),
@@ -683,9 +694,8 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         icon: <FolderPlus className="mr-2 h-4 w-4" />,
         onClick: () => onCreateFolder(null),
       },
-    ],
-    [t, handleRefresh, onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder]
-  );
+    ];
+  }, [t, openTarget, handleRefresh, onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder]);
 
   // Position helpers — clamp to viewport so menus don't overflow.
   const positionForMouse = (clientX: number, clientY: number, w: number, h: number) => {
@@ -779,25 +789,10 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     };
   }, [folderMenu, emptyMenu, folderMenuFocus, emptyMenuFocus]);
 
-  // Recursive renderer for files and their sub-pages
-  const renderFileWithSubPages = (file: FileItemType) => {
-    const subPages = getSubPages(file.id);
-    return (
-      <div key={file.id}>
-        <FileItem file={file} />
-        {subPages.length > 0 && (
-          <div className="ml-4 space-y-0.5 border-l border-border/50 pl-1">
-            {subPages.map(renderFileWithSubPages)}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   const renderFolder = (folder: FileItemType) => {
     const folderFiles = getFilesInFolder(folder.id);
     const childFolders = getFolders(folder.id);
-    const isCollapsed = collapsedFolderIds.has(folder.id);
+    const isCollapsed = !expandedFolderIds.has(folder.id);
     const isActiveFolder = activeParentId === folder.id;
     const hasChildren = folderFiles.length > 0 || childFolders.length > 0;
 
@@ -860,7 +855,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
               onDragStart={(e) => handleFolderDragStart(e, folder.id)}
               onDragEnd={handleDragEnd}
               onClick={() => {
-                setCollapsedFolderIds((prev) => {
+                setExpandedFolderIds((prev) => {
                   const next = new Set(prev);
                   if (next.has(folder.id)) next.delete(folder.id);
                   else next.add(folder.id);
@@ -868,7 +863,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
                 });
               }}
               onContextMenu={(e) => handleFolderContextMenu(e, folder)}
-              className="flex h-7 w-full cursor-pointer select-none items-center gap-2 px-2.5 text-sm"
+              className="flex h-7 w-full cursor-pointer select-none items-center gap-2 px-1.5 text-sm"
             >
               {isCollapsed ? (
                 <Folder className="h-[18px] w-[18px] shrink-0 text-[var(--sidebar-icon)] transition-colors group-hover/folder:text-[var(--sidebar-text)]" />
@@ -884,7 +879,9 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         {!isCollapsed && hasChildren && (
           <div className="ml-6 space-y-0.5 pl-1.5">
             {childFolders.map((child) => renderFolder(child))}
-            {folderFiles.map((file) => renderFileWithSubPages(file))}
+            {folderFiles.map((file) => (
+              <FileItem key={file.id} file={file} />
+            ))}
           </div>
         )}
       </div>
@@ -895,7 +892,11 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
 
   return (
     <div
-      className="flex min-h-full flex-col"
+      // `grow` (not just min-h-full) so the tree reliably fills the scroll
+      // viewport even with only a few files — otherwise the blank space below
+      // the last row falls outside this onContextMenu and right-click there
+      // does nothing.
+      className="flex min-h-full grow flex-col"
       onContextMenu={handleEmptyAreaContextMenu}
       onDragOver={(e) => {
         e.preventDefault();
@@ -908,7 +909,9 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     >
       <div className="space-y-0.5">
         {folderRows}
-        {rootFiles.map((file) => renderFileWithSubPages(file))}
+        {rootFiles.map((file) => (
+          <FileItem key={file.id} file={file} />
+        ))}
       </div>
 
       {files.length === 0 && (
@@ -983,9 +986,9 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
                   folderMenuReady &&
                     (item.destructive
                       ? "hover:bg-destructive/10"
-                      : "hover:bg-accent hover:text-accent-foreground"),
+                      : "hover:bg-[var(--sidebar-hover)]"),
                   folderMenuFocus === index &&
-                    (item.destructive ? "bg-destructive/10" : "bg-accent text-accent-foreground")
+                    (item.destructive ? "bg-destructive/10" : "bg-[var(--sidebar-active)]")
                 )}
               >
                 {item.icon}
@@ -1017,8 +1020,8 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
                 }}
                 className={cn(
                   "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
-                  "hover:bg-accent hover:text-accent-foreground",
-                  emptyMenuFocus === index && "bg-accent text-accent-foreground"
+                  "hover:bg-[var(--sidebar-hover)]",
+                  emptyMenuFocus === index && "bg-[var(--sidebar-active)]"
                 )}
               >
                 {item.icon}

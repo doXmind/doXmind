@@ -212,9 +212,73 @@ pub fn markdown_to_html(body: &str) -> String {
     opts.insert(CmarkOptions::ENABLE_TASKLISTS);
     opts.insert(CmarkOptions::ENABLE_HEADING_ATTRIBUTES);
     let parser = CmarkParser::new_ext(body, opts);
+    let events = wrap_raw_html_blocks(parser);
     let mut html = String::with_capacity(body.len());
-    cmark_html::push_html(&mut html, parser);
+    cmark_html::push_html(&mut html, events.into_iter());
     html
+}
+
+/// Wrap each raw-HTML block in a `<div data-raw-html="…">` sentinel so the
+/// editor imports it as a single rawHtml atom node (preserved byte-identical
+/// by source preservation) instead of flattening it into images/links. Block
+/// raw HTML arrives as a run of consecutive `Event::Html`; inline HTML
+/// (`Event::InlineHtml`) is left untouched. The original markup is stored,
+/// HTML-attribute-escaped, in the attribute. See `src/extensions/raw-html.ts`.
+/// Raw-HTML blocks owned by other editor blocks, which must pass through
+/// untouched: HTML-comment placeholders (pdf-block / excel-block / database),
+/// `<details>` (toggle), and `<div data-column(s)>` (columns).
+fn is_claimed_raw_html(raw: &str) -> bool {
+    let head = raw.trim_start();
+    let lower = head.to_ascii_lowercase();
+    head.starts_with("<!--")
+        || head.starts_with("</") // structural closing tag (e.g. columns/toggle close)
+        || lower.starts_with("<details")
+        || lower.starts_with("<pre") // fenced code block — a CodeBlock node, not raw HTML
+        || raw.contains("data-column")
+        // Any editor-owned node marker (task lists, etc.) is claimed by its own
+        // parseHTML and must not be swallowed as a rawHtml passthrough.
+        || raw.contains("data-type=")
+}
+
+fn wrap_raw_html_blocks<'a>(
+    parser: impl Iterator<Item = CmarkEvent<'a>>,
+) -> Vec<CmarkEvent<'a>> {
+    let mut out: Vec<CmarkEvent<'a>> = Vec::new();
+    let mut buffer = String::new();
+    let flush = |buffer: &mut String, out: &mut Vec<CmarkEvent<'a>>| {
+        if buffer.is_empty() {
+            return;
+        }
+        let raw = buffer.trim_end_matches('\n');
+        if is_claimed_raw_html(raw) {
+            // Owned by another block (comment placeholders, toggle, columns) —
+            // pass through verbatim so those importers still see it.
+            out.push(CmarkEvent::Html(CowStr::Boxed(
+                buffer.clone().into_boxed_str(),
+            )));
+            buffer.clear();
+            return;
+        }
+        let escaped = raw
+            .replace('&', "&amp;")
+            .replace('"', "&quot;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;");
+        let sentinel = format!("<div data-raw-html=\"{escaped}\" data-type=\"raw-html\"></div>\n");
+        out.push(CmarkEvent::Html(CowStr::Boxed(sentinel.into_boxed_str())));
+        buffer.clear();
+    };
+    for event in parser {
+        match event {
+            CmarkEvent::Html(text) => buffer.push_str(&text),
+            other => {
+                flush(&mut buffer, &mut out);
+                out.push(other);
+            }
+        }
+    }
+    flush(&mut buffer, &mut out);
+    out
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -382,11 +446,25 @@ fn unique_id(base: String, seen_ids: &mut HashMap<String, usize>) -> String {
 
 /// Read a `.md` file plus optional sibling sidecar; return what the editor
 /// should display.
+/// True for `.html` / `.htm`. HTML is a text document type whose file body IS
+/// the editor HTML — there is no Markdown body and no frontmatter, so it skips
+/// the `markdown_to_html` + frontmatter machinery the Markdown path uses.
+pub fn is_html_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "html" | "htm"))
+        .unwrap_or(false)
+}
+
 pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
     let md_path = md_path.as_ref();
     let raw = tokio::fs::read_to_string(md_path)
         .await
         .map_err(|e| Error::ReadFailed(md_path.to_path_buf(), e))?;
+
+    if is_html_file(md_path) {
+        return read_html_doc(md_path, raw).await;
+    }
 
     let (mut meta, body) = parse_frontmatter(&raw)?;
 
@@ -419,7 +497,14 @@ pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
                 browsing_renderer_version: browsing.renderer_version,
             });
         }
-        SidecarRead::Loaded(_) => {
+        SidecarRead::Loaded(side) => {
+            // Stale sidecar: the markdown changed, so the editor HTML is
+            // re-derived from the body — but the markdown hash governs ONLY
+            // HTML freshness. Sidecar-only `extras` (the sole home for
+            // database-block data) are carried through regardless; which
+            // entries survive is gated downstream by the `<!-- ... -->`
+            // markers still present in the body. Dropping them here would let
+            // the next save erase them permanently (#147).
             let editor_html = markdown_to_html(&body);
             let is_empty = browsing.html.is_empty();
             return Ok(ReadResult {
@@ -432,7 +517,7 @@ pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
                     body
                 },
                 meta,
-                extras: None,
+                extras: side.extras,
                 correlation: None,
                 source: if is_empty {
                     Source::Empty
@@ -512,6 +597,61 @@ pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
     })
 }
 
+/// Read an HTML document. The file body IS the editor HTML — no frontmatter,
+/// no `markdown_to_html`. The sidecar still caches the last-saved editor HTML
+/// and carries `extras`; the hash detects external edits. The read-only
+/// browsing view is the raw HTML (the frontend sanitizes it before injecting).
+async fn read_html_doc(path: &Path, raw: String) -> Result<ReadResult> {
+    let current_hash = hash_markdown(&raw);
+    let sidecar_path = sidecar_path_for(path);
+    let version = BROWSING_RENDERER_VERSION.to_string();
+
+    let (editor_html, extras, source, source_state, id) = match read_sidecar(&sidecar_path).await? {
+        SidecarRead::Loaded(side)
+            if side.version == SIDECAR_VERSION && side.markdown_hash == current_hash =>
+        {
+            (side.html, side.extras, Source::Sidecar, SourceState::SidecarFresh, side.id)
+        }
+        // Stale: the file changed externally, so the editor HTML is the file
+        // body; sidecar-only extras carry through regardless (see #147).
+        SidecarRead::Loaded(side) => (
+            raw.clone(),
+            side.extras,
+            Source::Markdown,
+            SourceState::SidecarStale,
+            side.id,
+        ),
+        SidecarRead::Corrupt => (
+            raw.clone(),
+            None,
+            Source::Markdown,
+            SourceState::SidecarCorrupt,
+            new_id(),
+        ),
+        SidecarRead::Missing => (
+            raw.clone(),
+            None,
+            Source::Markdown,
+            SourceState::SidecarMissing,
+            new_id(),
+        ),
+    };
+
+    Ok(ReadResult {
+        html: editor_html.clone(),
+        editor_html,
+        browsing_html: raw.clone(),
+        markdown: raw,
+        meta: DocMeta::new(id),
+        extras,
+        correlation: None,
+        source,
+        source_state,
+        outline: Vec::new(),
+        browsing_renderer_version: version,
+    })
+}
+
 /// Write a `.md` + sidecar pair. Always writes the `.md` first, then the
 /// sidecar. If the sidecar write fails, the `.md` is left in its updated
 /// state and the error is bubbled — callers can retry the sidecar; a stale
@@ -521,7 +661,19 @@ pub async fn write_doc(md_path: impl AsRef<Path>, payload: &DocPayload) -> Resul
         return Err(Error::MissingId);
     }
     let md_path = md_path.as_ref();
-    let md_content = build_md_with_frontmatter(&payload.meta, &payload.markdown)?;
+    let md_content = if is_html_file(md_path) {
+        // HTML: the file body IS the editor HTML (`payload.html` = getHTML()),
+        // written verbatim with no frontmatter. `payload.markdown` (getMarkdown)
+        // is irrelevant for an html document.
+        payload.html.clone()
+    } else {
+        // doXmind does not own the user's frontmatter (#148): preserve the
+        // existing head byte-for-byte and never inject one. The typed meta is
+        // NOT serialized into the `.md` — identity lives in the sidecar below.
+        let existing = tokio::fs::read_to_string(md_path).await.ok();
+        let head = existing.as_deref().and_then(extract_frontmatter_block);
+        assemble_md(head, &payload.markdown)
+    };
 
     atomic_write(md_path, md_content.as_bytes()).await?;
 
@@ -575,12 +727,37 @@ fn value_to_meta(value: serde_json::Value) -> DocMeta {
         .unwrap_or_else(|_| DocMeta::new(new_id()))
 }
 
-fn build_md_with_frontmatter(meta: &DocMeta, body: &str) -> Result<String> {
-    let yaml = serde_yaml::to_string(meta).map_err(Error::FrontmatterSerialize)?;
-    let yaml = yaml.trim_end_matches('\n');
-    // Always write a trailing newline after the body for POSIX-friendliness.
-    let trimmed_body = body.trim_end_matches('\n');
-    Ok(format!("---\n{yaml}\n---\n\n{trimmed_body}\n"))
+/// Return the verbatim frontmatter block (`---\n...\n---`, delimiters included,
+/// no trailing newline) at the very start of `raw`, or `None` if there is no
+/// frontmatter. Byte-exact: never reorders, reserializes, or trims the head, so
+/// hand-authored frontmatter (key order, comments, quoting) round-trips
+/// untouched (#148).
+fn extract_frontmatter_block(raw: &str) -> Option<&str> {
+    if !(raw.starts_with("---\n") || raw.starts_with("---\r\n")) {
+        return None;
+    }
+    let open_len = raw.find('\n').map(|n| n + 1)?; // bytes through the opening "---\n"
+    let mut offset = open_len;
+    for line in raw[open_len..].split_inclusive('\n') {
+        let content = line.trim_end_matches(['\n', '\r']);
+        if content == "---" {
+            return Some(&raw[..offset + content.len()]);
+        }
+        offset += line.len();
+    }
+    None // unterminated frontmatter — treat as no head
+}
+
+/// Assemble the `.md`: the preserved head (if any) + a normalized body. Never
+/// injects a frontmatter block when `head` is `None`.
+fn assemble_md(head: Option<&str>, body: &str) -> String {
+    let body = body.trim_end_matches('\n');
+    match (head, body.is_empty()) {
+        (Some(h), false) => format!("{h}\n\n{body}\n"),
+        (Some(h), true) => format!("{h}\n"),
+        (None, false) => format!("{body}\n"),
+        (None, true) => String::new(),
+    }
 }
 
 enum SidecarRead {
@@ -874,11 +1051,47 @@ mod tests {
         assert_eq!(r.editor_html, "<p>rich <strong>html</strong></p>");
         assert_eq!(r.browsing_html.trim(), "<p>rich <strong>html</strong></p>");
         assert_eq!(r.markdown.trim(), "rich **html**");
-        assert_eq!(r.meta.id, "doc-1");
-        assert_eq!(r.meta.title.as_deref(), Some("Doc 1"));
+        assert_eq!(r.meta.id, "doc-1"); // identity via the sidecar
+        // #148: a doXmind-authored new file gets no frontmatter, so meta (title)
+        // is not written into the `.md`; the title lives in the filename.
+        assert!(std::fs::read_to_string(&p).unwrap().starts_with("rich"));
+        assert!(r.meta.title.is_none());
         assert_eq!(
             r.extras.unwrap()["databases"]["d1"]["rows"],
             serde_json::json!([])
+        );
+    }
+
+    #[tokio::test]
+    async fn stale_sidecar_carries_extras_through() {
+        // #147: when the .md is edited externally so the hash mismatches, the
+        // editor HTML is re-derived from markdown BUT sidecar-only `extras`
+        // (the sole home for database-block data) must survive — otherwise the
+        // next save erases them permanently.
+        let dir = td();
+        let p = dir.path().join("doc.md");
+        let payload = DocPayload {
+            html: "<p>old <!-- database:db1 --></p>".into(),
+            markdown: "old\n\n<!-- database:db1 -->\n".into(),
+            meta: DocMeta::new("doc-1"),
+            extras: Some(serde_json::json!({"databases": {"db1": {"rows": [1, 2, 3]}}})),
+        };
+        write_doc(&p, &payload).await.unwrap();
+        // External edit: change the body but keep the database marker.
+        std::fs::write(
+            &p,
+            "---\nid: doc-1\n---\n\n# Edited externally\n\n<!-- database:db1 -->\n",
+        )
+        .unwrap();
+
+        let r = read_doc(&p).await.unwrap();
+        assert_eq!(r.source_state, SourceState::SidecarStale);
+        // HTML re-derived from the new markdown:
+        assert!(r.html.contains("<h1>Edited externally</h1>"));
+        // …but the database extras survive the stale read:
+        assert_eq!(
+            r.extras.expect("extras must survive a stale read")["databases"]["db1"]["rows"],
+            serde_json::json!([1, 2, 3])
         );
     }
 
@@ -940,6 +1153,106 @@ mod tests {
             .browsing_html
             .contains("<h1 id=\"markdown-source\">Markdown Source</h1>"));
         assert!(!r.browsing_html.contains("Editor Only"));
+    }
+
+    #[tokio::test]
+    async fn write_does_not_inject_frontmatter_into_a_plain_file() {
+        // #148: doXmind must never add a `---` block to a file that has none,
+        // and must never write document identity (`id`) into the `.md`.
+        let dir = td();
+        let p = dir.path().join("Plain.md");
+        write_doc(
+            &p,
+            &DocPayload {
+                html: "<p>hello</p>".into(),
+                markdown: "hello".into(),
+                meta: DocMeta::new("doc-1"),
+                extras: None,
+            },
+        )
+        .await
+        .unwrap();
+        let on_disk = std::fs::read_to_string(&p).unwrap();
+        assert!(!on_disk.starts_with("---"), "no frontmatter injected: {on_disk:?}");
+        assert!(!on_disk.contains("id:"), "id must not be written into the .md: {on_disk:?}");
+        assert_eq!(on_disk, "hello\n");
+        // identity still resolves via the sidecar
+        assert_eq!(read_doc(&p).await.unwrap().meta.id, "doc-1");
+    }
+
+    #[tokio::test]
+    async fn write_preserves_hand_authored_frontmatter_verbatim() {
+        // #148: a hand-authored head (custom key order, comments, quoting) must
+        // survive open->save byte-identical; doXmind does not own it.
+        let dir = td();
+        let p = dir.path().join("Authored.md");
+        let original =
+            "---\n# my notes\ntitle: \"Quoted\"\ntags: [a, b]\nid: legacy-1\n---\n\n# Body\n";
+        std::fs::write(&p, original).unwrap();
+        // Simulate a body-only save (the editor never edits the head).
+        write_doc(
+            &p,
+            &DocPayload {
+                html: "<h1>Body</h1>".into(),
+                markdown: "# Body".into(),
+                meta: DocMeta::new("legacy-1"),
+                extras: None,
+            },
+        )
+        .await
+        .unwrap();
+        let on_disk = std::fs::read_to_string(&p).unwrap();
+        assert_eq!(on_disk, original, "frontmatter head must be byte-identical");
+    }
+
+    #[tokio::test]
+    async fn html_doc_reads_file_body_as_editor_html() {
+        // #139: an .html file's body IS the editor HTML — no frontmatter parse,
+        // no markdown_to_html.
+        let dir = td();
+        let p = dir.path().join("page.html");
+        std::fs::write(&p, "<h1>Title</h1>\n<p>Hello <em>world</em></p>\n").unwrap();
+
+        let r = read_doc(&p).await.unwrap();
+        assert_eq!(r.source_state, SourceState::SidecarMissing);
+        assert_eq!(r.editor_html, "<h1>Title</h1>\n<p>Hello <em>world</em></p>\n");
+        // The body is preserved verbatim (no `---` frontmatter, no `<p>`-wrapping).
+        assert_eq!(r.markdown, "<h1>Title</h1>\n<p>Hello <em>world</em></p>\n");
+    }
+
+    #[tokio::test]
+    async fn html_doc_write_then_read_roundtrips_via_sidecar() {
+        // #139: saving writes the editor HTML verbatim to the .html file (no
+        // frontmatter), and the sidecar caches it + carries extras.
+        let dir = td();
+        let p = dir.path().join("page.html");
+        let body = "<h1>Edited</h1>\n<p>content</p>";
+        write_doc(
+            &p,
+            &DocPayload {
+                html: body.into(),
+                // getMarkdown of an html doc is irrelevant and must NOT be what
+                // lands on disk — the .html is the editor HTML (`html` field).
+                markdown: "# Edited\n\ncontent".into(),
+                meta: DocMeta::new("html-1"),
+                extras: Some(serde_json::json!({"k": 1})),
+            },
+        )
+        .await
+        .unwrap();
+
+        // The .html on disk is the editor HTML (`payload.html`) verbatim — not
+        // the markdown serialization, and no injected frontmatter.
+        let on_disk = std::fs::read_to_string(&p).unwrap();
+        assert_eq!(on_disk, body);
+        assert!(!on_disk.contains("# Edited"));
+        assert!(!on_disk.contains("---"));
+
+        let r = read_doc(&p).await.unwrap();
+        assert_eq!(r.source_state, SourceState::SidecarFresh);
+        assert_eq!(r.editor_html, body);
+        assert_eq!(r.meta.id, "html-1");
+        assert_eq!(r.extras, Some(serde_json::json!({"k": 1})));
     }
 
     #[tokio::test]
@@ -1052,7 +1365,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn round_trip_preserves_extras_and_unknown_meta_keys() {
+    async fn new_file_persists_extras_in_sidecar_not_frontmatter() {
+        // #148: doXmind no longer authors a `.md` head. For a new file, meta
+        // (title, custom keys) is NOT written into the markdown; sidecar
+        // `extras` still persist. Unknown frontmatter keys are preserved only
+        // when they already exist in the user's file (see
+        // `write_preserves_hand_authored_frontmatter_verbatim`).
         let dir = td();
         let p = dir.path().join("doc.md");
         let mut meta = DocMeta::new("doc-1");
@@ -1072,13 +1390,15 @@ mod tests {
         .await
         .unwrap();
 
+        let on_disk = std::fs::read_to_string(&p).unwrap();
+        assert!(!on_disk.contains("---"), "no frontmatter authored: {on_disk:?}");
+        assert!(!on_disk.contains("custom_field"));
+
         let r = read_doc(&p).await.unwrap();
         assert_eq!(r.source, Source::Sidecar);
-        assert_eq!(r.meta.title.as_deref(), Some("Hello"));
-        assert_eq!(
-            r.meta.extras.get("custom_field"),
-            Some(&serde_json::json!("yes"))
-        );
+        assert!(r.meta.title.is_none());
+        assert_eq!(r.meta.extras.get("custom_field"), None);
+        // Sidecar-only extras still round-trip.
         assert_eq!(r.extras, Some(serde_json::json!({"k": 1})));
     }
 
@@ -1095,6 +1415,41 @@ mod tests {
     fn markdown_to_html_empty_string() {
         assert_eq!(markdown_to_html(""), "");
         assert_eq!(markdown_to_html("   \n  "), "");
+    }
+
+    #[test]
+    fn markdown_to_html_wraps_raw_html_block_in_sentinel() {
+        let html = markdown_to_html("Intro\n\n<div align=\"center\">\n  <img src=\"x.png\">\n</div>\n\nAfter\n");
+        // The raw-HTML block becomes a single sentinel div carrying the escaped
+        // original markup; the surrounding paragraphs are untouched.
+        assert!(html.contains("data-raw-html=\""), "expected sentinel: {html}");
+        assert!(html.contains("&lt;div align=&quot;center&quot;&gt;"), "escaped markup: {html}");
+        assert!(html.contains("<p>Intro</p>"));
+        assert!(html.contains("<p>After</p>"));
+        // Exactly one sentinel for one raw-HTML block.
+        assert_eq!(html.matches("data-raw-html=").count(), 1);
+    }
+
+    #[test]
+    fn markdown_to_html_leaves_plain_markdown_without_sentinel() {
+        let html = markdown_to_html("# Title\n\nA paragraph with *emphasis*.\n");
+        assert!(!html.contains("data-raw-html"));
+    }
+
+    #[test]
+    fn markdown_to_html_does_not_wrap_claimed_raw_html() {
+        // Comment placeholders (pdf/excel/database), toggle, and columns are
+        // owned by other blocks and must pass through unwrapped.
+        let comment = markdown_to_html("<!-- pdf-block id=\"a\" src=\"s.pdf\" -->\n");
+        assert!(!comment.contains("data-raw-html"));
+        assert!(comment.contains("<!-- pdf-block"));
+
+        let toggle = markdown_to_html("<details>\n<summary>S</summary>\n\nbody\n\n</details>\n");
+        assert!(!toggle.contains("data-raw-html"));
+
+        let columns = markdown_to_html("<div data-columns=\"2\">\n\nx\n\n</div>\n");
+        assert!(!columns.contains("data-raw-html"));
+        assert!(columns.contains("data-columns"));
     }
 
     // ---- date formatter ----

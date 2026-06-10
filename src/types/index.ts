@@ -21,9 +21,6 @@ export interface FileItem {
   parentId: string | null;
   position: number;
   isFavorite: boolean;
-  icon: string | null;
-  coverImageUrl: string | null;
-  coverPosition: number;
   createdAt: string;
   updatedAt: string;
   wordCount: number;

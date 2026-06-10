@@ -3,13 +3,17 @@
 /**
  * Register a flush-before-close handler that works across the desktop shell.
  *
- * The shell (Electron main) intercepts the window close, asks the renderer to
- * flush pending edits via the `shell://close-requested` event, we run `flush`,
- * then tell the shell to proceed (`shell_close_window`). The shell enforces a
- * max-wait timeout so a hung renderer can't block quit. No-op in browser dev.
+ * Electron: the shell (main process) intercepts the window close, asks the
+ * renderer to flush pending edits via the `shell://close-requested` event, we
+ * run `flush`, then tell the shell to proceed (`shell_close_window`). The
+ * shell enforces a max-wait timeout so a hung renderer can't block quit.
  *
- * This replaces the former Tauri-specific `getCurrentWindow().onCloseRequested`
- * flow; the closing guard now lives in the shell, keyed by window.
+ * Tauri (until the shell migration completes): nothing emits
+ * `shell://close-requested`, so we also register the window's native
+ * onCloseRequested flow — flush with a 1.5s cap, then destroy. Exactly one
+ * of the two paths fires per shell; the other stays a dormant listener.
+ *
+ * No-op in browser dev.
  *
  * @returns an unlisten function.
  */
@@ -19,19 +23,49 @@ export async function onShellCloseRequested(
   if (typeof window === "undefined" || !("__TAURI_BACKEND_URL__" in window)) {
     return () => {};
   }
+  const unlisteners: Array<() => void> = [];
   try {
     const [{ listen }, { invoke }] = await Promise.all([
       import("@tauri-apps/api/event"),
       import("@tauri-apps/api/core"),
     ]);
-    return await listen("shell://close-requested", async () => {
-      try {
-        await flush();
-      } finally {
-        await invoke("shell_close_window");
-      }
-    });
+    unlisteners.push(
+      await listen("shell://close-requested", async () => {
+        try {
+          await flush();
+        } finally {
+          await invoke("shell_close_window");
+        }
+      })
+    );
   } catch {
-    return () => {};
+    // browser dev or impersonation gap — nothing to unhook
   }
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const appWindow = getCurrentWindow();
+    let closingAfterFlush = false;
+    unlisteners.push(
+      await appWindow.onCloseRequested(async (event) => {
+        if (closingAfterFlush) return;
+        closingAfterFlush = true;
+        event.preventDefault();
+        try {
+          await Promise.race([
+            flush(),
+            new Promise<void>((resolve) => window.setTimeout(resolve, 1500)),
+          ]);
+        } catch (error) {
+          console.error("[shell/close] failed to save before close", error);
+        }
+        await appWindow.destroy();
+      })
+    );
+  } catch {
+    // Electron impersonation does not implement the window plugin — fine,
+    // the shell://close-requested path above handles close there.
+  }
+  return () => {
+    for (const unlisten of unlisteners) unlisten();
+  };
 }

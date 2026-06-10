@@ -181,7 +181,11 @@ def test_external_markdown_edit_invalidates_sidecar(sync_client, tmp_path):
     assert "<h1>External</h1>" in read["editorHtml"]
     assert "<h1>External</h1>" in read["browsingHtml"]
     assert read["outline"] == [{"id": "external", "depth": 1, "text": "External"}]
-    assert read["extras"] is None
+    # #147: a stale read re-derives HTML but carries sidecar `extras` through —
+    # the markdown hash governs only HTML freshness, never data retention. Orphan
+    # gating (no `<!-- database:id -->` marker in the body) happens downstream in
+    # the frontend, not by erasing data at read time.
+    assert read["extras"] == {"databases": {"d1": {"rows": []}}}
 
 
 def test_browsing_html_strips_unsafe_raw_html_in_http_fallback(sync_client, tmp_path):
@@ -1105,6 +1109,69 @@ def test_doc_delete_rejects_unknown_extension(sync_client, tmp_path, patched_os_
     assert response.status_code == 400
     assert "must end in .md" in response.json()["detail"]
     assert note_path.exists()
+
+
+def test_doc_rename_markdown_moves_pair(sync_client, tmp_path):
+    doc = tmp_path / "Untitled-1.md"
+    doc.write_text("---\nid: doc-1\ntitle: Untitled-1\n---\n\n# Hi\n", encoding="utf-8")
+
+    result = invoke(
+        sync_client,
+        "doc_rename",
+        {"root": str(tmp_path), "oldPath": "Untitled-1.md", "newPath": "Report.md"},
+    )
+
+    assert result["path"] == "Report.md"
+    assert (tmp_path / "Report.md").exists()
+    assert not doc.exists()
+
+
+def test_doc_rename_pdf_keeps_extension_and_moves_sidecar(sync_client, tmp_path):
+    pdf_path = _make_pdf(tmp_path, "Spec.pdf")
+    sidecar_path = sidecar_path_for(pdf_path)
+    sidecar_path.write_text(json.dumps({"id": "pdf"}), encoding="utf-8")
+
+    result = invoke(
+        sync_client,
+        "doc_rename",
+        {"root": str(tmp_path), "oldPath": "Spec.pdf", "newPath": "Report.pdf"},
+    )
+
+    assert result["path"] == "Report.pdf"
+    assert result["documentType"] == "pdf"
+    assert not pdf_path.exists()
+    assert (tmp_path / "Report.pdf").exists()
+    assert not sidecar_path.exists()
+    assert sidecar_path_for(tmp_path / "Report.pdf").exists()
+
+
+def test_doc_rename_xlsx_keeps_extension(sync_client, tmp_path):
+    xlsx_path = _make_excel(tmp_path, "Budget.xlsx")
+
+    result = invoke(
+        sync_client,
+        "doc_rename",
+        {"root": str(tmp_path), "oldPath": "Budget.xlsx", "newPath": "Q1.xlsx"},
+    )
+
+    assert result["path"] == "Q1.xlsx"
+    assert result["documentType"] == "excel"
+    assert (tmp_path / "Q1.xlsx").exists()
+    assert not xlsx_path.exists()
+
+
+def test_doc_rename_rejects_type_change(sync_client, tmp_path):
+    pdf_path = _make_pdf(tmp_path, "Spec.pdf")
+
+    response = error_response(
+        sync_client,
+        "doc_rename",
+        {"root": str(tmp_path), "oldPath": "Spec.pdf", "newPath": "Spec.md"},
+    )
+
+    assert response.status_code == 400
+    assert "cannot change document type" in response.json()["detail"]
+    assert pdf_path.exists()
 
 
 def test_doc_read_includes_empty_correlation_for_plain_markdown(sync_client, tmp_path):

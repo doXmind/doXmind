@@ -61,8 +61,20 @@ export function WelcomeScreen() {
   }, [recentsRaw, openTarget, rootPath]);
 
   const recentFiles = useMemo<WelcomeRecentFile[]>(() => {
+    // Only standalone files belong here — a file that lives inside a recent
+    // workspace is represented by that workspace folder (VSCode-style), so we
+    // drop it. This also sweeps out documents that older builds recorded as
+    // file recents before workspace docs stopped being tracked individually.
+    const workspaceDirs = recentsRaw
+      .filter((entry) => entry.kind === "folder")
+      .map((entry) => entry.path.replace(/\/+$/, ""));
+    const isInsideWorkspace = (filePath: string) =>
+      workspaceDirs.some((dir) => filePath === dir || filePath.startsWith(`${dir}/`));
     return recentsRaw
-      .filter((entry) => entry.kind === "file" && entry.path !== openFilePath)
+      .filter(
+        (entry) =>
+          entry.kind === "file" && entry.path !== openFilePath && !isInsideWorkspace(entry.path)
+      )
       .slice(0, RECENT_FILE_LIMIT)
       .map((entry) => {
         const { name, parent } = workspaceLabel(entry.path);
@@ -131,7 +143,9 @@ export function WelcomeScreen() {
     try {
       await openFolder(path);
     } catch (error) {
-      log.error("Failed to open recent workspace", error);
+      // Expected when a recent points at a deleted/moved folder — it's already
+      // pruned from recents. Warn (not error) so the dev overlay stays quiet.
+      log.warn("Failed to open recent workspace (removed from recents)", { path });
       const { title, description } = getErrorMessage(error);
       notify.error(title, { description });
     }
@@ -141,7 +155,11 @@ export function WelcomeScreen() {
     try {
       await openFile(file.absolutePath);
     } catch (error) {
-      log.error("Failed to open recent file", error);
+      // Expected when a recent points at a deleted/moved file — openFile already
+      // dropped it from recents. Warn (not error) so the dev overlay stays quiet.
+      log.warn("Failed to open recent file (removed from recents)", {
+        path: file.absolutePath,
+      });
       const { title, description } = getErrorMessage(error);
       notify.error(title, { description });
     }

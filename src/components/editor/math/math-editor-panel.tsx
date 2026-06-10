@@ -2,9 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
-import katex from "katex";
 import { CornerDownLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { loadKatex } from "./katex-loader";
 
 interface MathEditorPanelProps {
   latex: string;
@@ -62,16 +62,23 @@ export function MathEditorPanel({
       previewRef.current.innerHTML = "";
       return;
     }
-    try {
-      katex.render(code, previewRef.current, {
-        displayMode,
-        throwOnError: false,
-        errorColor: "#ef4444",
-        trust: true,
-      });
-    } catch {
-      previewRef.current.innerHTML = `<span class="text-destructive text-sm">${t("invalidLatex")}</span>`;
-    }
+    let cancelled = false;
+    void loadKatex().then((katex) => {
+      if (cancelled || !previewRef.current) return;
+      try {
+        katex.render(code, previewRef.current, {
+          displayMode,
+          throwOnError: false,
+          errorColor: "#ef4444",
+          trust: true,
+        });
+      } catch {
+        previewRef.current.innerHTML = `<span class="text-destructive text-sm">${t("invalidLatex")}</span>`;
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [latex, displayMode, t]);
 
   const handleInput = useCallback(

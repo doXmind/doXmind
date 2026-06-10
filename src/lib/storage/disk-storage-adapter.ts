@@ -46,9 +46,6 @@ interface WorkspaceDocumentDto {
   title?: string | null;
   documentType?: WorkspaceDocumentType;
   hasSidecar: boolean;
-  icon?: string | null;
-  cover?: string | null;
-  coverPosition?: number | null;
   favorite?: boolean | null;
 }
 
@@ -138,7 +135,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       sourceState: result.sourceState ?? legacySourceToState(result.source),
       outline: result.outline ?? [],
       browsingRendererVersion: result.browsingRendererVersion,
-      documentType: "markdown",
+      documentType: docType,
       updatedAt: result.meta.updated || new Date().toISOString(),
       correlation: result.correlation ?? null,
     };
@@ -279,7 +276,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       sourceState: result.sourceState ?? legacySourceToState(result.source),
       outline: result.outline ?? [],
       browsingRendererVersion: result.browsingRendererVersion,
-      documentType: "markdown",
+      documentType: handle.documentType ?? documentTypeFromPath(requireHandlePath(handle)),
       updatedAt: result.meta.updated || new Date().toISOString(),
       correlation: result.correlation ?? null,
     };
@@ -394,7 +391,7 @@ export class DiskStorageAdapter implements StorageAdapter {
     const currentPath = requireHandlePath(handle);
     const newPath = siblingPath(
       currentPath,
-      handle.kind === "folder" ? name : ensureMarkdownExtension(name)
+      handle.kind === "folder" ? name : renameLeafPreservingExtension(currentPath, name)
     );
     if (newPath === currentPath) {
       return handle.kind === "folder"
@@ -548,7 +545,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       mode: "disk",
       id: result.meta.id || handle.id,
       kind: "document",
-      documentType: "markdown",
+      documentType: handle.documentType ?? documentTypeFromPath(relPath ?? ""),
       path: relPath,
       relPath,
     };
@@ -643,7 +640,11 @@ function entryFromDocument(doc: WorkspaceDocumentDto): WorkspaceEntry {
       relPath: doc.path,
     },
     kind: "document",
-    name: doc.title || stripDocumentExtension(doc.name),
+    // The file tree shows the filename — the on-disk source of truth the user
+    // renames. Preferring the frontmatter `title` here made renames silently
+    // revert: rename only moves the file, never rewrites `title`, so the
+    // post-rename DTO refresh re-read the stale title (e.g. "Untitled-N").
+    name: stripDocumentExtension(doc.name),
     parent: parentPath ? folderHandle(parentPath) : null,
     position: 0,
     createdAt: now,
@@ -652,9 +653,6 @@ function entryFromDocument(doc: WorkspaceDocumentDto): WorkspaceEntry {
     wordCount: 0,
     documentType: doc.documentType ?? documentTypeFromPath(doc.path),
     isFavorite: doc.favorite ?? false,
-    icon: doc.icon ?? null,
-    coverImageUrl: doc.cover ?? null,
-    coverPosition: doc.coverPosition ?? 0.5,
   };
 }
 
@@ -673,9 +671,6 @@ function folderEntryFromPath(path: string): WorkspaceEntry {
     preview: "",
     wordCount: 0,
     isFavorite: false,
-    icon: null,
-    coverImageUrl: null,
-    coverPosition: 0.5,
   };
 }
 
@@ -729,6 +724,16 @@ function ensureMarkdownExtension(name: string): string {
   return /\.(md|markdown)$/i.test(name) ? name : `${name}.md`;
 }
 
+// A document rename changes only the base name; the file keeps its original
+// type. The new name may arrive with the wrong extension (the sidebar's display
+// name has none, so callers default it to ".md") — strip whatever document
+// extension came in and re-apply the source file's, so a .pdf/.xlsx can never
+// be collapsed into a .md.
+function renameLeafPreservingExtension(currentPath: string, name: string): string {
+  const sourceExt = basename(currentPath).match(/\.(md|markdown|pdf|xlsx|xlsm)$/i)?.[0] ?? ".md";
+  return `${stripDocumentExtension(basename(name))}${sourceExt}`;
+}
+
 function ensurePdfExtension(name: string): string {
   return /\.pdf$/i.test(name) ? name : `${name}.pdf`;
 }
@@ -748,6 +753,7 @@ function stripDocumentExtension(name: string): string {
 function documentTypeFromPath(path: string): WorkspaceDocumentType {
   if (/\.pdf$/i.test(path)) return "pdf";
   if (/\.(xlsx|xlsm)$/i.test(path)) return "excel";
+  if (/\.html?$/i.test(path)) return "html";
   return "markdown";
 }
 

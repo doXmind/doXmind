@@ -12,11 +12,9 @@ const clamp = (value: number, min: number, max: number) =>
 interface AppearanceState {
   uiFontSize: number;
   codeFontSize: number;
-  pointerCursors: boolean;
 
   setUiFontSize: (value: number) => void;
   setCodeFontSize: (value: number) => void;
-  setPointerCursors: (value: boolean) => void;
   reset: () => void;
 }
 
@@ -25,19 +23,16 @@ export const useAppearanceStore = create<AppearanceState>()(
     (set) => ({
       uiFontSize: UI_FONT_SIZE_DEFAULT,
       codeFontSize: CODE_FONT_SIZE_DEFAULT,
-      pointerCursors: false,
 
       setUiFontSize: (value) =>
         set({ uiFontSize: clamp(value, UI_FONT_SIZE_MIN, UI_FONT_SIZE_MAX) }),
       setCodeFontSize: (value) =>
         set({ codeFontSize: clamp(value, UI_FONT_SIZE_MIN, UI_FONT_SIZE_MAX) }),
-      setPointerCursors: (value) => set({ pointerCursors: value }),
 
       reset: () =>
         set({
           uiFontSize: UI_FONT_SIZE_DEFAULT,
           codeFontSize: CODE_FONT_SIZE_DEFAULT,
-          pointerCursors: false,
         }),
     }),
     {

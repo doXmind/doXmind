@@ -1,0 +1,100 @@
+name: Desktop installer
+
+# Builds the Tauri desktop bundle (NSIS installer on Windows). Heavier than
+# the regular CI lint/type-check/pytest matrix because it pulls in the Rust
+# toolchain and runs PyInstaller, so it runs only when explicitly requested:
+# use the /build-windows PR comment command or manual dispatch.
+#
+# macOS is intentionally not included here: tauri.conf.json declares a
+# `Developer ID Application` signing identity that lives only on the
+# release machine. Add a macos job here once the signing cert + notary
+# credentials are wired into GitHub Secrets.
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or SHA to build"
+        required: false
+        default: "main"
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  windows:
+    name: Windows (NSIS)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        startsWith(github.event.comment.body, '/build-windows'))
+    runs-on: windows-latest
+    steps:
+      - name: Resolve checkout ref
+        id: checkout-ref
+        uses: actions/github-script@v7
+        with:
+          script: |
+            if (context.eventName === 'workflow_dispatch') {
+              core.setOutput('repository', `${context.repo.owner}/${context.repo.repo}`);
+              core.setOutput('ref', context.payload.inputs?.ref || context.ref);
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const pull_number = context.payload.issue.number;
+            const { data: pull } = await github.rest.pulls.get({ owner, repo, pull_number });
+            core.setOutput('repository', pull.head.repo.full_name);
+            core.setOutput('ref', pull.head.sha);
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.checkout-ref.outputs.repository }}
+          ref: ${{ steps.checkout-ref.outputs.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - name: Create Python venv with PyInstaller
+        shell: pwsh
+        run: |
+          python -m venv server\.venv
+          server\.venv\Scripts\pip install --upgrade pip
+          server\.venv\Scripts\pip install -r server\requirements.txt pyinstaller
+
+      - name: Build sidecar + Tauri NSIS bundle
+        run: npm run build:desktop
+
+      - name: Upload NSIS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: doxmind-windows-nsis
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 14

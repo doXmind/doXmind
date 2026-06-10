@@ -1,6 +1,6 @@
 [package]
 name = "doxmind"
-version = "1.0.4"
+version = "1.3.0"
 description = "doXmind — local-first Markdown workspace"
 authors = ["doXmind"]
 edition = "2021"
@@ -30,6 +30,7 @@ env_logger = "0.11"
 window-vibrancy = "0.6"
 uuid = { version = "1", features = ["v4"] }
 trash = "5"
+notify = "6"
 
 [features]
 # Enables tests that spawn `python3` to verify byte-identical sidecar
@@ -54,4 +55,13 @@ objc2-foundation = { version = "0.3", features = [
     "NSString",
     "NSGeometry",
     "NSURL",
+] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# Used to flip FILE_ATTRIBUTE_HIDDEN on `.doxmind` sidecars after atomic
+# writes — Windows doesn't honor the POSIX leading-dot hidden convention,
+# so without this the sidecars show up next to user documents in Explorer.
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
 ] }

@@ -33,8 +33,9 @@ from services.sidecar_io import (
     CorruptSidecarError,
     Loaded,
     Missing,
+    assemble_md,
     atomic_write,
-    build_md_with_frontmatter,
+    extract_frontmatter_block,
     hash_markdown,
     markdown_to_html,
     now_iso,
@@ -132,14 +133,25 @@ class Salvager(Protocol):
     ) -> tuple[dict[str, Any], list[str]]: ...
 
 
-class _DiscardAllSalvager:
+class _KeepAllSalvager:
+    """Default salvager: carry every `extras` slot through a stale read (#147).
+
+    The markdown hash governs only whether the cached editor HTML is reused or
+    re-derived — it must not decide whether `extras` survive. Which slots
+    actually persist is gated downstream by the `<!-- ... -->` markers still in
+    the body (registry blocks via the correlator, databases in the frontend),
+    so carrying everything through is safe: deleted markers still drop their
+    data, surviving markers keep theirs. Discarding here instead let the next
+    save permanently erase sidecar-only data (databases).
+    """
+
     def salvage(
         self,
         *,
         markdown_body: str,  # noqa: ARG002
         extras: dict[str, Any],
     ) -> tuple[dict[str, Any], list[str]]:
-        return {}, sorted(extras.keys())
+        return dict(extras), []
 
 
 class Correlator(Protocol):
@@ -201,7 +213,7 @@ class MarkdownDocumentState:
         salvager: Salvager | None = None,
         correlator: Correlator | None = None,
     ) -> None:
-        self._salvager: Salvager = salvager or _DiscardAllSalvager()
+        self._salvager: Salvager = salvager or _KeepAllSalvager()
         self._correlator = correlator
 
     def read(self, path: Path) -> ReadOutcome:
@@ -333,9 +345,13 @@ class MarkdownDocumentState:
         meta = dict(snapshot.meta)
         if not str(meta.get("id") or "").strip():
             raise ValueError("document id is required")
-        meta.setdefault("updated", now_iso())
 
-        md_content = build_md_with_frontmatter(meta, snapshot.markdown)
+        # doXmind does not own the user's frontmatter (#148): preserve the
+        # existing head byte-for-byte and never inject one. The typed meta is
+        # NOT serialized into the `.md` — identity lives in the sidecar below.
+        existing = path.read_text(encoding="utf-8") if path.exists() else None
+        head = extract_frontmatter_block(existing) if existing is not None else None
+        md_content = assemble_md(head, snapshot.markdown)
         atomic_write(path, md_content.encode("utf-8"))
 
         sidecar: dict[str, Any] = {

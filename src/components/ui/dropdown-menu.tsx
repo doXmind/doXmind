@@ -421,7 +421,10 @@ export function DropdownMenuItem({
       tabIndex={isFocused ? 0 : -1}
       className={cn(
         "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors",
-        isFocused && "bg-accent text-accent-foreground",
+        // doXmind highlights menu rows with the neutral sidebar-hover gray
+        // (theme-independent) rather than the theme's accent colour, so dark
+        // themes don't paint a loud blue bar on the focused/selected row.
+        isFocused && "bg-[var(--sidebar-hover)]",
         "focus-visible:ring-1 focus-visible:ring-ring",
         disabled && "pointer-events-none opacity-50",
         inset && "pl-8",
@@ -595,7 +598,7 @@ export function DropdownMenuSubTrigger({
       aria-expanded={open}
       className={cn(
         "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors",
-        (isFocused || open) && "bg-accent text-accent-foreground",
+        (isFocused || open) && "bg-[var(--sidebar-hover)]",
         "focus-visible:ring-1 focus-visible:ring-ring",
         className
       )}

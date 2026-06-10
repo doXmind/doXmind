@@ -16,7 +16,10 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SERVER_DIR = path.join(REPO_ROOT, "server");
-const VENV_PYTHON = path.join(SERVER_DIR, ".venv", "bin", "python");
+const VENV_PYTHON =
+  process.platform === "win32"
+    ? path.join(SERVER_DIR, ".venv", "Scripts", "python.exe")
+    : path.join(SERVER_DIR, ".venv", "bin", "python");
 const TARGET_DIR = path.join(REPO_ROOT, "src-tauri", "binaries");
 
 function rustHostTriple() {
@@ -29,12 +32,13 @@ function rustHostTriple() {
 
 function resolvePython() {
   if (fs.existsSync(VENV_PYTHON)) return VENV_PYTHON;
-  console.error(
-    `\nNo venv at ${VENV_PYTHON}.\n` +
-      `Create it first:\n` +
-      `  python3 -m venv server/.venv\n` +
-      `  server/.venv/bin/pip install -r server/requirements.txt pyinstaller\n`
-  );
+  const hint =
+    process.platform === "win32"
+      ? "  py -3 -m venv server\\.venv\n" +
+        "  server\\.venv\\Scripts\\pip install -r server\\requirements.txt pyinstaller\n"
+      : "  python3 -m venv server/.venv\n" +
+        "  server/.venv/bin/pip install -r server/requirements.txt pyinstaller\n";
+  console.error(`\nNo venv at ${VENV_PYTHON}.\nCreate it first:\n${hint}`);
   process.exit(1);
 }
 
@@ -83,14 +87,15 @@ function main() {
     { cwd: SERVER_DIR }
   );
 
-  const built = path.join(SERVER_DIR, "dist", "doxmind-server");
+  const exeExt = process.platform === "win32" ? ".exe" : "";
+  const built = path.join(SERVER_DIR, "dist", `doxmind-server${exeExt}`);
   if (!fs.existsSync(built)) {
     console.error(`[sidecar] expected output at ${built} but it's missing`);
     process.exit(1);
   }
 
   fs.mkdirSync(TARGET_DIR, { recursive: true });
-  const dest = path.join(TARGET_DIR, `doxmind-server-${triple}`);
+  const dest = path.join(TARGET_DIR, `doxmind-server-${triple}${exeExt}`);
   fs.copyFileSync(built, dest);
   fs.chmodSync(dest, 0o755);
 

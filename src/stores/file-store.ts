@@ -3,7 +3,6 @@ import { persist } from "zustand/middleware";
 import { storeLogger } from "@/lib/logger";
 import { eventBus } from "@/lib/events";
 import { syncDatabasesForDocument } from "@/stores/database-store";
-import { useEditorStore } from "@/stores/editor-store";
 import type { FileItem } from "@/types";
 import { documentTypeFromName } from "@/lib/document-types";
 import {
@@ -125,7 +124,7 @@ interface FileState {
   loadedContentIds: Set<string>;
 
   // File actions
-  loadFiles: () => Promise<void>;
+  loadFiles: (options?: { silent?: boolean }) => Promise<void>;
   loadFileContent: (fileId: string, options?: { force?: boolean }) => Promise<void>;
   openFolder: (root: string) => Promise<void>;
   openFile: (absolutePath: string) => Promise<void>;
@@ -152,11 +151,8 @@ interface FileState {
   materializeTransient: (absolutePath: string) => Promise<string>;
   discardTransient: () => void;
 
-  // Favorites & Icons
+  // Favorites
   toggleFavorite: (fileId: string) => Promise<void>;
-  setFileIcon: (fileId: string, icon: string | null) => Promise<void>;
-  setCoverImage: (fileId: string, url: string | null) => Promise<void>;
-  setCoverPosition: (fileId: string, position: number) => Promise<void>;
   getFavorites: () => FileItem[];
   getRecentFiles: (limit?: number) => FileItem[];
 
@@ -190,7 +186,6 @@ interface FileState {
   }) => Promise<string>;
   setCurrentFolder: (folderId: string | null) => void;
   getFilesInFolder: (folderId: string | null) => FileItem[];
-  getSubPages: (fileId: string) => FileItem[];
   getFolders: (parentId?: string | null) => FileItem[];
   getFolderAncestors: (folderId: string) => FileItem[];
 
@@ -217,13 +212,22 @@ function getAdapter(state: Pick<FileState, "rootPath">): StorageAdapter {
   return createStorageAdapter({ disk: { root: state.rootPath } });
 }
 
-const RECENTS_LIMIT = 8;
+// Cap files and folders independently so frequently-opened documents don't
+// evict workspace history from the shared recents list (and vice versa).
+const RECENTS_FILE_LIMIT = 16;
+const RECENTS_FOLDER_LIMIT = 12;
 
 function rememberRecent(entry: RecentEntry, state: Pick<FileState, "recents">): RecentEntry[] {
-  return [
+  const deduped = [
     entry,
     ...state.recents.filter((r) => !(r.kind === entry.kind && r.path === entry.path)),
-  ].slice(0, RECENTS_LIMIT);
+  ];
+  let files = 0;
+  let folders = 0;
+  // Preserves overall recency order (newest first) while bounding each kind.
+  return deduped.filter((r) =>
+    r.kind === "file" ? ++files <= RECENTS_FILE_LIMIT : ++folders <= RECENTS_FOLDER_LIMIT
+  );
 }
 
 function forgetRecent(entry: RecentEntry, state: Pick<FileState, "recents">): RecentEntry[] {
@@ -350,9 +354,6 @@ function fileFromEntry(entry: WorkspaceEntry, existingReadModel?: LoadedReadMode
     parentId: entry.parent?.id ?? null,
     position: entry.position || 0,
     isFavorite: entry.isFavorite || false,
-    icon: entry.icon || null,
-    coverImageUrl: entry.coverImageUrl || null,
-    coverPosition: entry.coverPosition ?? 0.5,
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
     wordCount: entry.wordCount || 0,
@@ -360,6 +361,34 @@ function fileFromEntry(entry: WorkspaceEntry, existingReadModel?: LoadedReadMode
     documentType: entry.documentType ?? documentTypeFromName(entry.name),
     storageHandle: entry.handle,
   };
+}
+
+// Whether two FileItems are identical in every field the sidebar/editor
+// renders. Deliberately excludes content (loaded lazily) and createdAt/
+// updatedAt (the scan stamps those with `new Date()` every call, so they
+// always differ and are not displayed meaningfully). Used by loadFiles to
+// reuse object identity for unchanged files across a re-scan.
+function sameScanFields(a: FileItem, b: FileItem): boolean {
+  return (
+    a.name === b.name &&
+    a.isFolder === b.isFolder &&
+    a.parentId === b.parentId &&
+    a.position === b.position &&
+    a.isFavorite === b.isFavorite &&
+    a.documentType === b.documentType &&
+    a.storageHandle?.path === b.storageHandle?.path
+  );
+}
+
+// Move an id-keyed set entry from oldId to newId. A rename changes a file's
+// path, and path-derived ids (PDF/Excel, and markdown without a frontmatter id)
+// change with it; markdown with a frontmatter id keeps its id, so this no-ops.
+function migrateIdInSet(ids: Set<string>, oldId: string, newId: string): Set<string> {
+  if (oldId === newId || !ids.has(oldId)) return ids;
+  const next = new Set(ids);
+  next.delete(oldId);
+  next.add(newId);
+  return next;
 }
 
 function parentHandleForId(
@@ -394,7 +423,8 @@ export const useFileStore = create<FileState>()(
       selectedFileIds: new Set<string>(),
       loadedContentIds: new Set<string>(),
 
-      loadFiles: async () => {
+      loadFiles: async (options) => {
+        const silent = options?.silent ?? false;
         const target = get().openTarget;
         // Welcome screen — no I/O, but mark synced so consumers stop waiting.
         if (target === "none") {
@@ -418,7 +448,9 @@ export const useFileStore = create<FileState>()(
           return;
         }
         const rootBeforeLoad = get().rootPath;
-        set({ isLoading: true });
+        // Silent refreshes (the filesystem watcher) skip the loading flag so a
+        // background re-scan never flickers the sidebar's loading state.
+        if (!silent) set({ isLoading: true });
         try {
           const adapter = getAdapter(get());
           const entries = await adapter.list();
@@ -443,9 +475,28 @@ export const useFileStore = create<FileState>()(
               }
             }
 
-            const files: FileItem[] = entries.map((entry) =>
-              fileFromEntry(entry, prevReadModelMap.get(entry.handle.id))
-            );
+            const previousById = new Map(state.files.map((f) => [f.id, f] as const));
+            const files: FileItem[] = entries.map((entry) => {
+              const built = fileFromEntry(entry, prevReadModelMap.get(entry.handle.id));
+              const prev = previousById.get(built.id);
+              // Reuse the previous object when nothing the UI renders has
+              // changed, so selectors like `files.find(id === current)` keep a
+              // stable reference. Without this, every background re-scan —
+              // including our own autosave rewriting the .md — hands the editor
+              // a brand-new object and forces a full re-render (the jank).
+              return prev && sameScanFields(prev, built) ? prev : built;
+            });
+
+            // Nothing structural changed (a self-save, or an external edit to a
+            // file's contents that the scan doesn't surface): leave state
+            // untouched so no component re-renders. The identity reuse above
+            // makes this a cheap reference check.
+            const filesUnchanged =
+              files.length === state.files.length &&
+              files.every((file, index) => file === state.files[index]);
+            if (filesUnchanged) {
+              return { isSynced: true, isLoading: false };
+            }
 
             // Clear currentFileId / currentFolderId if they no longer exist
             const validCurrentFileId =
@@ -501,6 +552,16 @@ export const useFileStore = create<FileState>()(
       },
 
       loadFileContent: async (fileId: string, options?: { force?: boolean }) => {
+        // Transient ("New file") buffers live only in memory — there is no disk
+        // path to read. A forced refresh (e.g. the window refocusing after the
+        // native save dialog closes) would otherwise call adapter.read() on a
+        // handle with no path and throw "Disk document handle is missing a path".
+        if (fileId.startsWith(TRANSIENT_ID_PREFIX)) {
+          set((state) => ({
+            loadedContentIds: new Set([...state.loadedContentIds, fileId]),
+          }));
+          return;
+        }
         const cacheHit = !options?.force && get().loadedContentIds.has(fileId);
         if (cacheHit) {
           // Surface cache hits in the perf log so the dev overlay can show
@@ -649,9 +710,6 @@ export const useFileStore = create<FileState>()(
             parentId: null,
             position: 0,
             isFavorite: false,
-            icon: null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
             createdAt: now,
             updatedAt: now,
             wordCount: 0,
@@ -660,7 +718,16 @@ export const useFileStore = create<FileState>()(
             storageHandle: handle,
           };
         } else {
-          const content = await adapter.read(handle);
+          const content = await adapter.read(handle).catch((error: unknown) => {
+            // A recent that fails to open is almost always gone (deleted or
+            // moved) — the backend surfaces a generic "Load failed" rather than
+            // a specific ENOENT. Drop it from recents so the welcome list
+            // self-heals, then surface the error to the caller (which toasts).
+            // It re-adds itself the next time it opens successfully.
+            set((state) => ({ recents: forgetRecent({ kind: "file", path: trimmed }, state) }));
+            void syncRecentsToDock(get().recents);
+            throw error;
+          });
           syncDatabasesForContent(content);
           const readModel = readModelFromContent(content);
           looseFile = {
@@ -671,9 +738,6 @@ export const useFileStore = create<FileState>()(
             parentId: null,
             position: 0,
             isFavorite: content.meta?.favorite ?? false,
-            icon: content.meta?.icon ?? null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
             createdAt: content.meta?.created || now,
             updatedAt: content.meta?.updated || now,
             wordCount: 0,
@@ -726,7 +790,7 @@ export const useFileStore = create<FileState>()(
         options?: { documentType?: "markdown" | "pdf" | "excel" }
       ) => {
         try {
-          // Validate parentId exists (folder or file for sub-pages); fall back to root if stale
+          // Validate parentId (a folder) exists; fall back to root if stale
           const validParentId =
             parentId && get().files.some((f) => f.id === parentId) ? parentId : null;
 
@@ -855,6 +919,7 @@ export const useFileStore = create<FileState>()(
               loadedContentIds: new Set([...state.loadedContentIds, content.handle.id]),
             }));
           } else if (updatedEntry) {
+            const newId = updatedEntry.handle.id;
             set((state) => ({
               files: sortFilesByOption(
                 state.files.map((item) =>
@@ -867,6 +932,12 @@ export const useFileStore = create<FileState>()(
                 ),
                 state.sortBy
               ),
+              // A rename changes the path, so path-derived ids (PDF/Excel) change
+              // too. Carry the open-file selection and loaded-content marker onto
+              // the new id so renaming the active file doesn't deselect it when
+              // the next scan drops the old id.
+              currentFileId: state.currentFileId === id ? newId : state.currentFileId,
+              loadedContentIds: migrateIdInSet(state.loadedContentIds, id, newId),
             }));
           }
         } catch (error) {
@@ -945,6 +1016,10 @@ export const useFileStore = create<FileState>()(
       setCurrentFile: (id: string | null) => {
         if (get().currentFileId === id) return;
         set({ currentFileId: id });
+        // Documents opened inside a workspace are intentionally NOT recorded as
+        // recents — they're represented by their workspace folder (recorded in
+        // openFolder), VSCode-style. Only standalone files opened by path
+        // (openFile) and folders are remembered.
       },
 
       renameFile: async (id: string, name: string) => {
@@ -994,9 +1069,6 @@ export const useFileStore = create<FileState>()(
           parentId: null,
           position: 0,
           isFavorite: false,
-          icon: null,
-          coverImageUrl: null,
-          coverPosition: 0.5,
           createdAt: now,
           updatedAt: now,
           wordCount: 0,
@@ -1117,88 +1189,6 @@ export const useFileStore = create<FileState>()(
               f.id === fileId ? { ...f, isFavorite: !newFavorite } : f
             ),
           }));
-        }
-      },
-
-      setFileIcon: async (fileId: string, icon: string | null) => {
-        const file = get().files.find((f) => f.id === fileId);
-        if (!file) return;
-
-        // Optimistic update
-        set((state) => ({
-          files: state.files.map((f) => (f.id === fileId ? { ...f, icon } : f)),
-        }));
-
-        const editor = useEditorStore.getState();
-        editor.setSaving(true);
-        try {
-          await getAdapter(get()).write(handleForFile(file), {
-            meta: { id: file.id, icon },
-          });
-          editor.setLastSavedAt(new Date().toISOString());
-        } catch (error) {
-          log.error("Failed to set file icon", error);
-          // Revert on error
-          set((state) => ({
-            files: state.files.map((f) => (f.id === fileId ? { ...f, icon: file.icon } : f)),
-          }));
-        } finally {
-          editor.setSaving(false);
-        }
-      },
-
-      setCoverImage: async (fileId: string, url: string | null) => {
-        const file = get().files.find((f) => f.id === fileId);
-        if (!file) return;
-
-        set((state) => ({
-          files: state.files.map((f) => (f.id === fileId ? { ...f, coverImageUrl: url } : f)),
-        }));
-
-        const editor = useEditorStore.getState();
-        editor.setSaving(true);
-        try {
-          await getAdapter(get()).write(handleForFile(file), {
-            meta: { id: file.id, cover: url },
-          });
-          editor.setLastSavedAt(new Date().toISOString());
-        } catch (error) {
-          log.error("Failed to set cover image", error);
-          set((state) => ({
-            files: state.files.map((f) =>
-              f.id === fileId ? { ...f, coverImageUrl: file.coverImageUrl } : f
-            ),
-          }));
-        } finally {
-          editor.setSaving(false);
-        }
-      },
-
-      setCoverPosition: async (fileId: string, position: number) => {
-        const file = get().files.find((f) => f.id === fileId);
-        if (!file) return;
-
-        const clamped = Math.max(0, Math.min(1, position));
-        set((state) => ({
-          files: state.files.map((f) => (f.id === fileId ? { ...f, coverPosition: clamped } : f)),
-        }));
-
-        const editor = useEditorStore.getState();
-        editor.setSaving(true);
-        try {
-          await getAdapter(get()).write(handleForFile(file), {
-            meta: { id: file.id, cover_position: clamped },
-          });
-          editor.setLastSavedAt(new Date().toISOString());
-        } catch (error) {
-          log.error("Failed to set cover position", error);
-          set((state) => ({
-            files: state.files.map((f) =>
-              f.id === fileId ? { ...f, coverPosition: file.coverPosition } : f
-            ),
-          }));
-        } finally {
-          editor.setSaving(false);
         }
       },
 
@@ -1342,12 +1332,6 @@ export const useFileStore = create<FileState>()(
       getFilesInFolder: (folderId: string | null) => {
         const { files, sortBy } = get();
         const filtered = files.filter((f) => !f.isFolder && f.parentId === folderId);
-        return sortFilesByOption(filtered, sortBy);
-      },
-
-      getSubPages: (fileId: string) => {
-        const { files, sortBy } = get();
-        const filtered = files.filter((f) => !f.isFolder && f.parentId === fileId);
         return sortFilesByOption(filtered, sortBy);
       },
 

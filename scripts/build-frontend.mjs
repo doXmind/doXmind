@@ -15,7 +15,15 @@ const env = { ...process.env };
 delete env.BACKEND_URL;
 delete env.NEXT_PUBLIC_API_URL;
 
-const result = spawnSync("npm", ["run", "build"], {
+const npmCli =
+  process.platform === "win32"
+    ? path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js")
+    : "npm";
+const result = spawnSync(process.platform === "win32" ? process.execPath : npmCli, [
+  ...(process.platform === "win32" ? [npmCli] : []),
+  "run",
+  "build",
+], {
   cwd: REPO_ROOT,
   stdio: "inherit",
   env,

@@ -10,6 +10,8 @@ interface ResizeHandleProps {
   onResizeEnd?: () => void;
   onDoubleClick?: () => void;
   className?: string;
+  /** Hide the visible 1px separator (e.g. when a gap already divides the panels). */
+  showSeparator?: boolean;
 }
 
 export function ResizeHandle({
@@ -19,6 +21,7 @@ export function ResizeHandle({
   onResizeEnd,
   onDoubleClick,
   className,
+  showSeparator = true,
 }: ResizeHandleProps) {
   const isDraggingRef = useRef(false);
   const startXRef = useRef(0);
@@ -92,7 +95,9 @@ export function ResizeHandle({
         className="absolute inset-y-0 -left-[4px] -right-[4px] cursor-col-resize"
       />
       {/* Visible 1px separator — Notion style */}
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-px bg-border/40" />
+      {showSeparator && (
+        <div className="pointer-events-none absolute inset-y-0 left-0 w-px bg-border/40" />
+      )}
     </div>
   );
 }

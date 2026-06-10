@@ -41,6 +41,15 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { buildDevApp } from "./build-dev-app.mjs";
 
+if (process.platform !== "darwin") {
+  console.error(
+    "[desktop-dev] this launcher is macOS-only (uses open/osascript/.app).\n" +
+      "On Windows or Linux, run `npm run dev:all` (frontend + backend) and a\n" +
+      "separate `cargo run --manifest-path src-tauri/Cargo.toml` for the Tauri shell."
+  );
+  process.exit(1);
+}
+
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // Latest mtime under a directory tree, recursively. Returns 0 if none.
