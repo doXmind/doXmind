@@ -18,7 +18,7 @@
  * @returns an unlisten function.
  */
 export async function onShellCloseRequested(
-  flush: () => Promise<void> | void
+  flush: () => Promise<unknown> | unknown
 ): Promise<() => void> {
   if (typeof window === "undefined" || !("__TAURI_BACKEND_URL__" in window)) {
     return () => {};
