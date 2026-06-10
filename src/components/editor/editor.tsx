@@ -23,6 +23,7 @@ import { PageCover } from "./page-cover";
 import { useBlockKeyboardShortcuts } from "@/hooks/use-block-keyboard-shortcuts";
 import { useFileStore, type FileItem, TRANSIENT_ID_PREFIX } from "@/stores/file-store";
 import { pickNativeSaveLocation } from "@/lib/native-dialog";
+import { onShellCloseRequested } from "@/lib/shell/close";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useEditorStore } from "@/stores/editor-store";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -496,22 +497,11 @@ export function Editor({
     window.addEventListener("doxmind:save-now", handleSaveNow);
 
     let unlistenClose: (() => void) | null = null;
-    let closingAfterFlush = false;
-    import("@tauri-apps/api/window")
-      .then(({ getCurrentWindow }) => {
-        const appWindow = getCurrentWindow();
-        return appWindow.onCloseRequested(async (event) => {
-          if (closingAfterFlush) return;
-          event.preventDefault();
-          await saveCurrentNow();
-          closingAfterFlush = true;
-          await appWindow.close();
-        });
-      })
-      .then((unlisten) => {
-        unlistenClose = unlisten;
-      })
-      .catch(() => {});
+    // The shell intercepts window close, asks us to flush via
+    // shell://close-requested, then proceeds once saveCurrentNow resolves.
+    void onShellCloseRequested(saveCurrentNow).then((unlisten) => {
+      unlistenClose = unlisten;
+    });
 
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);

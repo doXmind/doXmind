@@ -364,6 +364,23 @@ samp,
     background: transparent !important;
   }
 
+  /* `data-tauri-drag-region` is a Tauri-native attribute the WebView honored
+     automatically. Under Electron it is inert, so back it with the Chromium
+     `-webkit-app-region` property to keep the custom titlebar draggable, and
+     opt interactive children back out so buttons/inputs stay clickable. */
+  [data-tauri-drag-region] {
+    -webkit-app-region: drag;
+  }
+  [data-tauri-drag-region] button,
+  [data-tauri-drag-region] a,
+  [data-tauri-drag-region] input,
+  [data-tauri-drag-region] textarea,
+  [data-tauri-drag-region] select,
+  [data-tauri-drag-region] [role="button"],
+  [data-tauri-drag-region] [data-no-drag] {
+    -webkit-app-region: no-drag;
+  }
+
   /* Tauri/macOS-only refinement: when the editor sits over the native
      NSVisualEffectView, the content surface becomes slightly translucent
      so the chrome header blends into the vibrancy seam. The sidebar bg

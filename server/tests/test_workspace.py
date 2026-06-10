@@ -1198,3 +1198,101 @@ def test_doc_read_reports_blocking_duplicate_pdf_placeholders(sync_client, tmp_p
     assert duplicate["id"] == "abc"
     assert duplicate["how_handled"] == "errored"
     assert duplicate["detail"]["locations"] == [{"line": 1}, {"line": 3}]
+
+
+def _create_markdown(sync_client, root: str, path: str = "Note.md") -> None:
+    invoke(
+        sync_client,
+        "doc_create",
+        {
+            "root": root,
+            "payload": {
+                "path": path,
+                "html": "<p>hi</p>",
+                "markdown": "hi",
+                "meta": {"id": "n1", "title": "Note"},
+            },
+        },
+    )
+
+
+def test_workspace_import_asset_writes_asset_and_dedupes(sync_client, tmp_path):
+    root = str(tmp_path)
+    _create_markdown(sync_client, root)
+    png = list(b"\x89PNG\r\n\x1a\n" + b"payload-bytes")
+
+    first = invoke(
+        sync_client,
+        "workspace_import_asset",
+        {"root": root, "documentPath": "Note.md", "filename": "Pic.png", "bytes": png},
+    )
+    assert first["path"] == "./assets/Pic.png"
+    assert (tmp_path / "assets" / "Pic.png").read_bytes() == bytes(png)
+
+    # Re-importing the same filename must not clobber the first asset.
+    second = invoke(
+        sync_client,
+        "workspace_import_asset",
+        {"root": root, "documentPath": "Note.md", "filename": "Pic.png", "bytes": png},
+    )
+    assert second["path"] == "./assets/Pic (2).png"
+    assert (tmp_path / "assets" / "Pic (2).png").exists()
+
+
+def test_workspace_import_asset_sanitizes_unsafe_filename(sync_client, tmp_path):
+    root = str(tmp_path)
+    _create_markdown(sync_client, root)
+    res = invoke(
+        sync_client,
+        "workspace_import_asset",
+        {
+            "root": root,
+            "documentPath": "Note.md",
+            "filename": "a/b:c*.png",
+            "bytes": list(b"data"),
+        },
+    )
+    # basename "b:c*.png" with the path-unsafe ":" and "*" replaced by "_".
+    assert res["path"] == "./assets/b_c_.png"
+    assert (tmp_path / "assets" / "b_c_.png").exists()
+
+
+def test_workspace_import_asset_rejects_empty_payload(sync_client, tmp_path):
+    root = str(tmp_path)
+    _create_markdown(sync_client, root)
+    resp = error_response(
+        sync_client,
+        "workspace_import_asset",
+        {"root": root, "documentPath": "Note.md", "filename": "Empty.png", "bytes": []},
+    )
+    assert resp.status_code == 400
+
+
+def test_workspace_binary_route_streams_pdf_octet_stream(sync_client, tmp_path):
+    root = str(tmp_path)
+    body = b"%PDF-1.4\n" + b"x" * 5000
+    (tmp_path / "Doc.pdf").write_bytes(body)
+
+    resp = sync_client.get("/api/workspace/binary", params={"root": root, "path": "Doc.pdf"})
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"] == "application/octet-stream"
+    assert resp.content == body
+
+
+def test_workspace_binary_route_rejects_non_binary_file(sync_client, tmp_path):
+    root = str(tmp_path)
+    (tmp_path / "Note.md").write_text("# hi", encoding="utf-8")
+    resp = sync_client.get("/api/workspace/binary", params={"root": root, "path": "Note.md"})
+    assert resp.status_code == 400
+
+
+def test_doc_read_envelope_includes_correlation_field(sync_client, tmp_path):
+    # Regression pin for the Tauri->Electron migration: desktop doc_read now
+    # routes through this sidecar, which (unlike the former Rust command that
+    # pinned correlation to null) may populate a CorrelationReport. Pin the
+    # envelope so the field is never silently dropped.
+    root = str(tmp_path)
+    _create_markdown(sync_client, root)
+    read = invoke(sync_client, "doc_read", {"path": str(tmp_path / "Note.md")})
+    assert "correlation" in read
+    assert read["correlation"] is None or isinstance(read["correlation"], dict)

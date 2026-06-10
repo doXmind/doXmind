@@ -2,6 +2,7 @@
   "name": "doxmind",
   "version": "1.0.4",
   "private": true,
+  "main": "electron/main.js",
   "engines": {
     "node": ">=22"
   },
@@ -34,7 +35,9 @@
     "dev:desktop": "node scripts/desktop-dev.mjs",
     "build:sidecar": "node scripts/build-sidecar.mjs",
     "build:desktop": "node scripts/build-sidecar.mjs && tauri build --config src-tauri/tauri.bundle.conf.json",
-    "gen:outline-stress": "node scripts/generate-outline-stress-md.mjs"
+    "gen:outline-stress": "node scripts/generate-outline-stress-md.mjs",
+    "electron": "electron .",
+    "electron:smoke": "node scripts/electron-smoke.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -112,6 +115,7 @@
     "@vitest/ui": "^2.1.8",
     "autoprefixer": "^10.4.20",
     "cross-env": "^10.1.0",
+    "electron": "^42.3.0",
     "eslint": "^9.17.0",
     "eslint-config-next": "^15.1.0",
     "husky": "^9.1.7",
