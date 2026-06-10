@@ -390,6 +390,9 @@ async function boot() {
   // the frontend to drain via take_pending_open_paths.
   const first = pendingOpenPaths.length ? pendingOpenPaths.shift() : null;
   createWindow(first ? { kind: "file", path: first } : null);
+
+  // Background update checks (packaged builds only; no-op in dev).
+  require("./updater").initAutoUpdater();
 }
 
 function enqueueOpenPath(raw) {

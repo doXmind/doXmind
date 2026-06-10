@@ -1,0 +1,74 @@
+# electron-builder config for the Electron shell (replaces tauri.bundle.conf.json
+# once the migration completes).
+#
+# Build:  npm run dist:electron
+#         (build:sidecar:electron + next build run first — see package.json)
+# Local unsigned test pack:
+#         CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --publish never
+#
+# Auto-update: the zip target is the Squirrel.Mac update payload. Publishing a
+# release (with the dmg + zip assets) to the PUBLIC repo below is all the
+# server-side that update.electronjs.org needs. Keep `repo` in sync with
+# UPDATE_REPO in electron/updater.js.
+
+appId: com.doxmind.desktop
+productName: doXmind
+copyright: doXmind
+
+directories:
+  output: dist-electron
+
+# The renderer is a static export (out/) served in-process; no production npm
+# dependency is required at runtime, so keep node_modules out of the asar.
+files:
+  - electron/**/*
+  - out/**/*
+  - src-tauri/icons/icon.png
+  - src-tauri/icons/tray-icon-template.png
+  - package.json
+  - "!node_modules/**/*"
+
+extraResources:
+  # PyInstaller one-dir sidecar (scripts/build-sidecar.mjs --electron) →
+  # resources/doxmind-server/doxmind-server, the path electron/sidecar.js
+  # expects in packaged mode.
+  - from: server/dist/doxmind-server
+    to: doxmind-server
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  icon: src-tauri/icons/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: electron/entitlements.mac.plist
+  entitlementsInherit: electron/entitlements.mac.plist
+  # Uses APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID env vars.
+  notarize: true
+  fileAssociations:
+    - ext: [md, markdown]
+      name: Markdown Document
+      role: Editor
+      rank: Owner
+    - ext: [pdf]
+      name: PDF Document
+      role: Editor
+      rank: Alternate
+    - ext: [xlsx, xlsm]
+      name: Excel Workbook
+      role: Editor
+      rank: Alternate
+
+dmg:
+  artifactName: doXmind-${version}-${arch}.${ext}
+
+# Where `electron-builder --publish always` uploads release assets. This repo
+# must be PUBLIC for update.electronjs.org to serve updates from it.
+publish:
+  provider: github
+  owner: doXmind
+  repo: releases

@@ -45,6 +45,10 @@ function buildAppMenu(deps) {
       label: "doXmind",
       submenu: [
         { role: "about" },
+        {
+          label: "Check for Updates…",
+          click: () => require("./updater").checkForUpdatesInteractive(),
+        },
         { type: "separator" },
         { label: "Settings…", accelerator: "CmdOrCtrl+,", click: () => emitToFocused("menu://settings", null) },
         { type: "separator" },

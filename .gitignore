@@ -101,3 +101,6 @@ crates/target/
 server/dist/
 server/build/
 server/__pycache__/
+
+# electron-builder output
+dist-electron/
