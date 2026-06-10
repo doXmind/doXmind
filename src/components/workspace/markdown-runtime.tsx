@@ -29,6 +29,7 @@ import { getEditorExtensions, defaultEditorProps } from "@/components/editor/edi
 import { useBlockKeyboardShortcuts } from "@/hooks/use-block-keyboard-shortcuts";
 import { useFileStore, type FileItem, TRANSIENT_ID_PREFIX } from "@/stores/file-store";
 import { pickNativeSaveLocation } from "@/lib/native-dialog";
+import { onShellCloseRequested } from "@/lib/shell/close";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { isHtmlFile } from "@/lib/document-types";
 import { useEditorStore } from "@/stores/editor-store";
@@ -380,29 +381,11 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
     window.addEventListener("doxmind:save-now", handleSaveNow);
 
     let unlistenClose: (() => void) | null = null;
-    let closingAfterFlush = false;
-    import("@tauri-apps/api/window")
-      .then(({ getCurrentWindow }) => {
-        const appWindow = getCurrentWindow();
-        return appWindow.onCloseRequested(async (event) => {
-          if (closingAfterFlush) return;
-          closingAfterFlush = true;
-          event.preventDefault();
-          try {
-            await Promise.race([
-              saveCurrentNow(),
-              new Promise<void>((resolve) => window.setTimeout(resolve, 1500)),
-            ]);
-          } catch (error) {
-            console.error("[MarkdownRuntime] failed to save before close", error);
-          }
-          await appWindow.destroy();
-        });
-      })
-      .then((unlisten) => {
-        unlistenClose = unlisten;
-      })
-      .catch(() => {});
+    // The shell intercepts window close, asks us to flush via
+    // shell://close-requested, then proceeds once saveCurrentNow resolves.
+    void onShellCloseRequested(saveCurrentNow).then((unlisten) => {
+      unlistenClose = unlisten;
+    });
 
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
@@ -702,6 +685,9 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
             data-editor-scroll
             onMouseDown={handleContentMouseDown}
           >
+            {/* Reserve the floating header's height so the title clears the
+                overlay; content still scrolls up under the blurred header. */}
+            <div aria-hidden className="h-11 shrink-0" />
             <div
               className={cn(
                 "editor-page-frame relative",

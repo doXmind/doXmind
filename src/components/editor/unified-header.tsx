@@ -224,10 +224,9 @@ export function UnifiedHeader() {
                   size="icon"
                   className={cn(
                     "desktop-header-button relative z-10 h-7 w-7 rounded-md",
-                    // The header centers its content at y=22, but the macOS
-                    // traffic lights are centered ~y=27 (bracketed empirically:
-                    // a +2px nudge read as too-high, +8px as too-low). +5px sits
-                    // the toggle level with the dots.
+                    // Push the buttons down to sit level with the macOS traffic
+                    // lights, whose visual center lands a few px below the
+                    // header's natural flex center (see trafficLightPosition).
                     isMacTauri && "top-[5px]"
                   )}
                   onClick={toggleFilesSidebar}
@@ -273,39 +272,45 @@ export function UnifiedHeader() {
             hasOpenTarget && isFilesSidebarOpen && "desktop-chrome-content-panel"
           )}
         >
-          <div data-tauri-drag-region className="editor-content-frame flex h-full items-center">
-            <div data-tauri-drag-region className="flex min-w-0 flex-1 justify-start">
-              {title && (
-                <div
-                  data-tauri-drag-region
-                  className="-ml-2.5 flex h-8 min-w-0 max-w-[min(520px,100%)] cursor-default items-center gap-1.5 rounded-md bg-foreground/[0.04] pl-2.5 pr-1.5 transition-colors hover:bg-[var(--sidebar-hover)]"
-                  aria-label={title}
-                >
-                  <span
-                    data-tauri-drag-region
-                    className="text-ui-base min-w-0 truncate font-semibold text-foreground"
-                  >
-                    {title}
-                  </span>
-                  {currentFileName && (
-                    <button
-                      type="button"
-                      onClick={handleCloseDocument}
-                      aria-label={t("closeDocument")}
-                      title={t("closeDocument")}
-                      className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </div>
+          {/* Document title — a floating chip at the editor area's top-left.
+              When the sidebar is open the window controls sit over the sidebar,
+              so the title hugs the editor's left edge; when it's collapsed the
+              controls overlay the editor top-left, so clear them. Carries its
+              own translucent backing + blur to stay legible over the document
+              scrolling beneath the (otherwise invisible) header. */}
+          {title && (
+            <div
+              className={cn(
+                "absolute top-0 flex h-full items-center",
+                isMacTauri && !isFilesSidebarOpen ? "left-[148px]" : "left-4"
               )}
+            >
+              <div
+                className={cn(
+                  "flex h-8 min-w-0 max-w-[min(420px,100%)] cursor-default items-center gap-1.5 rounded-md bg-background/70 pl-2.5 pr-1.5 backdrop-blur-md transition-colors hover:bg-[var(--sidebar-hover)]",
+                  isMacTauri && "relative top-[5px]"
+                )}
+                aria-label={title}
+              >
+                <span className="text-ui-base min-w-0 truncate font-semibold text-foreground">
+                  {title}
+                </span>
+                {currentFileName && (
+                  <button
+                    type="button"
+                    onClick={handleCloseDocument}
+                    aria-label={t("closeDocument")}
+                    title={t("closeDocument")}
+                    className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Options menu — pinned to the header's far-right corner (outside the
-              centered content frame), so only the title aligns to the content
-              column's left edge. */}
+          {/* Options menu — pinned to the header's far-right corner. */}
           <div className="absolute right-4 top-0 flex h-full items-center md:right-6">
             {currentFileName && (
               <DropdownMenu>
@@ -314,7 +319,7 @@ export function UnifiedHeader() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="desktop-header-button h-7 w-7 rounded-md bg-foreground/[0.04]"
+                      className="desktop-header-button h-7 w-7 rounded-md bg-background/70 backdrop-blur-md"
                       aria-label={t("moreActions")}
                     >
                       <MoreHorizontal className="h-[15px] w-[15px]" />

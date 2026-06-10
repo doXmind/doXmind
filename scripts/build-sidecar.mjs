@@ -65,7 +65,10 @@ function run(cmd, args, opts = {}) {
 }
 
 function main() {
-  const triple = rustHostTriple();
+  // --electron: one-dir layout for electron-builder's extraResources
+  // (resources/doxmind-server/doxmind-server). Default: one-file binary
+  // copied to src-tauri/binaries for Tauri's externalBin lookup.
+  const electronMode = process.argv.includes("--electron");
   const python = resolvePython();
   ensurePyInstaller(python);
 
@@ -84,10 +87,26 @@ function main() {
       path.join(SERVER_DIR, "build"),
       "doxmind-server.spec",
     ],
-    { cwd: SERVER_DIR }
+    {
+      cwd: SERVER_DIR,
+      env: electronMode ? { ...process.env, DOXMIND_SIDECAR_ONEDIR: "1" } : process.env,
+    }
   );
 
   const exeExt = process.platform === "win32" ? ".exe" : "";
+
+  if (electronMode) {
+    const builtDir = path.join(SERVER_DIR, "dist", "doxmind-server");
+    const builtExe = path.join(builtDir, `doxmind-server${exeExt}`);
+    if (!fs.existsSync(builtExe)) {
+      console.error(`[sidecar] expected one-dir output at ${builtExe} but it's missing`);
+      process.exit(1);
+    }
+    console.log(`\n[sidecar] ✓ ${builtDir} (one-dir, picked up by electron-builder extraResources)`);
+    return;
+  }
+
+  const triple = rustHostTriple();
   const built = path.join(SERVER_DIR, "dist", `doxmind-server${exeExt}`);
   if (!fs.existsSync(built)) {
     console.error(`[sidecar] expected output at ${built} but it's missing`);

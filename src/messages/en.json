@@ -97,7 +97,6 @@
     "moreActions": "More actions",
     "save": "Save",
     "autosave": "Autosave",
-    "export": "Export",
     "closeDocument": "Close",
     "closeUnsavedTitle": "Save changes?",
     "closeUnsavedBody": "Do you want to save the changes you made to \"{name}\"? Your changes will be lost if you don't save them.",
@@ -589,7 +588,8 @@
     "aboutAcknowledgementsTitle": "Acknowledgements",
     "aboutAcknowledgementsBody1": "doXmind is proprietary software built on a desktop stack from Apple, Rust, Tauri, Python, React, Next.js, TipTap, and ProseMirror.",
     "aboutAcknowledgementsBody2": "We thank the maintainers of the open-source libraries used inside the app. Their work makes a local-first Markdown editor practical to ship.",
-    "aboutAcknowledgementsBody3": "doXmind itself is not open source; these acknowledgements are for the third-party components included with the product."
+    "aboutAcknowledgementsBody3": "doXmind itself is not open source; these acknowledgements are for the third-party components included with the product.",
+    "searchSettings": "Search settings"
   },
   "welcome": {
     "recentWorkspaces": "Recent workspaces",

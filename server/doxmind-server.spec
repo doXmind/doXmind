@@ -87,12 +87,22 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+# Two layouts from one spec:
+#   onefile (default)            — Tauri externalBin wants a single binary.
+#   onedir  (DOXMIND_SIDECAR_ONEDIR=1) — Electron extraResources; no cold
+#   self-extraction, and nested .so files notarize as regular bundle members.
+import os
+
+_onedir = os.environ.get("DOXMIND_SIDECAR_ONEDIR", "").lower() in ("1", "true", "yes", "on")
+
+_exe_payload = [] if _onedir else [a.binaries, a.datas]
+
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
+    *_exe_payload,
     [],
+    exclude_binaries=_onedir,
     name="doxmind-server",
     debug=False,
     bootloader_ignore_signals=False,
@@ -107,3 +117,13 @@ exe = EXE(
     codesign_identity="Developer ID Application: wangzhang wu (46KF5Z549N)",
     entitlements_file=None,
 )
+
+if _onedir:
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.datas,
+        strip=False,
+        upx=False,
+        name="doxmind-server",
+    )

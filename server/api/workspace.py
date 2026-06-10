@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 from send2trash import send2trash
 
@@ -183,6 +183,30 @@ async def invoke_workspace(request: WorkspaceInvokeRequest):
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@router.get("/binary")
+def workspace_binary(root: str, path: str):
+    """Stream a workspace PDF/Excel as raw bytes.
+
+    The generic ``workspace_read_binary`` command in ``_invoke`` returns a JSON
+    ``number[]`` (~4.5x wire bloat). The Electron shell routes binary reads here
+    instead so multi-MB PDFs/workbooks transfer as an ``application/octet-stream``
+    body that the renderer reads via ``res.arrayBuffer()``.
+    """
+    try:
+        workspace = canonical_workspace_root(root)
+        resolved = resolve_existing_workspace_path(workspace, path)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not is_pdf_file(resolved) and not is_excel_file(resolved):
+        raise HTTPException(
+            status_code=400,
+            detail="binary workspace reads are only enabled for PDF and Excel files",
+        )
+    return Response(content=resolved.read_bytes(), media_type="application/octet-stream")
+
+
 def _invoke(command: str, payload: dict[str, Any]) -> Any:
     if command == "workspace_default_root":
         return workspace_default_root()
@@ -310,6 +334,13 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
     if command == "workspace_delete_folder":
         return workspace_delete_folder(
             str(payload.get("root") or ""), str(payload.get("path") or "")
+        )
+    if command == "workspace_import_asset":
+        return workspace_import_asset(
+            str(payload.get("root") or ""),
+            str(payload.get("documentPath") or ""),
+            str(payload.get("filename") or ""),
+            payload.get("bytes"),
         )
 
     raise HTTPException(status_code=404, detail=f"unsupported workspace command: {command}")
@@ -1247,6 +1278,67 @@ def workspace_delete_folder(root: str, rel_path: str) -> dict[str, Any]:
         "path": rel_path,
         "sidecarPath": None,
     }
+
+
+def workspace_import_asset(
+    root: str, document_path: str, filename: str, byte_list: Any
+) -> dict[str, Any]:
+    """Write an embedded asset next to a markdown document, returning its
+    workspace-relative ``./assets/<name>`` reference.
+
+    Mirrors the Rust ``workspace_import_asset`` command (src-tauri/src/lib.rs):
+    sanitize the filename, create a sibling ``assets/`` directory, and pick a
+    collision-free ``name (2).ext`` path. Bytes arrive over the wire as a
+    ``number[]`` of unsigned bytes, matching ``doc_create_pdf``.
+    """
+    workspace = canonical_workspace_root(root)
+    ensure_markdown_path(document_path)
+    document = resolve_existing_workspace_path(workspace, document_path)
+    if not document.is_file():
+        raise ValueError(f"document is not a file: {document_path}")
+    if not isinstance(byte_list, (list, tuple)):
+        raise ValueError("asset bytes payload must be a list of unsigned bytes")
+    try:
+        data = bytes(int(b) & 0xFF for b in byte_list)
+    except (TypeError, ValueError) as err:
+        raise ValueError(f"invalid asset bytes payload: {err}") from err
+    if not data:
+        raise ValueError("asset is empty")
+
+    safe_name = sanitize_asset_filename(filename)
+    assets_dir = document.parent / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    destination = unique_asset_path(assets_dir, safe_name)
+    destination.write_bytes(data)
+    return {"path": f"./assets/{destination.name}"}
+
+
+def sanitize_asset_filename(filename: str) -> str:
+    # Cc is U+0000–U+001F and U+007F–U+009F — the exact range Rust's
+    # `char::is_control` replaces, alongside the Windows/macOS-unsafe punctuation.
+    unsafe = set('<>:"/\\|?*')
+    name = Path(filename).name or "image"
+    cleaned = "".join(
+        "_" if (ch in unsafe or ch <= "\x1f" or "\x7f" <= ch <= "\x9f") else ch
+        for ch in name
+    )
+    cleaned = cleaned.strip().strip(".")
+    return cleaned or "image"
+
+
+def unique_asset_path(assets_dir: Path, filename: str) -> Path:
+    first = assets_dir / filename
+    if not first.exists():
+        return first
+    name = Path(filename)
+    stem = name.stem or "image"
+    extension = name.suffix  # includes the leading "."
+    counter = 2
+    while True:
+        candidate = assets_dir / f"{stem} ({counter}){extension}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
 
 
 def canonical_workspace_root(root: str) -> Path:

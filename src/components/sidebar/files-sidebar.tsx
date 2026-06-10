@@ -143,7 +143,7 @@ export function FilesSidebar() {
   };
 
   return (
-    <div className="sidebar-glass flex h-full flex-col text-[var(--sidebar-text)]">
+    <div className="sidebar-glass flex h-full flex-col pt-11 text-[var(--sidebar-text)]">
       <WorkspaceHeader
         onCreateFile={() => handleCreateFile(null)}
         onCreatePdf={() => handleCreatePdf(null)}
