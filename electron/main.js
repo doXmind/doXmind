@@ -77,13 +77,13 @@ function createWindow(target) {
     minHeight: 600,
     title: "doXmind",
     titleBarStyle: "hiddenInset",
-    // Header is h-14 (56px), content vertically centered at ~28px. Electron
-    // anchors this position at the buttons' top-left (circle center ≈ +6 on
-    // each axis), whereas Tauri's traffic_light_position anchored ~8px further
-    // in — so the Electron numbers are ~8 less than Tauri's (28,30) in BOTH
-    // axes to land the same visual. x=20 keeps the lights clear of the header's
-    // 92px left-controls clearance (globals.css) instead of crowding it.
-    trafficLightPosition: { x: 20, y: 22 },
+    // Align the traffic lights to the header's natural content center. The
+    // header is h-11 (44px) and flex-centers its buttons at y=22. The native
+    // traffic-light cluster's visual center sits ~5px below trafficLightPosition.y,
+    // so y≈19 lands the dots' center on the toggle/search buttons' line (which
+    // no longer carry any top-offset nudge). x=12 matches the sidebar's left
+    // content edge and clears the 76px left-controls inset.
+    trafficLightPosition: { x: 12, y: 19 },
     transparent: true,
     vibrancy: "sidebar",
     backgroundColor: "#00000000",

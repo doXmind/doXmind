@@ -685,6 +685,9 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
             data-editor-scroll
             onMouseDown={handleContentMouseDown}
           >
+            {/* Reserve the floating header's height so the title clears the
+                overlay; content still scrolls up under the blurred header. */}
+            <div aria-hidden className="h-11 shrink-0" />
             <div
               className={cn(
                 "editor-page-frame relative",

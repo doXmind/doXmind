@@ -97,7 +97,6 @@
     "moreActions": "更多操作",
     "save": "保存",
     "autosave": "自动保存",
-    "export": "导出",
     "closeDocument": "关闭",
     "closeUnsavedTitle": "保存更改？",
     "closeUnsavedBody": "是否保存你对“{name}”所做的更改？如果不保存，更改将会丢失。",
@@ -589,7 +588,8 @@
     "aboutAcknowledgementsTitle": "致谢",
     "aboutAcknowledgementsBody1": "doXmind 是闭源商业软件，构建于 Apple、Rust、Tauri、Python、React、Next.js、TipTap 与 ProseMirror 等桌面技术之上。",
     "aboutAcknowledgementsBody2": "感谢 app 内部使用的开源库维护者。他们的工作让本地优先 Markdown 编辑器可以被可靠地交付。",
-    "aboutAcknowledgementsBody3": "doXmind 本身不是开源项目；这里的致谢仅面向产品中包含的第三方组件。"
+    "aboutAcknowledgementsBody3": "doXmind 本身不是开源项目；这里的致谢仅面向产品中包含的第三方组件。",
+    "searchSettings": "搜索设置"
   },
   "welcome": {
     "recentWorkspaces": "最近的工作区",

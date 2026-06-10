@@ -279,6 +279,8 @@ export function BrowsingRuntime({
             </div>
           )}
           <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1" data-browsing-scroll>
+            {/* Reserve the floating header's height (see markdown-runtime). */}
+            <div aria-hidden className="h-11 shrink-0" />
             <div
               className={cn(
                 "editor-page-frame relative",

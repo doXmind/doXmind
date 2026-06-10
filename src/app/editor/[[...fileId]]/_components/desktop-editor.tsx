@@ -96,8 +96,17 @@ export function DesktopEditor() {
   return (
     <AppShell hideHeader>
       <OutlineProvider editor={editor}>
-        <div className="desktop-window-shell flex h-full flex-col" style={shellStyle}>
-          {!isFocusMode && <UnifiedHeader />}
+        <div className="desktop-window-shell relative flex h-full flex-col" style={shellStyle}>
+          {/* Header floats over the content as a transparent, blurred overlay
+              (Codex-style): the document/sidebar scroll *under* it rather than
+              being capped by an opaque bar. Each scroll surface reserves the
+              header's height at its top (h-11 spacers) so the first line clears
+              the floating controls. */}
+          {!isFocusMode && (
+            <div className="absolute inset-x-0 top-0 z-30">
+              <UnifiedHeader />
+            </div>
+          )}
 
           <div className="flex min-h-0 flex-1">
             <div
