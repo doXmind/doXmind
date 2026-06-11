@@ -625,7 +625,8 @@
     "actionNew": "New",
     "actionOpen": "Open",
     "actionOpenFolder": "Open Folder",
-    "actionImport": "Import"
+    "actionImport": "Import",
+    "dropToOpen": "Drop a file or folder to open"
   },
   "workspaceHome": {
     "eyebrow": "{name}",

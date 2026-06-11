@@ -48,6 +48,9 @@ export interface WelcomeVariantProps {
   onStartWriting: () => void;
   onOpenRecentFile: (file: WelcomeRecentFile) => void;
   onOpenRecentWorkspace: (path: string) => void;
+  // Open OS-dropped items by path: a dropped folder mounts as a workspace, a
+  // dropped file opens standalone. Desktop-shell only; a no-op in the browser.
+  onDropFiles: (files: File[]) => void;
 }
 
 // Helper that variants may use for "12 min ago" / "yesterday" style stamps.

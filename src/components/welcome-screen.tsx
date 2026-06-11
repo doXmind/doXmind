@@ -7,7 +7,7 @@ import { useFileStore } from "@/stores/file-store";
 import { getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
 import { useIsTauri } from "@/hooks/use-is-tauri";
-import { pickNativeFolder } from "@/lib/native-dialog";
+import { pickNativeFolder, resolveDroppedFiles } from "@/lib/native-dialog";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { documentTypeFromName } from "@/lib/document-types";
 import { StratigraphyWelcome } from "@/components/welcome/stratigraphy";
@@ -151,6 +151,30 @@ export function WelcomeScreen() {
     }
   };
 
+  // Drag-and-drop onto the welcome screen: a dropped folder mounts as a
+  // workspace, a dropped file opens standalone. Folders win when both are
+  // dropped (the workspace represents the files inside it).
+  const handleDropFiles = async (files: File[]) => {
+    if (!isDesktopShell) {
+      notify.error(tSidebar("openWorkspaceRequiresDesktop"));
+      return;
+    }
+    try {
+      const resolved = await resolveDroppedFiles(files);
+      const folder = resolved.find((entry) => entry.isDirectory);
+      if (folder) {
+        await openFolder(folder.path);
+        return;
+      }
+      const file = resolved.find((entry) => !entry.isDirectory);
+      if (file) await openFile(file.path);
+    } catch (error) {
+      log.error("Failed to open dropped item", error);
+      const { title, description } = getErrorMessage(error);
+      notify.error(title, { description });
+    }
+  };
+
   const handleOpenRecentFile = async (file: WelcomeRecentFile) => {
     try {
       await openFile(file.absolutePath);
@@ -175,6 +199,7 @@ export function WelcomeScreen() {
     onStartWriting: handleStartWriting,
     onOpenRecentFile: handleOpenRecentFile,
     onOpenRecentWorkspace: handleOpenRecentWorkspace,
+    onDropFiles: handleDropFiles,
   };
 
   return <StratigraphyWelcome {...variantProps} />;

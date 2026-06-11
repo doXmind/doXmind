@@ -160,6 +160,25 @@ async function pickSave(win, title, defaultName, filters) {
   return result.filePath;
 }
 
+// Resolve a dropped path: follow symlinks and report whether it's a directory
+// so the welcome screen can decide between openFolder and openFile. Returns
+// null when the path can't be stat'd (deleted/permission), which the caller
+// treats as "skip this drop".
+function resolveDroppedPath(p) {
+  if (typeof p !== "string" || !p) return null;
+  let real = p;
+  try {
+    real = fs.realpathSync(p);
+  } catch {
+    // Keep the original path if realpath fails; stat below still validates it.
+  }
+  try {
+    return { path: real, isDirectory: fs.statSync(real).isDirectory() };
+  } catch {
+    return null;
+  }
+}
+
 function saveWindowPdf({ targetPath, bytes }) {
   if (!targetPath) throw new Error("save_window_pdf requires targetPath");
   const buf = Buffer.from(bytes || []);
@@ -293,6 +312,8 @@ async function dispatch(event, cmd, args) {
       pendingOpenPaths = [];
       return drained;
     }
+    case "resolve_dropped_path":
+      return resolveDroppedPath(args.path);
     case "save_window_pdf":
       return saveWindowPdf(args);
     case "shell_close_window":

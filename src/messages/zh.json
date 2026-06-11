@@ -625,7 +625,8 @@
     "actionNew": "新建",
     "actionOpen": "打开",
     "actionOpenFolder": "打开文件夹",
-    "actionImport": "导入"
+    "actionImport": "导入",
+    "dropToOpen": "拖入文件或文件夹即可打开"
   },
   "workspaceHome": {
     "eyebrow": "{name}",

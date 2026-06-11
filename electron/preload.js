@@ -15,7 +15,7 @@
  * The sidecar URL and platform arrive via webPreferences.additionalArguments.
  */
 
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 function argValue(prefix) {
   const found = process.argv.find((a) => a.startsWith(prefix));
@@ -59,3 +59,16 @@ const internals = {
 contextBridge.exposeInMainWorld("__TAURI_INTERNALS__", internals);
 contextBridge.exposeInMainWorld("__TAURI_BACKEND_URL__", backendUrl);
 contextBridge.exposeInMainWorld("__TAURI_PLATFORM__", platform);
+
+// Dropped File objects no longer expose `.path` under contextIsolation; the
+// renderer resolves the absolute path through webUtils. Used by the welcome
+// screen's drag-and-drop to open files/folders by path.
+contextBridge.exposeInMainWorld("__DOXMIND_DESKTOP__", {
+  getPathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file) || null;
+    } catch {
+      return null;
+    }
+  },
+});
