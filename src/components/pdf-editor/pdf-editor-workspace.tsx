@@ -209,6 +209,14 @@ type PdfTool = "select" | "add-text";
  * a continuous vertical scroll of every page, or a two-up scrolling spread.
  */
 type PdfViewMode = "single" | "continuous" | "two-page";
+
+// How many pages on each side of the one in view stay "live" in the scroll
+// modes — i.e. mount a pdf.js canvas and materialize their editable text boxes.
+// Everything outside this window is a sized placeholder. Without this bound a
+// long PDF allocates a canvas + a full text-box set per page on open and
+// exhausts the renderer's memory (V8 OOM → crash). Edits live in `textEdits`
+// keyed by id, so a page leaving the window never loses user changes.
+const PDF_PAGE_WINDOW = 2;
 /**
  * Zoom intent. `custom` honors the explicit zoom buttons; the two `fit-*`
  * modes recompute `scale` from the viewport so a page (or its width) always
@@ -395,29 +403,37 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
     paragraphModeRef.current = paragraphMode;
   }, [paragraphMode]);
 
-  // When paragraph mode is on, populate textBoxes for EVERY page from the
-  // backend-derived paragraph boxes. Edits from textEdits are overlaid so the
-  // editor immediately reflects user changes & migrated v1 edits. All pages
-  // are materialized (not just the one in view) because in the scroll modes
-  // any page can be edited without re-rendering the document.
+  // When paragraph mode is on, materialize textBoxes from the backend-derived
+  // paragraph boxes — but only for pages within PDF_PAGE_WINDOW of the one in
+  // view, so a long document doesn't build a full-document box set. Edits from
+  // textEdits are overlaid; they persist by id even for pages outside the
+  // window, so scrolling back re-materializes them with the edit applied.
   useEffect(() => {
     if (!paragraphMode) return;
     const overlay = textEditsRef.current ?? {};
-    const merged = Object.values(paragraphBoxesByPage)
-      .flat()
-      .map((box) => {
+    const lo = Math.max(0, currentPageIndex - PDF_PAGE_WINDOW);
+    const hi = currentPageIndex + PDF_PAGE_WINDOW;
+    const merged: PdfTextBox[] = [];
+    for (let page = lo; page <= hi; page += 1) {
+      const boxes = paragraphBoxesByPage[page];
+      if (!boxes) continue;
+      for (const box of boxes) {
         const edit = overlay[box.id];
-        if (!edit) return box;
-        return {
-          ...box,
-          ...edit,
-          originalText: box.originalText,
-          originalLines: box.originalLines,
-          isParagraph: true,
-        };
-      });
+        merged.push(
+          edit
+            ? {
+                ...box,
+                ...edit,
+                originalText: box.originalText,
+                originalLines: box.originalLines,
+                isParagraph: true,
+              }
+            : box
+        );
+      }
+    }
     setTextBoxes(merged);
-  }, [paragraphMode, paragraphBoxesByPage, textEdits]);
+  }, [paragraphMode, paragraphBoxesByPage, textEdits, currentPageIndex]);
 
   // Clear text-range selection when active object changes away from a text-like
   useEffect(() => {
@@ -774,7 +790,11 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
         const currentTextEdits = textEditsRef.current ?? {};
         const currentLegacyEdits = legacyEditsRef.current ?? {};
         const all: PdfTextBox[] = [];
-        for (let pageIndex = 0; pageIndex < pdfDoc.numPages; pageIndex += 1) {
+        // Only extract pages near the one in view — a long PDF must not build a
+        // full-document text-box set up front (renderer OOM on open).
+        const lo = Math.max(0, currentPageIndex - PDF_PAGE_WINDOW);
+        const hi = Math.min(pdfDoc.numPages - 1, currentPageIndex + PDF_PAGE_WINDOW);
+        for (let pageIndex = lo; pageIndex <= hi; pageIndex += 1) {
           const page = await pdfDoc.getPage(pageIndex + 1);
           if (cancelled) return;
           const baseViewport = page.getViewport({ scale: 1 });
@@ -841,7 +861,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
     return () => {
       cancelled = true;
     };
-  }, [pdfDoc, paragraphMode]);
+  }, [pdfDoc, paragraphMode, currentPageIndex]);
 
   const commitTextBoxEdit = (box: PdfTextBox) => {
     setTextEdits((edits) => {
@@ -1536,7 +1556,11 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   });
 
   // Which pages to mount: a single page in single mode, every page in the
-  // scroll modes (continuous / two-page).
+  // scroll modes (continuous / two-page). In scroll mode every page yields a
+  // correctly-sized placeholder div (so the scrollbar maps the whole document),
+  // but only pages within PAGE_WINDOW of the one in view mount the heavy
+  // pdf.js canvas + editing overlays — otherwise a long PDF allocates a canvas
+  // per page and blows the renderer's memory (V8 OOM → crash).
   const visiblePageIndices =
     viewMode === "single"
       ? [clampPageIndex(currentPageIndex, pageCount)]
@@ -1554,6 +1578,10 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
     const pageDraft =
       highlightDraft && highlightDraft.box.pageIndex === pageIndex ? highlightDraft : null;
     const isActivePage = Boolean(activeObject) && activePageIndex === pageIndex;
+    // Virtualization: only pages near the one in view carry the real canvas +
+    // overlays; the rest stay as sized placeholders to keep scroll height right.
+    const mountHeavy =
+      viewMode === "single" || Math.abs(pageIndex - currentPageIndex) <= PDF_PAGE_WINDOW;
     return (
       <div
         key={pageIndex}
@@ -1574,14 +1602,16 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
         onPointerUp={commitHighlightDraft}
         onPointerLeave={commitHighlightDraft}
       >
-        <PdfPageCanvas
-          pdfDoc={pdfDoc}
-          pageIndex={pageIndex}
-          scale={scale}
-          onMeasure={registerPageSize}
-        />
+        {mountHeavy && (
+          <PdfPageCanvas
+            pdfDoc={pdfDoc}
+            pageIndex={pageIndex}
+            scale={scale}
+            onMeasure={registerPageSize}
+          />
+        )}
 
-        {status === "ready" && (
+        {mountHeavy && status === "ready" && (
           <>
             {pageHighlightBoxes.map((box) => (
               <HighlightObject
@@ -1746,7 +1776,10 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   return (
     <div
       data-testid="pdf-runtime"
-      className="relative flex h-full min-h-0 bg-muted/40 text-foreground"
+      // pt-11 reserves the floating editor header's height (it overlays the top
+      // as a transparent bar; see desktop-editor) so the PDF tool rail, page
+      // thumbnails, and toolbar sit below it instead of under the title/options.
+      className="relative flex h-full min-h-0 bg-muted/40 pt-11 text-foreground"
       onPointerDown={() => {
         // background click clears selection
         setActiveObject(null);
@@ -1776,7 +1809,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
               onClick={() => goToPage(pageIndex)}
             >
               <PdfPageThumbnail
-                sourceBytes={sourceBytes}
+                pdfDoc={pdfDoc}
                 pageIndex={pageIndex}
                 active={pageIndex === currentPageIndex}
               />
@@ -2525,29 +2558,48 @@ function PdfPageCanvas({
 }
 
 function PdfPageThumbnail({
-  sourceBytes,
+  pdfDoc,
   pageIndex,
   active,
 }: {
-  sourceBytes: Uint8Array | null;
+  pdfDoc: PDFDocumentProxy | null;
   pageIndex: number;
   active: boolean;
 }) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Only render a canvas once the thumbnail scrolls near the viewport. A long
+  // PDF has hundreds of thumbnails; rendering them all up front allocates a
+  // canvas per page and exhausts the renderer (OOM). rootMargin pre-renders a
+  // little ahead so scrolling feels instant.
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el || visible) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setVisible(true);
+      },
+      { root: null, rootMargin: "300px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible || !pdfDoc) return;
     let cancelled = false;
 
     async function renderThumbnail() {
-      if (!sourceBytes) return;
       const canvas = canvasRef.current;
       const context = canvas?.getContext("2d");
-      if (!canvas || !context) return;
+      if (!canvas || !context || !pdfDoc) return;
 
       try {
-        const pdfjs = getPdfjs();
-        const pdf = await pdfjs.getDocument({ data: new Uint8Array(sourceBytes) }).promise;
-        const page = await pdf.getPage(pageIndex + 1);
+        // Reuse the already-loaded document — never re-parse the whole PDF per
+        // thumbnail (that allocated N full PDFDocumentProxy copies and OOM'd).
+        const page = await pdfDoc.getPage(pageIndex + 1);
         const baseViewport = page.getViewport({ scale: 1 });
         const viewport = page.getViewport({ scale: 86 / baseViewport.width });
         const outputScale = Math.max(window.devicePixelRatio || 1, 1);
@@ -2575,10 +2627,11 @@ function PdfPageThumbnail({
     return () => {
       cancelled = true;
     };
-  }, [pageIndex, sourceBytes]);
+  }, [visible, pageIndex, pdfDoc]);
 
   return (
     <div
+      ref={wrapperRef}
       className={cn(
         "flex aspect-[0.72] w-20 items-center justify-center rounded border bg-white shadow-sm",
         active ? "border-primary/40" : "border-border"
