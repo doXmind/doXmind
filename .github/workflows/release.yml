@@ -4,8 +4,11 @@ name: Release (macOS arm64)
 # doXmind/releases repo — the same flow as `npm run release:electron` locally,
 # but using APPLE_* secrets instead of the local keychain profile.
 #
-# Trigger: push a tag like `v1.4.0` (must match package.json version), or run
-# manually via the Actions tab.
+# Trigger: MANUAL ONLY (workflow_dispatch from the Actions tab). Releases are
+# cut locally via `npm run release:electron` on the maintainer's signing
+# machine; this workflow is kept as a fallback and is deliberately NOT wired to
+# tag pushes, so pushing a `vX.Y.Z` release tag does not kick off a (redundant)
+# CI build.
 #
 # Required repository secrets:
 #   CSC_LINK                  base64 of the Developer ID Application .p12
@@ -17,9 +20,6 @@ name: Release (macOS arm64)
 #                             (the default GITHUB_TOKEN can't push to another repo)
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
 
 jobs:
