@@ -18,6 +18,9 @@ copyright: doXmind
 directories:
   output: dist-electron
 
+# Notarize the signed .app before it is zipped (see electron/notarize.js).
+afterSign: electron/notarize.js
+
 # The renderer is a static export (out/) served in-process; no production npm
 # dependency is required at runtime, so keep node_modules out of the asar.
 files:
@@ -47,8 +50,10 @@ mac:
   gatekeeperAssess: false
   entitlements: electron/entitlements.mac.plist
   entitlementsInherit: electron/entitlements.mac.plist
-  # Uses APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID env vars.
-  notarize: true
+  # Notarization runs in the afterSign hook (electron/notarize.js) so it can use
+  # the local keychain profile OR APPLE_* env secrets in CI. electron-builder's
+  # built-in notarize is left off to avoid forcing the env-var path.
+  notarize: false
   fileAssociations:
     - ext: [md, markdown]
       name: Markdown Document
@@ -72,3 +77,6 @@ publish:
   provider: github
   owner: doXmind
   repo: releases
+  # Publish directly (not as a draft) so the auto-update feed sees it
+  # immediately. CI is the gate; a tag push means "ship it".
+  releaseType: release
