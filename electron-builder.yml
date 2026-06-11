@@ -77,6 +77,8 @@ publish:
   provider: github
   owner: doXmind
   repo: releases
-  # Publish directly (not as a draft) so the auto-update feed sees it
-  # immediately. CI is the gate; a tag push means "ship it".
-  releaseType: release
+  # Must stay 'draft': the releases repo has no pre-existing git tag, and
+  # GitHub rejects creating a *published* release without one (422). The draft
+  # holds the assets; a follow-up `gh release edit --draft=false` (CI step /
+  # manual) creates the tag against main and makes the auto-update feed see it.
+  releaseType: draft
