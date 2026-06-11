@@ -51,7 +51,7 @@ jobs:
       - name: Build the renderer (static export)
         run: npm run build
 
-      - name: Build, sign, notarize, and publish
+      - name: Build, sign, notarize, and upload (draft)
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -60,3 +60,13 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx electron-builder --publish always
+
+      # electron-builder uploads to a DRAFT release (the releases repo has no
+      # pre-existing tag). Publish it so update.electronjs.org serves it: this
+      # creates the tag against main and marks it latest.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          gh release edit "v${VERSION}" --repo doXmind/releases --draft=false --latest --target main
