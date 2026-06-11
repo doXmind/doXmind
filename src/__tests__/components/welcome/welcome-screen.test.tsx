@@ -47,6 +47,7 @@ describe("StratigraphyWelcome", () => {
         onStartWriting={onStartWriting}
         onOpenRecentFile={vi.fn()}
         onOpenRecentWorkspace={vi.fn()}
+        onDropFiles={vi.fn()}
       />
     );
 
@@ -93,6 +94,7 @@ describe("StratigraphyWelcome", () => {
         onStartWriting={vi.fn()}
         onOpenRecentFile={onOpenRecentFile}
         onOpenRecentWorkspace={onOpenRecentWorkspace}
+        onDropFiles={vi.fn()}
       />
     );
 
@@ -131,6 +133,7 @@ describe("StratigraphyWelcome", () => {
         onStartWriting={vi.fn()}
         onOpenRecentFile={vi.fn()}
         onOpenRecentWorkspace={onOpenRecentWorkspace}
+        onDropFiles={vi.fn()}
       />
     );
 
@@ -154,6 +157,7 @@ describe("StratigraphyWelcome", () => {
         onStartWriting={vi.fn()}
         onOpenRecentFile={vi.fn()}
         onOpenRecentWorkspace={vi.fn()}
+        onDropFiles={vi.fn()}
       />
     );
 

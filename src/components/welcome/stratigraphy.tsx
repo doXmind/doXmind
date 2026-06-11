@@ -12,7 +12,7 @@
 //   actionNew                 "New"
 //   actionOpenFolder          "Open Folder"
 
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { motion } from "framer-motion";
 import { FolderOpen, Plus } from "lucide-react";
@@ -202,8 +202,49 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
     onStartWriting,
     onOpenRecentFile,
     onOpenRecentWorkspace,
+    onDropFiles,
   } = props;
   const t = useTranslations("welcome");
+
+  // OS file/folder drag-and-drop. We only react to "Files" drags (not internal
+  // element drags) and preventDefault so Electron doesn't navigate the window
+  // to the dropped file. A depth counter keeps the overlay steady while the
+  // cursor crosses child elements.
+  const [isDragging, setIsDragging] = useState(false);
+  const dragDepth = useRef(0);
+
+  const isFileDrag = (e: React.DragEvent) => e.dataTransfer.types.includes("Files");
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setIsDragging(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
+    dragDepth.current -= 1;
+    if (dragDepth.current <= 0) {
+      dragDepth.current = 0;
+      setIsDragging(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files ?? []);
+    if (files.length > 0) onDropFiles(files);
+  };
 
   const layers = useMemo<StratigraphyLayer[]>(() => {
     // VSCode-style precedence: recent workspaces (folders) come first, then any
@@ -239,7 +280,21 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
   const isFirstRun = recentFiles.length === 0 && recentWorkspaces.length === 0;
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden bg-background pt-6 text-foreground">
+    <div
+      className="relative flex flex-1 flex-col overflow-hidden bg-background pt-6 text-foreground"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragging ? (
+        <div className="pointer-events-none absolute inset-3 z-50 flex items-center justify-center rounded-2xl bg-background/70 ring-1 ring-inset ring-border backdrop-blur-sm">
+          <div className="flex items-center gap-2 rounded-full bg-muted/60 px-4 py-2 text-[13px] text-muted-foreground">
+            <FolderOpen className="h-4 w-4" />
+            {t("dropToOpen")}
+          </div>
+        </div>
+      ) : null}
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col overflow-hidden px-8">
         {isFirstRun ? (
           <FirstRunState
