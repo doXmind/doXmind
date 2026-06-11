@@ -1,0 +1,62 @@
+name: Release (macOS arm64)
+
+# Builds, signs, notarizes, and publishes the Electron app to the public
+# doXmind/releases repo — the same flow as `npm run release:electron` locally,
+# but using APPLE_* secrets instead of the local keychain profile.
+#
+# Trigger: push a tag like `v1.4.0` (must match package.json version), or run
+# manually via the Actions tab.
+#
+# Required repository secrets:
+#   CSC_LINK                  base64 of the Developer ID Application .p12
+#   CSC_KEY_PASSWORD          password for that .p12
+#   APPLE_ID                  Apple ID email (notarization)
+#   APPLE_APP_SPECIFIC_PASSWORD  app-specific password for that Apple ID
+#   APPLE_TEAM_ID             Apple Developer Team ID (46KF5Z549N)
+#   RELEASES_TOKEN            PAT with `repo` scope on doXmind/releases
+#                             (the default GITHUB_TOKEN can't push to another repo)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: macos-14 # arm64 runner
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the PyInstaller sidecar (one-dir)
+        run: |
+          python3.12 -m venv server/.venv
+          server/.venv/bin/pip install --upgrade pip
+          server/.venv/bin/pip install -r server/requirements.txt pyinstaller
+          npm run build:sidecar:electron
+
+      - name: Install JS deps
+        run: npm ci
+
+      - name: Build the renderer (static export)
+        run: npm run build
+
+      - name: Build, sign, notarize, and publish
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx electron-builder --publish always
