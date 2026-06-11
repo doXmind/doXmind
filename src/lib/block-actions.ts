@@ -233,32 +233,35 @@ export interface BlockColorOption {
   preview: string; // Tailwind bg class for the color preview dot
 }
 
+// Notion's actual text-color palette (light mode). Teal/Indigo have no Notion
+// equivalent, so they take values consistent with the same muted family.
 export const textColorOptions: BlockColorOption[] = [
   { label: "Default", value: "", preview: "bg-foreground" },
-  { label: "Gray", value: "#64748b", preview: "bg-slate-500" },
-  { label: "Brown", value: "#92400e", preview: "bg-amber-800" },
-  { label: "Red", value: "#ef4444", preview: "bg-red-500" },
-  { label: "Pink", value: "#ec4899", preview: "bg-pink-500" },
-  { label: "Orange", value: "#f97316", preview: "bg-orange-500" },
-  { label: "Yellow", value: "#eab308", preview: "bg-yellow-500" },
-  { label: "Green", value: "#22c55e", preview: "bg-green-500" },
-  { label: "Teal", value: "#14b8a6", preview: "bg-teal-500" },
-  { label: "Blue", value: "#3b82f6", preview: "bg-blue-500" },
-  { label: "Indigo", value: "#6366f1", preview: "bg-indigo-500" },
-  { label: "Purple", value: "#a855f7", preview: "bg-purple-500" },
+  { label: "Gray", value: "#787774", preview: "bg-slate-500" },
+  { label: "Brown", value: "#9F6B53", preview: "bg-amber-800" },
+  { label: "Red", value: "#D44C47", preview: "bg-red-500" },
+  { label: "Pink", value: "#C14C8A", preview: "bg-pink-500" },
+  { label: "Orange", value: "#D9730D", preview: "bg-orange-500" },
+  { label: "Yellow", value: "#CB912F", preview: "bg-yellow-500" },
+  { label: "Green", value: "#448361", preview: "bg-green-500" },
+  { label: "Teal", value: "#2D9B87", preview: "bg-teal-500" },
+  { label: "Blue", value: "#337EA9", preview: "bg-blue-500" },
+  { label: "Indigo", value: "#5E5BC9", preview: "bg-indigo-500" },
+  { label: "Purple", value: "#9065B0", preview: "bg-purple-500" },
 ];
 
+// Notion's actual background-color palette (light mode).
 export const bgColorOptions: BlockColorOption[] = [
   { label: "Default", value: "", preview: "bg-background" },
-  { label: "Gray", value: "#f1f5f9", preview: "bg-slate-100" },
-  { label: "Brown", value: "#fef3c7", preview: "bg-amber-100" },
-  { label: "Red", value: "#fee2e2", preview: "bg-red-100" },
-  { label: "Pink", value: "#fce7f3", preview: "bg-pink-100" },
-  { label: "Orange", value: "#ffedd5", preview: "bg-orange-100" },
-  { label: "Yellow", value: "#fef9c3", preview: "bg-yellow-100" },
-  { label: "Green", value: "#dcfce7", preview: "bg-green-100" },
-  { label: "Teal", value: "#ccfbf1", preview: "bg-teal-100" },
-  { label: "Blue", value: "#dbeafe", preview: "bg-blue-100" },
-  { label: "Indigo", value: "#e0e7ff", preview: "bg-indigo-100" },
-  { label: "Purple", value: "#f3e8ff", preview: "bg-purple-100" },
+  { label: "Gray", value: "#F1F1EF", preview: "bg-slate-100" },
+  { label: "Brown", value: "#F4EEEE", preview: "bg-amber-100" },
+  { label: "Red", value: "#FDEBEC", preview: "bg-red-100" },
+  { label: "Pink", value: "#FAF1F5", preview: "bg-pink-100" },
+  { label: "Orange", value: "#FAEBDD", preview: "bg-orange-100" },
+  { label: "Yellow", value: "#FBF3DB", preview: "bg-yellow-100" },
+  { label: "Green", value: "#EDF3EC", preview: "bg-green-100" },
+  { label: "Teal", value: "#E0EFEC", preview: "bg-teal-100" },
+  { label: "Blue", value: "#E7F3F8", preview: "bg-blue-100" },
+  { label: "Indigo", value: "#E9E7F5", preview: "bg-indigo-100" },
+  { label: "Purple", value: "#F4F0F7", preview: "bg-purple-100" },
 ];

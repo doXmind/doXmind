@@ -900,7 +900,7 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
           {/* Plus button: insert new block */}
           <button
             type="button"
-            className="flex h-7 w-7 items-center justify-center rounded-[4px] text-muted-foreground/60 transition-all duration-150 hover:bg-muted hover:text-muted-foreground"
+            className="flex h-7 w-7 items-center justify-center rounded-[4px] text-muted-foreground/70 transition-all duration-150 hover:bg-muted hover:text-muted-foreground"
             onMouseDown={(e) => {
               e.preventDefault(); // prevent editor blur
               handlePlusClick(e);
@@ -914,7 +914,7 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
           <button
             ref={gripRef}
             type="button"
-            className="flex h-7 w-7 cursor-grab items-center justify-center rounded-[4px] text-muted-foreground/60 transition-all duration-150 hover:bg-muted hover:text-muted-foreground active:cursor-grabbing"
+            className="flex h-7 w-7 cursor-grab items-center justify-center rounded-[4px] text-muted-foreground/70 transition-all duration-150 hover:bg-muted hover:text-muted-foreground active:cursor-grabbing"
             onMouseDown={handleGripMouseDown}
             onMouseUp={(e) => {
               // If no drag occurred (just a click), open action menu

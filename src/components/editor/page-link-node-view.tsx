@@ -135,19 +135,20 @@ export function PageLinkNodeView({ node }: NodeViewProps) {
         )}
       >
         {/* Icon: emoji if user set one, otherwise the link badge */}
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center text-[18px] leading-none">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center text-[20px] leading-none">
           {displayIcon ? (
             <span>{displayIcon}</span>
           ) : (
-            <PageLinkIcon className="text-muted-foreground" />
+            <PageLinkIcon className="h-[22px] w-[22px] text-muted-foreground" />
           )}
         </span>
 
-        {/* Title */}
+        {/* Title — Notion's link-to-page block renders the title at full 16px
+            body size in regular weight (not bold), no underline. */}
         <span
           className={cn(
-            "min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.005em]",
-            isDeleted ? "font-medium italic text-muted-foreground" : "text-foreground"
+            "min-w-0 flex-1 truncate text-[16px] font-normal",
+            isDeleted ? "italic text-muted-foreground" : "text-foreground"
           )}
         >
           {isDeleted ? "Page not found" : displayTitle}

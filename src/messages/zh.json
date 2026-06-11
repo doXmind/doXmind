@@ -62,12 +62,6 @@
     "uploadImage": "上传图片",
     "dragOrPaste": "拖放或粘贴图片",
     "maxFileSize": "最大文件大小：{size}",
-    "contextMenu": {
-      "cut": "剪切",
-      "copy": "复制",
-      "paste": "粘贴",
-      "format": "格式"
-    },
     "presentation": {
       "enterPresentation": "演示",
       "exitPresentation": "退出演示",
@@ -184,6 +178,8 @@
       "page": "页面",
       "linkToPage": "页面链接",
       "linkToPageDesc": "链接到已有页面",
+      "mentionPage": "提及页面",
+      "mentionPageDesc": "行内引用一个页面",
       "webBookmark": "网页书签",
       "webBookmarkDesc": "将链接保存为可视化书签",
       "database": "数据库",
@@ -393,8 +389,7 @@
       "imageUrl": "图片链接",
       "imageUrlPlaceholder": "https://example.com/image.png",
       "apply": "应用"
-    },
-    "contextMenuAria": "编辑器上下文菜单"
+    }
   },
   "sidebar": {
     "settings": "设置",
@@ -540,7 +535,7 @@
     "uiFontSize": "界面字号",
     "uiFontSizeDesc": "调整 doXmind 界面的基础字号",
     "codeFontSize": "代码字号",
-    "codeFontSizeDesc": "调整代码、数学公式以及等宽文本的基础字号",
+    "codeFontSizeDesc": "调整行内代码、数学公式以及等宽文本的基础字号",
     "editorFontFamily": "编辑器字体",
     "editorFontFamilyDesc": "编辑器正文使用的字体",
     "editorLineSpacing": "编辑器行距",

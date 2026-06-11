@@ -539,15 +539,17 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
     | "moveDown"
     | "align"
     | "color";
+  // Notion order: transform actions (Turn into / Color / Align) first, then
+  // object actions (Duplicate / Copy / Move), with Delete last.
   const menuItems: MenuItemId[] = [
-    "delete",
-    "duplicate",
     ...(showTurnInto ? ["turnInto" as const] : []),
+    ...(showColor ? ["color" as const] : []),
+    ...(showAlign ? ["align" as const] : []),
+    "duplicate",
     "copy",
     "moveUp",
     "moveDown",
-    ...(showAlign ? ["align" as const] : []),
-    ...(showColor ? ["color" as const] : []),
+    "delete",
   ];
   const menuItemCount = menuItems.length;
 
@@ -668,32 +670,6 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
       role="menu"
       aria-label={t("blockAction.blockActionsAria")}
     >
-      {/* Delete */}
-      <MenuButton
-        icon={<Trash2 className="h-3.5 w-3.5" />}
-        label={t("blockAction.delete")}
-        focused={currentItemId === "delete" && !activeSubmenu}
-        onClick={handleDelete}
-        onMouseEnter={() => {
-          setFocusIndex(menuItems.indexOf("delete"));
-          setActiveSubmenu(null);
-        }}
-        shortcut="Del"
-      />
-
-      {/* Duplicate */}
-      <MenuButton
-        icon={<Copy className="h-3.5 w-3.5" />}
-        label={t("blockAction.duplicate")}
-        focused={currentItemId === "duplicate" && !activeSubmenu}
-        onClick={handleDuplicate}
-        onMouseEnter={() => {
-          setFocusIndex(menuItems.indexOf("duplicate"));
-          setActiveSubmenu(null);
-        }}
-        shortcut="Ctrl+D"
-      />
-
       {/* Turn Into → submenu (only for text-like blocks) */}
       {showTurnInto && (
         <div
@@ -767,6 +743,145 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
         </div>
       )}
 
+      {/* Color → submenu (only for text-like blocks) */}
+      {showColor && (
+        <div
+          className="relative"
+          data-submenu-trigger="color"
+          onMouseEnter={() => {
+            cancelSubmenuClose();
+            setFocusIndex(menuItems.indexOf("color"));
+            setActiveSubmenu("color");
+            setSubmenuFocusIndex(0);
+          }}
+          onMouseLeave={scheduleSubmenuClose}
+        >
+          <div
+            className={cn(
+              "flex cursor-default items-center gap-2 rounded-sm px-3 py-1.5 text-sm",
+              currentItemId === "color" || activeSubmenu === "color"
+                ? "bg-accent text-accent-foreground"
+                : "text-foreground"
+            )}
+            role="menuitem"
+            aria-haspopup="true"
+          >
+            <span className="text-muted-foreground">
+              <Palette className="h-3.5 w-3.5" />
+            </span>
+            <span className="flex-1">{t("blockAction.color")}</span>
+            <ChevronRight className="h-3 w-3 text-muted-foreground" />
+          </div>
+
+          {activeSubmenu === "color" && (
+            <div
+              ref={colorRef}
+              className={cn(
+                "fixed z-[101] min-w-[240px] rounded-lg border border-border bg-popover shadow-xl",
+                "animate-in fade-in-0 slide-in-from-left-1"
+              )}
+              style={submenuStyle}
+              onMouseEnter={cancelSubmenuClose}
+              onMouseLeave={scheduleSubmenuClose}
+              role="menu"
+            >
+              <ColorPicker
+                activeTextColor={colorTargetNode?.attrs.textColor || null}
+                activeBackgroundColor={colorTargetNode?.attrs.backgroundColor || null}
+                onTextColorChange={(color) => handleColorChange(color, "text")}
+                onBackgroundColorChange={(color) => handleColorChange(color, "background")}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Align → submenu (only for alignable blocks) */}
+      {showAlign && (
+        <div
+          className="relative"
+          data-submenu-trigger="align"
+          onMouseEnter={() => {
+            cancelSubmenuClose();
+            setFocusIndex(menuItems.indexOf("align"));
+            setActiveSubmenu("align");
+            setSubmenuFocusIndex(0);
+          }}
+          onMouseLeave={scheduleSubmenuClose}
+        >
+          <div
+            className={cn(
+              "flex cursor-default items-center gap-2 rounded-sm px-3 py-1.5 text-sm",
+              currentItemId === "align" || activeSubmenu === "align"
+                ? "bg-accent text-accent-foreground"
+                : "text-foreground"
+            )}
+            role="menuitem"
+            aria-haspopup="true"
+          >
+            <span className="text-muted-foreground">
+              <AlignLeft className="h-3.5 w-3.5" />
+            </span>
+            <span className="flex-1">{t("blockAction.align")}</span>
+            <ChevronRight className="h-3 w-3 text-muted-foreground" />
+          </div>
+
+          {activeSubmenu === "align" && (
+            <div
+              ref={alignRef}
+              className={cn(
+                "fixed z-[101] min-w-[180px] rounded-lg border border-border bg-popover p-1.5 shadow-xl",
+                "animate-in fade-in-0 slide-in-from-left-1"
+              )}
+              style={submenuStyle}
+              onMouseEnter={cancelSubmenuClose}
+              onMouseLeave={scheduleSubmenuClose}
+              role="menu"
+            >
+              {alignItems.map((item, idx) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-sm px-3 py-1.5 text-sm",
+                    "transition-colors duration-75",
+                    idx === submenuFocusIndex
+                      ? "bg-accent text-accent-foreground"
+                      : "text-foreground hover:bg-accent/50",
+                    item.isActive && "font-medium"
+                  )}
+                  onClick={() => {
+                    item.action();
+                    onClose();
+                  }}
+                  onMouseEnter={() => setSubmenuFocusIndex(idx)}
+                  role="menuitem"
+                >
+                  <span className="text-muted-foreground">{item.icon}</span>
+                  <span className="flex-1 text-left">{item.label}</span>
+                  {item.isActive && <span className="text-xs text-primary">●</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {(showTurnInto || showColor || showAlign) && <div className="my-1.5 h-px bg-border" />}
+
+      {/* Duplicate */}
+      <MenuButton
+        icon={<Copy className="h-3.5 w-3.5" />}
+        label={t("blockAction.duplicate")}
+        focused={currentItemId === "duplicate" && !activeSubmenu}
+        onClick={handleDuplicate}
+        onMouseEnter={() => {
+          setFocusIndex(menuItems.indexOf("duplicate"));
+          setActiveSubmenu(null);
+        }}
+        shortcut="Ctrl+D"
+      />
+
       {/* Copy Block */}
       <MenuButton
         icon={<Clipboard className="h-3.5 w-3.5" />}
@@ -778,8 +893,6 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
           setActiveSubmenu(null);
         }}
       />
-
-      <div className="my-1.5 h-px bg-border" />
 
       {/* Move Up */}
       <MenuButton
@@ -807,133 +920,20 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
         shortcut="Ctrl+Shift+↓"
       />
 
-      {/* Color → submenu (only for text-like blocks) */}
-      {(showAlign || showColor) && (
-        <>
-          <div className="my-1.5 h-px bg-border" />
-          {showAlign && (
-            <div
-              className="relative"
-              data-submenu-trigger="align"
-              onMouseEnter={() => {
-                cancelSubmenuClose();
-                setFocusIndex(menuItems.indexOf("align"));
-                setActiveSubmenu("align");
-                setSubmenuFocusIndex(0);
-              }}
-              onMouseLeave={scheduleSubmenuClose}
-            >
-              <div
-                className={cn(
-                  "flex cursor-default items-center gap-2 rounded-sm px-3 py-1.5 text-sm",
-                  currentItemId === "align" || activeSubmenu === "align"
-                    ? "bg-accent text-accent-foreground"
-                    : "text-foreground"
-                )}
-                role="menuitem"
-                aria-haspopup="true"
-              >
-                <span className="text-muted-foreground">
-                  <AlignLeft className="h-3.5 w-3.5" />
-                </span>
-                <span className="flex-1">{t("blockAction.align")}</span>
-                <ChevronRight className="h-3 w-3 text-muted-foreground" />
-              </div>
+      <div className="my-1.5 h-px bg-border" />
 
-              {activeSubmenu === "align" && (
-                <div
-                  ref={alignRef}
-                  className={cn(
-                    "fixed z-[101] min-w-[180px] rounded-lg border border-border bg-popover p-1.5 shadow-xl",
-                    "animate-in fade-in-0 slide-in-from-left-1"
-                  )}
-                  style={submenuStyle}
-                  onMouseEnter={cancelSubmenuClose}
-                  onMouseLeave={scheduleSubmenuClose}
-                  role="menu"
-                >
-                  {alignItems.map((item, idx) => (
-                    <button
-                      key={item.label}
-                      type="button"
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-sm px-3 py-1.5 text-sm",
-                        "transition-colors duration-75",
-                        idx === submenuFocusIndex
-                          ? "bg-accent text-accent-foreground"
-                          : "text-foreground hover:bg-accent/50",
-                        item.isActive && "font-medium"
-                      )}
-                      onClick={() => {
-                        item.action();
-                        onClose();
-                      }}
-                      onMouseEnter={() => setSubmenuFocusIndex(idx)}
-                      role="menuitem"
-                    >
-                      <span className="text-muted-foreground">{item.icon}</span>
-                      <span className="flex-1 text-left">{item.label}</span>
-                      {item.isActive && <span className="text-xs text-primary">●</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {showColor && (
-            <div
-              className="relative"
-              data-submenu-trigger="color"
-              onMouseEnter={() => {
-                cancelSubmenuClose();
-                setFocusIndex(menuItems.indexOf("color"));
-                setActiveSubmenu("color");
-                setSubmenuFocusIndex(0);
-              }}
-              onMouseLeave={scheduleSubmenuClose}
-            >
-              <div
-                className={cn(
-                  "flex cursor-default items-center gap-2 rounded-sm px-3 py-1.5 text-sm",
-                  currentItemId === "color" || activeSubmenu === "color"
-                    ? "bg-accent text-accent-foreground"
-                    : "text-foreground"
-                )}
-                role="menuitem"
-                aria-haspopup="true"
-              >
-                <span className="text-muted-foreground">
-                  <Palette className="h-3.5 w-3.5" />
-                </span>
-                <span className="flex-1">{t("blockAction.color")}</span>
-                <ChevronRight className="h-3 w-3 text-muted-foreground" />
-              </div>
-
-              {activeSubmenu === "color" && (
-                <div
-                  ref={colorRef}
-                  className={cn(
-                    "fixed z-[101] min-w-[240px] rounded-lg border border-border bg-popover shadow-xl",
-                    "animate-in fade-in-0 slide-in-from-left-1"
-                  )}
-                  style={submenuStyle}
-                  onMouseEnter={cancelSubmenuClose}
-                  onMouseLeave={scheduleSubmenuClose}
-                  role="menu"
-                >
-                  <ColorPicker
-                    activeTextColor={colorTargetNode?.attrs.textColor || null}
-                    activeBackgroundColor={colorTargetNode?.attrs.backgroundColor || null}
-                    onTextColorChange={(color) => handleColorChange(color, "text")}
-                    onBackgroundColorChange={(color) => handleColorChange(color, "background")}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      )}
+      {/* Delete */}
+      <MenuButton
+        icon={<Trash2 className="h-3.5 w-3.5" />}
+        label={t("blockAction.delete")}
+        focused={currentItemId === "delete" && !activeSubmenu}
+        onClick={handleDelete}
+        onMouseEnter={() => {
+          setFocusIndex(menuItems.indexOf("delete"));
+          setActiveSubmenu(null);
+        }}
+        shortcut="Del"
+      />
     </div>,
     document.body
   );

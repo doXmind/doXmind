@@ -62,12 +62,6 @@
     "uploadImage": "Upload image",
     "dragOrPaste": "Drag & drop or paste an image",
     "maxFileSize": "Max file size: {size}",
-    "contextMenu": {
-      "cut": "Cut",
-      "copy": "Copy",
-      "paste": "Paste",
-      "format": "Format"
-    },
     "presentation": {
       "enterPresentation": "Present",
       "exitPresentation": "Exit presentation",
@@ -184,6 +178,8 @@
       "page": "Page",
       "linkToPage": "Link to Page",
       "linkToPageDesc": "Link to an existing page",
+      "mentionPage": "Mention Page",
+      "mentionPageDesc": "Inline reference to a page",
       "webBookmark": "Web Bookmark",
       "webBookmarkDesc": "Save a link as a visual bookmark",
       "database": "Database",
@@ -393,8 +389,7 @@
       "imageUrl": "Image URL",
       "imageUrlPlaceholder": "https://example.com/image.png",
       "apply": "Apply"
-    },
-    "contextMenuAria": "Editor context menu"
+    }
   },
   "sidebar": {
     "settings": "Settings",
@@ -540,7 +535,7 @@
     "uiFontSize": "UI font size",
     "uiFontSizeDesc": "Adjust the base size used for the doXmind UI",
     "codeFontSize": "Code font size",
-    "codeFontSizeDesc": "Adjust the base size used for code, math, and mono content",
+    "codeFontSizeDesc": "Adjust the base size used for inline code, math, and mono content",
     "editorFontFamily": "Editor font",
     "editorFontFamilyDesc": "Font used for document body in the editor",
     "editorLineSpacing": "Editor line spacing",

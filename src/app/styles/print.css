@@ -393,14 +393,6 @@
     overflow: visible !important;
     border: 0 !important;
   }
-  /* Line numbers — keep them visible but light */
-  .ProseMirror .line-number,
-  .ProseMirror .code-line-numbers {
-    color: #b3b3b3 !important;
-    background: transparent !important;
-    border-right: 1px solid #ececec !important;
-    user-select: none;
-  }
   /* Lowlight (highlight.js) token colors — light theme.
      We re-declare the full set so syntax colors survive regardless of
      which hljs theme stylesheet was loaded. */

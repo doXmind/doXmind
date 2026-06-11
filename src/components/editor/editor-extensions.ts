@@ -25,6 +25,7 @@ import { CustomCodeBlock } from "@/extensions/code-block";
 import { Columns, Column } from "@/extensions/columns";
 import { TableOfContents } from "@/extensions/toc";
 import { WebBookmark } from "@/extensions/web-bookmark";
+import { PageMention } from "@/extensions/page-mention";
 import { DatabaseBlock } from "@/extensions/database";
 import { LinkPaste } from "@/extensions/link-paste";
 import { TrailingNode } from "@/extensions/trailing-node";
@@ -148,6 +149,9 @@ export function getEditorExtensions(): Extensions {
 
     // Web Bookmark (visual URL card)
     WebBookmark,
+
+    // Inline page mention (Notion @-page reference); block-level link is PageLink
+    PageMention,
 
     // Notion-style database block (deprecated; not migrated to registry per ADR-0004)
     DatabaseBlock,
