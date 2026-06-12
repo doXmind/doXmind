@@ -71,6 +71,36 @@ mac:
 dmg:
   artifactName: doXmind-${version}-${arch}.${ext}
 
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: src-tauri/icons/icon.ico
+  fileAssociations:
+    - ext: md
+      name: Markdown Document
+      role: Editor
+    - ext: markdown
+      name: Markdown Document
+      role: Editor
+    - ext: pdf
+      name: PDF Document
+      role: Editor
+    - ext: xlsx
+      name: Excel Workbook
+      role: Editor
+    - ext: xlsm
+      name: Excel Workbook
+      role: Editor
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  artifactName: doXmind-${version}-${arch}-setup.${ext}
+  shortcutName: doXmind
+
 # Where `electron-builder --publish always` uploads release assets. This repo
 # must be PUBLIC for update.electronjs.org to serve updates from it.
 publish:

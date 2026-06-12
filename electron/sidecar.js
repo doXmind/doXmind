@@ -32,9 +32,12 @@ function findFreePort(host = "127.0.0.1") {
 
 function resolvePython(repoRoot) {
   if (process.env.DOXMIND_PYTHON) return process.env.DOXMIND_PYTHON;
-  const venv = path.join(repoRoot, "server", ".venv", "bin", "python");
+  const venv =
+    process.platform === "win32"
+      ? path.join(repoRoot, "server", ".venv", "Scripts", "python.exe")
+      : path.join(repoRoot, "server", ".venv", "bin", "python");
   if (fs.existsSync(venv)) return venv;
-  return "python3";
+  return process.platform === "win32" ? "python" : "python3";
 }
 
 /**
@@ -50,15 +53,18 @@ function spawnSidecar({ repoRoot, port, packaged = false, resourcesPath = "" }) 
     // force-quit/crash, where 'will-quit' never fires and kill() never runs.
     DOXMIND_PARENT_PID: String(process.pid),
   };
+  // PyInstaller appends .exe to the one-dir binary on Windows.
+  const exeExt = process.platform === "win32" ? ".exe" : "";
   if (packaged) {
-    const bin = path.join(resourcesPath, "doxmind-server", "doxmind-server");
-    return spawn(bin, [], { env, stdio: ["ignore", "pipe", "pipe"] });
+    const bin = path.join(resourcesPath, "doxmind-server", `doxmind-server${exeExt}`);
+    return spawn(bin, [], { env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
   }
   const python = resolvePython(repoRoot);
   return spawn(python, ["run_sidecar.py"], {
     cwd: path.join(repoRoot, "server"),
     env,
     stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
   });
 }
 

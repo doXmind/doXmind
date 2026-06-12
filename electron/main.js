@@ -70,28 +70,43 @@ function urlForTarget(target) {
 }
 
 function createWindow(target) {
+  const isMac = process.platform === "darwin";
+  // macOS gets the frameless/vibrancy chrome the frontend's is-tauri-macos CSS
+  // expects; other platforms use a normal native frame (title bar + min/max/
+  // close) and an opaque background — the macOS-only chrome CSS never applies
+  // there, so a transparent/frameless window would have no way to be moved or
+  // closed.
+  const platformArg = isMac ? "macos" : process.platform === "win32" ? "windows" : "linux";
+  const chrome = isMac
+    ? {
+        titleBarStyle: "hiddenInset",
+        // Align the traffic lights to the header's natural content center. The
+        // header is h-11 (44px) and flex-centers its buttons at y=22. The native
+        // traffic-light cluster's visual center sits ~5px below trafficLightPosition.y,
+        // so y≈19 lands the dots' center on the toggle/search buttons' line (which
+        // no longer carry any top-offset nudge). x=12 matches the sidebar's left
+        // content edge and clears the 76px left-controls inset.
+        trafficLightPosition: { x: 12, y: 19 },
+        transparent: true,
+        vibrancy: "sidebar",
+        backgroundColor: "#00000000",
+      }
+    : {
+        backgroundColor: "#ffffff",
+        icon: APP_ICON,
+      };
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 900,
     minHeight: 600,
     title: "doXmind",
-    titleBarStyle: "hiddenInset",
-    // Align the traffic lights to the header's natural content center. The
-    // header is h-11 (44px) and flex-centers its buttons at y=22. The native
-    // traffic-light cluster's visual center sits ~5px below trafficLightPosition.y,
-    // so y≈19 lands the dots' center on the toggle/search buttons' line (which
-    // no longer carry any top-offset nudge). x=12 matches the sidebar's left
-    // content edge and clears the 76px left-controls inset.
-    trafficLightPosition: { x: 12, y: 19 },
-    transparent: true,
-    vibrancy: "sidebar",
-    backgroundColor: "#00000000",
+    ...chrome,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       sandbox: false,
-      additionalArguments: [`--doxmind-backend-url=${sidecarUrl}`, "--doxmind-platform=macos"],
+      additionalArguments: [`--doxmind-backend-url=${sidecarUrl}`, `--doxmind-platform=${platformArg}`],
     },
   });
   // Pre-register so a concurrent focus-existing lookup sees this window before
