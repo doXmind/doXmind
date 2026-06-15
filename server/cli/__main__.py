@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 import typer
 
@@ -12,7 +13,9 @@ index_app = typer.Typer(help="Workspace index commands.")
 app.add_typer(index_app, name="index")
 
 ROOT_OPTION = typer.Option(
-    None, "--root", help="Workspace root (defaults to $DOXMIND_WORKSPACE_ROOT or ~/Documents/doXmind)."
+    None,
+    "--root",
+    help="Workspace root (defaults to $DOXMIND_WORKSPACE_ROOT or ~/Documents/doXmind).",
 )
 
 
@@ -77,6 +80,23 @@ def read(
         typer.echo(doc.get("html", ""))
     else:
         typer.echo(doc.get("markdown", ""))
+
+
+@app.command()
+def convert(
+    path: str = typer.Argument(..., help="Path to a .pdf or .xlsx/.xlsm file."),
+) -> None:
+    """Parse a PDF or Excel file into the editor's JSON model and print it."""
+    from core.convert import convert_excel, convert_pdf
+
+    suffix = Path(path).suffix.lower()
+    if suffix == ".pdf":
+        result = convert_pdf(path)
+    elif suffix in {".xlsx", ".xlsm"}:
+        result = convert_excel(path)
+    else:
+        raise typer.BadParameter("convert supports .pdf and .xlsx/.xlsm files")
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 @app.command()

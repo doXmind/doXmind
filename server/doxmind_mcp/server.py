@@ -15,7 +15,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from core import documents, workspace
+from core import convert, documents, workspace
 
 mcp = FastMCP("doxmind")
 
@@ -40,6 +40,24 @@ def read_document(path: str) -> dict[str, Any]:
     state.
     """
     return documents.read_document_in_root(None, path)
+
+
+@mcp.tool()
+def read_pdf(path: str) -> dict[str, Any]:
+    """Parse a workspace PDF into layout-aware paragraph blocks (text + bbox).
+
+    `path` is relative to the workspace root.
+    """
+    return convert.read_pdf_in_root(None, path)
+
+
+@mcp.tool()
+def read_excel(path: str) -> dict[str, Any]:
+    """Parse a workspace .xlsx/.xlsm into a JSON cell model.
+
+    `path` is relative to the workspace root.
+    """
+    return convert.read_excel_in_root(None, path)
 
 
 def main() -> None:
