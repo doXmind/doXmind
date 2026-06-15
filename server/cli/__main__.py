@@ -20,6 +20,19 @@ ROOT_OPTION = typer.Option(
 )
 
 
+def _workspace_path(root: str, path: str) -> Path:
+    """Resolve a path the way the workspace commands do: a relative path is
+    taken against the workspace root, an absolute path is used as-is. This keeps
+    the file-oriented commands (read/export/convert) consistent with the
+    root-relative commands (ls/new/...) so the same path works in both."""
+    p = Path(path).expanduser()
+    if p.is_absolute():
+        return p
+    from core.workspace import resolve_root
+
+    return resolve_root(root) / p
+
+
 @app.command(name="ls")
 def list_documents(
     root: str = ROOT_OPTION,
@@ -67,14 +80,15 @@ def index_rebuild(root: str = ROOT_OPTION) -> None:
 
 @app.command()
 def read(
-    path: str = typer.Argument(..., help="Path to the .md / .html document."),
+    path: str = typer.Argument(..., help="Document path (workspace-relative or absolute)."),
+    root: str = ROOT_OPTION,
     as_json: bool = typer.Option(False, "--json", help="Print the full read DTO as JSON."),
     html: bool = typer.Option(False, "--html", help="Print the editor HTML instead of markdown."),
 ) -> None:
     """Read a document and print its markdown (default), HTML, or full JSON."""
     from core.documents import read_document
 
-    doc = read_document(path)
+    doc = read_document(_workspace_path(root, path))
     if as_json:
         typer.echo(json.dumps(doc, ensure_ascii=False, indent=2))
     elif html:
@@ -174,16 +188,18 @@ def edit(
 
 @app.command()
 def export(
-    path: str = typer.Argument(..., help="Path to the document to export."),
+    path: str = typer.Argument(..., help="Document to export (workspace-relative or absolute)."),
+    root: str = ROOT_OPTION,
     to: str = typer.Option("pdf", "--to", help="Export format: pdf, html, or md."),
     out: str = typer.Option(None, "--out", help="Output file (defaults next to the source)."),
 ) -> None:
     """Export a document to pdf, html, or md."""
     from core.exporting import export_document, suffix_for
 
-    data = export_document(path, to)
-    target = Path(out) if out else Path(path).with_suffix(suffix_for(to))
-    if target.resolve() == Path(path).resolve():
+    source = _workspace_path(root, path)
+    data = export_document(source, to)
+    target = Path(out) if out else source.with_suffix(suffix_for(to))
+    if target.resolve() == source.resolve():
         raise typer.BadParameter("export would overwrite the source; pass --out")
     target.write_bytes(data)
     typer.echo(f"wrote {target} ({len(data)} bytes)")
@@ -191,16 +207,20 @@ def export(
 
 @app.command()
 def convert(
-    path: str = typer.Argument(..., help="Path to a .pdf or .xlsx/.xlsm file."),
+    path: str = typer.Argument(
+        ..., help=".pdf or .xlsx/.xlsm file (workspace-relative or absolute)."
+    ),
+    root: str = ROOT_OPTION,
 ) -> None:
     """Parse a PDF or Excel file into the editor's JSON model and print it."""
     from core.convert import convert_excel, convert_pdf
 
-    suffix = Path(path).suffix.lower()
+    source = _workspace_path(root, path)
+    suffix = source.suffix.lower()
     if suffix == ".pdf":
-        result = convert_pdf(path)
+        result = convert_pdf(source)
     elif suffix in {".xlsx", ".xlsm"}:
-        result = convert_excel(path)
+        result = convert_excel(source)
     else:
         raise typer.BadParameter("convert supports .pdf and .xlsx/.xlsm files")
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
