@@ -9,8 +9,11 @@ S2 lands the read surface (list / search / read). Write and structural tools
 arrive in later slices on the same `core` facade.
 """
 
-from __future__ import annotations
-
+# NOTE: do not add `from __future__ import annotations` here. FastMCP derives
+# each tool's input schema from the parameter annotations and runs
+# `issubclass(annotation, Context)` on them; with stringized annotations that
+# raises `TypeError: issubclass() arg 1 must be a class`. Real (evaluated)
+# annotations keep tool registration working across mcp SDK versions.
 from pathlib import Path
 from typing import Any
 

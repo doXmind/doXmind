@@ -24,7 +24,7 @@ dependencies = [
     "send2trash>=1.8.3",
     "orjson>=3.10.0",
     "typer==0.26.7",
-    "mcp==1.27.2",
+    "mcp==1.12.4",
 ]
 
 # The standalone shells (ADR 0010). `doxmind` is the document toolkit CLI;

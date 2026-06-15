@@ -53,7 +53,7 @@ typer==0.26.7
 # `doxmind_mcp` so it does not shadow this `mcp` import. Pinned: newer builds
 # changed FastMCP's parameter-annotation handling, so an unpinned `>=` resolved
 # a version on CI that rejected the tool signatures.
-mcp==1.27.2
+mcp==1.12.4
 
 # Testing
 pytest==8.3.4
