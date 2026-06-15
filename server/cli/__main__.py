@@ -83,6 +83,64 @@ def read(
 
 
 @app.command()
+def mv(
+    old: str = typer.Argument(..., help="Existing workspace-relative path."),
+    new: str = typer.Argument(..., help="Destination workspace-relative path."),
+    root: str = ROOT_OPTION,
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+) -> None:
+    """Move or rename a document or folder."""
+    from core.structure import move_document
+
+    if not yes:
+        typer.confirm(f"Move {old} -> {new}?", abort=True)
+    result = move_document(root, old, new)
+    typer.echo(f"moved -> {result.get('path', new)}")
+
+
+@app.command()
+def rm(
+    path: str = typer.Argument(..., help="Workspace-relative document path."),
+    root: str = ROOT_OPTION,
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+) -> None:
+    """Move a document to the system Trash."""
+    from core.structure import delete_document
+
+    if not yes:
+        typer.confirm(f"Move {path} to Trash?", abort=True)
+    result = delete_document(root, path)
+    typer.echo(f"moved to Trash: {result['path']}")
+
+
+@app.command()
+def mkdir(
+    path: str = typer.Argument(..., help="Workspace-relative folder path."),
+    root: str = ROOT_OPTION,
+) -> None:
+    """Create a folder in the workspace."""
+    from core.structure import create_folder
+
+    create_folder(root, path)
+    typer.echo(f"created folder {path}")
+
+
+@app.command("import")
+def import_doc(
+    src: str = typer.Argument(..., help="Path to an external .md/.pdf/.xlsx file."),
+    root: str = ROOT_OPTION,
+    dest: str = typer.Option("", "--dest", help="Destination folder within the workspace."),
+    name: str = typer.Option(None, "--name", help="Override the destination file name."),
+    mode: str = typer.Option("create", "--mode", help="create (refuse clobber) or replace."),
+) -> None:
+    """Import an external document into the workspace (copy; source untouched)."""
+    from core.structure import import_document
+
+    dto = import_document(root, src, dest, name, mode)
+    typer.echo(f"imported {dto['path']}")
+
+
+@app.command()
 def new(
     path: str = typer.Argument(..., help="Workspace-relative path, e.g. notes/idea.md."),
     root: str = ROOT_OPTION,

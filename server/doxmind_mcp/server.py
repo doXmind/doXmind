@@ -16,7 +16,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from core import convert, documents, exporting, workspace
+from core import convert, documents, exporting, structure, workspace
 from core.workspace import resolve_in_root
 
 mcp = FastMCP("doxmind")
@@ -95,6 +95,50 @@ def export_document(path: str, format: str = "pdf", out_path: str | None = None)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
     return {"outPath": out_rel, "bytes": len(data)}
+
+
+@mcp.tool()
+def rename_document(path: str, new_path: str) -> dict[str, Any]:
+    """Rename a document in place (its sidecar travels with it).
+
+    Both paths are relative to the workspace root.
+    """
+    return structure.rename_document(None, path, new_path)
+
+
+@mcp.tool()
+def move_document(path: str, new_path: str) -> dict[str, Any]:
+    """Move a document or folder to a new workspace location.
+
+    Both paths are relative to the workspace root.
+    """
+    return structure.move_document(None, path, new_path)
+
+
+@mcp.tool()
+def delete_document(path: str) -> dict[str, Any]:
+    """Move a document (and its sidecar) to the system Trash. Not a hard delete.
+
+    `path` is relative to the workspace root.
+    """
+    return structure.delete_document(None, path)
+
+
+@mcp.tool()
+def create_folder(path: str) -> dict[str, Any]:
+    """Create a folder in the workspace. `path` is relative to the workspace root."""
+    return structure.create_folder(None, path)
+
+
+@mcp.tool()
+def import_document(
+    source_path: str, dest_folder: str = "", name: str | None = None, mode: str = "create"
+) -> dict[str, Any]:
+    """Copy an external .md/.pdf/.xlsx file into the workspace; the source on
+    disk is left untouched. `dest_folder` is relative to the workspace root.
+    `mode` is "create" (refuse to clobber) or "replace".
+    """
+    return structure.import_document(None, source_path, dest_folder, name, mode)
 
 
 def main() -> None:
