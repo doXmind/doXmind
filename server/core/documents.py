@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from api.workspace import read_doc
+from core.workspace import resolve_in_root
 
 
 def read_document(path: str | Path) -> dict[str, Any]:
@@ -24,3 +25,13 @@ def read_document(path: str | Path) -> dict[str, Any]:
     ``sourceState`` / ``outline`` / ``correlation``.
     """
     return read_doc(Path(path).expanduser())
+
+
+def read_document_in_root(root: str | Path | None, rel_path: str | Path) -> dict[str, Any]:
+    """Read a document addressed relative to a confined workspace ``root``.
+
+    The MCP surface uses this so an agent can only read inside the configured
+    workspace; the free-path :func:`read_document` stays for the CLI, where the
+    human already owns the path they pass.
+    """
+    return read_doc(resolve_in_root(root, rel_path))
