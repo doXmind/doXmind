@@ -8,6 +8,57 @@ import os
 import typer
 
 app = typer.Typer(add_completion=False, help="doXmind local document toolkit.")
+index_app = typer.Typer(help="Workspace index commands.")
+app.add_typer(index_app, name="index")
+
+ROOT_OPTION = typer.Option(
+    None, "--root", help="Workspace root (defaults to $DOXMIND_WORKSPACE_ROOT or ~/Documents/doXmind)."
+)
+
+
+@app.command(name="ls")
+def list_documents(
+    root: str = ROOT_OPTION,
+    as_json: bool = typer.Option(False, "--json", help="Print the scan result as JSON."),
+) -> None:
+    """List the documents in the workspace."""
+    from core.workspace import list_workspace
+
+    result = list_workspace(root)
+    if as_json:
+        typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    for doc in result["documents"]:
+        typer.echo(f"{doc['documentType']:<8} {doc['path']}")
+
+
+@app.command()
+def search(
+    query: str = typer.Argument(..., help="Text to search for in markdown bodies."),
+    root: str = ROOT_OPTION,
+    limit: int = typer.Option(None, "--limit", help="Max documents to return."),
+    as_json: bool = typer.Option(False, "--json", help="Print results as JSON."),
+) -> None:
+    """Full-text search markdown documents in the workspace."""
+    from core.workspace import search_documents
+
+    results = search_documents(root, query, limit)
+    if as_json:
+        typer.echo(json.dumps(results, ensure_ascii=False, indent=2))
+        return
+    for hit in results:
+        typer.echo(f"{hit['path']} ({len(hit['matches'])} match(es))")
+        for match in hit["matches"][:5]:
+            typer.echo(f"  {match['line']}: {match['preview']}")
+
+
+@index_app.command("rebuild")
+def index_rebuild(root: str = ROOT_OPTION) -> None:
+    """Rebuild the workspace id->path index."""
+    from core.workspace import rebuild_index
+
+    index = rebuild_index(root)
+    typer.echo(f"rebuilt index: {len(index.get('ids', {}))} document(s)")
 
 
 @app.command()

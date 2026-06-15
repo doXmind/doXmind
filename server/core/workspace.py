@@ -13,12 +13,16 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 from api.workspace import (
     canonical_workspace_root,
     ensure_path_within_root,
     validate_relative_path,
     workspace_default_root,
+    workspace_index_rebuild,
+    workspace_markdown_search,
+    workspace_scan,
 )
 
 WORKSPACE_ROOT_ENV = "DOXMIND_WORKSPACE_ROOT"
@@ -67,3 +71,21 @@ def _as_relative(workspace: Path, path: str | Path) -> str:
         return str(p.resolve().relative_to(workspace))
     except ValueError as err:
         raise ValueError(f"path escapes workspace root: {path}") from err
+
+
+def list_workspace(root: str | Path | None = None) -> dict[str, Any]:
+    """Scan the workspace and return ``{root, documents[]}`` (and refresh the
+    on-disk id index as a side effect, matching the desktop app)."""
+    return workspace_scan(str(resolve_root(root)))
+
+
+def search_documents(
+    root: str | Path | None = None, query: str = "", limit: int | None = None
+) -> list[dict[str, Any]]:
+    """Full-text search markdown bodies; returns per-document line matches."""
+    return workspace_markdown_search(str(resolve_root(root)), query, limit)
+
+
+def rebuild_index(root: str | Path | None = None) -> dict[str, Any]:
+    """Rebuild and persist the workspace id->path index."""
+    return workspace_index_rebuild(str(resolve_root(root)))
