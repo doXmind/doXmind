@@ -89,3 +89,12 @@ def search_documents(
 def rebuild_index(root: str | Path | None = None) -> dict[str, Any]:
     """Rebuild and persist the workspace id->path index."""
     return workspace_index_rebuild(str(resolve_root(root)))
+
+
+def find_document(root: str | Path | None, doc_id: str) -> dict[str, Any] | None:
+    """Return the document DTO for a stable id, or None if no document matches."""
+    target = str(doc_id)
+    for doc in list_workspace(root)["documents"]:
+        if str(doc.get("id")) == target:
+            return doc
+    return None

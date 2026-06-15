@@ -145,6 +145,31 @@ def import_document(
     )
 
 
+@mcp.resource("docs://list")
+def docs_index() -> str:
+    """A markdown listing of every workspace document (stable id, type, path)."""
+    docs = workspace.list_workspace()["documents"]
+    lines = [f"- `{d['id']}` [{d['documentType']}] {d['path']}" for d in docs]
+    return "\n".join(lines) or "(empty workspace)"
+
+
+@mcp.resource("doc://{doc_id}")
+def doc_resource(doc_id: str) -> str:
+    """The markdown content of a workspace document addressed by its stable id.
+
+    For PDF/Excel documents, points at the read_pdf / read_excel tools instead.
+    """
+    dto = workspace.find_document(None, doc_id)
+    if dto is None:
+        raise ValueError(f"no document with id {doc_id}")
+    if dto["documentType"] in ("markdown", "html"):
+        return documents.read_document_in_root(None, dto["path"])["markdown"]
+    return (
+        f"{dto['documentType']} document at {dto['path']} — "
+        f"use the read_{dto['documentType']} tool to parse it."
+    )
+
+
 def main() -> None:
     mcp.run()
 

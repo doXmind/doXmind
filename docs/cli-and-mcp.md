@@ -72,6 +72,9 @@ doxmind --root /path/to/workspace ls  # override the workspace root
 `move_document`, `delete_document` (→ system Trash), `create_folder`,
 `import_document`.
 
+It also exposes resources: `docs://list` (a listing of every document with its
+stable id) and `doc://<id>` (a document's markdown content, addressed by id).
+
 ### Claude Code
 
 ```bash

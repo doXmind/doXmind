@@ -44,3 +44,24 @@ async def test_call_tool_round_trip(tmp_path, monkeypatch):
     # A dict-returning tool yields the dict directly as the structured payload.
     _content, payload = await server.mcp.call_tool("read_document", {"path": "alpha.md"})
     assert "hello mcp world" in payload["markdown"]
+
+
+async def test_doc_resource_by_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("DOXMIND_WORKSPACE_ROOT", str(tmp_path))
+    from core.documents import create_document
+
+    dto = create_document(tmp_path, "note.md", markdown="# Note\n\nresource body\n")
+
+    templates = {t.uriTemplate for t in await server.mcp.list_resource_templates()}
+    assert "doc://{doc_id}" in templates
+    resources = {str(r.uri) for r in await server.mcp.list_resources()}
+    assert "docs://list" in resources
+
+    contents = await server.mcp.read_resource(f"doc://{dto['id']}")
+    assert "resource body" in contents[0].content
+
+    index = await server.mcp.read_resource("docs://list")
+    assert "note.md" in index[0].content
+
+    with pytest.raises(ValueError):
+        await server.mcp.read_resource("doc://does-not-exist")
