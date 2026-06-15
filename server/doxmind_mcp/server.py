@@ -63,7 +63,7 @@ def read_excel(path: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def create_document(path: str, markdown: str = "", title: str | None = None) -> dict[str, Any]:
+def create_document(path: str, markdown: str = "", title: str = "") -> dict[str, Any]:
     """Create a new markdown document. `path` is relative to the workspace root.
 
     Refuses to overwrite an existing document.
@@ -82,7 +82,7 @@ def edit_document(path: str, markdown: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def export_document(path: str, format: str = "pdf", out_path: str | None = None) -> dict[str, Any]:
+def export_document(path: str, format: str = "pdf", out_path: str = "") -> dict[str, Any]:
     """Export a workspace document to pdf/html/md, writing it into the workspace.
 
     `path` and `out_path` are relative to the workspace root. When `out_path` is
@@ -132,7 +132,7 @@ def create_folder(path: str) -> dict[str, Any]:
 
 @mcp.tool()
 def import_document(
-    source_path: str, dest_folder: str = "", name: str | None = None, mode: str = "create"
+    source_path: str, dest_folder: str = "", name: str = "", mode: str = "create"
 ) -> dict[str, Any]:
     """Copy a .md/.pdf/.xlsx file to another location in the workspace.
 

@@ -46,12 +46,14 @@ orjson>=3.10.0
 
 # `doxmind` CLI (ADR 0010). Typer builds the command surface on top of Click;
 # the CLI imports the core facade directly and runs without the desktop app.
-typer>=0.12.0
+typer==0.26.7
 
 # `doxmind-mcp` server (ADR 0010). The official MCP SDK; FastMCP exposes the
 # workspace to external agents over stdio. The local package is named
-# `doxmind_mcp` so it does not shadow this `mcp` import.
-mcp>=1.2.0
+# `doxmind_mcp` so it does not shadow this `mcp` import. Pinned: newer builds
+# changed FastMCP's parameter-annotation handling, so an unpinned `>=` resolved
+# a version on CI that rejected the tool signatures.
+mcp==1.27.2
 
 # Testing
 pytest==8.3.4
