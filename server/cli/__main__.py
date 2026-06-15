@@ -83,6 +83,21 @@ def read(
 
 
 @app.command()
+def new(
+    path: str = typer.Argument(..., help="Workspace-relative path, e.g. notes/idea.md."),
+    root: str = ROOT_OPTION,
+    title: str = typer.Option(None, "--title", help="Document title (frontmatter/meta)."),
+    content: str = typer.Option("", "--content", help="Initial markdown body."),
+) -> None:
+    """Create a new markdown document in the workspace."""
+    from core.documents import create_document
+
+    meta = {"title": title} if title else None
+    dto = create_document(root, path, markdown=content, meta=meta)
+    typer.echo(f"created {dto['path']} (id {dto['id']})")
+
+
+@app.command()
 def export(
     path: str = typer.Argument(..., help="Path to the document to export."),
     to: str = typer.Option("pdf", "--to", help="Export format: pdf, html, or md."),

@@ -63,6 +63,25 @@ def read_excel(path: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def create_document(path: str, markdown: str = "", title: str | None = None) -> dict[str, Any]:
+    """Create a new markdown document. `path` is relative to the workspace root.
+
+    Refuses to overwrite an existing document.
+    """
+    meta = {"title": title} if title else None
+    return documents.create_document(None, path, markdown=markdown, meta=meta)
+
+
+@mcp.tool()
+def edit_document(path: str, markdown: str) -> dict[str, Any]:
+    """Replace the markdown body of a workspace document (creates it if absent).
+
+    `path` is relative to the workspace root.
+    """
+    return documents.edit_document(None, path, markdown)
+
+
+@mcp.tool()
 def export_document(path: str, format: str = "pdf", out_path: str | None = None) -> dict[str, Any]:
     """Export a workspace document to pdf/html/md, writing it into the workspace.
 
