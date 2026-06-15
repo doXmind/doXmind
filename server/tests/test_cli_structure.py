@@ -111,6 +111,24 @@ def test_import_document_replace_preserves_sidecar(tmp_path):
         shutil.rmtree(src_dir)
 
 
+def test_move_partial_failure_surfaces_error(tmp_path, monkeypatch):
+    create_document(tmp_path, "a.md", markdown="body")
+    orig_rename = Path.rename
+
+    def flaky_rename(self, target):
+        if str(self).endswith(".doxmind"):
+            raise OSError("simulated sidecar rename failure")
+        return orig_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", flaky_rename)
+    with pytest.raises(RuntimeError):
+        move_document(tmp_path, "a.md", "b.md")
+    # The document moved even though the sidecar rename failed; the error makes
+    # that half-moved state explicit instead of returning silently.
+    assert (tmp_path / "b.md").exists()
+    assert not (tmp_path / "a.md").exists()
+
+
 def test_mcp_import_confines_source_to_workspace(tmp_path, monkeypatch):
     monkeypatch.setenv("DOXMIND_WORKSPACE_ROOT", str(tmp_path))
     create_document(tmp_path, "src.md", markdown="inside")

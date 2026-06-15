@@ -147,13 +147,16 @@ def import_document(
 
 @mcp.resource("docs://list")
 def docs_index() -> str:
-    """A markdown listing of every workspace document (stable id, type, path)."""
+    """A markdown listing of every workspace document (resource URI, type, path)."""
     docs = workspace.list_workspace()["documents"]
-    lines = [f"- `{d['id']}` [{d['documentType']}] {d['path']}" for d in docs]
+    lines = [f"- doc:///{d['id']} [{d['documentType']}] {d['path']}" for d in docs]
     return "\n".join(lines) or "(empty workspace)"
 
 
-@mcp.resource("doc://{doc_id}")
+# The id is placed in the URI path (doc:///<id>), not the authority (doc://<id>),
+# because path-based ids look like "path:<hex>" and a colon in the authority is
+# parsed as a port, which rejects the URI.
+@mcp.resource("doc:///{doc_id}")
 def doc_resource(doc_id: str) -> str:
     """The markdown content of a workspace document addressed by its stable id.
 

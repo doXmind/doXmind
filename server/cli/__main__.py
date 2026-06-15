@@ -21,16 +21,25 @@ ROOT_OPTION = typer.Option(
 
 
 def _workspace_path(root: str, path: str) -> Path:
-    """Resolve a path the way the workspace commands do: a relative path is
-    taken against the workspace root, an absolute path is used as-is. This keeps
-    the file-oriented commands (read/export/convert) consistent with the
-    root-relative commands (ls/new/...) so the same path works in both."""
+    """Resolve a path for the file-oriented commands (read/export/convert/--out).
+
+    A relative path is taken against the workspace root and may not escape it
+    (``..`` is rejected), matching the root-relative commands (ls/new/...). An
+    absolute path is honored as-is: the CLI is a trusted local tool, so the
+    human may read or write any file they own (e.g. ``--out ~/Desktop/x.pdf``).
+    Path confinement is the MCP/agent guarantee, not the CLI's.
+    """
     p = Path(path).expanduser()
     if p.is_absolute():
         return p
+    from api.workspace import validate_relative_path
     from core.workspace import resolve_root
 
-    return resolve_root(root) / p
+    try:
+        relative = validate_relative_path(str(p))
+    except ValueError as err:
+        raise typer.BadParameter(str(err)) from err
+    return resolve_root(root) / relative
 
 
 @app.command(name="ls")
@@ -191,16 +200,19 @@ def export(
     path: str = typer.Argument(..., help="Document to export (workspace-relative or absolute)."),
     root: str = ROOT_OPTION,
     to: str = typer.Option("pdf", "--to", help="Export format: pdf, html, or md."),
-    out: str = typer.Option(None, "--out", help="Output file (defaults next to the source)."),
+    out: str = typer.Option(
+        None, "--out", help="Output file: workspace-relative, or absolute (e.g. ~/Desktop/x.pdf)."
+    ),
 ) -> None:
     """Export a document to pdf, html, or md."""
     from core.exporting import export_document, suffix_for
 
     source = _workspace_path(root, path)
     data = export_document(source, to)
-    target = Path(out) if out else source.with_suffix(suffix_for(to))
+    target = _workspace_path(root, out) if out else source.with_suffix(suffix_for(to))
     if target.resolve() == source.resolve():
         raise typer.BadParameter("export would overwrite the source; pass --out")
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
     typer.echo(f"wrote {target} ({len(data)} bytes)")
 

@@ -53,15 +53,28 @@ async def test_doc_resource_by_id(tmp_path, monkeypatch):
     dto = create_document(tmp_path, "note.md", markdown="# Note\n\nresource body\n")
 
     templates = {t.uriTemplate for t in await server.mcp.list_resource_templates()}
-    assert "doc://{doc_id}" in templates
+    assert "doc:///{doc_id}" in templates
     resources = {str(r.uri) for r in await server.mcp.list_resources()}
     assert "docs://list" in resources
 
-    contents = await server.mcp.read_resource(f"doc://{dto['id']}")
+    contents = await server.mcp.read_resource(f"doc:///{dto['id']}")
     assert "resource body" in contents[0].content
 
     index = await server.mcp.read_resource("docs://list")
     assert "note.md" in index[0].content
 
     with pytest.raises(ValueError):
-        await server.mcp.read_resource("doc://does-not-exist")
+        await server.mcp.read_resource("doc:///does-not-exist")
+
+
+async def test_doc_resource_path_based_id_with_colon(tmp_path, monkeypatch):
+    # A raw .md with no sidecar gets a path-based id ("path:<hex>") whose colon
+    # would break a doc://<id> authority URI; doc:///<id> keeps it in the path.
+    monkeypatch.setenv("DOXMIND_WORKSPACE_ROOT", str(tmp_path))
+    (tmp_path / "raw.md").write_text("# Raw\n\nno sidecar here\n", encoding="utf-8")
+
+    listing = next(d for d in server.list_workspace()["documents"] if d["path"].endswith("raw.md"))
+    assert listing["id"].startswith("path:")  # colon-bearing id
+
+    contents = await server.mcp.read_resource(f"doc:///{listing['id']}")
+    assert "no sidecar here" in contents[0].content

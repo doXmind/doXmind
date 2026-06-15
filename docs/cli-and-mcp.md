@@ -20,8 +20,17 @@ Workspace-relative commands resolve their root in this order:
 2. `$DOXMIND_WORKSPACE_ROOT`,
 3. the default `~/Documents/doXmind`.
 
-Every agent/user-supplied path is confined to that root: `..` escapes, absolute
-paths outside the root, and symlinks pointing outside are rejected.
+**Confinement.** The **MCP server** confines every agent-supplied path to the
+workspace root — `..` escapes, absolute paths outside the root, and symlinks
+pointing outside are all rejected. This is the security boundary for untrusted
+agents.
+
+The **CLI** is a trusted local tool run by the file's owner, so it is _not_ a
+confinement boundary. Its workspace commands (`ls`/`new`/`mv`/`rm`/…) are
+root-relative; the file commands (`read`/`export`/`convert`) take a relative
+path resolved against the root (`..` is rejected) **or** an absolute path used
+as-is, so a human can read or write anywhere they own (e.g.
+`--out ~/Desktop/x.pdf`).
 
 ## Install
 
@@ -73,7 +82,7 @@ doxmind --root /path/to/workspace ls  # override the workspace root
 `import_document`.
 
 It also exposes resources: `docs://list` (a listing of every document with its
-stable id) and `doc://<id>` (a document's markdown content, addressed by id).
+stable id) and `doc:///<id>` (a document's markdown content, addressed by id).
 
 ### Claude Code
 

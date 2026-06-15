@@ -65,6 +65,13 @@ def test_cli_edit_replaces_body(tmp_path):
     assert "after edit" in read_document_in_root(tmp_path, "note.md")["markdown"]
 
 
+def test_edit_document_creates_absent_file(tmp_path):
+    # edit is an upsert: editing a path that doesn't exist creates it.
+    edit_document(tmp_path, "fresh.md", "brand new body")
+    assert (tmp_path / "fresh.md").exists()
+    assert "brand new body" in read_document_in_root(tmp_path, "fresh.md")["markdown"]
+
+
 def test_mcp_create_and_edit_confined(tmp_path, monkeypatch):
     monkeypatch.setenv("DOXMIND_WORKSPACE_ROOT", str(tmp_path))
     server.create_document("agent.md", markdown="from agent")
