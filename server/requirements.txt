@@ -44,6 +44,10 @@ send2trash>=1.8.3
 # 1180 ms -> 488 ms for the 8 MB fixture round-trip).
 orjson>=3.10.0
 
+# `doxmind` CLI (ADR 0010). Typer builds the command surface on top of Click;
+# the CLI imports the core facade directly and runs without the desktop app.
+typer>=0.12.0
+
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.25.2
