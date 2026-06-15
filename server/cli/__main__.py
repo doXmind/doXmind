@@ -83,6 +83,23 @@ def read(
 
 
 @app.command()
+def export(
+    path: str = typer.Argument(..., help="Path to the document to export."),
+    to: str = typer.Option("pdf", "--to", help="Export format: pdf, html, or md."),
+    out: str = typer.Option(None, "--out", help="Output file (defaults next to the source)."),
+) -> None:
+    """Export a document to pdf, html, or md."""
+    from core.exporting import export_document, suffix_for
+
+    data = export_document(path, to)
+    target = Path(out) if out else Path(path).with_suffix(suffix_for(to))
+    if target.resolve() == Path(path).resolve():
+        raise typer.BadParameter("export would overwrite the source; pass --out")
+    target.write_bytes(data)
+    typer.echo(f"wrote {target} ({len(data)} bytes)")
+
+
+@app.command()
 def convert(
     path: str = typer.Argument(..., help="Path to a .pdf or .xlsx/.xlsm file."),
 ) -> None:

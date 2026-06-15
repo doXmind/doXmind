@@ -11,11 +11,13 @@ arrive in later slices on the same `core` facade.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from core import convert, documents, workspace
+from core import convert, documents, exporting, workspace
+from core.workspace import resolve_in_root
 
 mcp = FastMCP("doxmind")
 
@@ -58,6 +60,22 @@ def read_excel(path: str) -> dict[str, Any]:
     `path` is relative to the workspace root.
     """
     return convert.read_excel_in_root(None, path)
+
+
+@mcp.tool()
+def export_document(path: str, format: str = "pdf", out_path: str | None = None) -> dict[str, Any]:
+    """Export a workspace document to pdf/html/md, writing it into the workspace.
+
+    `path` and `out_path` are relative to the workspace root. When `out_path` is
+    omitted the output goes next to the source with the format's extension.
+    Returns the output path and byte size.
+    """
+    data = exporting.export_document_in_root(None, path, format)
+    out_rel = out_path or str(Path(path).with_suffix(exporting.suffix_for(format)))
+    target = resolve_in_root(None, out_rel)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+    return {"outPath": out_rel, "bytes": len(data)}
 
 
 def main() -> None:
