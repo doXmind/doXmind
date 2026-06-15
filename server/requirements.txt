@@ -48,6 +48,11 @@ orjson>=3.10.0
 # the CLI imports the core facade directly and runs without the desktop app.
 typer>=0.12.0
 
+# `doxmind-mcp` server (ADR 0010). The official MCP SDK; FastMCP exposes the
+# workspace to external agents over stdio. The local package is named
+# `doxmind_mcp` so it does not shadow this `mcp` import.
+mcp>=1.2.0
+
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.25.2

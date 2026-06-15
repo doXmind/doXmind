@@ -9,6 +9,7 @@ requires-python = ">=3.11"
 # (S9, #184); this declares the entry point so it is recorded from the start.
 [project.scripts]
 doxmind = "cli.__main__:main"
+doxmind-mcp = "doxmind_mcp.server:main"
 
 [tool.ruff]
 # Exclude directories
