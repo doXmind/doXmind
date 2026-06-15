@@ -101,6 +101,11 @@ function createWindow(target) {
     minWidth: 900,
     minHeight: 600,
     title: "doXmind",
+    // Start hidden and reveal on first paint. With the transparent + vibrancy
+    // macOS chrome, showing before the renderer paints flashes the bare
+    // vibrancy material through the unpainted webview — in dark mode this reads
+    // as a "broken"/see-through sidebar until React renders the opaque chrome.
+    show: false,
     ...chrome,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -120,6 +125,7 @@ function createWindow(target) {
     }
   });
   attachCloseToSave(win);
+  win.once("ready-to-show", () => win.show());
   win.loadURL(urlForTarget(target));
   return win;
 }

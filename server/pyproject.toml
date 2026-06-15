@@ -4,6 +4,47 @@ version = "1.0.0"
 description = "doXmind - Local Writing Studio Backend"
 requires-python = ">=3.11"
 
+# Runtime dependencies for the installable `doxmind` / `doxmind-mcp` shells
+# (ADR 0010). Kept in sync with requirements.txt, which remains the source for
+# the desktop sidecar's pinned dev environment; test-only deps stay there.
+dependencies = [
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.34.0",
+    "python-dotenv==1.0.1",
+    "pydantic==2.10.3",
+    "pydantic-settings==2.7.0",
+    "sqlalchemy==2.0.36",
+    "aiosqlite==0.20.0",
+    "greenlet==3.1.1",
+    "python-multipart==0.0.19",
+    "httpx==0.28.1",
+    "markdown==3.7",
+    "pymupdf>=1.24.0",
+    "openpyxl>=3.1.5",
+    "send2trash>=1.8.3",
+    "orjson>=3.10.0",
+    "typer==0.26.7",
+    "mcp==1.12.4",
+]
+
+# The standalone shells (ADR 0010). `doxmind` is the document toolkit CLI;
+# `doxmind-mcp` is the stdio MCP server. Installable with pip / pipx / uvx;
+# PyInstaller specs in packaging/ produce no-Python binaries.
+[project.scripts]
+doxmind = "cli.__main__:main"
+doxmind-mcp = "doxmind_mcp.server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# Flat layout: the backend keeps its packages and a few modules at the root, so
+# discovery is listed explicitly (auto-discovery rejects multiple top-level
+# packages). `tests` is intentionally omitted.
+[tool.setuptools]
+packages = ["api", "cli", "core", "db", "doxmind_mcp", "lib", "services"]
+py-modules = ["config", "dependencies", "exceptions", "main", "run_sidecar"]
+
 [tool.ruff]
 # Exclude directories
 exclude = [

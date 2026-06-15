@@ -1165,9 +1165,20 @@ def move_document_pair(root: str, old_path: str, new_path: str) -> dict[str, Any
     source_sidecar = sidecar_path_for(source)
     destination_sidecar = sidecar_path_for(destination)
     source.rename(destination)
-    if source_sidecar.exists():
-        source_sidecar.rename(destination_sidecar)
+    # The document has moved — invalidate before the sidecar step so a failure
+    # below can't leave the cache serving a stale entry (mirrors doc_delete).
     _invalidate_scan_cache(workspace)
+    if source_sidecar.exists():
+        # Pair atomicity (ADR 0005) is captured in the error surfaced here: if
+        # the sidecar move fails the document is already at the destination, so
+        # report the half-moved pair instead of returning a consistent-looking
+        # DTO over an inconsistent workspace.
+        try:
+            source_sidecar.rename(destination_sidecar)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                f"document moved to {new_path} but sidecar move failed: {exc}"
+            ) from exc
     return document_dto_for_path(workspace, destination)
 
 
