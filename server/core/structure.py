@@ -17,7 +17,7 @@ from api.workspace import (
     move_document_pair,
     workspace_create_folder,
 )
-from core.workspace import resolve_root
+from core.workspace import resolve_in_root, resolve_root
 
 
 def rename_document(
@@ -51,12 +51,28 @@ def import_document(
     dest_folder: str = "",
     name: str | None = None,
     mode: str = "create",
+    *,
+    confine_source: bool = False,
 ) -> dict[str, Any]:
-    """Copy an external .md/.pdf/.xlsx into the workspace (source left intact)."""
-    resolved_name = name or Path(src_path).name
+    """Copy a .md/.pdf/.xlsx into the workspace (source left intact).
+
+    When ``confine_source`` is set (the MCP surface), the source must itself live
+    inside the workspace root, so an untrusted agent cannot copy an arbitrary
+    file (e.g. /etc/passwd, ~/.ssh/id_rsa) into the workspace and then read it
+    back. The CLI leaves it unset so a human can import from anywhere they own.
+    """
+    if confine_source:
+        source = resolve_in_root(root, src_path)
+        if not source.is_file():
+            raise ValueError(f"source must be a file inside the workspace: {src_path}")
+        src = str(source)
+        resolved_name = name or source.name
+    else:
+        src = str(src_path)
+        resolved_name = name or Path(src_path).name
     return doc_import_external(
         str(resolve_root(root)),
-        str(src_path),
+        src,
         None,
         str(dest_folder),
         str(resolved_name),

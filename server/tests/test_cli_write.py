@@ -39,12 +39,30 @@ def test_edit_document_replaces_body(tmp_path):
     assert doc["sourceState"] == "sidecar_fresh"
 
 
+def test_edit_document_empty_markdown_wipes_body(tmp_path):
+    create_document(tmp_path, "note.md", markdown="original content here")
+    assert "original content" in read_document_in_root(tmp_path, "note.md")["markdown"]
+    edit_document(tmp_path, "note.md", "")
+    wiped = read_document_in_root(tmp_path, "note.md")
+    assert wiped["markdown"] == ""
+    assert wiped["html"] == ""
+
+
 def test_cli_new_creates_document(tmp_path):
     res = runner.invoke(
         app, ["new", "ideas/spark.md", "--root", str(tmp_path), "--content", "# Spark\n\nzap"]
     )
     assert res.exit_code == 0, res.output
     assert (tmp_path / "ideas" / "spark.md").exists()
+
+
+def test_cli_edit_replaces_body(tmp_path):
+    create_document(tmp_path, "note.md", markdown="before")
+    res = runner.invoke(
+        app, ["edit", "note.md", "--root", str(tmp_path), "--content", "after edit"]
+    )
+    assert res.exit_code == 0, res.output
+    assert "after edit" in read_document_in_root(tmp_path, "note.md")["markdown"]
 
 
 def test_mcp_create_and_edit_confined(tmp_path, monkeypatch):

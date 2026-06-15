@@ -134,11 +134,15 @@ def create_folder(path: str) -> dict[str, Any]:
 def import_document(
     source_path: str, dest_folder: str = "", name: str | None = None, mode: str = "create"
 ) -> dict[str, Any]:
-    """Copy an external .md/.pdf/.xlsx file into the workspace; the source on
-    disk is left untouched. `dest_folder` is relative to the workspace root.
-    `mode` is "create" (refuse to clobber) or "replace".
+    """Copy a .md/.pdf/.xlsx file to another location in the workspace.
+
+    Both `source_path` and `dest_folder` are relative to the workspace root —
+    the source must already be inside the workspace (agents cannot import files
+    from outside it). `mode` is "create" (refuse to clobber) or "replace".
     """
-    return structure.import_document(None, source_path, dest_folder, name, mode)
+    return structure.import_document(
+        None, source_path, dest_folder, name, mode, confine_source=True
+    )
 
 
 def main() -> None:

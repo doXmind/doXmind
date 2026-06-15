@@ -50,9 +50,10 @@ def create_document(
 ) -> dict[str, Any]:
     """Create a new markdown document in the workspace; refuses to overwrite.
 
-    Identity lives in the sidecar (ADR 0002), so a missing id is generated here.
-    When no editor ``html`` is supplied it is rendered from the markdown so the
-    document opens correctly in the editor.
+    Identity lives in the sidecar — the sidecar id wins over frontmatter
+    (ADR 0008) — so a missing id is generated here. When no editor ``html`` is
+    supplied it is rendered from the markdown so the document opens correctly in
+    the editor.
     """
     meta = dict(meta or {})
     if not str(meta.get("id") or "").strip():

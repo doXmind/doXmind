@@ -14,8 +14,11 @@ import os
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
+# `db`, aiosqlite, sqlalchemy, and uvicorn are pulled in for the `doxmind serve`
+# command (it boots the full FastAPI sidecar via run_sidecar -> main -> db). The
+# document commands don't need them, but a single binary must cover serve too.
 hiddenimports: list[str] = ["orjson"]
-hiddenimports += collect_submodules("uvicorn")  # `doxmind serve`
+hiddenimports += collect_submodules("uvicorn")
 hiddenimports += collect_submodules("aiosqlite")
 hiddenimports += collect_submodules("sqlalchemy.dialects.sqlite")
 for _pkg in ("api", "services", "core", "cli", "db", "lib"):

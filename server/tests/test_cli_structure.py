@@ -91,3 +91,34 @@ def test_mcp_structure_tools_confined(tmp_path, monkeypatch, patched_trash):
     assert not (tmp_path / "renamed.md").exists()
     with pytest.raises(ValueError):
         server.delete_document("../escape.md")
+
+
+def test_import_document_replace_preserves_sidecar(tmp_path):
+    create_document(tmp_path, "existing.md", markdown="old body")
+    sidecar = tmp_path / ".existing.doxmind"
+    sidecar_bytes = sidecar.read_bytes()
+
+    src_dir = Path(tempfile.mkdtemp())
+    try:
+        source = src_dir / "fresh.md"
+        source.write_text("# Fresh\n\nnew body\n", encoding="utf-8")
+        import_document(tmp_path, source, name="existing.md", mode="replace")
+        assert "new body" in (tmp_path / "existing.md").read_text(encoding="utf-8")
+        assert source.exists()  # source untouched
+        # Replace leaves the sidecar intact so the next open trips the stale path.
+        assert sidecar.read_bytes() == sidecar_bytes
+    finally:
+        shutil.rmtree(src_dir)
+
+
+def test_mcp_import_confines_source_to_workspace(tmp_path, monkeypatch):
+    monkeypatch.setenv("DOXMIND_WORKSPACE_ROOT", str(tmp_path))
+    create_document(tmp_path, "src.md", markdown="inside")
+    # In-workspace copy is allowed.
+    server.import_document("src.md", dest_folder="copies")
+    assert (tmp_path / "copies" / "src.md").exists()
+    # An external/absolute source is rejected (no arbitrary filesystem read).
+    with pytest.raises(ValueError):
+        server.import_document("/etc/hosts")
+    with pytest.raises(ValueError):
+        server.import_document("../escape.md")

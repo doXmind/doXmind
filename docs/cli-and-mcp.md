@@ -53,6 +53,7 @@ doxmind ls                      # list workspace documents
 doxmind search "TODO"           # full-text search markdown
 doxmind read notes/idea.md            # print markdown (--html / --json)
 doxmind new notes/idea.md --title Idea --content "# Idea\n\n..."
+doxmind edit notes/idea.md --content "# Idea\n\nrewritten"   # or pipe via stdin
 doxmind export notes/idea.md --to pdf --out idea.pdf
 doxmind convert spec.pdf              # parse PDF -> JSON blocks
 doxmind mv a.md sub/a.md              # move/rename (prompts unless --yes)

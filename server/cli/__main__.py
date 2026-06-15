@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 
+import click
 import typer
 
 app = typer.Typer(add_completion=False, help="doXmind local document toolkit.")
@@ -153,6 +154,22 @@ def new(
     meta = {"title": title} if title else None
     dto = create_document(root, path, markdown=content, meta=meta)
     typer.echo(f"created {dto['path']} (id {dto['id']})")
+
+
+@app.command()
+def edit(
+    path: str = typer.Argument(..., help="Workspace-relative document path."),
+    root: str = ROOT_OPTION,
+    content: str = typer.Option(
+        None, "--content", help="New markdown body (reads stdin when omitted)."
+    ),
+) -> None:
+    """Replace a document's markdown body (creates it if absent)."""
+    from core.documents import edit_document
+
+    markdown = content if content is not None else click.get_text_stream("stdin").read()
+    dto = edit_document(root, path, markdown)
+    typer.echo(f"edited {dto['meta'].get('title') or path}")
 
 
 @app.command()
