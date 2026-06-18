@@ -1,4 +1,4 @@
-# PyInstaller spec — single-file FastAPI sidecar for the Tauri bundle.
+# PyInstaller spec — FastAPI sidecar for the desktop bundle.
 #
 # Usage:
 #   server/.venv/bin/pyinstaller --clean --noconfirm server/doxmind-server.spec
@@ -6,6 +6,10 @@
 # The build script (scripts/build-sidecar.mjs) wraps this and renames the
 # resulting binary to `doxmind-server-<target-triple>` so Tauri's externalBin
 # lookup finds it.
+#
+# Set DOXMIND_CODESIGN_IDENTITY to sign the binary during PyInstaller's EXE
+# step (macOS); unsigned otherwise. Electron release builds let electron-builder
+# import the certificate and sign the packaged app bundle in its own phase.
 
 # ruff: noqa
 # pyright: ignore
@@ -114,7 +118,7 @@ exe = EXE(
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
-    codesign_identity="Developer ID Application: wangzhang wu (46KF5Z549N)",
+    codesign_identity=os.environ.get("DOXMIND_CODESIGN_IDENTITY") or None,
     entitlements_file=None,
 )
 
