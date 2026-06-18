@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useFileStore } from "@/stores/file-store";
+import { shouldSuppressWorkspaceRefreshForSelfSave, useFileStore } from "@/stores/file-store";
 import { storeLogger } from "@/lib/logger";
 import { debounce } from "@/lib/utils";
 
@@ -35,6 +35,7 @@ export function WorkspaceChangeListener() {
     // Re-scan via the same path the Refresh button uses. loadFiles() preserves
     // selection / expanded state, so a refresh doesn't reset the tree.
     const refresh = debounce(() => {
+      if (shouldSuppressWorkspaceRefreshForSelfSave()) return;
       // Silent: a background re-scan must not toggle the sidebar's loading
       // state, and loadFiles preserves object identity for unchanged files so
       // the open editor doesn't re-render on every external change / autosave.

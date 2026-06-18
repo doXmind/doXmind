@@ -8,10 +8,9 @@
  * run `flush`, then tell the shell to proceed (`shell_close_window`). The
  * shell enforces a max-wait timeout so a hung renderer can't block quit.
  *
- * Tauri (until the shell migration completes): nothing emits
- * `shell://close-requested`, so we also register the window's native
- * onCloseRequested flow — flush with a 1.5s cap, then destroy. Exactly one
- * of the two paths fires per shell; the other stays a dormant listener.
+ * Tauri: explicit app Quit emits `shell://close-requested`; native window
+ * close goes through onCloseRequested. Both paths flush, then ask Rust to close
+ * the window so it can distinguish window-close from app-quit.
  *
  * No-op in browser dev.
  *
@@ -42,7 +41,10 @@ export async function onShellCloseRequested(
     // browser dev or impersonation gap — nothing to unhook
   }
   try {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const [{ getCurrentWindow }, { invoke }] = await Promise.all([
+      import("@tauri-apps/api/window"),
+      import("@tauri-apps/api/core"),
+    ]);
     const appWindow = getCurrentWindow();
     let closingAfterFlush = false;
     unlisteners.push(
@@ -58,7 +60,7 @@ export async function onShellCloseRequested(
         } catch (error) {
           console.error("[shell/close] failed to save before close", error);
         }
-        await appWindow.destroy();
+        await invoke("shell_close_window");
       })
     );
   } catch {

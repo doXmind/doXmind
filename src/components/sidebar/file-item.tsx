@@ -35,19 +35,20 @@ import {
 } from "@/lib/document-types";
 import { revealFileInFinder } from "@/lib/storage/reveal";
 import { exportMarkdownAsPdf } from "@/lib/markdown-pdf-export";
+import { getSidebarTreePaddingLeft } from "./tree-layout";
 
 const log = storeLogger.child("FileItem");
 const getNameWithoutExtension = getDisplayName;
 
 interface FileItemProps {
   file: FileItemType;
-  indent?: boolean;
+  depth?: number;
 }
 
 // Store last clicked file ID for range selection (outside component to persist across renders)
 let lastClickedFileId: string | null = null;
 
-export function FileItem({ file, indent: _indent = false }: FileItemProps) {
+export function FileItem({ file, depth = 0 }: FileItemProps) {
   const t = useTranslations("sidebar");
   // Fine-grained selectors — each FileItem only re-renders when its relevant state changes
   const isActive = useFileStore((s) => s.currentFileId === file.id);
@@ -437,7 +438,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       onMouseEnter={handleMouseEnterPrefetch}
       onMouseLeave={cancelHoverPrefetch}
       className={cn(
-        "group/file relative flex cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-3 py-2.5 transition-colors duration-150 ease-out md:h-7 md:px-1.5 md:py-1",
+        "group/file relative flex cursor-pointer items-center gap-2 overflow-hidden rounded-lg py-2.5 pr-3 transition-colors duration-150 ease-out md:h-7 md:py-1 md:pr-1.5",
         "select-none active:scale-[0.98] md:active:scale-100", // Touch feedback on mobile, prevent text selection
         isSelected
           ? "bg-primary/10 dark:bg-primary/20"
@@ -445,6 +446,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
             ? "bg-[var(--sidebar-active)] text-foreground"
             : "text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)]"
       )}
+      style={{ paddingLeft: getSidebarTreePaddingLeft(depth) }}
     >
       {/* Checkbox for multi-select */}
       {(isSelectionMode || isSelected) && (

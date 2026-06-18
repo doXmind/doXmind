@@ -52,18 +52,18 @@ describe("StratigraphyWelcome", () => {
     );
 
     expect(screen.getByText("Welcome to doxmind.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /choose a folder/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /start writing/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /new/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open folder/i })).toBeInTheDocument();
+    expect(screen.queryByText("01")).not.toBeInTheDocument();
+    expect(screen.queryByText("02")).not.toBeInTheDocument();
+    expect(screen.queryByText("03")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /pick up tomorrow/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New" })).toBeEnabled();
 
-    await user.click(screen.getByRole("button", { name: /choose a folder/i }));
-    await user.click(screen.getByRole("button", { name: /start writing/i }));
-    await user.click(screen.getByRole("button", { name: "Open Folder" }));
     await user.click(screen.getByRole("button", { name: "New" }));
+    await user.click(screen.getByRole("button", { name: "Open Folder" }));
 
-    expect(onOpenFolder).toHaveBeenCalledTimes(2);
-    expect(onStartWriting).toHaveBeenCalledOnce();
+    expect(onOpenFolder).toHaveBeenCalledOnce();
+    expect(onStartWriting).not.toHaveBeenCalled();
     expect(onCreateNew).toHaveBeenCalledOnce();
   });
 
@@ -98,9 +98,12 @@ describe("StratigraphyWelcome", () => {
       />
     );
 
-    expect(screen.getByText(/stratigraphy/)).toBeInTheDocument();
+    expect(screen.getByText("Welcome back.")).toBeInTheDocument();
+    expect(screen.getByText("Recent")).toBeInTheDocument();
+    expect(screen.getByText("Quick actions")).toBeInTheDocument();
+    expect(screen.queryByText("01")).not.toBeInTheDocument();
     // VSCode-style precedence: recent folders render first, then standalone
-    // files — both are shown (stratigraphy.tsx renders `[...folders, ...files]`).
+    // files — both are shown in the same Recent panel.
     const folderButton = screen.getByRole("button", { name: /notes/i });
     const fileButton = screen.getByRole("button", { name: /Project\.md/i });
     expect(folderButton).toBeInTheDocument();
@@ -190,7 +193,7 @@ describe("WelcomeScreen store wiring", () => {
 
     renderWithIntl(<WelcomeScreen />);
 
-    await user.click(screen.getByRole("button", { name: /start writing/i }));
+    await user.click(screen.getByRole("button", { name: "New" }));
 
     const state = useFileStore.getState();
     expect(state.transientFile?.name).toBe("Untitled-1.md");
@@ -198,17 +201,11 @@ describe("WelcomeScreen store wiring", () => {
     expect(window.location.pathname).toMatch(/^\/editor\/transient-/);
   });
 
-  it("starts an untitled transient document from bottom-bar New without a workspace", async () => {
-    const user = userEvent.setup();
-
+  it("does not duplicate the first-run actions in the bottom bar", () => {
     renderWithIntl(<WelcomeScreen />);
 
-    await user.click(screen.getByRole("button", { name: "New" }));
-
-    const state = useFileStore.getState();
-    expect(state.transientFile?.name).toBe("Untitled-1.md");
-    expect(state.currentFileId).toMatch(/^transient-/);
-    expect(window.location.pathname).toMatch(/^\/editor\/transient-/);
+    expect(screen.getAllByRole("button", { name: /new/i })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /open folder/i })).toHaveLength(1);
   });
 
   it("blocks browser-only folder opening with the desktop-required notification", async () => {

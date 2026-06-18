@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DesktopEditor } from "@/app/editor/[[...fileId]]/_components/desktop-editor";
 import { useFileStore } from "@/stores/file-store";
@@ -79,5 +79,25 @@ describe("DesktopEditor welcome shell", () => {
     expect(screen.getByTestId("files-sidebar")).toBeInTheDocument();
     expect(screen.getByTestId("workspace-home")).toBeInTheDocument();
     expect(screen.queryByTestId("document-workspace")).not.toBeInTheDocument();
+  });
+
+  it("unmounts the file sidebar contents when the sidebar is collapsed", () => {
+    useFileStore.setState({
+      openTarget: "folder",
+      rootPath: "/tmp/workspace",
+      currentFileId: null,
+      files: [],
+      isSynced: true,
+    });
+
+    render(<DesktopEditor />);
+    expect(screen.getByTestId("files-sidebar")).toBeInTheDocument();
+
+    act(() => {
+      useLayoutStore.setState({ isFilesSidebarOpen: false });
+    });
+
+    expect(screen.queryByTestId("files-sidebar")).not.toBeInTheDocument();
+    expect(screen.getByTestId("workspace-home")).toBeInTheDocument();
   });
 });

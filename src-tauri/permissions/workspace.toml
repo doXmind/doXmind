@@ -43,6 +43,7 @@ commands.allow = [
   "force_open_new_window_for_target",
   "register_window_target",
   "unregister_window_target",
+  "shell_close_window",
   "current_window_open_target",
   "get_backend_url",
   "dock_set_recents",

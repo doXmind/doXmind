@@ -29,7 +29,6 @@ import { getEditorExtensions, defaultEditorProps } from "@/components/editor/edi
 import { useBlockKeyboardShortcuts } from "@/hooks/use-block-keyboard-shortcuts";
 import { useFileStore, type FileItem, TRANSIENT_ID_PREFIX } from "@/stores/file-store";
 import { pickNativeSaveLocation } from "@/lib/native-dialog";
-import { onShellCloseRequested } from "@/lib/shell/close";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { isHtmlFile } from "@/lib/document-types";
 import { useEditorStore } from "@/stores/editor-store";
@@ -98,6 +97,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   const isFileSwitchingRef = useRef(false);
   const prevDbIdsRef = useRef<Set<string>>(new Set());
   const initialFileIdRef = useRef<string | null>(file.id);
+  const fileStorageKeyRef = useRef(markdownRuntimeFileKey(file));
 
   const persistContent = useCallback(
     async (content: string, contentMarkdown?: string, options?: { explicit?: boolean }) => {
@@ -155,10 +155,17 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
           return true;
         }
 
-        await updateFile(file.id, { content, contentMarkdown });
+        const previousSavedContent = lastContentRef.current;
+        lastContentRef.current = content;
+        try {
+          await updateFile(file.id, { content, contentMarkdown });
+        } catch (error) {
+          lastContentRef.current = previousSavedContent;
+          setDirty(true);
+          throw error;
+        }
         setLastSavedAt(new Date().toISOString());
         setDirty(false);
-        lastContentRef.current = content;
 
         const currentIds = extractDatabaseIds(contentMarkdown ?? content, "save");
         for (const id of prevDbIdsRef.current) {
@@ -380,18 +387,10 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
     window.addEventListener("pagehide", handleBeforeUnload);
     window.addEventListener("doxmind:save-now", handleSaveNow);
 
-    let unlistenClose: (() => void) | null = null;
-    // The shell intercepts window close, asks us to flush via
-    // shell://close-requested, then proceeds once saveCurrentNow resolves.
-    void onShellCloseRequested(saveCurrentNow).then((unlisten) => {
-      unlistenClose = unlisten;
-    });
-
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       window.removeEventListener("pagehide", handleBeforeUnload);
       window.removeEventListener("doxmind:save-now", handleSaveNow);
-      unlistenClose?.();
       useEditorRefStore.getState().setRequestSave(null);
     };
   }, [debouncedSave, editor, persistContent]);
@@ -410,6 +409,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
 
     if (initialFileIdRef.current === file.id) {
       initialFileIdRef.current = null;
+      fileStorageKeyRef.current = markdownRuntimeFileKey(file);
       lastContentRef.current = editor.getHTML();
       prevDbIdsRef.current = extractDatabaseIds(file.content, "initialMount");
       // Capture the original Markdown so untouched blocks round-trip verbatim.
@@ -421,13 +421,24 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       return;
     }
 
+    const nextFileKey = markdownRuntimeFileKey(file);
+    const previousFileKey = fileStorageKeyRef.current;
+    const isSamePhysicalFile =
+      previousFileKey !== null && nextFileKey !== null && previousFileKey === nextFileKey;
+    const preservedScrollTop = scrollAreaRef.current?.scrollTop ?? 0;
+    const targetScrollTop = isSamePhysicalFile
+      ? preservedScrollTop
+      : (scrollPositions.get(file.id) ?? 0);
+
     debouncedSave.cancel();
     setDirty(false);
-    setIsEditing(file.id.startsWith(TRANSIENT_ID_PREFIX));
-    setActivationIntent(undefined);
-    appliedActivationIntentRef.current = undefined;
+    if (!isSamePhysicalFile) {
+      setIsEditing(file.id.startsWith(TRANSIENT_ID_PREFIX));
+      setActivationIntent(undefined);
+      appliedActivationIntentRef.current = undefined;
+    }
     isFileSwitchingRef.current = true;
-    setIsSwitching(true);
+    setIsSwitching(!isSamePhysicalFile);
 
     // Capture the rAF handle so a rapid A→B→C switch can cancel an inflight
     // rAF from the previous swap. Without this, a stale rAF can land between
@@ -447,6 +458,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       );
       lastContentRef.current = editor.getHTML();
       prevDbIdsRef.current = extractDatabaseIds(file.content, "fileSwitch");
+      fileStorageKeyRef.current = nextFileKey;
       editor.commands.setSourceBaseline(file.contentMarkdown ?? null);
       // #139: for an HTML doc, preserve its original HTML blocks on getHTML().
       editor.commands.setHtmlBaseline(isHtmlFile(file) ? file.content : null);
@@ -457,7 +469,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       // Restore this file's remembered scroll position, or start at the top
       // for a file we haven't shown before. restoreScrollTop re-applies across
       // a couple of frames so it survives post-setContent layout settling.
-      restoreScrollTop(scrollAreaRef.current, scrollPositions.get(file.id) ?? 0);
+      restoreScrollTop(scrollAreaRef.current, targetScrollTop);
 
       rafId = requestAnimationFrame(() => {
         rafId = undefined;
@@ -527,13 +539,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
 
       domObserver?.start();
 
-      if (scrollAreaRef.current) {
-        if (isEmpty) {
-          scrollAreaRef.current.scrollTop = 0;
-        } else {
-          scrollAreaRef.current.scrollTop = preservedScrollTop;
-        }
-      }
+      restoreScrollTop(scrollAreaRef.current, preservedScrollTop);
 
       requestAnimationFrame(() => {
         isFileSwitchingRef.current = false;
@@ -686,7 +692,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
             onMouseDown={handleContentMouseDown}
           >
             {/* Reserve the floating header's height so the title clears the
-                overlay; content still scrolls up under the blurred header. */}
+                opaque chrome above the editor. */}
             <div aria-hidden className="h-11 shrink-0" />
             <div
               className={cn(
@@ -831,6 +837,10 @@ function getVisibleCaretPosition(view: EditorView, scrollParent: HTMLElement | n
 
 function getReplayableKeyboardText(key: string) {
   return key.length === 1 ? key : null;
+}
+
+function markdownRuntimeFileKey(file: FileItem): string | null {
+  return file.storageHandle?.relPath ?? file.storageHandle?.path ?? null;
 }
 
 function restoreScrollTop(scrollParent: HTMLElement | null, scrollTop: number | null) {

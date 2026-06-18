@@ -375,6 +375,8 @@ samp,
   [data-tauri-drag-region] textarea,
   [data-tauri-drag-region] select,
   [data-tauri-drag-region] [role="button"],
+  [data-tauri-drag-region] [role="tab"],
+  [data-tauri-drag-region] [role="tablist"],
   [data-tauri-drag-region] [data-no-drag] {
     -webkit-app-region: no-drag;
   }
@@ -483,16 +485,18 @@ samp,
 
 .desktop-chrome-header {
   position: relative;
-  background: var(--chrome-material-bg);
+  background: hsl(var(--background));
   backdrop-filter: blur(22px) saturate(1.12);
   -webkit-backdrop-filter: blur(22px) saturate(1.12);
 }
 
-/* The header's left band (sidebar region + card gap) is one solid sidebar
-   tint; the content panel paints the editor surface on top from the gap edge
-   rightward. Solid (not a gradient) so the gap matches the sidebar exactly. */
+/* With the sidebar open, the header's left band must not paint a second
+   material layer. It lets the shared .desktop-content-canvas show through,
+   while the content panel paints the editor surface from the gap edge rightward. */
 .desktop-chrome-header[data-sidebar-open] {
-  background: var(--sidebar-translucent-bg);
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .desktop-header-button {
@@ -529,28 +533,21 @@ html.is-tauri-macos .settings-surface {
 
 html.is-tauri-macos .desktop-chrome-header,
 html.is-tauri-macos .desktop-chrome-header[data-sidebar-open] {
-  /* Codex-style: the header itself does not exist as a surface. Fully
-     transparent, no blur — only the floating chips (title pill left, options
-     right, toggle/search) are visible, each carrying its own backing so it
-     stays legible over the document that scrolls underneath. desktop-editor
-     positions this as an absolute overlay; the scroll surfaces reserve h-11. */
+  background: hsl(var(--background));
+}
+
+html.is-tauri-macos .desktop-chrome-header[data-sidebar-open] {
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
 
-/* The header's editor-side column must stay transparent too, or it re-paints an
-   opaque content-surface strip over the document (the very cap we're removing). */
 html.is-tauri-macos .desktop-chrome-content-panel {
-  background: transparent;
-  border-left: none;
-  border-top-left-radius: 0;
+  background: var(--content-surface-bg);
 }
 
-/* The editor card now rounds its OWN top-left, since the header no longer caps
-   it with a rounded panel above. */
 html.is-tauri-macos .desktop-content-with-sidebar {
-  border-top-left-radius: var(--content-card-radius);
+  border-top-left-radius: 0;
 }
 
 html.is-tauri-macos .desktop-chrome-left-controls {

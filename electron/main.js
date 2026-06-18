@@ -24,6 +24,7 @@ const { findFreePort, spawnSidecar, waitForHealth } = require("./sidecar");
 const { isWorkspaceCommand, proxyWorkspace } = require("./workspace-proxy");
 const { WindowRegistry, normalizeOpenPath } = require("./window-registry");
 const menus = require("./menus");
+const { createWindowLifecycle } = require("./window-lifecycle");
 
 const REPO_ROOT = path.join(__dirname, "..");
 const OUT_DIR = path.join(REPO_ROOT, "out");
@@ -43,6 +44,7 @@ const registry = new WindowRegistry();
 // Event listeners registered via @tauri-apps/api/event: {eventId, eventName, webContentsId, handlerId}.
 const eventListeners = [];
 let nextEventId = 1;
+let windowLifecycle = null;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -124,7 +126,7 @@ function createWindow(target) {
       if (eventListeners[i].webContentsId === wcId) eventListeners.splice(i, 1);
     }
   });
-  attachCloseToSave(win);
+  windowLifecycle.attachCloseToSave(win);
   win.once("ready-to-show", () => win.show());
   win.loadURL(urlForTarget(target));
   return win;
@@ -279,21 +281,6 @@ async function refreshMenus() {
   if (tray) tray.setContextMenu(menus.buildTrayMenu(deps));
 }
 
-// Close-to-save: intercept the window close, ask the renderer to flush, and
-// only then destroy. A max-wait timeout guards against a hung/listener-less
-// renderer. The closing guard lives here (not in the renderer) keyed by window.
-function attachCloseToSave(win) {
-  win.on("close", (event) => {
-    if (win._doxmindClosing) return;
-    event.preventDefault();
-    win._doxmindClosing = true;
-    deliver("shell://close-requested", null, new Set([win.webContents.id]));
-    setTimeout(() => {
-      if (!win.isDestroyed()) win.destroy();
-    }, 3000);
-  });
-}
-
 async function dispatch(event, cmd, args) {
   if (isWorkspaceCommand(cmd)) return proxyWorkspace(sidecarUrl, cmd, args);
 
@@ -339,8 +326,7 @@ async function dispatch(event, cmd, args) {
       return saveWindowPdf(args);
     case "shell_close_window":
       if (win) {
-        win._doxmindClosing = true;
-        win.destroy();
+        windowLifecycle.closeWindowNow(win);
       }
       return null;
     case "plugin:event|listen":
@@ -414,6 +400,11 @@ async function boot() {
 
   protocol.handle("doxmind-asset", handleAsset);
   ipcMain.handle("shell:invoke", dispatch);
+  windowLifecycle = createWindowLifecycle({
+    deliver,
+    getAllWindows: () => BrowserWindow.getAllWindows(),
+    quit: () => app.quit(),
+  });
 
   // Native menu bar + Dock menu + Tray. Recents are empty until the frontend
   // pushes them via dock_set_recents (which calls refreshMenus).
@@ -494,6 +485,10 @@ if (!app.requestSingleInstanceLock()) {
 app.on("window-all-closed", () => {
   // macOS apps stay resident until the user quits explicitly.
   if (process.platform !== "darwin") app.quit();
+});
+
+app.on("before-quit", (event) => {
+  windowLifecycle?.requestQuit(event);
 });
 
 app.on("will-quit", () => {

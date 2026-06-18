@@ -16,6 +16,17 @@ import { registerWindowTarget, syncRecentsToDock, unregisterWindowTarget } from 
 import { perfAsync, perfSync } from "@/lib/perf";
 
 const log = storeLogger.child("File");
+const SELF_SAVE_REFRESH_SUPPRESSION_MS = 2500;
+
+let suppressWorkspaceRefreshUntil = 0;
+
+export function suppressWorkspaceRefreshForSelfSave(): void {
+  suppressWorkspaceRefreshUntil = Date.now() + SELF_SAVE_REFRESH_SUPPRESSION_MS;
+}
+
+export function shouldSuppressWorkspaceRefreshForSelfSave(): boolean {
+  return Date.now() < suppressWorkspaceRefreshUntil;
+}
 
 // Track in-progress content fetches to deduplicate concurrent loadFileContent calls
 const pendingContentLoads = new Set<string>();
@@ -102,6 +113,7 @@ export interface RecentEntry {
 interface FileState {
   files: FileItem[];
   currentFileId: string | null;
+  openTabIds: string[];
   currentFolderId: string | null; // null = root view
   openTarget: OpenTarget;
   // Active storage root: in `folder` mode this is the mounted folder, in
@@ -141,6 +153,7 @@ interface FileState {
   ) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
   setCurrentFile: (id: string | null) => void;
+  closeTab: (id: string) => void;
   renameFile: (id: string, name: string) => Promise<void>;
   getFile: (id: string) => FileItem | undefined;
 
@@ -270,6 +283,10 @@ function handleForFile(file: FileItem): DocumentHandle {
   );
 }
 
+function storagePathKey(handle: DocumentHandle | null | undefined): string | null {
+  return handle?.relPath ?? handle?.path ?? null;
+}
+
 type LoadedReadModel = Pick<
   FileItem,
   | "content"
@@ -391,6 +408,11 @@ function migrateIdInSet(ids: Set<string>, oldId: string, newId: string): Set<str
   return next;
 }
 
+function migrateIdInList(ids: string[], oldId: string, newId: string): string[] {
+  if (oldId === newId || !ids.includes(oldId)) return ids;
+  return ids.map((id) => (id === oldId ? newId : id));
+}
+
 function parentHandleForId(
   files: FileItem[],
   parentId: string | null | undefined
@@ -405,6 +427,7 @@ export const useFileStore = create<FileState>()(
     (set, get) => ({
       files: [],
       currentFileId: null,
+      openTabIds: [],
       currentFolderId: null,
       openTarget: "none",
       rootPath: null,
@@ -428,7 +451,7 @@ export const useFileStore = create<FileState>()(
         const target = get().openTarget;
         // Welcome screen — no I/O, but mark synced so consumers stop waiting.
         if (target === "none") {
-          set({ files: [], isSynced: true, isLoading: false });
+          set({ files: [], openTabIds: [], isSynced: true, isLoading: false });
           return;
         }
         // File mode owns `files` directly. If a cold boot rehydrated the
@@ -440,7 +463,13 @@ export const useFileStore = create<FileState>()(
               await get().openFile(get().openFilePath as string);
             } catch (error) {
               log.error("Failed to restore previously opened file", error);
-              set({ openTarget: "none", rootPath: null, openFilePath: null, isSynced: true });
+              set({
+                openTarget: "none",
+                rootPath: null,
+                openFilePath: null,
+                openTabIds: [],
+                isSynced: true,
+              });
             }
           } else {
             set({ isSynced: true, isLoading: false });
@@ -460,10 +489,35 @@ export const useFileStore = create<FileState>()(
           // race conditions where a concurrent loadFileContent updates
           // loadedContentIds between our read and write.
           set((state) => {
-            // Preserve loadedContentIds for files that still exist on server
-            const preservedContentIds = new Set(
-              Array.from(state.loadedContentIds).filter((id) => newFileIds.has(id))
-            );
+            const previousById = new Map(state.files.map((f) => [f.id, f] as const));
+            const previousByPath = new Map<string, FileItem>();
+            for (const file of state.files) {
+              const key = storagePathKey(file.storageHandle);
+              if (key) previousByPath.set(key, file);
+            }
+
+            const idMigrationByOldId = new Map<string, string>();
+            for (const entry of entries) {
+              const previous = previousByPath.get(storagePathKey(entry.handle) ?? "");
+              if (previous && previous.id !== entry.handle.id) {
+                idMigrationByOldId.set(previous.id, entry.handle.id);
+              }
+            }
+
+            // Preserve loadedContentIds for files that still exist on server,
+            // including same-path files whose document id changed after an
+            // external edit or sidecar/frontmatter reconciliation.
+            const preservedContentIds = new Set<string>();
+            for (const id of state.loadedContentIds) {
+              if (newFileIds.has(id)) {
+                preservedContentIds.add(id);
+                continue;
+              }
+              const migratedId = idMigrationByOldId.get(id);
+              if (migratedId && newFileIds.has(migratedId)) {
+                preservedContentIds.add(migratedId);
+              }
+            }
 
             // Build a map of previously loaded content to merge into new file list
             const prevReadModelMap = new Map<string, LoadedReadModel>();
@@ -472,10 +526,13 @@ export const useFileStore = create<FileState>()(
                 if (preservedContentIds.has(f.id) && f.content) {
                   prevReadModelMap.set(f.id, readModelFromFile(f));
                 }
+                const migratedId = idMigrationByOldId.get(f.id);
+                if (migratedId && preservedContentIds.has(migratedId) && f.content) {
+                  prevReadModelMap.set(migratedId, readModelFromFile(f));
+                }
               }
             }
 
-            const previousById = new Map(state.files.map((f) => [f.id, f] as const));
             const files: FileItem[] = entries.map((entry) => {
               const built = fileFromEntry(entry, prevReadModelMap.get(entry.handle.id));
               const prev = previousById.get(built.id);
@@ -499,9 +556,12 @@ export const useFileStore = create<FileState>()(
             }
 
             // Clear currentFileId / currentFolderId if they no longer exist
+            const migratedCurrentFileId = state.currentFileId
+              ? (idMigrationByOldId.get(state.currentFileId) ?? state.currentFileId)
+              : null;
             const validCurrentFileId =
-              state.currentFileId && newFileIds.has(state.currentFileId)
-                ? state.currentFileId
+              migratedCurrentFileId && newFileIds.has(migratedCurrentFileId)
+                ? migratedCurrentFileId
                 : null;
             const validCurrentFolderId =
               state.currentFolderId &&
@@ -511,12 +571,18 @@ export const useFileStore = create<FileState>()(
 
             // Clear selection of files that no longer exist
             const validSelectedFileIds = new Set(
-              Array.from(state.selectedFileIds).filter((id) => newFileIds.has(id))
+              Array.from(state.selectedFileIds)
+                .map((id) => idMigrationByOldId.get(id) ?? id)
+                .filter((id) => newFileIds.has(id))
             );
+            const validOpenTabIds = state.openTabIds
+              .map((id) => idMigrationByOldId.get(id) ?? id)
+              .filter((id) => newFileIds.has(id));
 
             return {
               files,
-              currentFileId: validCurrentFileId,
+              currentFileId: validCurrentFileId ?? validOpenTabIds[0] ?? null,
+              openTabIds: validOpenTabIds,
               currentFolderId: validCurrentFolderId,
               selectedFileIds: validSelectedFileIds,
               loadedContentIds: preservedContentIds,
@@ -534,6 +600,7 @@ export const useFileStore = create<FileState>()(
               transientFile: null,
               files: [],
               currentFileId: null,
+              openTabIds: [],
               currentFolderId: null,
               loadedContentIds: new Set(),
               selectedFileIds: new Set(),
@@ -607,10 +674,26 @@ export const useFileStore = create<FileState>()(
                   // and resets scroll/selection. Compare HTML byte-for-byte and
                   // skip the slice update when unchanged.
                   const nextReadModel = readModelFromContent(fullFile);
-                  const htmlUnchanged = existing.content === nextReadModel.content;
+                  const isSelfSaveEcho =
+                    !!options?.force &&
+                    existing.contentMarkdown !== null &&
+                    existing.contentMarkdown !== undefined &&
+                    fullFile.markdown === existing.contentMarkdown;
+                  const committedReadModel: LoadedReadModel = isSelfSaveEcho
+                    ? {
+                        ...nextReadModel,
+                        content: existing.content,
+                        editorHtml: existing.editorHtml ?? existing.content,
+                        contentMarkdown: existing.contentMarkdown,
+                      }
+                    : nextReadModel;
+                  const htmlUnchanged = existing.content === committedReadModel.content;
                   const browsingHtmlUnchanged =
-                    (existing.browsingHtml ?? existing.content) === nextReadModel.browsingHtml;
-                  const outlineUnchanged = outlinesEqual(existing.outline, nextReadModel.outline);
+                    (existing.browsingHtml ?? existing.content) === committedReadModel.browsingHtml;
+                  const outlineUnchanged = outlinesEqual(
+                    existing.outline,
+                    committedReadModel.outline
+                  );
                   const handleIdUnchanged = existing.id === fullFile.handle.id;
                   if (
                     htmlUnchanged &&
@@ -629,13 +712,14 @@ export const useFileStore = create<FileState>()(
                         ? {
                             ...f,
                             id: fullFile.handle.id,
-                            ...nextReadModel,
+                            ...committedReadModel,
                             storageHandle: fullFile.handle,
                           }
                         : f
                     ),
                     currentFileId:
                       state.currentFileId === fileId ? fullFile.handle.id : state.currentFileId,
+                    openTabIds: migrateIdInList(state.openTabIds, fileId, fullFile.handle.id),
                     loadedContentIds: new Set([...state.loadedContentIds, fullFile.handle.id]),
                   };
                 })
@@ -660,6 +744,7 @@ export const useFileStore = create<FileState>()(
           recents: rememberRecent({ kind: "folder", path: trimmedRoot }, state),
           files: [],
           currentFileId: null,
+          openTabIds: [],
           currentFolderId: null,
           loadedContentIds: new Set(),
           isSynced: false,
@@ -754,6 +839,7 @@ export const useFileStore = create<FileState>()(
           recents: rememberRecent({ kind: "file", path: trimmed }, state),
           files: [looseFile],
           currentFileId: looseFile.id,
+          openTabIds: [looseFile.id],
           currentFolderId: null,
           loadedContentIds: new Set([looseFile.id]),
           selectedFileIds: new Set(),
@@ -773,6 +859,7 @@ export const useFileStore = create<FileState>()(
           transientFile: null,
           files: [],
           currentFileId: null,
+          openTabIds: [],
           currentFolderId: null,
           loadedContentIds: new Set(),
           selectedFileIds: new Set(),
@@ -847,6 +934,7 @@ export const useFileStore = create<FileState>()(
           set((state) => ({
             files: sortFilesByOption([newFile, ...state.files], state.sortBy),
             currentFileId: newFile.id,
+            openTabIds: [...state.openTabIds.filter((tabId) => tabId !== newFile.id), newFile.id],
             justCreatedFileId: newFile.id,
             loadedContentIds: new Set([...state.loadedContentIds, newFile.id]),
           }));
@@ -894,29 +982,40 @@ export const useFileStore = create<FileState>()(
           }
 
           if (hasContentUpdate) {
+            suppressWorkspaceRefreshForSelfSave();
             const content = await adapter.write(updatedEntry?.handle ?? originalHandle, {
               html: updates.content,
               markdown: updates.contentMarkdown,
               name: updates.name ?? originalFile.name,
+              meta: { id: originalFile.id },
             });
+            const contentHandle = { ...content.handle, id: originalFile.id };
+            const savedReadModel = readModelFromContent(content);
+            const liveReadModel: LoadedReadModel = {
+              ...savedReadModel,
+              content: updates.content ?? savedReadModel.content,
+              editorHtml: updates.content ?? savedReadModel.editorHtml,
+              contentMarkdown: updates.contentMarkdown ?? savedReadModel.contentMarkdown,
+            };
             set((state) => ({
               files: sortFilesByOption(
                 state.files.map((item) =>
                   item.id === id
                     ? {
                         ...item,
-                        id: content.handle.id,
+                        id: originalFile.id,
                         name: updates.name ?? content.name,
-                        ...readModelFromContent(content),
-                        storageHandle: content.handle,
+                        ...liveReadModel,
+                        storageHandle: contentHandle,
                         updatedAt: content.updatedAt,
                       }
                     : item
                 ),
                 state.sortBy
               ),
-              currentFileId: state.currentFileId === id ? content.handle.id : state.currentFileId,
-              loadedContentIds: new Set([...state.loadedContentIds, content.handle.id]),
+              currentFileId: state.currentFileId === id ? originalFile.id : state.currentFileId,
+              openTabIds: migrateIdInList(state.openTabIds, id, originalFile.id),
+              loadedContentIds: new Set([...state.loadedContentIds, originalFile.id]),
             }));
           } else if (updatedEntry) {
             const newId = updatedEntry.handle.id;
@@ -937,6 +1036,7 @@ export const useFileStore = create<FileState>()(
               // the new id so renaming the active file doesn't deselect it when
               // the next scan drops the old id.
               currentFileId: state.currentFileId === id ? newId : state.currentFileId,
+              openTabIds: migrateIdInList(state.openTabIds, id, newId),
               loadedContentIds: migrateIdInSet(state.loadedContentIds, id, newId),
             }));
           }
@@ -984,14 +1084,15 @@ export const useFileStore = create<FileState>()(
         }
 
         const newFiles = state.files.filter((f) => !idsLeavingStore.has(f.id));
-        const nextFile = newFiles.find((f) => !f.isFolder);
+        const newOpenTabIds = state.openTabIds.filter((tabId) => !idsLeavingStore.has(tabId));
         const newCurrentId = idsLeavingStore.has(state.currentFileId || "")
-          ? (nextFile?.id ?? null)
+          ? (newOpenTabIds[0] ?? null)
           : state.currentFileId;
 
         set({
           files: newFiles,
           currentFileId: newCurrentId,
+          openTabIds: newOpenTabIds,
         });
 
         try {
@@ -1014,12 +1115,37 @@ export const useFileStore = create<FileState>()(
       },
 
       setCurrentFile: (id: string | null) => {
-        if (get().currentFileId === id) return;
-        set({ currentFileId: id });
+        set((state) => {
+          if (!id) {
+            return state.currentFileId === null ? {} : { currentFileId: null };
+          }
+          const file = state.files.find((item) => item.id === id && !item.isFolder);
+          if (!file) {
+            return state.currentFileId === id ? {} : { currentFileId: id };
+          }
+          const openTabIds = state.openTabIds.includes(id)
+            ? state.openTabIds
+            : [...state.openTabIds, id];
+          if (state.currentFileId === id && openTabIds === state.openTabIds) return {};
+          return { currentFileId: id, openTabIds };
+        });
         // Documents opened inside a workspace are intentionally NOT recorded as
         // recents — they're represented by their workspace folder (recorded in
         // openFolder), VSCode-style. Only standalone files opened by path
         // (openFile) and folders are remembered.
+      },
+
+      closeTab: (id: string) => {
+        set((state) => {
+          const index = state.openTabIds.indexOf(id);
+          if (index === -1) return {};
+          const openTabIds = state.openTabIds.filter((tabId) => tabId !== id);
+          const currentFileId =
+            state.currentFileId === id
+              ? (openTabIds[index] ?? openTabIds[index - 1] ?? null)
+              : state.currentFileId;
+          return { openTabIds, currentFileId };
+        });
       },
 
       renameFile: async (id: string, name: string) => {
@@ -1084,6 +1210,7 @@ export const useFileStore = create<FileState>()(
             transientFile: transient,
             files: sortFilesByOption([synthetic, ...filteredFiles], state.sortBy),
             currentFileId: id,
+            openTabIds: [...state.openTabIds.filter((tabId) => tabId !== id), id],
             justCreatedFileId: id,
             isSynced: true,
             isLoading: false,
@@ -1158,6 +1285,7 @@ export const useFileStore = create<FileState>()(
         set((state) => ({
           files: state.files.filter((f) => f.id !== transient.id),
           transientFile: null,
+          openTabIds: state.openTabIds.filter((id) => id !== transient.id),
           currentFileId: state.currentFileId === transient.id ? null : state.currentFileId,
           loadedContentIds: new Set(
             Array.from(state.loadedContentIds).filter((id) => id !== transient.id)
@@ -1461,15 +1589,16 @@ export const useFileStore = create<FileState>()(
       bulkDeleteFiles: async (fileIds) => {
         const state = get();
         const newFiles = state.files.filter((f) => !fileIds.includes(f.id));
-        const nextFile = newFiles.find((f) => !f.isFolder);
+        const newOpenTabIds = state.openTabIds.filter((tabId) => !fileIds.includes(tabId));
         const newCurrentId = fileIds.includes(state.currentFileId || "")
-          ? (nextFile?.id ?? null)
+          ? (newOpenTabIds[0] ?? null)
           : state.currentFileId;
 
         // Optimistic update
         set({
           files: newFiles,
           currentFileId: newCurrentId,
+          openTabIds: newOpenTabIds,
           selectedFileIds: new Set(), // Clear selection after delete
         });
 

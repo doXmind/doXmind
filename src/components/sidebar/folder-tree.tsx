@@ -43,6 +43,7 @@ import {
 } from "@/lib/external-import-resolver";
 import { ImportError } from "@/lib/storage";
 import { ImportConflictModal } from "./import-conflict-modal";
+import { getSidebarTreePaddingLeft } from "./tree-layout";
 
 const log = storeLogger.child("FolderTree");
 
@@ -789,7 +790,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     };
   }, [folderMenu, emptyMenu, folderMenuFocus, emptyMenuFocus]);
 
-  const renderFolder = (folder: FileItemType) => {
+  const renderFolder = (folder: FileItemType, depth = 0) => {
     const folderFiles = getFilesInFolder(folder.id);
     const childFolders = getFolders(folder.id);
     const isCollapsed = !expandedFolderIds.has(folder.id);
@@ -813,7 +814,10 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
           )}
         >
           {renamingFolderId === folder.id ? (
-            <div className="flex w-full items-center gap-2 px-2.5 py-1.5 text-sm">
+            <div
+              className="flex w-full items-center gap-2 py-1.5 pr-2.5 text-sm"
+              style={{ paddingLeft: getSidebarTreePaddingLeft(depth) }}
+            >
               <Folder className="h-[18px] w-[18px] shrink-0 text-[var(--sidebar-icon)]" />
               <Input
                 value={renamingFolderName}
@@ -863,7 +867,8 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
                 });
               }}
               onContextMenu={(e) => handleFolderContextMenu(e, folder)}
-              className="flex h-7 w-full cursor-pointer select-none items-center gap-2 px-1.5 text-sm"
+              className="flex h-7 w-full cursor-pointer select-none items-center gap-2 pr-1.5 text-sm"
+              style={{ paddingLeft: getSidebarTreePaddingLeft(depth) }}
             >
               {isCollapsed ? (
                 <Folder className="h-[18px] w-[18px] shrink-0 text-[var(--sidebar-icon)] transition-colors group-hover/folder:text-[var(--sidebar-text)]" />
@@ -877,10 +882,10 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
           )}
         </div>
         {!isCollapsed && hasChildren && (
-          <div className="ml-6 space-y-0.5 pl-1.5">
-            {childFolders.map((child) => renderFolder(child))}
+          <div className="space-y-0.5">
+            {childFolders.map((child) => renderFolder(child, depth + 1))}
             {folderFiles.map((file) => (
-              <FileItem key={file.id} file={file} />
+              <FileItem key={file.id} file={file} depth={depth + 1} />
             ))}
           </div>
         )}
@@ -910,7 +915,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
       <div className="space-y-0.5">
         {folderRows}
         {rootFiles.map((file) => (
-          <FileItem key={file.id} file={file} />
+          <FileItem key={file.id} file={file} depth={0} />
         ))}
       </div>
 

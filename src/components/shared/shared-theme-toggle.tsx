@@ -23,7 +23,7 @@ function MiniThemeCard({
     <button
       onClick={onSelect}
       className={cn(
-        "group relative flex flex-col items-center gap-1 rounded-md border p-1 transition-all",
+        "group relative flex w-full min-w-0 flex-col items-center gap-1 overflow-hidden rounded-md border p-1 transition-all",
         isActive
           ? "border-primary ring-1 ring-primary/20"
           : "border-transparent hover:border-border"
@@ -62,8 +62,9 @@ function MiniThemeCard({
         )}
       </div>
       <span
+        title={theme.name}
         className={cn(
-          "text-ui-xs leading-tight",
+          "text-ui-xs w-full min-w-0 truncate text-center leading-tight",
           isActive ? "font-medium text-foreground" : "text-muted-foreground"
         )}
       >
