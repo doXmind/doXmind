@@ -14,7 +14,7 @@ use std::fs;
 use std::io;
 use std::net::TcpListener;
 use std::path::{Component, Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Mutex;
 use std::thread;
@@ -92,6 +92,20 @@ impl Backend {
     fn new() -> Self {
         Self {
             child: Mutex::new(None),
+        }
+    }
+}
+
+struct QuitState {
+    requested: AtomicBool,
+    allow_exit: AtomicBool,
+}
+
+impl QuitState {
+    fn new() -> Self {
+        Self {
+            requested: AtomicBool::new(false),
+            allow_exit: AtomicBool::new(false),
         }
     }
 }
@@ -3544,6 +3558,52 @@ fn unregister_window_target(window: WebviewWindow, registry: tauri::State<'_, Wi
     registry.clear(window.label());
 }
 
+#[tauri::command]
+fn shell_close_window(
+    app: AppHandle,
+    window: WebviewWindow,
+    quit_state: tauri::State<'_, QuitState>,
+) {
+    let _ = window.destroy();
+    maybe_finish_quit_after_windows_close(&app, &quit_state);
+}
+
+fn maybe_finish_quit_after_windows_close(app: &AppHandle, quit_state: &QuitState) {
+    if !quit_state.requested.load(Ordering::SeqCst) {
+        return;
+    }
+    if !app.webview_windows().is_empty() {
+        return;
+    }
+    quit_state.allow_exit.store(true, Ordering::SeqCst);
+    app.exit(0);
+}
+
+fn request_quit_after_window_flush(app: &AppHandle, quit_state: &QuitState) {
+    let windows: Vec<WebviewWindow> = app.webview_windows().into_values().collect();
+    if windows.is_empty() {
+        quit_state.allow_exit.store(true, Ordering::SeqCst);
+        app.exit(0);
+        return;
+    }
+
+    for window in &windows {
+        let _ = window.emit("shell://close-requested", ());
+    }
+
+    let app_for_timeout = app.clone();
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(3100));
+        for window in app_for_timeout.webview_windows().into_values() {
+            let _ = window.destroy();
+        }
+        if let Some(quit_state) = app_for_timeout.try_state::<QuitState>() {
+            quit_state.allow_exit.store(true, Ordering::SeqCst);
+        }
+        app_for_timeout.exit(0);
+    });
+}
+
 /// Receive the latest recents from any window. The dock menu reads this
 /// global state on every right-click, so the most recent push wins. The
 /// macOS menu bar's `Open Recent` submenu and the tray's `Recent Files`
@@ -3672,6 +3732,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
         .manage(BackendUrl(backend_url.clone()))
         .manage(backend_state)
         .manage(WindowRegistry::new())
+        .manage(QuitState::new())
         .manage(WorkspaceWatchers::new())
         .manage(pending_open_paths)
         .manage(InitScript(init_script.clone()))
@@ -3716,6 +3777,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
             force_open_new_window_for_target,
             register_window_target,
             unregister_window_target,
+            shell_close_window,
             dock_set_recents,
             current_window_open_target,
             save_window_pdf,
@@ -3790,7 +3852,21 @@ window.__TAURI_PLATFORM__ = "{platform}";
 
     app.run(move |handle, event| {
         match event {
-            RunEvent::ExitRequested { .. } | RunEvent::Exit => {
+            RunEvent::ExitRequested { api, .. } => {
+                if let Some(quit_state) = handle.try_state::<QuitState>() {
+                    if quit_state.allow_exit.load(Ordering::SeqCst) {
+                        shutdown_backend(handle);
+                        return;
+                    }
+                    api.prevent_exit();
+                    if !quit_state.requested.swap(true, Ordering::SeqCst) {
+                        request_quit_after_window_flush(handle, &quit_state);
+                    }
+                } else {
+                    shutdown_backend(handle);
+                }
+            }
+            RunEvent::Exit => {
                 shutdown_backend(handle);
             }
             #[cfg(target_os = "macos")]

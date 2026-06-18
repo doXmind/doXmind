@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import {
   Search,
@@ -39,6 +39,7 @@ import { useIsTauri } from "@/hooks/use-is-tauri";
 import { getDisplayName, isExcelFile, isPdfFile } from "@/lib/document-types";
 import { exportMarkdownAsPdf } from "@/lib/markdown-pdf-export";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
+import { shouldStartWindowDrag } from "@/lib/window-drag-region";
 
 export function UnifiedHeader() {
   const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
@@ -74,6 +75,17 @@ export function UnifiedHeader() {
   // make the header itself a drag region so the window can still be moved.
   const { isTauri, platform } = useIsTauri();
   const isMacTauri = isTauri && platform === "macos";
+
+  const handleHeaderPointerDownCapture = useCallback(
+    (event: React.PointerEvent<HTMLElement>) => {
+      if (!isMacTauri || !shouldStartWindowDrag(event)) return;
+      event.preventDefault();
+      void import("@tauri-apps/api/window")
+        .then(({ getCurrentWindow }) => getCurrentWindow().startDragging())
+        .catch(() => {});
+    },
+    [isMacTauri]
+  );
 
   const handleExport = async (format: "markdown" | "pdf" | "docx" | "xlsx") => {
     const { currentFileId, files } = useFileStore.getState();
@@ -178,6 +190,7 @@ export function UnifiedHeader() {
       <header
         data-tauri-drag-region
         data-sidebar-open={hasOpenTarget && isFilesSidebarOpen ? "" : undefined}
+        onPointerDownCapture={handleHeaderPointerDownCapture}
         className="desktop-chrome-header relative z-20 grid h-11 shrink-0 items-center text-foreground"
         style={{
           // Column 1 tracks the sidebar width exactly (0 when collapsed) so

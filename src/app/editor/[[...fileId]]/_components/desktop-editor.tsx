@@ -117,7 +117,7 @@ export function DesktopEditor() {
               }}
             >
               <aside className="min-w-0 overflow-hidden">
-                {!isFocusMode && hasOpenTarget && (
+                {!isFocusMode && hasOpenTarget && isFilesSidebarOpen && (
                   <div style={{ minWidth: filesSidebarWidth }} className="h-full">
                     <FilesSidebar />
                   </div>

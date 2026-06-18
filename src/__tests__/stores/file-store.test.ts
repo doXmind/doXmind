@@ -317,6 +317,33 @@ describe("useFileStore disk workspace", () => {
     expect(useFileStore.getState().currentFileId).toBe("doc-pdf");
   });
 
+  it("creates a blank Excel workbook as binary via doc_create_excel", async () => {
+    invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
+      if (command === "doc_create_excel") {
+        expect(payload.path).toBe("Untitled.xlsx");
+        expect(Array.isArray(payload.bytes)).toBe(true);
+        expect((payload.bytes as number[]).slice(0, 4)).toEqual([0x50, 0x4b, 0x03, 0x04]);
+        return {
+          id: "doc-excel",
+          idSource: "path",
+          path: "Untitled.xlsx",
+          name: "Untitled.xlsx",
+          title: "Untitled",
+          documentType: "excel",
+          hasSidecar: false,
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    const id = await useFileStore
+      .getState()
+      .createFile("Untitled.xlsx", "", null, { documentType: "excel" });
+
+    expect(id).toBe("doc-excel");
+    expect(useFileStore.getState().currentFileId).toBe("doc-excel");
+  });
+
   it("writes content updates through doc_write_workspace", async () => {
     useFileStore.setState({
       files: [

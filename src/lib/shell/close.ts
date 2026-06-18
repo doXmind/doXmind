@@ -8,10 +8,8 @@
  * run `flush`, then tell the shell to proceed (`shell_close_window`). The
  * shell enforces a max-wait timeout so a hung renderer can't block quit.
  *
- * Tauri (until the shell migration completes): nothing emits
- * `shell://close-requested`, so we also register the window's native
- * onCloseRequested flow — flush with a 1.5s cap, then destroy. Exactly one
- * of the two paths fires per shell; the other stays a dormant listener.
+ * Tauri: explicit app Quit emits `shell://close-requested`; native window
+ * close still goes through onCloseRequested. Both paths flush before destroy.
  *
  * No-op in browser dev.
  *
