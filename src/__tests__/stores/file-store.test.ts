@@ -16,10 +16,12 @@ function resetStore() {
   useFileStore.setState({
     files: [],
     currentFileId: null,
+    openTabIds: [],
     currentFolderId: null,
     openTarget: "folder",
     rootPath: "/workspace",
     openFilePath: null,
+    transientFile: null,
     recents: [],
     isLoading: false,
     isSynced: false,
@@ -28,6 +30,24 @@ function resetStore() {
     selectedFileIds: new Set(),
     loadedContentIds: new Set(),
   });
+}
+
+function markdownFile(id: string, name: string) {
+  return {
+    id,
+    name,
+    content: "",
+    isFolder: false,
+    parentId: null,
+    position: 0,
+    isFavorite: false,
+    createdAt: now,
+    updatedAt: now,
+    wordCount: 0,
+    preview: "",
+    documentType: "markdown" as const,
+    storageHandle: { mode: "disk" as const, id, kind: "document" as const, relPath: name },
+  };
 }
 
 function mockRead(path = "Doc.md", html = "<p>Hello</p>", markdown = "Hello") {
@@ -122,6 +142,7 @@ describe("useFileStore disk workspace", () => {
       openTarget: "folder",
       rootPath: "/workspace",
       currentFileId: "doc-1",
+      openTabIds: ["doc-1"],
       recents: [{ kind: "folder", path: "/workspace" }],
       loadedContentIds: new Set(["doc-1"]),
     });
@@ -152,6 +173,41 @@ describe("useFileStore disk workspace", () => {
     expect(state.recents).toContainEqual({ kind: "folder", path: "/workspace" });
     expect(state.files.map((file) => file.id)).toEqual(["doc-2"]);
     expect(state.currentFileId).toBeNull();
+    expect(state.openTabIds).toEqual([]);
+  });
+
+  it("adds workspace files to the open tab list as they become current", () => {
+    useFileStore.setState({
+      files: [markdownFile("doc-1", "One.md"), markdownFile("doc-2", "Two.md")],
+      currentFileId: null,
+      openTabIds: [],
+    });
+
+    useFileStore.getState().setCurrentFile("doc-1");
+    useFileStore.getState().setCurrentFile("doc-2");
+    useFileStore.getState().setCurrentFile("doc-1");
+
+    const state = useFileStore.getState();
+    expect(state.currentFileId).toBe("doc-1");
+    expect(state.openTabIds).toEqual(["doc-1", "doc-2"]);
+  });
+
+  it("selects the neighboring tab when closing the active tab", () => {
+    useFileStore.setState({
+      files: [
+        markdownFile("doc-1", "One.md"),
+        markdownFile("doc-2", "Two.md"),
+        markdownFile("doc-3", "Three.md"),
+      ],
+      currentFileId: "doc-2",
+      openTabIds: ["doc-1", "doc-2", "doc-3"],
+    });
+
+    useFileStore.getState().closeTab("doc-2");
+
+    const state = useFileStore.getState();
+    expect(state.currentFileId).toBe("doc-3");
+    expect(state.openTabIds).toEqual(["doc-1", "doc-3"]);
   });
 
   it("removes a stale recent folder and returns home when the workspace root is missing", async () => {

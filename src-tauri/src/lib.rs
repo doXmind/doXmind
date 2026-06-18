@@ -99,6 +99,7 @@ impl Backend {
 struct QuitState {
     requested: AtomicBool,
     allow_exit: AtomicBool,
+    suppress_next_empty_exit: AtomicBool,
 }
 
 impl QuitState {
@@ -106,6 +107,7 @@ impl QuitState {
         Self {
             requested: AtomicBool::new(false),
             allow_exit: AtomicBool::new(false),
+            suppress_next_empty_exit: AtomicBool::new(false),
         }
     }
 }
@@ -3564,6 +3566,11 @@ fn shell_close_window(
     window: WebviewWindow,
     quit_state: tauri::State<'_, QuitState>,
 ) {
+    if !quit_state.requested.load(Ordering::SeqCst) && app.webview_windows().len() <= 1 {
+        quit_state
+            .suppress_next_empty_exit
+            .store(true, Ordering::SeqCst);
+    }
     let _ = window.destroy();
     maybe_finish_quit_after_windows_close(&app, &quit_state);
 }
@@ -3856,6 +3863,14 @@ window.__TAURI_PLATFORM__ = "{platform}";
                 if let Some(quit_state) = handle.try_state::<QuitState>() {
                     if quit_state.allow_exit.load(Ordering::SeqCst) {
                         shutdown_backend(handle);
+                        return;
+                    }
+                    if handle.webview_windows().is_empty()
+                        && quit_state
+                            .suppress_next_empty_exit
+                            .swap(false, Ordering::SeqCst)
+                    {
+                        api.prevent_exit();
                         return;
                     }
                     api.prevent_exit();

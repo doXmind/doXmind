@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import {
   Search,
@@ -40,6 +40,20 @@ import { getDisplayName, isExcelFile, isPdfFile } from "@/lib/document-types";
 import { exportMarkdownAsPdf } from "@/lib/markdown-pdf-export";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { shouldStartWindowDrag } from "@/lib/window-drag-region";
+import {
+  CsvGlyph,
+  MarkdownGlyph,
+  PdfGlyph,
+  SpreadsheetGlyph,
+} from "@/components/icons/document-glyphs";
+import type { FileItem } from "@/types";
+
+function TabDocumentIcon({ file }: { file: FileItem }) {
+  if (isPdfFile(file)) return <PdfGlyph className="h-4 w-4" />;
+  if (isExcelFile(file)) return <SpreadsheetGlyph className="h-4 w-4" />;
+  if (/\.csv$/i.test(file.name)) return <CsvGlyph className="h-4 w-4" />;
+  return <MarkdownGlyph className="h-4 w-4 text-[var(--sidebar-icon)]" />;
+}
 
 export function UnifiedHeader() {
   const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
@@ -52,13 +66,17 @@ export function UnifiedHeader() {
   const currentFile = useFileStore((s) =>
     s.currentFileId ? s.files.find((file) => file.id === s.currentFileId) : undefined
   );
+  const currentFileId = useFileStore((s) => s.currentFileId);
+  const files = useFileStore((s) => s.files);
+  const openTabIds = useFileStore((s) => s.openTabIds);
   const openTarget = useFileStore((s) => s.openTarget);
+  const closeTab = useFileStore((s) => s.closeTab);
   // Hide the sidebar toggle on the welcome screen — there's nothing to show.
   const hasOpenTarget = openTarget !== "none";
   const currentFileName = currentFile?.name;
   const isDirty = useEditorStore((s) => s.isDirty);
   const isSaving = useEditorStore((s) => s.isSaving);
-  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+  const [closeRequestId, setCloseRequestId] = useState<string | null>(null);
   const tSettings = useTranslations("settings");
   const t = useTranslations("editor");
 
@@ -67,7 +85,18 @@ export function UnifiedHeader() {
   // would just be noise.
   const isExcel = currentFile ? isExcelFile(currentFile) : false;
   const title = currentFileName ? getDisplayName(currentFileName) : "";
+  const closeRequestFile = closeRequestId
+    ? files.find((file) => file.id === closeRequestId)
+    : undefined;
+  const closeRequestTitle = closeRequestFile ? getDisplayName(closeRequestFile.name) : title;
   const saveLabel = isSaving ? t("saving") : isDirty ? t("unsavedChanges") : t("saved");
+  const tabFiles = useMemo(() => {
+    const byId = new Map(files.filter((file) => !file.isFolder).map((file) => [file.id, file]));
+    return openTabIds.flatMap((id) => {
+      const file = byId.get(id);
+      return file ? [file] : [];
+    });
+  }, [files, openTabIds]);
 
   // In the Tauri macOS build the native title bar is hidden via
   // `titleBarStyle: Overlay`, so the real traffic-light buttons float over
@@ -148,26 +177,47 @@ export function UnifiedHeader() {
 
   // Perform the actual close. A never-saved buffer or a loose single file has
   // no workspace to fall back to, so closing returns to the welcome screen;
-  // inside an open folder we just deselect the file and land on the workspace
-  // home, keeping the folder (and its sidebar) open.
-  const performClose = () => {
+  // inside an open folder we close only that tab and keep the workspace open.
+  const performClose = (fileId?: string | null) => {
     const store = useFileStore.getState();
-    if (store.transientFile) {
+    const targetId = fileId ?? store.currentFileId;
+    if (!targetId) return;
+    const wasActive = store.currentFileId === targetId;
+
+    if (store.transientFile?.id === targetId) {
       store.discardTransient();
     } else if (store.openTarget === "file") {
       store.closeOpened();
+    } else {
+      closeTab(targetId);
     }
-    navigateToEditorFile(null);
+
+    if (wasActive) {
+      navigateToEditorFile(useFileStore.getState().currentFileId, { replace: true });
+    }
   };
 
-  // Closing a document with unsaved changes asks first (VSCode-style). A clean
-  // document closes immediately.
-  const handleCloseDocument = () => {
-    if (useEditorStore.getState().isDirty) {
-      setCloseConfirmOpen(true);
+  const handleActivateTab = (fileId: string) => {
+    if (fileId === currentFileId) return;
+    navigateToEditorFile(fileId);
+  };
+
+  const handleCloseTab = (fileId: string) => {
+    if (fileId === currentFileId && useEditorStore.getState().isDirty) {
+      setCloseRequestId(fileId);
       return;
     }
-    performClose();
+    performClose(fileId);
+  };
+
+  const handleCloseDocument = () => {
+    const activeId = useFileStore.getState().currentFileId;
+    if (!activeId) return;
+    if (useEditorStore.getState().isDirty) {
+      setCloseRequestId(activeId);
+      return;
+    }
+    performClose(activeId);
   };
 
   const handleSaveAndClose = async () => {
@@ -176,13 +226,14 @@ export function UnifiedHeader() {
     // Save cancelled (e.g. the location picker was dismissed) — keep the
     // document open so nothing is lost.
     if (!saved) return;
-    setCloseConfirmOpen(false);
+    setCloseRequestId(null);
     performClose();
   };
 
   const handleDiscardAndClose = () => {
-    setCloseConfirmOpen(false);
-    performClose();
+    const targetId = closeRequestId;
+    setCloseRequestId(null);
+    performClose(targetId);
   };
 
   return (
@@ -285,13 +336,83 @@ export function UnifiedHeader() {
             hasOpenTarget && isFilesSidebarOpen && "desktop-chrome-content-panel"
           )}
         >
-          {/* Document title — a floating chip at the editor area's top-left.
-              When the sidebar is open the window controls sit over the sidebar,
-              so the title hugs the editor's left edge; when it's collapsed the
-              controls overlay the editor top-left, so clear them. Carries its
-              own translucent backing + blur to stay legible over the document
-              scrolling beneath the (otherwise invisible) header. */}
-          {title && (
+          {tabFiles.length > 0 && (
+            <div
+              className={cn(
+                "absolute right-14 top-0 flex h-full min-w-0 items-end md:right-16",
+                isMacTauri && !isFilesSidebarOpen ? "left-[148px]" : "left-2"
+              )}
+            >
+              <div
+                className={cn(
+                  "flex h-10 min-w-0 items-end gap-1 overflow-x-auto overflow-y-hidden pr-2",
+                  isMacTauri && "relative top-[5px]"
+                )}
+                role="tablist"
+              >
+                {tabFiles.map((file) => {
+                  const isActive = file.id === currentFileId;
+                  const displayName = getDisplayName(file.name);
+                  return (
+                    <div
+                      key={file.id}
+                      role="tab"
+                      tabIndex={0}
+                      aria-selected={isActive}
+                      title={file.storageHandle?.relPath ?? file.name}
+                      onClick={() => handleActivateTab(file.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          handleActivateTab(file.id);
+                        }
+                      }}
+                      className={cn(
+                        "group relative flex h-8 min-w-[132px] max-w-[224px] shrink-0 cursor-default items-center gap-2 rounded-t-md border px-2.5 text-left backdrop-blur-md transition-colors",
+                        isActive
+                          ? "border-border/80 border-b-background bg-background text-foreground shadow-[0_-1px_0_hsl(var(--foreground)/0.04)_inset]"
+                          : "border-transparent bg-background/45 text-muted-foreground hover:bg-background/70 hover:text-foreground"
+                      )}
+                    >
+                      <TabDocumentIcon file={file} />
+                      <span className="text-ui-sm min-w-0 flex-1 truncate font-medium">
+                        {displayName}
+                      </span>
+                      {isActive && isSaving ? (
+                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+                      ) : isActive && isDirty ? (
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+                      ) : null}
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "absolute bottom-[-1px] left-0 right-0 h-px",
+                          isActive ? "bg-background" : "bg-transparent"
+                        )}
+                      />
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleCloseTab(file.id);
+                        }}
+                        aria-label={t("closeDocument")}
+                        title={t("closeDocument")}
+                        className={cn(
+                          "flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground",
+                          !isActive && "opacity-0 group-hover:opacity-100"
+                        )}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {title && tabFiles.length === 0 && (
             <div
               className={cn(
                 "absolute top-0 flex h-full items-center",
@@ -430,13 +551,13 @@ export function UnifiedHeader() {
         </div>
       </header>
 
-      <Modal open={closeConfirmOpen} onClose={() => setCloseConfirmOpen(false)}>
-        <ModalHeader onClose={() => setCloseConfirmOpen(false)}>
-          {t("closeUnsavedTitle")}
-        </ModalHeader>
-        <p className="text-sm text-muted-foreground">{t("closeUnsavedBody", { name: title })}</p>
+      <Modal open={!!closeRequestId} onClose={() => setCloseRequestId(null)}>
+        <ModalHeader onClose={() => setCloseRequestId(null)}>{t("closeUnsavedTitle")}</ModalHeader>
+        <p className="text-sm text-muted-foreground">
+          {t("closeUnsavedBody", { name: closeRequestTitle })}
+        </p>
         <ModalFooter>
-          <Button variant="ghost" onClick={() => setCloseConfirmOpen(false)}>
+          <Button variant="ghost" onClick={() => setCloseRequestId(null)}>
             {t("cancel")}
           </Button>
           <Button variant="outline" onClick={handleDiscardAndClose}>

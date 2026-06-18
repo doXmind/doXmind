@@ -1776,9 +1776,9 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   return (
     <div
       data-testid="pdf-runtime"
-      // pt-11 reserves the floating editor header's height (it overlays the top
-      // as a transparent bar; see desktop-editor) so the PDF tool rail, page
-      // thumbnails, and toolbar sit below it instead of under the title/options.
+      // pt-11 reserves the floating editor header's height so the PDF tool rail,
+      // page thumbnails, and toolbar sit below it instead of under the
+      // title/options.
       className="relative flex h-full min-h-0 bg-muted/40 pt-11 text-foreground"
       onPointerDown={() => {
         // background click clears selection

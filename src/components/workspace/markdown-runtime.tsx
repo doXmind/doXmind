@@ -29,7 +29,6 @@ import { getEditorExtensions, defaultEditorProps } from "@/components/editor/edi
 import { useBlockKeyboardShortcuts } from "@/hooks/use-block-keyboard-shortcuts";
 import { useFileStore, type FileItem, TRANSIENT_ID_PREFIX } from "@/stores/file-store";
 import { pickNativeSaveLocation } from "@/lib/native-dialog";
-import { onShellCloseRequested } from "@/lib/shell/close";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { isHtmlFile } from "@/lib/document-types";
 import { useEditorStore } from "@/stores/editor-store";
@@ -380,18 +379,10 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
     window.addEventListener("pagehide", handleBeforeUnload);
     window.addEventListener("doxmind:save-now", handleSaveNow);
 
-    let unlistenClose: (() => void) | null = null;
-    // The shell intercepts window close, asks us to flush via
-    // shell://close-requested, then proceeds once saveCurrentNow resolves.
-    void onShellCloseRequested(saveCurrentNow).then((unlisten) => {
-      unlistenClose = unlisten;
-    });
-
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       window.removeEventListener("pagehide", handleBeforeUnload);
       window.removeEventListener("doxmind:save-now", handleSaveNow);
-      unlistenClose?.();
       useEditorRefStore.getState().setRequestSave(null);
     };
   }, [debouncedSave, editor, persistContent]);
@@ -686,7 +677,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
             onMouseDown={handleContentMouseDown}
           >
             {/* Reserve the floating header's height so the title clears the
-                overlay; content still scrolls up under the blurred header. */}
+                opaque chrome above the editor. */}
             <div aria-hidden className="h-11 shrink-0" />
             <div
               className={cn(
