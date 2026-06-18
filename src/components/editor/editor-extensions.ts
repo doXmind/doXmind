@@ -192,5 +192,6 @@ export function getEditorExtensions(): Extensions {
 export const defaultEditorProps = {
   attributes: {
     class: "prose prose-sm sm:prose dark:prose-invert max-w-none focus:outline-none",
+    spellcheck: "false",
   },
 };

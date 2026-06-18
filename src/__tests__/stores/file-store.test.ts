@@ -176,6 +176,76 @@ describe("useFileStore disk workspace", () => {
     expect(state.openTabIds).toEqual([]);
   });
 
+  it("keeps the active file selected when a rescan changes its id but not its path", async () => {
+    useFileStore.setState({
+      openTarget: "folder",
+      rootPath: "/workspace",
+      files: [
+        {
+          ...markdownFile("doc-old", "Doc.md"),
+          content: "<p>Draft</p>",
+          editorHtml: "<p>Draft</p>",
+          browsingHtml: "<p>Draft</p>",
+          contentMarkdown: "Draft",
+          storageHandle: {
+            mode: "disk",
+            id: "doc-old",
+            kind: "document",
+            path: "Doc.md",
+            relPath: "Doc.md",
+          },
+        },
+        {
+          ...markdownFile("doc-other", "Other.md"),
+          storageHandle: {
+            mode: "disk",
+            id: "doc-other",
+            kind: "document",
+            path: "Other.md",
+            relPath: "Other.md",
+          },
+        },
+      ],
+      currentFileId: "doc-old",
+      openTabIds: ["doc-old", "doc-other"],
+      loadedContentIds: new Set(["doc-old"]),
+    });
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "workspace_scan") {
+        return {
+          root: "/workspace",
+          documents: [
+            {
+              id: "doc-new",
+              idSource: "sidecar",
+              path: "Doc.md",
+              name: "Doc.md",
+              title: "Doc",
+              hasSidecar: true,
+            },
+            {
+              id: "doc-other",
+              idSource: "frontmatter",
+              path: "Other.md",
+              name: "Other.md",
+              title: "Other",
+              hasSidecar: true,
+            },
+          ],
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await useFileStore.getState().loadFiles({ silent: true });
+
+    const state = useFileStore.getState();
+    expect(state.currentFileId).toBe("doc-new");
+    expect(state.openTabIds).toEqual(["doc-new", "doc-other"]);
+    expect(state.loadedContentIds.has("doc-new")).toBe(true);
+    expect(state.getFile("doc-new")?.content).toBe("<p>Draft</p>");
+  });
+
   it("adds workspace files to the open tab list as they become current", () => {
     useFileStore.setState({
       files: [markdownFile("doc-1", "One.md"), markdownFile("doc-2", "Two.md")],
@@ -424,12 +494,22 @@ describe("useFileStore disk workspace", () => {
         return {
           html: "<p>Old</p>",
           markdown: "Old",
+          meta: { id: "generated-by-backend", title: "Doc", updated: now },
+          extras: { databases: {} },
+          source: "sidecar",
+        };
+      }
+      if (command === "doc_write_workspace") {
+        return {
+          html: "<p>New</p>",
+          editorHtml: "<p>New</p>",
+          browsingHtml: "<p>New</p>",
+          markdown: "New",
           meta: { id: "doc-1", title: "Doc", updated: now },
           extras: { databases: {} },
           source: "sidecar",
         };
       }
-      if (command === "doc_write_workspace") return undefined;
       throw new Error(`Unexpected command: ${command}`);
     });
 
@@ -442,9 +522,165 @@ describe("useFileStore disk workspace", () => {
       expect.objectContaining({
         root: "/workspace",
         path: "Doc.md",
-        payload: expect.objectContaining({ html: "<p>New</p>", markdown: "New" }),
+        payload: expect.objectContaining({
+          html: "<p>New</p>",
+          markdown: "New",
+          meta: { id: "doc-1" },
+        }),
       })
     );
+  });
+
+  it("keeps the live editor html after autosave when the backend returns normalized html", async () => {
+    useFileStore.setState({
+      files: [
+        {
+          id: "doc-1",
+          name: "Doc.md",
+          content: "<p>Old</p>",
+          editorHtml: "<p>Old</p>",
+          browsingHtml: "<p>Old</p>",
+          contentMarkdown: "Old",
+          isFolder: false,
+          parentId: null,
+          position: 0,
+          isFavorite: false,
+          createdAt: now,
+          updatedAt: now,
+          wordCount: 0,
+          preview: "",
+          storageHandle: { mode: "disk", id: "doc-1", kind: "document", relPath: "Doc.md" },
+        },
+      ],
+      loadedContentIds: new Set(["doc-1"]),
+    });
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "doc_write_workspace") {
+        return {
+          html: "<p>New normalized by backend</p>",
+          editorHtml: "<p>New normalized by backend</p>",
+          browsingHtml: "<p>New normalized by backend</p>",
+          markdown: "New normalized by backend",
+          meta: { id: "doc-1", title: "Doc", updated: now },
+          extras: { databases: {} },
+          source: "sidecar",
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await useFileStore
+      .getState()
+      .updateFile("doc-1", { content: "<p>New</p>", contentMarkdown: "New" });
+
+    const saved = useFileStore.getState().getFile("doc-1");
+    expect(saved?.content).toBe("<p>New</p>");
+    expect(saved?.id).toBe("doc-1");
+    expect(saved?.storageHandle?.id).toBe("doc-1");
+    expect(saved?.editorHtml).toBe("<p>New</p>");
+    expect(saved?.contentMarkdown).toBe("New");
+    expect(saved?.browsingHtml).toBe("<p>New normalized by backend</p>");
+  });
+
+  it("keeps live editor html when a forced reread sees the same markdown saved by autosave", async () => {
+    useFileStore.setState({
+      files: [
+        {
+          id: "doc-1",
+          name: "Doc.md",
+          content: "<p>New</p>",
+          editorHtml: "<p>New</p>",
+          browsingHtml: "<p>New</p>",
+          contentMarkdown: "New",
+          isFolder: false,
+          parentId: null,
+          position: 0,
+          isFavorite: false,
+          createdAt: now,
+          updatedAt: now,
+          wordCount: 0,
+          preview: "",
+          documentType: "markdown",
+          storageHandle: { mode: "disk", id: "doc-1", kind: "document", relPath: "Doc.md" },
+        },
+      ],
+      loadedContentIds: new Set(["doc-1"]),
+    });
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "doc_read") {
+        return {
+          html: "<p>New normalized by backend</p>",
+          editorHtml: "<p>New normalized by backend</p>",
+          browsingHtml: '<h1 id="new">New</h1>',
+          markdown: "New",
+          meta: { id: "doc-1", title: "Doc", updated: now },
+          extras: { databases: {} },
+          source: "sidecar",
+          sourceState: "sidecar_fresh",
+          outline: [{ id: "new", depth: 1, text: "New" }],
+          browsingRendererVersion: "browsing-html/v1",
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await useFileStore.getState().loadFileContent("doc-1", { force: true });
+
+    const refreshed = useFileStore.getState().getFile("doc-1");
+    expect(refreshed?.content).toBe("<p>New</p>");
+    expect(refreshed?.editorHtml).toBe("<p>New</p>");
+    expect(refreshed?.contentMarkdown).toBe("New");
+    expect(refreshed?.browsingHtml).toBe('<h1 id="new">New</h1>');
+    expect(refreshed?.outline).toEqual([{ id: "new", depth: 1, text: "New" }]);
+  });
+
+  it("applies a forced reread when the markdown changed externally", async () => {
+    useFileStore.setState({
+      files: [
+        {
+          id: "doc-1",
+          name: "Doc.md",
+          content: "<p>New</p>",
+          editorHtml: "<p>New</p>",
+          browsingHtml: "<p>New</p>",
+          contentMarkdown: "New",
+          isFolder: false,
+          parentId: null,
+          position: 0,
+          isFavorite: false,
+          createdAt: now,
+          updatedAt: now,
+          wordCount: 0,
+          preview: "",
+          documentType: "markdown",
+          storageHandle: { mode: "disk", id: "doc-1", kind: "document", relPath: "Doc.md" },
+        },
+      ],
+      loadedContentIds: new Set(["doc-1"]),
+    });
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "doc_read") {
+        return {
+          html: "<p>External edit</p>",
+          editorHtml: "<p>External edit</p>",
+          browsingHtml: "<p>External edit</p>",
+          markdown: "External edit",
+          meta: { id: "doc-1", title: "Doc", updated: now },
+          extras: { databases: {} },
+          source: "markdown",
+          sourceState: "sidecar_stale",
+          outline: [],
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await useFileStore.getState().loadFileContent("doc-1", { force: true });
+
+    const refreshed = useFileStore.getState().getFile("doc-1");
+    expect(refreshed?.content).toBe("<p>External edit</p>");
+    expect(refreshed?.editorHtml).toBe("<p>External edit</p>");
+    expect(refreshed?.contentMarkdown).toBe("External edit");
   });
 
   it("keeps the new filename after rename even when the returned title is stale", async () => {
