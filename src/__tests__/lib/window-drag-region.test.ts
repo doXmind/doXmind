@@ -24,6 +24,17 @@ describe("shouldStartWindowDrag", () => {
     expect(shouldStartWindowDrag(eventFor(icon, header))).toBe(false);
   });
 
+  it("ignores editor tabs inside the header", () => {
+    const header = document.createElement("header");
+    const tab = document.createElement("div");
+    const label = document.createElement("span");
+    tab.setAttribute("role", "tab");
+    tab.appendChild(label);
+    header.appendChild(tab);
+
+    expect(shouldStartWindowDrag(eventFor(label, header))).toBe(false);
+  });
+
   it("ignores non-primary mouse buttons", () => {
     const header = document.createElement("header");
     const title = document.createElement("span");

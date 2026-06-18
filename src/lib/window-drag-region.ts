@@ -1,5 +1,5 @@
 const NON_DRAG_SELECTOR =
-  'button,a,input,textarea,select,[role="button"],[data-no-drag],[contenteditable="true"],[contenteditable=""]';
+  'button,a,input,textarea,select,[role="button"],[role="tab"],[role="tablist"],[data-no-drag],[contenteditable="true"],[contenteditable=""]';
 
 export function shouldStartWindowDrag(event: {
   button?: number;

@@ -375,6 +375,8 @@ samp,
   [data-tauri-drag-region] textarea,
   [data-tauri-drag-region] select,
   [data-tauri-drag-region] [role="button"],
+  [data-tauri-drag-region] [role="tab"],
+  [data-tauri-drag-region] [role="tablist"],
   [data-tauri-drag-region] [data-no-drag] {
     -webkit-app-region: no-drag;
   }

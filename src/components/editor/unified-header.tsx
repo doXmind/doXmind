@@ -349,6 +349,7 @@ export function UnifiedHeader() {
                   isMacTauri && "relative top-[5px]"
                 )}
                 role="tablist"
+                data-no-drag
               >
                 {tabFiles.map((file) => {
                   const isActive = file.id === currentFileId;
@@ -359,6 +360,7 @@ export function UnifiedHeader() {
                       role="tab"
                       tabIndex={0}
                       aria-selected={isActive}
+                      data-no-drag
                       title={file.storageHandle?.relPath ?? file.name}
                       onClick={() => handleActivateTab(file.id)}
                       onKeyDown={(event) => {
