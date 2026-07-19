@@ -549,6 +549,11 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       clearTimeout(timeoutId);
       isFileSwitchingRef.current = false;
     };
+    // `file` is deliberately NOT a dependency: this reconcile must fire only
+    // when the on-disk content changes. The store refreshes `file`'s identity
+    // on unrelated bookkeeping too, and re-running then would hit the
+    // isEmpty branch and resurrect content the user just deleted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file.content, editor]);
 
   // Apply a pending edit-activation intent (replay the printable key the

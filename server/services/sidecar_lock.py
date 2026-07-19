@@ -1,8 +1,8 @@
 """Advisory locks for sidecar migration.
 
-The lock is POSIX-only for now: Unix-like systems use ``fcntl.flock`` on
-``<sidecar>.lock``. Windows currently uses a no-op lock so the desktop
-runtime keeps working there until a Windows-specific file lock is added.
+Unix-like systems use ``fcntl.flock`` on ``<sidecar>.lock``; Windows uses
+``msvcrt.locking`` on the same file. Both are advisory, local-host locks —
+do not rely on them for NFS/cross-host safety.
 """
 
 from __future__ import annotations
@@ -20,19 +20,39 @@ logger = logging.getLogger(__name__)
 def _locked_sidecar(sidecar_path: Path) -> Iterator[None]:
     """Acquire an advisory per-sidecar migration lock.
 
-    POSIX platforms use ``fcntl.flock`` against ``<sidecar>.lock``.
-    Windows is a no-op for now because ``fcntl`` is not available there.
+    POSIX platforms use ``fcntl.flock`` against ``<sidecar>.lock``; Windows
+    uses ``msvcrt.locking`` on the first byte of the same file. Both block
+    until the lock is granted, mirroring ``LOCK_EX`` semantics.
     """
     lock_path = sidecar_path.parent / f"{sidecar_path.name}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
     if sys.platform == "win32":
-        # Windows lacks fcntl; a Windows-specific locking backend can be added separately.
-        logger.debug("sidecar migration lock is a no-op on Windows: %s", lock_path)
-        yield
+        import msvcrt
+
+        with lock_path.open("a+b") as lock_file:
+            # LK_LOCK waits ~1s between 10 attempts then raises OSError; loop
+            # so contention blocks indefinitely like flock(LOCK_EX) instead of
+            # failing. The critical section (one sidecar rewrite) is short.
+            lock_file.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    continue
+            try:
+                yield
+            finally:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        # Like the POSIX branch: never delete the lock file — concurrent
+        # waiters may hold a handle to it, and delete/recreate races would
+        # hand two processes different files to lock.
         return
 
     import fcntl
 
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+b") as lock_file:
         # flock is advisory and local-host oriented; do not rely on this for NFS/cross-host safety.
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)

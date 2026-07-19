@@ -212,10 +212,49 @@ pub fn markdown_to_html(body: &str) -> String {
     opts.insert(CmarkOptions::ENABLE_TASKLISTS);
     opts.insert(CmarkOptions::ENABLE_HEADING_ATTRIBUTES);
     let parser = CmarkParser::new_ext(body, opts);
-    let events = wrap_raw_html_blocks(parser);
+    let events = mermaid_fences_to_chart_divs(wrap_raw_html_blocks(parser).into_iter());
     let mut html = String::with_capacity(body.len());
     cmark_html::push_html(&mut html, events.into_iter());
     html
+}
+
+/// Rewrite ```` ```mermaid ```` fences into the editor's mermaidChart atom
+/// node (`<div data-type="mermaid-chart" data-code="…">`) instead of a plain
+/// code block — mirrors the marked and Python importers (#152).
+fn mermaid_fences_to_chart_divs<'a>(
+    events: impl Iterator<Item = CmarkEvent<'a>>,
+) -> Vec<CmarkEvent<'a>> {
+    use pulldown_cmark::CodeBlockKind;
+
+    let mut out: Vec<CmarkEvent<'a>> = Vec::new();
+    let mut mermaid_code: Option<String> = None;
+    for event in events {
+        match event {
+            CmarkEvent::Start(CmarkTag::CodeBlock(CodeBlockKind::Fenced(ref lang)))
+                if mermaid_code.is_none() && lang.as_ref() == "mermaid" =>
+            {
+                mermaid_code = Some(String::new());
+            }
+            CmarkEvent::Text(text) if mermaid_code.is_some() => {
+                mermaid_code.as_mut().expect("checked is_some").push_str(&text);
+            }
+            CmarkEvent::End(pulldown_cmark::TagEnd::CodeBlock) if mermaid_code.is_some() => {
+                let code = mermaid_code.take().expect("checked is_some");
+                let escaped = code
+                    .trim_end_matches('\n')
+                    .replace('&', "&amp;")
+                    .replace('"', "&quot;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;");
+                let div = format!(
+                    "<div data-type=\"mermaid-chart\" data-code=\"{escaped}\" class=\"mermaid-chart\"></div>"
+                );
+                out.push(CmarkEvent::Html(CowStr::Boxed(div.into_boxed_str())));
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// Wrap each raw-HTML block in a `<div data-raw-html="…">` sentinel so the
