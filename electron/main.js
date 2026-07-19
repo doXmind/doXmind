@@ -22,6 +22,7 @@ const { pathToFileURL } = require("node:url");
 const { startStaticServer } = require("./static-server");
 const { findFreePort, spawnSidecar, waitForHealth } = require("./sidecar");
 const { isWorkspaceCommand, proxyWorkspace } = require("./workspace-proxy");
+const { createAssetScope } = require("./asset-scope");
 const { WindowRegistry, normalizeOpenPath } = require("./window-registry");
 const menus = require("./menus");
 const { createWindowLifecycle } = require("./window-lifecycle");
@@ -41,6 +42,8 @@ let tray = null;
 
 // Per-window open-target registry, keyed by webContents.id.
 const registry = new WindowRegistry();
+// Directories doxmind-asset:// may serve from (see asset-scope.js).
+const assetScope = createAssetScope();
 // Event listeners registered via @tauri-apps/api/event: {eventId, eventName, webContentsId, handlerId}.
 const eventListeners = [];
 let nextEventId = 1;
@@ -156,11 +159,14 @@ async function pickFolder(win, title) {
     properties: ["openDirectory", "createDirectory"],
   });
   if (result.canceled || !result.filePaths.length) return null;
+  let picked;
   try {
-    return fs.realpathSync(result.filePaths[0]);
+    picked = fs.realpathSync(result.filePaths[0]);
   } catch {
-    return result.filePaths[0];
+    picked = result.filePaths[0];
   }
+  assetScope.addRoot(picked);
+  return picked;
 }
 
 async function pickFile(win, title, filters) {
@@ -170,6 +176,7 @@ async function pickFile(win, title, filters) {
     filters: filters || [],
   });
   if (result.canceled || !result.filePaths.length) return null;
+  assetScope.addRootForFile(result.filePaths[0]);
   return result.filePaths[0];
 }
 
@@ -282,7 +289,16 @@ async function refreshMenus() {
 }
 
 async function dispatch(event, cmd, args) {
-  if (isWorkspaceCommand(cmd)) return proxyWorkspace(sidecarUrl, cmd, args);
+  if (isWorkspaceCommand(cmd)) {
+    const result = await proxyWorkspace(sidecarUrl, cmd, args);
+    // Any root the data plane actually operates on is fair game for the
+    // asset protocol (image loads resolve relative to these roots).
+    if (args && typeof args.root === "string" && args.root) assetScope.addRoot(args.root);
+    if (cmd === "workspace_default_root" && typeof result === "string") {
+      assetScope.addRoot(result);
+    }
+    return result;
+  }
 
   const sender = event.sender;
   const win = BrowserWindow.fromWebContents(sender);
@@ -359,7 +375,11 @@ function handleAsset(request) {
   // convertFileSrc emits doxmind-asset://local/<encoded-absolute-path>.
   const url = new URL(request.url);
   const filePath = decodeURIComponent(url.pathname.replace(/^\//, ""));
-  // Phase 3 will confine this to the active workspace root.
+  if (!assetScope.allows(filePath)) {
+    // Outside every user-selected workspace / opened-file directory — refuse
+    // rather than hand the renderer an arbitrary local-file read.
+    return new Response("doxmind-asset: path outside workspace scope", { status: 403 });
+  }
   return net.fetch(pathToFileURL(filePath).toString());
 }
 
@@ -431,6 +451,7 @@ async function boot() {
 function enqueueOpenPath(raw) {
   const normalized = normalizeOpenPath(raw);
   if (normalized) {
+    assetScope.addRootForFile(normalized);
     pendingOpenPaths.push(normalized);
     return true;
   }

@@ -20,10 +20,11 @@
  * frontend transforms existing edit keys eagerly so the renderer sees the
  * post-op coordinates and the backend can replay the same ops on openpyxl.
  *
- * Formula recalculation is deliberately not yet wired — user-edited values
- * surface immediately, but cells that depend on them via formulas keep
- * showing whatever cached value the source `.xlsx` had until a Univer-style
- * headless recalc engine is plugged in.
+ * Formula recalculation runs through a headless HyperFormula engine
+ * (`src/lib/excel/engine.ts`): the sheet builds it after first paint, every
+ * rendered cell reads `computedValueAt`, and edits sync into the engine so
+ * dependent formulas update live. When the engine is still warming up the
+ * grid falls back to the cached values from the source `.xlsx`.
  */
 
 import {

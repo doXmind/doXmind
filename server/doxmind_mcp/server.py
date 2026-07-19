@@ -5,8 +5,9 @@ The server operates on a single configured workspace root
 agent-supplied path to it (S5). It imports the `core` facade directly, so it
 runs as a standalone process with no desktop app or HTTP sidecar (ADR 0010).
 
-S2 lands the read surface (list / search / read). Write and structural tools
-arrive in later slices on the same `core` facade.
+The surface covers reads (list / search / read / read_pdf / read_excel),
+writes (create / edit), structure (rename / move / delete / create_folder /
+import), and export — all on the same `core` facade.
 """
 
 # NOTE: do not add `from __future__ import annotations` here. FastMCP derives
