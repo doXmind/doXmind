@@ -21,7 +21,23 @@ from pathlib import Path
 from typing import Any
 
 import markdown
+from markdown.extensions import Extension
+from markdown.inlinepatterns import SimpleTagInlineProcessor
 from markdown.postprocessors import RawHtmlPostprocessor
+
+
+class _GfmStrikethroughExtension(Extension):
+    """GFM ``~~text~~`` → ``<del>text</del>``.
+
+    python-markdown has no built-in strikethrough; without this the tildes
+    stay literal while the marked and Rust importers emit ``<del>`` (#152).
+    Priority 105 sits below backticks (190) so ``` `~~x~~` ``` stays code.
+    """
+
+    def extendMarkdown(self, md: markdown.Markdown) -> None:
+        md.inlinePatterns.register(
+            SimpleTagInlineProcessor(r"()~~(.+?)~~", "del"), "gfm_del", 105
+        )
 
 
 class _RawHtmlSentinelPostprocessor(RawHtmlPostprocessor):
@@ -161,19 +177,52 @@ def render_task_lists(md: str) -> str:
     return "\n".join(output)
 
 
+# ```mermaid fences must become the editor's mermaidChart atom node, not a
+# plain code block — mirrors the marked importer (#152). The fenced_code
+# extension has already HTML-escaped the payload (& < >), so only quotes
+# need re-escaping for the attribute context; entities decode back to the
+# original source when the editor reads `data-code`.
+_MERMAID_FENCE_RE = re.compile(
+    r'<pre><code class="language-mermaid">(.*?)</code></pre>', re.DOTALL
+)
+
+
+def _mermaid_fence_to_chart_div(rendered: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        code = match.group(1).rstrip("\n").replace('"', "&quot;")
+        return (
+            f'<div data-type="mermaid-chart" data-code="{code}"'
+            ' class="mermaid-chart"></div>'
+        )
+
+    return _MERMAID_FENCE_RE.sub(replace, rendered)
+
+
 def markdown_to_html(md: str) -> str:
     """Render markdown to HTML for the editor.
 
     No `codehilite` extension — TipTap can't parse the wrapper spans it
     emits; the frontend uses lowlight for syntax highlighting instead.
+
+    `tab_length=2`: python-markdown only nests a sublist indented by exactly
+    `tab_length` spaces, and both the TipTap serializer and CommonMark authors
+    write 2-space nesting — the default (4) silently flattened those sublists
+    into siblings (#152). Trade-off: indented code blocks now trigger at 2
+    spaces instead of 4, and 4-space-indented sublists nest two levels deep.
+    Our own save path only ever emits fenced code and 2-space lists, so both
+    quirks are limited to externally-authored markdown, where a too-deep list
+    beats losing the structure outright.
     """
-    converter = markdown.Markdown(extensions=["tables", "fenced_code", "sane_lists"])
+    converter = markdown.Markdown(
+        extensions=["tables", "fenced_code", "sane_lists", _GfmStrikethroughExtension()],
+        tab_length=2,
+    )
     # Replace the built-in raw-HTML restorer with the sentinel-wrapping one
     # (same name + priority so it slots into the existing pipeline).
     converter.postprocessors.register(
         _RawHtmlSentinelPostprocessor(converter), "raw_html", 30
     )
-    return converter.convert(render_task_lists(md))
+    return _mermaid_fence_to_chart_div(converter.convert(render_task_lists(md)))
 
 
 def parse_yaml_scalar(value: str) -> Any:

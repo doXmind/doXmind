@@ -4,25 +4,21 @@ Generated from `conformance/corpus.json` by running each importer. Each implemen
 
 The three importers feed the same TipTap schema, so they _should_ produce equivalent HTML. They don't yet — this table is the inventory #152 tracks.
 
-- **Agree across all three (14)**: heading, paragraph, emphasis_underscore, bold, inline_code, link_absolute, link_relative, bullet_list, ordered_list, blockquote, fenced_code, raw_html_block, html_comment, inline_code_with_math
-- **Cosmetic divergence (3)** (different whitespace / attr order / self-close, TipTap parses equivalently): image, table, horizontal_rule
-- **Semantic divergence (7)** (different node structure or behaviour): strikethrough, nested_list, task_list, mermaid, inline_math, block_math, cjk_with_dollar
+- **Agree across all three (16)**: heading, paragraph, emphasis_underscore, bold, strikethrough, inline_code, link_absolute, link_relative, bullet_list, ordered_list, blockquote, fenced_code, mermaid, raw_html_block, html_comment, inline_code_with_math
+- **Cosmetic divergence (4)** (different whitespace / attr order / self-close, TipTap parses equivalently): image, table, horizontal_rule, nested_list
+- **Semantic divergence (4)** (different node structure or behaviour): task_list, inline_math, block_math, cjk_with_dollar
 
-## Semantic divergences
+Resolved since the first inventory: `strikethrough` (Python now registers a GFM
+`~~x~~` → `<del>` inline pattern), `nested_list` (Python now runs with
+`tab_length=2` so 2-space sublists nest instead of flattening; remaining
+difference vs Rust is whitespace only), and `mermaid` (all three importers now
+emit the same `<div data-type="mermaid-chart">` node).
 
-### `strikethrough` — input: `'this is ~~gone~~ here'`
-
-Python does not enable GFM strikethrough — `~~x~~` stays literal text; Rust & marked emit `<del>`.
-
-```
-rust  : <p>this is <del>gone</del> here</p>
-python: <p>this is ~~gone~~ here</p>
-marked: <p>this is <del>gone</del> here</p>
-```
+## Cosmetic divergences (nested_list)
 
 ### `nested_list` — input: `'- a\n  - b'`
 
-Python (`sane_lists`) flattens a 2-space-indented sublist into siblings; Rust & marked nest correctly.
+All three nest correctly; Rust puts the inner `<ul>` on its own line.
 
 ```
 rust  : <ul>
@@ -33,8 +29,10 @@ rust  : <ul>
 </li>
 </ul>
 python: <ul>
-<li>a</li>
+<li>a<ul>
 <li>b</li>
+</ul>
+</li>
 </ul>
 marked: <ul>
 <li>a<ul>
@@ -43,6 +41,8 @@ marked: <ul>
 </li>
 </ul>
 ```
+
+## Semantic divergences
 
 ### `task_list` — input: `'- [ ] todo\n- [x] done'`
 
@@ -63,21 +63,6 @@ marked: <ul>
 <li><input disabled="" type="checkbox"> todo</li>
 <li><input checked="" disabled="" type="checkbox"> done</li>
 </ul>
-```
-
-### `mermaid` — input: `'```mermaid\ngraph TD\n  A --> B\n```'`
-
-marked emits a `<div data-type=mermaid-chart>` node; Rust & Python emit a ` ```mermaid ` code block.
-
-```
-rust  : <pre><code class="language-mermaid">graph TD
-  A --&gt; B
-</code></pre>
-python: <pre><code class="language-mermaid">graph TD
-  A --&gt; B
-</code></pre>
-marked: <div data-type="mermaid-chart" data-code="graph TD
-  A --&gt; B" class="mermaid-chart"></div>
 ```
 
 ### `inline_math` — input: `'energy $E=mc^2$ ok'`
