@@ -61,6 +61,19 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx electron-builder --publish always
 
+      # The versioned DMG remains the canonical release artifact. Upload a
+      # fixed-name copy as well so doxmind.com can link to the latest release
+      # without hard-coding a version number.
+      - name: Upload stable website download
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          cp "dist-electron/doXmind-${VERSION}-arm64.dmg" "dist-electron/doXmind-mac-arm64.dmg"
+          gh release upload "v${VERSION}" "dist-electron/doXmind-mac-arm64.dmg" \
+            --repo doXmind/releases \
+            --clobber
+
       # electron-builder uploads to a DRAFT release (the releases repo has no
       # pre-existing tag). Publish it so update.electronjs.org serves it: this
       # creates the tag against main and marks it latest.
