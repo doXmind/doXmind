@@ -276,16 +276,19 @@ const LINK_LIKE_RE = /\[[^[\]]*\](?=[([:])/g;
  * app uses — while `>` becomes `\>`, which all three importers understand.
  */
 export function escapeMarkdownText(text: string, atLineStart: boolean): string {
-  const out = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(LINK_LIKE_RE, (match) => `\\${match}`);
-  if (!atLineStart) return out;
-  if (THEMATIC_BREAK_RE.test(out)) return out.replace(/[-*_]/, (c) => `\\${c}`);
-  if (ORDERED_MARKER_RE.test(out)) {
-    return out.replace(ORDERED_MARKER_RE, (_match, prefix, delim) => `${prefix}\\${delim}`);
-  }
-  return out.replace(LEADING_MARKER_RE, (_match, indent, marker) => `${indent}\\${marker}`);
+  const entities = text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  // The leading-marker pass runs BEFORE the link pass, and therefore only ever
+  // sees backslashes the user typed. Its first alternative matches a literal
+  // backslash so that one survives the round-trip — run it second and it would
+  // escape the backslash the link pass just inserted at index 0, doubling it.
+  const marked = !atLineStart
+    ? entities
+    : THEMATIC_BREAK_RE.test(entities)
+      ? entities.replace(/[-*_]/, (c) => `\\${c}`)
+      : ORDERED_MARKER_RE.test(entities)
+        ? entities.replace(ORDERED_MARKER_RE, (_match, prefix, delim) => `${prefix}\\${delim}`)
+        : entities.replace(LEADING_MARKER_RE, (_match, indent, marker) => `${indent}\\${marker}`);
+  return marked.replace(LINK_LIKE_RE, (match) => `\\${match}`);
 }
 
 export function markdownToHtml(markdown: string): string {
