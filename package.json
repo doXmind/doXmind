@@ -1,6 +1,6 @@
 {
   "name": "doxmind",
-  "version": "1.7.6",
+  "version": "1.7.7",
   "private": true,
   "main": "electron/main.js",
   "engines": {
