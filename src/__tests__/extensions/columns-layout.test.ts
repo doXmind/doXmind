@@ -119,6 +119,16 @@ describe("layout columns", () => {
     expect((widths[0] as number) + (widths[1] as number)).toBe(100);
   });
 
+  it("survives a degenerate split without producing NaN widths", () => {
+    // Every requested width at or below the floor leaves no excess to scale by;
+    // dividing by it made every column NaN and the row rendered with none.
+    const ed = makeEditor(TWO_COLUMNS);
+    ed.commands.setLayoutColumnWidths(columnsPos(ed), [1, 1]);
+    const widths = columnWidths(ed);
+    for (const w of widths) expect(Number.isNaN(w as number)).toBe(false);
+    expect((widths[0] as number) + (widths[1] as number)).toBe(100);
+  });
+
   it("resets to an even split when the column count changes", () => {
     const ed = makeEditor(TWO_COLUMNS);
     ed.commands.setLayoutColumnWidths(columnsPos(ed), [70, 30]);

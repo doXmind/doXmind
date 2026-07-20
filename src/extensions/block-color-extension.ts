@@ -6,8 +6,6 @@
  */
 
 import { Extension } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
-import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 const COLORED_TYPES = [
   "paragraph",
@@ -21,13 +19,6 @@ const COLORED_TYPES = [
   "callout",
   "toggle",
 ];
-
-/**
- * Blocks whose live DOM comes from a React node view. Attribute `renderHTML`
- * only feeds serialization there, so the colour has to be delivered as a node
- * decoration instead — ProseMirror patches those onto a node view's outer DOM.
- */
-const NODE_VIEW_TYPES = new Set(["callout", "toggle"]);
 
 const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const NAMED_COLOR = /^[a-z]+$/i;
@@ -45,15 +36,6 @@ function readColor(value: string | null): string | null {
     return color;
   }
   return null;
-}
-
-function colorStyle(attrs: Record<string, unknown>): string | null {
-  const declarations: string[] = [];
-  if (typeof attrs.textColor === "string") declarations.push(`color: ${attrs.textColor}`);
-  if (typeof attrs.backgroundColor === "string") {
-    declarations.push(`background-color: ${attrs.backgroundColor}`);
-  }
-  return declarations.length > 0 ? declarations.join("; ") : null;
 }
 
 export const BlockColorExtension = Extension.create({
@@ -88,26 +70,6 @@ export const BlockColorExtension = Extension.create({
           },
         },
       },
-    ];
-  },
-
-  addProseMirrorPlugins() {
-    return [
-      new Plugin({
-        key: new PluginKey("blockColorDecorations"),
-        props: {
-          decorations(state) {
-            const decorations: Decoration[] = [];
-            state.doc.descendants((node, pos) => {
-              if (!NODE_VIEW_TYPES.has(node.type.name)) return true;
-              const style = colorStyle(node.attrs);
-              if (style) decorations.push(Decoration.node(pos, pos + node.nodeSize, { style }));
-              return true;
-            });
-            return DecorationSet.create(state.doc, decorations);
-          },
-        },
-      }),
     ];
   },
 });

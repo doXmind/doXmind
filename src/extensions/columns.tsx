@@ -39,6 +39,10 @@ function clampWidths(widths: number[]): number[] {
 
   const floored = widths.map((w) => Math.max(MIN_COLUMN_PERCENT, w));
   const excess = floored.reduce((sum, w) => sum + w - MIN_COLUMN_PERCENT, 0);
+  // Every column already sat at or below the minimum, so there is no excess to
+  // distribute proportionally — dividing by it would make every width NaN and
+  // the row would render with no columns at all.
+  if (excess === 0) return floored.map(() => Math.round(100 / count));
   const scaled = floored.map((w) =>
     Math.round(MIN_COLUMN_PERCENT + ((w - MIN_COLUMN_PERCENT) / excess) * slack)
   );
