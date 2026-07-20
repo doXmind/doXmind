@@ -4,7 +4,11 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ImageNodeView } from "@/components/editor/image-node-view";
 import { notify } from "@/lib/notifications";
-import { api } from "@/lib/api";
+import {
+  assetAltTextFor,
+  assetFilenameFor,
+  importWorkspaceImageAsset,
+} from "@/lib/workspace-asset-import";
 import { parseUploadError } from "@/lib/utils/image-upload-errors";
 
 export interface ResizableImageOptions {
@@ -69,7 +73,7 @@ function createImageUploadPlaceholderPlugin() {
 async function uploadAndInsertImage(file: File, view: any, pos?: number) {
   if (!file.type.startsWith("image/")) return false;
 
-  const altText = file.name.replace(/\.[^.]+$/, "");
+  const altText = assetAltTextFor(assetFilenameFor(file));
   const { state } = view;
   const insertPos = pos !== undefined ? pos : state.selection.from;
   const uploadId = `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -83,7 +87,7 @@ async function uploadAndInsertImage(file: File, view: any, pos?: number) {
   view.dispatch(tr);
 
   try {
-    const result = await api.uploadImage(file);
+    const assetPath = await importWorkspaceImageAsset(file);
 
     // Read the decoration's current tracked position
     const currentState = view.state;
@@ -93,7 +97,7 @@ async function uploadAndInsertImage(file: File, view: any, pos?: number) {
 
     // Insert image at tracked position and remove placeholder decoration
     const imageNode = currentState.schema.nodes.image.create({
-      src: result.url,
+      src: assetPath,
       alt: altText,
     });
 

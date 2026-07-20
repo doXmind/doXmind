@@ -7,6 +7,47 @@ import { unfurlLink } from "@/lib/api/unfurl";
 import { cn } from "@/lib/utils";
 import { WebBookmarkEmptyState } from "./web-bookmark-empty-state";
 
+const EXPLICIT_SCHEME = /^([a-z][a-z0-9+.-]*):/i;
+/** Mirrors the href allowlist in `sanitize-html.ts`. */
+const SAFE_SCHEMES = new Set(["http", "https", "mailto", "tel", "sms"]);
+/** Schemes whose URLs carry no `//authority` component. */
+const AUTHORITY_LESS_SCHEMES = new Set(["mailto", "tel", "sms"]);
+
+function schemeOf(url: string): string | null {
+  const match = EXPLICIT_SCHEME.exec(url.trim());
+  return match ? match[1].toLowerCase() : null;
+}
+
+/**
+ * A bookmark URL is untrusted input — it comes from a `.md` / sidecar the app
+ * did not necessarily write. Anything outside the allowlist renders as text
+ * rather than a live link. Scheme-less values are relative references and are
+ * safe by construction.
+ */
+export function isSafeBookmarkUrl(url: string): boolean {
+  const scheme = schemeOf(url);
+  return scheme === null || SAFE_SCHEMES.has(scheme);
+}
+
+/**
+ * `mailto:` / `tel:` / `sms:` have no host to fetch metadata from, and the
+ * unfurl endpoint prepends `https://` to anything without `://` — which
+ * reparses `mailto:a@b.com` as host `b.com` and hands back a URL pointing
+ * somewhere the user never typed. Writing that back would silently retarget
+ * the link in the DOM and in the saved `.md`, so these never leave the editor.
+ */
+export function isAuthorityLessBookmarkUrl(url: string): boolean {
+  const scheme = schemeOf(url);
+  return scheme !== null && AUTHORITY_LESS_SCHEMES.has(scheme);
+}
+
+/** Card label for an authority-less URL: the address, without the scheme. */
+export function authorityLessBookmarkLabel(url: string): string {
+  const trimmed = url.trim();
+  const body = trimmed.slice(trimmed.indexOf(":") + 1).split("?")[0];
+  return body || trimmed;
+}
+
 interface BookmarkAttrs {
   url?: string;
   title?: string;
@@ -38,9 +79,14 @@ export function WebBookmarkNodeView({ node, updateAttributes }: NodeViewProps) {
   const latestUrlRef = useRef(url);
   latestUrlRef.current = url;
 
+  const authorityLess = isAuthorityLessBookmarkUrl(url);
+  const linkable = isSafeBookmarkUrl(url);
+
   // Decide whether the bookmark needs enrichment: we trust attrs that have a
   // real title (different from the URL) and at least *some* extra metadata.
-  const needsUnfurl = !!url && (!title || title === url) && !description && !imageUrl;
+  // Authority-less and unsupported schemes are never sent to the sidecar.
+  const needsUnfurl =
+    !!url && linkable && !authorityLess && (!title || title === url) && !description && !imageUrl;
 
   useEffect(() => {
     if (!needsUnfurl) return;
@@ -78,7 +124,13 @@ export function WebBookmarkNodeView({ node, updateAttributes }: NodeViewProps) {
     );
   }
 
-  const displayTitle = title || url;
+  // Derived at render time, never written back into attrs: persisting a title
+  // on mount would mark the document dirty just for opening it.
+  const displayTitle = title || (authorityLess ? authorityLessBookmarkLabel(url) : url);
+  // Unsupported schemes still show the card — losing the user's URL would be
+  // worse — but they don't get a clickable href.
+  const Card = linkable ? "a" : "div";
+  const linkProps = linkable ? { href: url, target: "_blank", rel: "noreferrer" } : {};
 
   return (
     <NodeViewWrapper
@@ -97,10 +149,8 @@ export function WebBookmarkNodeView({ node, updateAttributes }: NodeViewProps) {
       data-favicon-url={faviconUrl ?? ""}
       data-image-url={imageUrl ?? ""}
     >
-      <a
-        href={url}
-        target="_blank"
-        rel="noreferrer"
+      <Card
+        {...linkProps}
         className={cn(
           "group flex w-full overflow-hidden rounded-md border border-border/60 bg-card",
           // !-prefix overrides .ProseMirror a's text-primary + underline (which
@@ -152,7 +202,7 @@ export function WebBookmarkNodeView({ node, updateAttributes }: NodeViewProps) {
             }}
           />
         ) : null}
-      </a>
+      </Card>
     </NodeViewWrapper>
   );
 }
