@@ -31,7 +31,7 @@ import {
   Palette,
   ArrowRightLeft,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatShortcut } from "@/lib/utils";
 import { turnIntoOptions, isTurnIntoSeparator } from "@/lib/block-actions";
 import { ColorPicker } from "./color-picker";
 import {
@@ -973,7 +973,9 @@ function MenuButton({
     >
       <span className="text-muted-foreground">{icon}</span>
       <span className="flex-1 text-left">{label}</span>
-      {shortcut && <span className="text-ui-xs text-muted-foreground/60">{shortcut}</span>}
+      {shortcut && (
+        <span className="text-ui-xs text-muted-foreground/60">{formatShortcut(shortcut)}</span>
+      )}
     </button>
   );
 }

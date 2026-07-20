@@ -68,10 +68,6 @@ const EXTERNAL_REF_BLOCKS: Record<string, { html: string; body: string }> = {
     html: '<div data-type="excel-block" data-id="e1" data-src="data.xlsx"></div>',
     body: '<!-- excel-block id="e1" src="data.xlsx" -->',
   },
-  databaseBlock: {
-    html: '<div data-type="database-block" data-database-id="abc123"></div>',
-    body: "<!-- database:abc123 -->",
-  },
 };
 
 describe("block coverage — markdown-form blocks round-trip byte-identical", () => {

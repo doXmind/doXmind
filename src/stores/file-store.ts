@@ -2,7 +2,6 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { storeLogger } from "@/lib/logger";
 import { eventBus } from "@/lib/events";
-import { syncDatabasesForDocument } from "@/stores/database-store";
 import type { FileItem } from "@/types";
 import { documentTypeFromName } from "@/lib/document-types";
 import {
@@ -325,24 +324,6 @@ function readModelFromFile(file: FileItem): LoadedReadModel {
   };
 }
 
-function shouldSyncDatabases(content: DocumentContent): boolean {
-  if (content.html.includes("data-database-id")) return true;
-  if (content.markdown?.includes("database:")) return true;
-  const extras = content.extras;
-  if (!extras || typeof extras !== "object") return false;
-  const databases = (extras as { databases?: unknown }).databases;
-  return Boolean(databases && typeof databases === "object" && Object.keys(databases).length > 0);
-}
-
-function syncDatabasesForContent(content: DocumentContent): void {
-  if (!shouldSyncDatabases(content)) return;
-  perfSync(
-    "doxmind.loadFileContent.syncDatabases",
-    () => syncDatabasesForDocument(content.extras, content.html, content.markdown),
-    { htmlBytes: content.html?.length ?? 0 }
-  );
-}
-
 function outlinesEqual(
   left: LoadedReadModel["outline"] = [],
   right: LoadedReadModel["outline"] = []
@@ -659,7 +640,6 @@ export const useFileStore = create<FileState>()(
                 () => getAdapter(get()).read(handleForFile(file)),
                 { fileId, documentType: file.documentType }
               );
-              syncDatabasesForContent(fullFile);
               perfSync("doxmind.loadFileContent.storeCommit", () =>
                 set((state) => {
                   // Only update if the file exists in the files array.
@@ -813,7 +793,6 @@ export const useFileStore = create<FileState>()(
             void syncRecentsToDock(get().recents);
             throw error;
           });
-          syncDatabasesForContent(content);
           const readModel = readModelFromContent(content);
           looseFile = {
             id: content.handle.id || handle.id,

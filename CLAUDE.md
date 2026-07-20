@@ -8,7 +8,7 @@ doXmind is a **fully-local desktop IDE** for documents. It is a Tauri shell wrap
 
 Three document types are first-class citizens:
 
-- **Markdown** — rich TipTap editor with custom blocks (math, mermaid, callouts, databases, …). Persisted as a portable `.md` file plus a hidden same-name `.doxmind` sidecar that stores the lossless editor HTML and doXmind-only extras.
+- **Markdown** — rich TipTap editor with custom blocks (math, mermaid, callouts, …). Persisted as a portable `.md` file plus a hidden same-name `.doxmind` sidecar that stores the lossless editor HTML and doXmind-only extras.
 - **PDF** — block-based annotation/edit surface. Editor state lives in a hidden sidecar next to the original PDF.
 - **Excel** — workbook editor with formulas, filters, autofill, formatting, and structural row/col ops. Editor state lives in a hidden sidecar next to the original `.xlsx`.
 
@@ -94,9 +94,7 @@ Markdown sidecar shape:
   "html": "<p>...</p>",
   "markdown_hash": "sha256:abc123...",
   "updated_at": "2026-04-29T17:38:00Z",
-  "extras": {
-    "databases": {}
-  }
+  "extras": {}
 }
 ```
 
@@ -131,7 +129,7 @@ There are no API keys or external service credentials.
 
 ## Removed Surface — Do Not Reintroduce
 
-This product intentionally excludes JWT auth, OAuth user login, password reset, email verification, Stripe billing, credits, quotas, sharing links, community publishing, comments, follows, bookmarks, notifications, telemetry, RLHF reporting, S3, Postgres, Redis, Docker deployment, hosted cloud sync, chat, agents, providers, OpenRouter, autocomplete, quick edit, document review, prompts, knowledge-base retrieval, and `markitdown`.
+This product intentionally excludes JWT auth, OAuth user login, password reset, email verification, Stripe billing, credits, quotas, sharing links, community publishing, comments, follows, bookmarks, notifications, telemetry, RLHF reporting, S3, Postgres, Redis, Docker deployment, hosted cloud sync, chat, agents, providers, OpenRouter, autocomplete, quick edit, document review, prompts, knowledge-base retrieval, `markitdown`, and Notion-style database blocks (removed July 2026; legacy `extras.databases` sidecar data is passed through untouched, never rendered).
 
 Do not rebuild these by accident. If a feature needs to return, make the product decision explicit and design it around the local desktop IDE model.
 

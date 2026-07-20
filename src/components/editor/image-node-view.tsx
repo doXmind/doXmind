@@ -14,6 +14,7 @@ import {
   Download,
   MoreHorizontal,
   ArrowUpFromLine,
+  ImageOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -85,6 +86,7 @@ export function ImageNodeView({
   // Inline edit mode for URL/alt text
   const [editMode, setEditMode] = useState<EditMode>("none");
   const [inputValue, setInputValue] = useState("");
+  const [loadFailed, setLoadFailed] = useState(false);
 
   // Show toolbar on hover or when selected
   const showToolbar = (isHovered || selected) && !resizeState?.isResizing;
@@ -239,6 +241,11 @@ export function ImageNodeView({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showMoreMenu]);
 
+  // A new source gets a fresh chance to load.
+  useEffect(() => {
+    setLoadFailed(false);
+  }, [resolvedSrc]);
+
   // Reset state when deselected
   useEffect(() => {
     if (!selected && !isHovered) {
@@ -273,24 +280,52 @@ export function ImageNodeView({
           if (!selected) setShowMoreMenu(false);
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          ref={imgRef}
-          src={resolvedSrc}
-          alt={alt || ""}
-          title={title || undefined}
-          onLoad={handleImageLoad}
-          className={cn(
-            "rounded-lg",
-            selected && "ring-2 ring-primary/50 ring-offset-1 ring-offset-background"
-          )}
-          style={{
-            width: displayWidth ? `${displayWidth}px` : undefined,
-            height: displayHeight ? `${displayHeight}px` : undefined,
-            maxWidth: "100%",
-          }}
-          draggable={false}
-        />
+        {loadFailed ? (
+          <div
+            className={cn(
+              "flex w-full items-center gap-3 rounded-lg border border-dashed border-border bg-muted/40 px-4 py-5 text-sm text-muted-foreground",
+              selected && "ring-2 ring-primary/50 ring-offset-1 ring-offset-background"
+            )}
+          >
+            <ImageOff className="h-5 w-5 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-foreground/80">{t("imageLoadFailed")}</p>
+              <p className="truncate text-xs" title={src || undefined}>
+                {alt || src}
+              </p>
+            </div>
+            {editor.isEditable && (
+              <button
+                type="button"
+                className="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-accent"
+                onClick={handleEditUrl}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                {t("replaceImage")}
+              </button>
+            )}
+          </div>
+        ) : (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            ref={imgRef}
+            src={resolvedSrc}
+            alt={alt || ""}
+            title={title || undefined}
+            onLoad={handleImageLoad}
+            onError={() => setLoadFailed(true)}
+            className={cn(
+              "rounded-lg",
+              selected && "ring-2 ring-primary/50 ring-offset-1 ring-offset-background"
+            )}
+            style={{
+              width: displayWidth ? `${displayWidth}px` : undefined,
+              height: displayHeight ? `${displayHeight}px` : undefined,
+              maxWidth: "100%",
+            }}
+            draggable={false}
+          />
+        )}
 
         {/* Notion-style overlay toolbar (top-right, inside the image) */}
         {showToolbar && editor.isEditable && editMode === "none" && (
