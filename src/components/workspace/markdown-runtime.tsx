@@ -3,6 +3,7 @@
 import { useEditor, EditorContent, type Editor as TiptapEditor } from "@tiptap/react";
 import { TextSelection } from "@tiptap/pm/state";
 import { AnimatePresence, motion } from "framer-motion";
+import { useTranslations } from "next-intl";
 import type { EditorView } from "@tiptap/pm/view";
 import {
   type CSSProperties,
@@ -31,6 +32,7 @@ import { useFileStore, type FileItem, TRANSIENT_ID_PREFIX } from "@/stores/file-
 import { pickNativeSaveLocation } from "@/lib/native-dialog";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { isHtmlFile } from "@/lib/document-types";
+import { notify } from "@/lib/notifications";
 import { useEditorStore } from "@/stores/editor-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
@@ -75,6 +77,7 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   const setLastSavedAt = useEditorStore((s) => s.setLastSavedAt);
 
   const lineHeight = useLayoutStore((s) => s.lineHeight);
+  const t = useTranslations("editor");
 
   // Mode is local state. Untitled buffers (transient) open straight into
   // edit mode; everything else starts in read mode and switches on the
@@ -157,12 +160,19 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
         try {
           await updateFile(file.id, { content, contentMarkdown });
         } catch (error) {
-          lastContentRef.current = previousSavedContent;
-          setDirty(true);
+          // Only unwind the baseline if nothing moved it while the write was
+          // in flight. A flush-on-switch outruns its own file: by the time it
+          // rejects, `lastContentRef` describes the document now on screen,
+          // and restoring the outgoing file's baseline over it would make the
+          // reconcile effect below re-apply stale content to the wrong file.
+          if (lastContentRef.current === content) {
+            lastContentRef.current = previousSavedContent;
+            setDirty(true);
+          }
           throw error;
         }
         setLastSavedAt(new Date().toISOString());
-        setDirty(false);
+        if (lastContentRef.current === content) setDirty(false);
 
         return true;
       } finally {
@@ -372,6 +382,46 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
     }
   }, [editor]);
 
+  // Flush the outgoing buffer whenever the loaded document changes (or the
+  // runtime unmounts). The autosave debounce is *trailing*, so a switch made
+  // inside the window — or made while the user is still typing — is exactly
+  // the case where nothing has reached disk yet.
+  //
+  // This has to be a cleanup rather than a step inside the file-switch effect
+  // below: `persistContent` and `debouncedSave` are rebuilt whenever `file.id`
+  // changes, so by the time that effect runs they are already bound to the
+  // *incoming* file, and the previous debounce instance still holds a live
+  // trailing timer that the incoming instance's `.cancel()` cannot reach. The
+  // cleanup closure is the one place that still holds the outgoing pair.
+  //
+  // The serializers run here, synchronously, while the editor still holds the
+  // outgoing document; the write itself is free to land after the swap because
+  // its payload no longer depends on editor state. That is what keeps a slow
+  // save from writing the outgoing text into the incoming file.
+  //
+  // Autosave-off is deliberately not honoured here, matching the beforeunload
+  // flush: the setting governs when edits are written during editing, not
+  // whether a buffer that is about to be discarded gets to survive.
+  useEffect(() => {
+    if (!editor) return;
+    const flushOutgoing = persistContent;
+    const pending = debouncedSave;
+    const name = file.name;
+    return () => {
+      pending.cancel();
+      if (editor.isDestroyed) return;
+      const content = editor.getHTML();
+      if (content === lastContentRef.current) return;
+      const contentMarkdown = editor.getMarkdown();
+      void flushOutgoing(content, contentMarkdown).catch(() => {
+        notify.error(t("saveFailedTitle", { name }), {
+          description: t("saveFailedBody"),
+          persistent: true,
+        });
+      });
+    };
+  }, [debouncedSave, editor, file.id, file.name, persistContent, t]);
+
   // File switch: replace content + reset scroll. The new file may be a
   // markdown different from the current one; we also reset isEditing back
   // to read (unless the new file is transient).
@@ -400,7 +450,8 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       ? preservedScrollTop
       : (scrollPositions.get(file.id) ?? 0);
 
-    debouncedSave.cancel();
+    // The pending autosave was already flushed by the cleanup above; from here
+    // on `isDirty` describes the incoming document, which is clean.
     setDirty(false);
     if (!isSamePhysicalFile) {
       setIsEditing(file.id.startsWith(TRANSIENT_ID_PREFIX));
@@ -486,6 +537,18 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
     if (editorHTML === file.content) {
       lastContentRef.current = editorHTML;
       return;
+    }
+
+    // The .md moved on disk under an editor that still holds unsaved edits.
+    // Per the storage model an external edit wins, so the disk version is what
+    // gets applied — but the buffer it displaces is the user's, and it is not
+    // recoverable through undo once setContent lands. Say so, and make the
+    // banner persistent: the user is mid-edit and a 5s toast would be missed.
+    if (shouldApplyDiskRefresh && editorHTML !== lastContentRef.current) {
+      notify.error(t("externalRewriteTitle", { name: file.name }), {
+        description: t("externalRewriteBody"),
+        persistent: true,
+      });
     }
 
     isFileSwitchingRef.current = true;
