@@ -1,6 +1,11 @@
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { PageMentionNodeView } from "@/components/editor/page-mention-node-view";
+import {
+  documentHrefForPage,
+  renderPageMarkdownLink,
+  resolvePageId,
+} from "@/lib/editor-navigation";
 
 export interface PageMentionOptions {
   HTMLAttributes: Record<string, unknown>;
@@ -21,8 +26,11 @@ declare module "@tiptap/core" {
 /**
  * Inline page mention (Notion's @-page reference). Distinct from the
  * block-level PageLink card: this is an inline atom that flows with the text.
- * Markdown form is the page title (lossy, like PageLink); the node is restored
- * from the sidecar HTML on reopen.
+ * Markdown form is a relative link to the target document; the rich node is
+ * restored from the sidecar HTML on reopen. Unlike PageLink there is no
+ * markdown-side parse rule — an inline link in the middle of a sentence is
+ * indistinguishable from any other link, and claiming those as atoms would
+ * make ordinary prose uneditable.
  */
 export const PageMention = Node.create<PageMentionOptions>({
   name: "pageMention",
@@ -43,7 +51,11 @@ export const PageMention = Node.create<PageMentionOptions>({
     return {
       pageId: {
         default: "",
-        parseHTML: (element) => element.getAttribute("data-page-id") || "",
+        parseHTML: (element) =>
+          resolvePageId(
+            element.getAttribute("data-page-id"),
+            element.getAttribute("data-page-href")
+          ),
         renderHTML: (attributes) => ({ "data-page-id": attributes.pageId }),
       },
       pageTitle: {
@@ -56,13 +68,18 @@ export const PageMention = Node.create<PageMentionOptions>({
         parseHTML: (element) => element.getAttribute("data-page-icon") || null,
         renderHTML: (attributes) => ({ "data-page-icon": attributes.pageIcon }),
       },
+      // See PageLink: the portable half of the reference.
+      pageHref: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-page-href") || null,
+        renderHTML: (attributes) =>
+          attributes.pageHref ? { "data-page-href": attributes.pageHref } : {},
+      },
     };
   },
 
   renderMarkdown(node) {
-    const pageId = node.attrs?.pageId || "";
-    if (!pageId) return "";
-    return node.attrs?.pageTitle || "Untitled";
+    return renderPageMarkdownLink(node.attrs ?? {});
   },
 
   parseHTML() {
@@ -98,6 +115,7 @@ export const PageMention = Node.create<PageMentionOptions>({
               pageId: attrs.pageId,
               pageTitle: attrs.pageTitle,
               pageIcon: attrs.pageIcon || null,
+              pageHref: documentHrefForPage(attrs.pageId),
             },
           });
         },
