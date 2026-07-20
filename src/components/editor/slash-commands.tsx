@@ -46,7 +46,7 @@ import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
 
-import { Palette, Table2, LayoutGrid, GalleryHorizontalEnd } from "lucide-react";
+import { Palette } from "lucide-react";
 
 interface CommandSubItem {
   titleKey: string;
@@ -61,7 +61,7 @@ interface CommandItem {
   menuTitleKey?: string;
   descKey: string;
   icon: React.ReactNode;
-  category: "basic" | "lists" | "media" | "database" | "layout" | "advanced" | "turninto" | "color";
+  category: "basic" | "lists" | "media" | "layout" | "advanced" | "turninto" | "color";
   shortcut?: string;
   menuShortcut?: string;
   searchOnly?: boolean;
@@ -72,16 +72,36 @@ interface CommandItem {
 }
 
 /**
- * Feature flag: database blocks are still in internal beta. Flip to `true`
- * to expose them in the slash menu (and search results) again.
+ * Rank a slash-menu item against a lowercase query. Lower is better;
+ * Infinity means "does not match". Title matches outrank keyword matches
+ * outrank description matches, and within each source a prefix beats a
+ * word-prefix beats a substring — so "/col" puts "Columns" above items
+ * that merely mention "collapse".
  */
-const ENABLE_DATABASE_BLOCKS = false;
+export function slashMatchScore(
+  item: Pick<CommandItem, "title" | "description" | "searchKeywords">,
+  q: string
+): number {
+  if (!q) return 0;
+  const score = (text: string, base: number): number => {
+    const t = text.toLowerCase();
+    if (!t.includes(q)) return Infinity;
+    if (t.startsWith(q)) return base;
+    if (t.split(/\s+/).some((word) => word.startsWith(q))) return base + 1;
+    return base + 2;
+  };
+  let best = score(item.title, 0);
+  for (const kw of item.searchKeywords ?? []) {
+    best = Math.min(best, score(kw, 3));
+  }
+  best = Math.min(best, score(item.description, 6));
+  return best;
+}
 
 const categoryLabelKeys: Record<string, string> = {
   basic: "slashMenu.categories.basic",
   lists: "slashMenu.categories.lists",
   media: "slashMenu.categories.media",
-  database: "slashMenu.categories.database",
   layout: "slashMenu.categories.layout",
   advanced: "slashMenu.categories.advanced",
   turninto: "slashMenu.categories.turninto",
@@ -108,7 +128,6 @@ const categoryOrder: Record<CommandItem["category"], number> = {
   basic: 0,
   lists: 0,
   media: 1,
-  database: 2,
   layout: 3,
   advanced: 4,
   turninto: 5,
@@ -442,102 +461,6 @@ const commands: CommandItem[] = [
     searchKeywords: ["网页书签", "书签", "链接"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setWebBookmark({ url: "" }).run();
-    },
-  },
-
-  // Database - parent entry with sub-items
-  {
-    title: "Database",
-    description: "Add a database with table, board, gallery or list view",
-    titleKey: "blockMenu.database",
-    descKey: "blockMenu.databaseDesc",
-    icon: <Table2 className="h-4 w-4" />,
-    category: "database",
-    searchKeywords: ["数据库"],
-    hasSubItems: true,
-    subItems: [
-      {
-        titleKey: "blockMenu.tableView",
-        icon: <Table2 className="h-4 w-4" />,
-        command: ({ editor, range }) => {
-          editor.chain().focus().deleteRange(range).insertDatabaseBlock().run();
-        },
-      },
-      {
-        titleKey: "blockMenu.boardView",
-        icon: <LayoutGrid className="h-4 w-4" />,
-        command: ({ editor, range }) => {
-          editor.chain().focus().deleteRange(range).insertDatabaseBlock(undefined, "board").run();
-        },
-      },
-      {
-        titleKey: "blockMenu.galleryView",
-        icon: <GalleryHorizontalEnd className="h-4 w-4" />,
-        command: ({ editor, range }) => {
-          editor.chain().focus().deleteRange(range).insertDatabaseBlock(undefined, "gallery").run();
-        },
-      },
-      {
-        titleKey: "blockMenu.listView",
-        icon: <List className="h-4 w-4" />,
-        command: ({ editor, range }) => {
-          editor.chain().focus().deleteRange(range).insertDatabaseBlock(undefined, "list").run();
-        },
-      },
-    ],
-    command: () => {},
-  },
-  // Individual database views (search-only, for direct access via search)
-  {
-    title: "Table view",
-    description: "Add a table view for a new or existing data source",
-    titleKey: "blockMenu.tableView",
-    descKey: "blockMenu.tableViewDesc",
-    icon: <Table2 className="h-4 w-4" />,
-    category: "database",
-    searchOnly: true,
-    searchKeywords: ["表格视图", "数据库表格"],
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).insertDatabaseBlock().run();
-    },
-  },
-  {
-    title: "Board view",
-    description: "Add a Kanban board view grouped by status",
-    titleKey: "blockMenu.boardView",
-    descKey: "blockMenu.boardViewDesc",
-    icon: <LayoutGrid className="h-4 w-4" />,
-    category: "database",
-    searchOnly: true,
-    searchKeywords: ["看板视图", "看板"],
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).insertDatabaseBlock(undefined, "board").run();
-    },
-  },
-  {
-    title: "Gallery view",
-    description: "Add a gallery view with card layout",
-    titleKey: "blockMenu.galleryView",
-    descKey: "blockMenu.galleryViewDesc",
-    icon: <GalleryHorizontalEnd className="h-4 w-4" />,
-    category: "database",
-    searchOnly: true,
-    searchKeywords: ["画廊视图", "画廊"],
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).insertDatabaseBlock(undefined, "gallery").run();
-    },
-  },
-  {
-    title: "List view",
-    description: "Add a simple list view",
-    titleKey: "blockMenu.listView",
-    descKey: "blockMenu.listViewDesc",
-    icon: <List className="h-4 w-4" />,
-    category: "database",
-    searchOnly: true,
-    searchKeywords: ["列表视图"],
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).insertDatabaseBlock(undefined, "list").run();
     },
   },
 
@@ -1528,14 +1451,6 @@ function getPreviewCaption(item: CommandItem, translatedTitle: string) {
       return "Insert a diagram or chart";
     case "Inline Math":
       return "Insert inline math expression";
-    case "Table view":
-      return "Create a table database view";
-    case "Board view":
-      return "Create a Kanban board view";
-    case "Gallery view":
-      return "Create a gallery database view";
-    case "List view":
-      return "Create a list database view";
     case "2 Columns":
       return "Side-by-side two columns";
     case "3 Columns":
@@ -1596,17 +1511,17 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(
     const [subSelectedIndex, setSubSelectedIndex] = useState(0);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const isSearching = query.trim().length > 0;
-    const visibleItems = useMemo(
-      () =>
-        items
-          .map((item, originalIndex) => ({ item, originalIndex }))
-          .sort(
-            (a, b) =>
-              getMenuRank(a.item, a.originalIndex) - getMenuRank(b.item, b.originalIndex) ||
-              a.originalIndex - b.originalIndex
-          ),
-      [items]
-    );
+    const visibleItems = useMemo(() => {
+      const indexed = items.map((item, originalIndex) => ({ item, originalIndex }));
+      // While searching, items() already ranked by match quality — keep it.
+      // The curated Notion-style layout only applies to the browse view.
+      if (isSearching) return indexed;
+      return indexed.sort(
+        (a, b) =>
+          getMenuRank(a.item, a.originalIndex) - getMenuRank(b.item, b.originalIndex) ||
+          a.originalIndex - b.originalIndex
+      );
+    }, [items, isSearching]);
 
     const selectItem = useCallback(
       (index: number) => {
@@ -1809,12 +1724,6 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-semibold">
                         {t(item.menuTitleKey ?? item.titleKey)}
-                        {isSearching && item.category === "database" && item.searchOnly && (
-                          <span className="font-medium text-[#9b9a97] dark:text-[#8d8d8d]">
-                            {" "}
-                            · Database
-                          </span>
-                        )}
                         {isSearching && item.category === "turninto" && (
                           <span className="font-medium text-[#9b9a97] dark:text-[#8d8d8d]">
                             {" "}
@@ -1885,6 +1794,9 @@ export const SlashCommands = Extension.create({
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
+        // Multi-word queries ("2 columns", "link to page") must not close
+        // the menu at the first space — Notion muscle memory.
+        allowSpaces: true,
         decorationContent: "/",
         decorationTag: "span",
         decorationClass: "slash-command-query",
@@ -1892,26 +1804,19 @@ export const SlashCommands = Extension.create({
         items: ({ query }: { query: string }) => {
           const q = query.toLowerCase();
 
-          const matchesQuery = (item: CommandItem) => {
-            if (!q) return true;
-            if (item.title.toLowerCase().includes(q) || item.description.toLowerCase().includes(q))
+          const scored = commands
+            .map((item) => ({ item, score: slashMatchScore(item, q) }))
+            .filter(({ item, score }) => {
+              if (score === Infinity) return false;
+              // Hidden categories: only show when query specifically matches
+              if (item.category === "turninto" || item.category === "color" || item.searchOnly) {
+                return q.length > 0;
+              }
               return true;
-            if (item.searchKeywords?.some((kw) => kw.toLowerCase().includes(q))) return true;
-            return false;
-          };
-
-          return commands.filter((item) => {
-            // Internal-only blocks: never surfaced (not even via search) until
-            // the corresponding feature flag is enabled.
-            if (!ENABLE_DATABASE_BLOCKS && item.category === "database") return false;
-            // Hidden categories: only show when query specifically matches
-            if (item.category === "turninto" || item.category === "color" || item.searchOnly) {
-              if (!q) return false;
-              return matchesQuery(item);
-            }
-            // Normal items
-            return matchesQuery(item);
-          });
+            });
+          // Stable sort: ties keep curated registry order.
+          if (q) scored.sort((a, b) => a.score - b.score);
+          return scored.map(({ item }) => item);
         },
         render: () => {
           let component: ReactRenderer<CommandListRef> | null = null;

@@ -155,4 +155,35 @@ describe("source preservation — edits stay confined to the edited block", () =
     expect(out).toContain("| 1 | 2 |");
     expect(out).toContain("Third paragraph stays put.");
   });
+
+  it("splitting a block keeps untouched siblings byte-identical", () => {
+    // Regression for the GUI deep-QA finding: an edit that SPLITS one block
+    // into two must not let the LCS realignment re-serialize neighbours —
+    // the lazy-continuation quote and the compact table delimiter are both
+    // canaries that the default serializer would rewrite.
+    const body = [
+      "# Title",
+      "",
+      "> A quote line",
+      "> second line",
+      "",
+      "| A | B |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+      "",
+      "Final paragraph.",
+    ].join("\n");
+    const editor = makeEditor(body);
+    expect(norm(getMd(editor))).toBe(norm(body)); // baseline faithful
+
+    // Split the heading after its first character (caret inside "Title").
+    editor.chain().setTextSelection(2).splitBlock().run();
+
+    const out = getMd(editor);
+    editor.destroy();
+
+    expect(out).toContain("> A quote line\n> second line");
+    expect(out).toContain("| A | B |\n| --- | --- |\n| 1 | 2 |");
+    expect(out).toContain("Final paragraph.");
+  });
 });

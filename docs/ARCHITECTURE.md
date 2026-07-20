@@ -20,7 +20,7 @@ The product surface is intentionally narrow:
 
 - A user opens a folder ("workspace") of Markdown files.
 - The editor renders each `.md` as rich content via TipTap.
-- Editor-only state (block colors, embedded databases, cached HTML) is
+- Editor-only state (block colors, cached HTML) is
   stored in a hidden `.doxmind` sidecar next to each `.md`.
 - PDF and Excel are Second-class files opened as Synthetic Documents with one
   External-reference Custom Block whose state lives in the same markdown-shaped
@@ -51,8 +51,7 @@ The `.doxmind` sidecar is JSON and stores:
   "markdown_hash": "abc123...",
   "updated_at": "2026-04-29T17:38:00Z",
   "extras": {
-    "blocks": {},
-    "databases": {}
+    "blocks": {}
   }
 }
 ```
@@ -60,9 +59,11 @@ The `.doxmind` sidecar is JSON and stores:
 `extras.blocks` is the target home for External-reference Custom Block state.
 PDF and Excel Synthetic Documents store their single block under
 `extras.blocks.<block_id>.editor` and
-`extras.blocks.<block_id>.parsedCache`. `extras.databases` remains the legacy
-database-block home while that block exists. Anything that does not round-trip
-through Markdown belongs in `extras`, not in top-level PDF/Excel fields.
+`extras.blocks.<block_id>.parsedCache`. `extras.databases` is a retired key:
+the database block was removed in July 2026, but sidecars written before the
+removal may still carry it and saves must pass it through untouched. Anything
+that does not round-trip through Markdown belongs in `extras`, not in
+top-level PDF/Excel fields.
 
 ### Open
 
@@ -224,7 +225,6 @@ Each Zustand store owns a single concern (see `src/stores/`):
 | `layout-store`        | Sidebar, focus mode, command palette, mobile gates.  |
 | `outline-store`       | Heading outline derived from the current document.   |
 | `block-selection`     | Multi-block selection range.                         |
-| `database-store`      | Database-block rendering state.                      |
 | `appearance-store`    | Theme, font, density.                                |
 | `settings-store`      | User settings persisted to `~/.doxmind/config.json`. |
 | `marker-store`        | Marker OCR model download / install state.           |
@@ -239,15 +239,15 @@ they never persist editor HTML themselves.
 TipTap extensions live under `src/extensions/`. Each extension is a
 self-contained block or behavior:
 
-- Custom blocks: `callout`, `columns`, `database`, `mermaid`, `math`,
+- Custom blocks: `callout`, `columns`, `mermaid`, `math`,
   `code-block`, `toggle`, `toc`, `web-bookmark`, `resizable-image`.
 - Editor behaviors: `block-handle`, `block-selection`,
   `inline-comment`, `block-color`, `link-paste`, `page-link`,
   `search`, `trailing-node`, `atom-block-lift`.
 
 Extensions that need to round-trip through Markdown emit / parse fenced
-blocks. Extensions that store doXmind-only state (e.g. database blocks)
-write to `extras` in the sidecar.
+blocks. Extensions that store doXmind-only state write to `extras` in the
+sidecar.
 
 ## Import pipeline
 
@@ -316,7 +316,6 @@ local-desk/
 | ------------------------------- | --------------------------------------- |
 | Document Markdown body          | `~/.../Foo.md` (user filesystem)        |
 | Editor HTML, sidecar id, extras | `~/.../.Foo.doxmind` (sidecar)          |
-| Database-block content          | `extras.databases` in the sidecar       |
 | Workspace pointer + settings    | `~/.doxmind/config.json`                |
 | Marker model install state      | `~/.doxmind/marker-models.json`         |
 | App-level metadata              | `~/.doxmind/doxmind.db` (`AppMetadata`) |

@@ -258,26 +258,6 @@ const ALL_GUI_BLOCK_FIXTURES = [
     html: '<div data-type="web-bookmark" data-url="https://example.com" data-title="Example" data-preflight-block="web-bookmark">Example</div>',
   },
   {
-    id: "database-table",
-    customBlockType: null,
-    html: '<div data-type="database-block" data-database-id="550e8400-e29b-41d4-a716-446655440001" data-preflight-block="database-table"></div>',
-  },
-  {
-    id: "database-board",
-    customBlockType: null,
-    html: '<div data-type="database-block" data-default-view-type="board" data-preflight-block="database-board"></div>',
-  },
-  {
-    id: "database-gallery",
-    customBlockType: null,
-    html: '<div data-type="database-block" data-default-view-type="gallery" data-preflight-block="database-gallery"></div>',
-  },
-  {
-    id: "database-list",
-    customBlockType: null,
-    html: '<div data-type="database-block" data-default-view-type="list" data-preflight-block="database-list"></div>',
-  },
-  {
     id: "pdf-block",
     customBlockType: "pdf-block",
     html: '<div data-type="pdf-block" data-id="pdf-1" data-src="assets/spec.pdf" data-preflight-block="pdf-block">PDF</div>',

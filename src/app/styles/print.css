@@ -14,7 +14,7 @@
           inline styles WITHOUT !important, so a stylesheet rule
           with !important wins.
    - Per-block rules cover every custom TipTap block (callout, code,
-     mermaid, math, database, web bookmark, page link, toggle,
+     mermaid, math, web bookmark, page link, toggle,
      columns, TOC, resizable image). Without these, blocks fall
      through to default browser rendering and break in subtle ways.
    ============================================================= */
@@ -129,11 +129,6 @@
   .image-resize-handle,
   .image-upload-placeholder,
   .table-handles,
-  .database-toolbar,
-  .database-view-tabs-container,
-  .database-add-row,
-  .database-add-column,
-  .filter-sort-panel,
   .toggle-chevron,
   .notion-toggle-empty,
   .toc-empty,
@@ -626,60 +621,6 @@
   .ProseMirror table tr {
     page-break-inside: avoid;
     break-inside: avoid;
-  }
-
-  /* ---------- Database (atom node) ---------- */
-  .ProseMirror [data-type="database-block"] {
-    margin: 10pt 0 !important;
-    background: #ffffff !important;
-    border: 1px solid #e6e6e3 !important;
-    border-radius: 6px !important;
-    padding: 6pt !important;
-    page-break-inside: auto;
-    overflow: visible !important;
-  }
-  /* Keep title; drop the chrome */
-  .ProseMirror [data-type="database-block"] .database-title-input {
-    border: 0 !important;
-    background: transparent !important;
-    font-size: 13pt !important;
-    font-weight: 600 !important;
-    padding: 2pt 0 6pt 0 !important;
-    color: #1f1f1f !important;
-  }
-  /* Render the active view as a static table */
-  .ProseMirror [data-type="database-block"] .database-table {
-    width: 100% !important;
-    border-collapse: collapse !important;
-    font-size: 9.5pt !important;
-  }
-  .ProseMirror [data-type="database-block"] .database-table th,
-  .ProseMirror [data-type="database-block"] .database-table td {
-    border: 1px solid #e6e6e3 !important;
-    padding: 4pt 6pt !important;
-    text-align: left !important;
-    color: #1f1f1f !important;
-    background: transparent !important;
-  }
-  .ProseMirror [data-type="database-block"] .database-table th {
-    background: #f4f4f2 !important;
-    font-weight: 600 !important;
-  }
-  /* Board view → flow as a sequence of column lists, no flex container */
-  .ProseMirror [data-type="database-block"] .database-board {
-    display: block !important;
-  }
-  .ProseMirror [data-type="database-block"] .board-column {
-    display: block !important;
-    margin-bottom: 8pt !important;
-    page-break-inside: avoid;
-  }
-  .ProseMirror [data-type="database-block"] .board-card {
-    border: 1px solid #e6e6e3 !important;
-    border-radius: 4px !important;
-    padding: 6pt 8pt !important;
-    margin-bottom: 4pt !important;
-    background: #fafafa !important;
   }
 
   /* ---------- Web Bookmark ---------- */

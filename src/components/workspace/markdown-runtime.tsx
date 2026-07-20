@@ -42,8 +42,6 @@ import {
 } from "@/components/workspace/markdown-skeleton";
 import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
 import { rangeToMarkdown } from "@/lib/markdown-selection";
-import { useDatabaseStore } from "@/stores/database-store";
-import { eventBus } from "@/lib/events";
 import { perfMark, perfMeasure, perfSync } from "@/lib/perf";
 
 // Per-file scroll memory keyed by fileId, kept at module scope so it survives
@@ -95,7 +93,6 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   const appliedActivationIntentRef = useRef<EditActivationIntent | undefined>(undefined);
   const lastContentRef = useRef(file.content);
   const isFileSwitchingRef = useRef(false);
-  const prevDbIdsRef = useRef<Set<string>>(new Set());
   const initialFileIdRef = useRef<string | null>(file.id);
   const fileStorageKeyRef = useRef(markdownRuntimeFileKey(file));
 
@@ -167,13 +164,6 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
         setLastSavedAt(new Date().toISOString());
         setDirty(false);
 
-        const currentIds = extractDatabaseIds(contentMarkdown ?? content, "save");
-        for (const id of prevDbIdsRef.current) {
-          if (!currentIds.has(id)) {
-            void useDatabaseStore.getState().deleteDatabase(id);
-          }
-        }
-        prevDbIdsRef.current = currentIds;
         return true;
       } finally {
         setSaving(false);
@@ -345,25 +335,6 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
   }, [editor, setEditor]);
 
   useEffect(() => {
-    if (!editor) return;
-    return eventBus.on("database:deleted", ({ databaseId }) => {
-      prevDbIdsRef.current.delete(databaseId);
-      editor.commands.command(({ tr, state }) => {
-        let deleted = false;
-        state.doc.descendants((node, pos) => {
-          if (deleted) return false;
-          if (node.type.name === "databaseBlock" && node.attrs.databaseId === databaseId) {
-            tr.delete(pos, pos + node.nodeSize);
-            deleted = true;
-            return false;
-          }
-        });
-        return deleted;
-      });
-    });
-  }, [editor]);
-
-  useEffect(() => {
     const saveCurrentNow = async (): Promise<boolean> => {
       if (!editor) return true;
       const content = editor.getHTML();
@@ -411,7 +382,6 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
       initialFileIdRef.current = null;
       fileStorageKeyRef.current = markdownRuntimeFileKey(file);
       lastContentRef.current = editor.getHTML();
-      prevDbIdsRef.current = extractDatabaseIds(file.content, "initialMount");
       // Capture the original Markdown so untouched blocks round-trip verbatim.
       editor.commands.setSourceBaseline(file.contentMarkdown ?? null);
       // #139: for an HTML doc, preserve its original HTML blocks on getHTML().
@@ -457,7 +427,6 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
         { bytes: file.content?.length ?? 0, branch: "fileSwitch" }
       );
       lastContentRef.current = editor.getHTML();
-      prevDbIdsRef.current = extractDatabaseIds(file.content, "fileSwitch");
       fileStorageKeyRef.current = nextFileKey;
       editor.commands.setSourceBaseline(file.contentMarkdown ?? null);
       // #139: for an HTML doc, preserve its original HTML blocks on getHTML().
@@ -755,22 +724,6 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
 }
 
 /* ─── Helpers (mirror of Editor.tsx) ──────────────────── */
-
-function extractDatabaseIdsRaw(content: string): Set<string> {
-  const ids = new Set<string>();
-  const re = /(?:data-database-id="([a-f0-9-]+)"|<!-- database:([a-f0-9-]+) -->)/g;
-  let m;
-  while ((m = re.exec(content)) !== null) ids.add(m[1] || m[2]);
-  return ids;
-}
-
-function extractDatabaseIds(content: string, callsite: string): Set<string> {
-  return perfSync(
-    `doxmind.editor.extractDatabaseIds.${callsite}`,
-    () => extractDatabaseIdsRaw(content),
-    { bytes: content.length }
-  );
-}
 
 function focusTrailingParagraph(view: EditorView): boolean {
   const { state, dispatch } = view;

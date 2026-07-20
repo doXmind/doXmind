@@ -4,12 +4,11 @@
  * Usage:
  *   import { eventBus } from "@/lib/events";
  *   eventBus.emit("storage:changed");
- *   const unsub = eventBus.on("database:deleted", ({ databaseId }) => { ... });
+ *   const unsub = eventBus.on("storage:changed", () => { ... });
  */
 
 type EventMap = {
   "storage:changed": void;
-  "database:deleted": { databaseId: string };
 };
 
 type Callback<T> = T extends void ? () => void : (data: T) => void;
