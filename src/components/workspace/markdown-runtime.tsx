@@ -431,11 +431,14 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
     if (initialFileIdRef.current === file.id) {
       initialFileIdRef.current = null;
       fileStorageKeyRef.current = markdownRuntimeFileKey(file);
-      lastContentRef.current = editor.getHTML();
       // Capture the original Markdown so untouched blocks round-trip verbatim.
       editor.commands.setSourceBaseline(file.contentMarkdown ?? null);
       // #139: for an HTML doc, preserve its original HTML blocks on getHTML().
       editor.commands.setHtmlBaseline(isHtmlFile(file) ? file.content : null);
+      // Snapshot AFTER the baselines: setHtmlBaseline makes getHTML() return the
+      // preserved raw markup, so a snapshot taken before it holds the normalized
+      // form and every later comparison reads as a phantom edit.
+      lastContentRef.current = editor.getHTML();
       // (Re)mount: restore this file's remembered scroll, or top if unseen.
       restoreScrollTop(scrollAreaRef.current, scrollPositions.get(file.id) ?? 0);
       return;
@@ -477,11 +480,14 @@ export function MarkdownRuntime({ file, reservedRightInset = 0 }: MarkdownRuntim
         () => editor.commands.setContent(file.content, { emitUpdate: false }),
         { bytes: file.content?.length ?? 0, branch: "fileSwitch" }
       );
-      lastContentRef.current = editor.getHTML();
       fileStorageKeyRef.current = nextFileKey;
       editor.commands.setSourceBaseline(file.contentMarkdown ?? null);
       // #139: for an HTML doc, preserve its original HTML blocks on getHTML().
       editor.commands.setHtmlBaseline(isHtmlFile(file) ? file.content : null);
+      // Snapshot AFTER the baselines — see the mount branch above. Switching in
+      // does not self-heal the way a direct mount does, because the reconcile
+      // effect early-returns while a file switch is in flight.
+      lastContentRef.current = editor.getHTML();
       editor.emit("update", { editor, transaction: editor.state.tr, appendedTransactions: [] });
 
       domObserver?.start();

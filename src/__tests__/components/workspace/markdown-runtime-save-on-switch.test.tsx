@@ -51,6 +51,27 @@ function markdownFile(name: string, html: string, markdown: string): FileItem {
 const fileA = markdownFile("A.md", "<p>Alpha</p>", "Alpha");
 const fileB = markdownFile("B.md", "<p>Bravo</p>", "Bravo");
 
+/**
+ * An HTML document whose on-disk markup is NOT already ProseMirror-normalized
+ * (extra attributes survive via the html source baseline). The flush path has
+ * to compare against the preserved raw markup, not the normalized form, or an
+ * untouched file looks edited.
+ */
+function htmlFile(name: string, html: string): FileItem {
+  const file = markdownFile(name, html, "");
+  return {
+    ...file,
+    documentType: "html",
+    contentMarkdown: null,
+    storageHandle: { ...file.storageHandle!, documentType: "html" },
+  } as FileItem;
+}
+
+const filePage = htmlFile(
+  "Page.html",
+  '<h1 id="t" class="title">Title</h1>\n<p data-x="1">Body text here</p>'
+);
+
 /** Every `doc_write_workspace` call the adapter made, in order. */
 function writes() {
   return invokeMock.mock.calls
@@ -195,6 +216,23 @@ describe("MarkdownRuntime save-on-switch", () => {
         expect(write.payload.markdown).not.toContain("IMPORTANT-EDIT");
       }
     }
+  });
+
+  it("writes nothing when switching away from a document the user never edited", async () => {
+    // Guards the flush against writing files the user only looked at. The
+    // .html fixture is deliberate: its on-disk markup is not ProseMirror-
+    // normalized, so the flush has to compare against the preserved raw markup
+    // that setHtmlBaseline installs rather than the normalized form.
+    const { rerender } = render(withIntl(<MarkdownRuntime file={fileA} />));
+    await settle();
+
+    rerender(withIntl(<MarkdownRuntime file={filePage} />));
+    await settle(1500);
+
+    rerender(withIntl(<MarkdownRuntime file={fileB} />));
+    await settle(1500);
+
+    expect(writes().some((w) => w.path === "Page.html")).toBe(false);
   });
 
   it("flushes each outgoing buffer once across a rapid A→B→A switch", async () => {

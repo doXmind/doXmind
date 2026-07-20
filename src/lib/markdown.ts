@@ -40,10 +40,15 @@ function escapeForAttr(value: string): string {
 // rather than being flattened into images/links with the layout dropped.
 marked.use({
   renderer: {
-    html(token: string | { raw?: string; text?: string }): string {
+    html(token: string | { raw?: string; text?: string; block?: boolean }): string {
       const original = typeof token === "string" ? token : (token.raw ?? token.text ?? "");
       const raw = original.replace(/\n+$/, "");
-      if (isHtmlCommentBlock(raw) && !isCustomBlockPlaceholderComment(raw)) {
+      // marked routes inline HTML through this same callback. Only a
+      // block-level comment may become a node: turning an inline
+      // `<!-- omit in toc -->` into a div splits its heading or paragraph in
+      // two and detaches the marker from what it annotates.
+      const isBlock = typeof token !== "string" && token.block === true;
+      if (isBlock && isHtmlCommentBlock(raw) && !isCustomBlockPlaceholderComment(raw)) {
         return `<div data-html-comment="${escapeForAttr(raw)}" data-type="html-comment"></div>`;
       }
       if (isClaimedRawHtml(raw)) return original; // pass through untouched

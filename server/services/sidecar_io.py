@@ -72,10 +72,16 @@ class _RawHtmlSentinelPostprocessor(RawHtmlPostprocessor):
         head = html.lstrip()
         lower = head.lower()
         stripped = html.strip()
+        # A comment becomes a node only at block level. python-markdown stashes
+        # inline HTML through this same hook, and turning an inline
+        # `<!-- omit in toc -->` into a div splits its heading or paragraph and
+        # detaches the marker from what it annotates.
         # External-reference placeholders share the comment syntax but are owned
         # by the pdf-block / excel-block nodes, so they pass through verbatim.
-        if HTML_COMMENT_BLOCK_RE.match(stripped) and not CUSTOM_BLOCK_PLACEHOLDER_RE.match(
-            stripped
+        if (
+            self.isblocklevel(stripped)
+            and HTML_COMMENT_BLOCK_RE.match(stripped)
+            and not CUSTOM_BLOCK_PLACEHOLDER_RE.match(stripped)
         ):
             return f'<div data-html-comment="{_escape_for_attr(stripped)}" data-type="html-comment"></div>'
         # Raw HTML owned by other blocks (comment placeholders, toggle,
