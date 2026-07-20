@@ -21,6 +21,7 @@
   "horizontal_rule": "<p>above</p>\n<hr>\n<p>below</p>\n",
   "raw_html_block": "<div data-raw-html=\"&lt;p align=&quot;center&quot;&gt;&lt;img src=&quot;b.svg&quot;&gt;&lt;/p&gt;\" data-type=\"raw-html\"></div>",
   "html_comment": "<!-- pdf-block id=\"a\" src=\"s.pdf\" -->",
+  "html_comment_plain": "<div data-html-comment=\"&lt;!-- markdownlint-disable MD013 --&gt;\" data-type=\"html-comment\"></div>",
   "cjk_with_dollar": "<p>价格是 $5 到$10 元</p>\n",
   "inline_code_with_math": "<p>use <code>$x$</code> literally</p>\n"
 }

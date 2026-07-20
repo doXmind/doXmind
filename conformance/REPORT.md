@@ -4,7 +4,7 @@ Generated from `conformance/corpus.json` by running each importer. Each implemen
 
 The three importers feed the same TipTap schema, so they _should_ produce equivalent HTML. They don't yet — this table is the inventory #152 tracks.
 
-- **Agree across all three (16)**: heading, paragraph, emphasis_underscore, bold, strikethrough, inline_code, link_absolute, link_relative, bullet_list, ordered_list, blockquote, fenced_code, mermaid, raw_html_block, html_comment, inline_code_with_math
+- **Agree across all three (17)**: heading, paragraph, emphasis_underscore, bold, strikethrough, inline_code, link_absolute, link_relative, bullet_list, ordered_list, blockquote, fenced_code, mermaid, raw_html_block, html_comment, html_comment_plain, inline_code_with_math
 - **Cosmetic divergence (4)** (different whitespace / attr order / self-close, TipTap parses equivalently): image, table, horizontal_rule, nested_list
 - **Semantic divergence (4)** (different node structure or behaviour): task_list, inline_math, block_math, cjk_with_dollar
 

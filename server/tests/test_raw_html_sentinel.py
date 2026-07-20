@@ -39,6 +39,33 @@ def test_comment_placeholders_are_not_wrapped() -> None:
     assert placeholder in out
 
 
+def test_html_comment_gets_its_own_sentinel() -> None:
+    out = markdown_to_html("Intro\n\n<!-- markdownlint-disable MD013 -->\n\nAfter\n")
+    assert 'data-html-comment="' in out
+    assert "&lt;!-- markdownlint-disable MD013 --&gt;" in out
+    assert "data-raw-html" not in out
+
+
+def test_multi_line_html_comment_keeps_interior() -> None:
+    out = markdown_to_html("<!--\nSPDX-License-Identifier: MIT\n-->\n\nProse.\n")
+    assert 'data-html-comment="' in out
+    assert "SPDX-License-Identifier: MIT" in out
+
+
+def test_comment_placeholder_gets_no_comment_sentinel() -> None:
+    out = markdown_to_html('<!-- pdf-block id="abc" src="spec.pdf" -->\n')
+    assert "data-html-comment" not in out
+
+
+def test_comment_followed_by_markup_keeps_both_verbatim() -> None:
+    # python-markdown stashes the comment and the markup separately, so each
+    # gets its own sentinel (marked keeps them as one raw-HTML block). Either
+    # way no bytes are lost, which is what the sentinels exist to guarantee.
+    out = markdown_to_html("<!-- c -->\n<div>x</div>\n")
+    assert "&lt;!-- c --&gt;" in out
+    assert "&lt;div&gt;x&lt;/div&gt;" in out
+
+
 def test_details_toggle_is_not_wrapped() -> None:
     out = markdown_to_html("<details>\n<summary>S</summary>\n\nbody\n\n</details>\n")
     assert "data-raw-html" not in out
