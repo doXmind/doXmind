@@ -26,12 +26,16 @@ export function StatusBar({ editor }: StatusBarProps) {
   };
 
   const stats = useMemo(() => {
-    const text = editor.getText();
+    // One newline per block boundary: getText()'s default separator is "\n\n",
+    // which bills every boundary as two characters the document does not have.
+    const text = editor.getText({ blockSeparator: "\n" });
     const words = getWordCount(text);
     const characters = text.length;
     return { words, characters };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor.state.doc.content.size]);
+    // Keyed on the doc node, not its size — replacing a character or toggling a
+    // mark leaves the size identical and would otherwise freeze the counts.
+    // A selection-only transaction reuses the same doc, so this stays cheap.
+  }, [editor, editor.state.doc]);
 
   const saveStatus = useMemo(() => {
     if (isSaving) return "saving";

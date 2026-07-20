@@ -6,12 +6,13 @@
 import { marked } from "marked";
 
 import { containsCjk } from "@/extensions/math/cjk";
+import { isCustomBlockPlaceholderComment, isHtmlCommentBlock } from "@/extensions/html-comment";
 
 // Raw-HTML blocks that other extensions already own — must NOT be wrapped as a
-// rawHtml passthrough or those features break: HTML-comment placeholders
-// (pdf-block / excel-block / database), `<details>` (toggle), and
-// `<div data-column(s)>` (columns). Genuine user raw HTML (badge rows, etc.)
-// carries none of these markers.
+// rawHtml passthrough or those features break: HTML comments (htmlComment, and
+// the pdf-block / excel-block placeholders that share their syntax),
+// `<details>` (toggle), and `<div data-column(s)>` (columns). Genuine user raw
+// HTML (badge rows, etc.) carries none of these markers.
 export function isClaimedRawHtml(raw: string): boolean {
   const head = raw.trimStart();
   return (
@@ -26,22 +27,33 @@ export function isClaimedRawHtml(raw: string): boolean {
   );
 }
 
+function escapeForAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 // Configure marked to wrap raw-HTML blocks in a sentinel so they import as a
 // single rawHtml atom node (preserved byte-identical by source preservation)
 // rather than being flattened into images/links with the layout dropped.
 marked.use({
   renderer: {
-    html(token: string | { raw?: string; text?: string }): string {
+    html(token: string | { raw?: string; text?: string; block?: boolean }): string {
       const original = typeof token === "string" ? token : (token.raw ?? token.text ?? "");
       const raw = original.replace(/\n+$/, "");
+      // marked routes inline HTML through this same callback. Only a
+      // block-level comment may become a node: turning an inline
+      // `<!-- omit in toc -->` into a div splits its heading or paragraph in
+      // two and detaches the marker from what it annotates.
+      const isBlock = typeof token !== "string" && token.block === true;
+      if (isBlock && isHtmlCommentBlock(raw) && !isCustomBlockPlaceholderComment(raw)) {
+        return `<div data-html-comment="${escapeForAttr(raw)}" data-type="html-comment"></div>`;
+      }
       if (isClaimedRawHtml(raw)) return original; // pass through untouched
       if (!raw.trim()) return "";
-      const escaped = raw
-        .replace(/&/g, "&amp;")
-        .replace(/"/g, "&quot;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      return `<div data-raw-html="${escaped}" data-type="raw-html"></div>`;
+      return `<div data-raw-html="${escapeForAttr(raw)}" data-type="raw-html"></div>`;
     },
   },
 });

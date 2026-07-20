@@ -8,8 +8,30 @@
  */
 
 import type { Editor } from "@tiptap/core";
-import { TextSelection } from "@tiptap/pm/state";
+import type { Fragment, Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { TextSelection, type Transaction } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
+
+/**
+ * Replace the content of one cell.
+ *
+ * Callers walk the table node to compute `cellPos`, which makes every position
+ * relative to the document as it stood when `tr` was created. Once a step has
+ * been added those offsets no longer describe the current document, so each one
+ * must be mapped forward before it is used — otherwise the second and later
+ * writes of a multi-cell operation land inside neighbouring cells and shred the
+ * table.
+ */
+function replaceCellContent(
+  tr: Transaction,
+  cellPos: number,
+  cell: ProseMirrorNode,
+  content: Fragment | ProseMirrorNode
+): void {
+  const from = tr.mapping.map(cellPos + 1);
+  const to = tr.mapping.map(cellPos + cell.content.size + 1);
+  tr.replaceWith(from, to, content);
+}
 
 /**
  * Get the DOM <table> element for the table currently under selection.
@@ -161,8 +183,7 @@ export function duplicateColumn(editor: Editor, tablePos: number, colIndex: numb
         const destCellPos = cellPos + cell.nodeSize;
         const destCell = row.child(c + 1);
         if (destCell && sourceContent.size > 0) {
-          // Replace destination cell content
-          tr.replaceWith(destCellPos + 1, destCellPos + destCell.content.size + 1, sourceContent);
+          replaceCellContent(tr, destCellPos, destCell, sourceContent);
         }
         break;
       }
@@ -207,7 +228,7 @@ export function duplicateRow(editor: Editor, tablePos: number, rowIndex: number)
         const dstCell = newRow.child(c);
 
         if (srcCell.content.size > 0) {
-          tr.replaceWith(dstCellPos + 1, dstCellPos + dstCell.content.size + 1, srcCell.content);
+          replaceCellContent(tr, dstCellPos, dstCell, srcCell.content);
         }
 
         dstCellPos += dstCell.nodeSize;
@@ -239,9 +260,7 @@ export function clearColumn(editor: Editor, tablePos: number, colIndex: number):
     for (let c = 0; c < row.childCount; c++) {
       const cell = row.child(c);
       if (c === colIndex && cell.content.size > 0) {
-        // Replace cell content with an empty paragraph
-        const emptyParagraph = editor.state.schema.nodes.paragraph.create();
-        tr.replaceWith(cellPos + 1, cellPos + cell.content.size + 1, emptyParagraph);
+        replaceCellContent(tr, cellPos, cell, editor.state.schema.nodes.paragraph.create());
         changed = true;
       }
       cellPos += cell.nodeSize;
@@ -273,8 +292,7 @@ export function clearRow(editor: Editor, tablePos: number, rowIndex: number): bo
       for (let c = 0; c < row.childCount; c++) {
         const cell = row.child(c);
         if (cell.content.size > 0) {
-          const emptyParagraph = editor.state.schema.nodes.paragraph.create();
-          tr.replaceWith(cellPos + 1, cellPos + cell.content.size + 1, emptyParagraph);
+          replaceCellContent(tr, cellPos, cell, editor.state.schema.nodes.paragraph.create());
           changed = true;
         }
         cellPos += cell.nodeSize;

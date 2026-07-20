@@ -70,7 +70,7 @@ export function MathEditorPanel({
           displayMode,
           throwOnError: false,
           errorColor: "#ef4444",
-          trust: true,
+          trust: false,
         });
       } catch {
         previewRef.current.innerHTML = `<span class="text-destructive text-sm">${t("invalidLatex")}</span>`;

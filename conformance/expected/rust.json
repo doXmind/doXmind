@@ -9,6 +9,7 @@
   "heading": "<h1>Heading One</h1>\n",
   "horizontal_rule": "<p>above</p>\n<hr />\n<p>below</p>\n",
   "html_comment": "<!-- pdf-block id=\"a\" src=\"s.pdf\" -->",
+  "html_comment_plain": "<div data-html-comment=\"&lt;!-- markdownlint-disable MD013 --&gt;\" data-type=\"html-comment\"></div>\n",
   "image": "<p><img src=\"assets/img.png\" alt=\"alt\" /></p>\n",
   "inline_code": "<p>use <code>code</code> inline</p>\n",
   "inline_code_with_math": "<p>use <code>$x$</code> literally</p>\n",

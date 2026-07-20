@@ -9,6 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useLayoutStore } from "@/stores/layout-store";
 import { cn } from "@/lib/utils";
 import { perfMark, perfMeasure, perfSync } from "@/lib/perf";
+import { sanitizeDocumentHtml } from "@/lib/sanitize-html";
 import type { FileItem } from "@/stores/file-store";
 
 const SCROLLSPY_THRESHOLD = 0.2;
@@ -508,7 +509,14 @@ function renderSearchHighlights(html: string, rawTerm: string, activeIndex: numb
   return { html: root.innerHTML, count: matchIndex };
 }
 
-function prepareBrowsingHtml(html: string, headings: Heading[] = []) {
+function prepareBrowsingHtml(html: string, headings: Heading[] = []): string {
+  // The browsing view projects this straight into dangerouslySetInnerHTML, and
+  // a document is untrusted input — sanitize at the boundary so every early
+  // return below is covered too.
+  return sanitizeDocumentHtml(prepareBrowsingHtmlRaw(html, headings));
+}
+
+function prepareBrowsingHtmlRaw(html: string, headings: Heading[] = []) {
   if (!html || typeof window === "undefined" || typeof DOMParser === "undefined") return html;
   if (!needsBrowsingHtmlPreparation(html, headings)) return html;
 

@@ -354,8 +354,23 @@ export const BlockSelectionExtension = Extension.create<BlockSelectionOptions>({
                     const blocks = extractBlocks(view.state.doc);
                     const selectedIds = pluginState.selectedBlockIds;
 
+                    // extractBlocks() flattens the tree, so a container and its children sit
+                    // side by side in one list: the entry after a blockquote's last paragraph
+                    // is the blockquote's own next sibling. Extending over that flat list would
+                    // silently pull an unrelated top-level block into the selection — and the
+                    // Backspace below would delete it. Walk siblings of the anchor instead.
+                    const parentStart = (block: SelectableBlock) => {
+                      const $pos = view.state.doc.resolve(block.from);
+                      return $pos.depth === 0 ? -1 : $pos.before($pos.depth);
+                    };
+
+                    const anchor = blocks.find((b) => selectedIds.has(b.id));
+                    if (!anchor) return false;
+                    const anchorParent = parentStart(anchor);
+                    const siblings = blocks.filter((b) => parentStart(b) === anchorParent);
+
                     // Find the range of selected block indices
-                    const selectedIndices = blocks
+                    const selectedIndices = siblings
                       .map((b, i) => (selectedIds.has(b.id) ? i : -1))
                       .filter((i) => i >= 0);
 
@@ -368,11 +383,11 @@ export const BlockSelectionExtension = Extension.create<BlockSelectionOptions>({
                     if (event.key === "ArrowUp" && minIdx > 0) {
                       // Add the block above
                       newIds = new Set(selectedIds);
-                      newIds.add(blocks[minIdx - 1].id);
-                    } else if (event.key === "ArrowDown" && maxIdx < blocks.length - 1) {
+                      newIds.add(siblings[minIdx - 1].id);
+                    } else if (event.key === "ArrowDown" && maxIdx < siblings.length - 1) {
                       // Add the block below
                       newIds = new Set(selectedIds);
-                      newIds.add(blocks[maxIdx + 1].id);
+                      newIds.add(siblings[maxIdx + 1].id);
                     } else {
                       return false;
                     }
@@ -395,7 +410,18 @@ export const BlockSelectionExtension = Extension.create<BlockSelectionOptions>({
                       .filter((b) => selectedIds.has(b.id))
                       .sort((a, b) => b.from - a.from);
 
-                    if (toDelete.length >= view.state.doc.childCount) {
+                    // extractBlocks() descends into containers, so toDelete may hold blocks
+                    // nested inside a blockquote/callout/table. Only a selection covering
+                    // every top-level child actually empties the document; counting nested
+                    // blocks against childCount would clear a document the user only
+                    // partially selected. Block ids are `block-<pos>`, and a top-level
+                    // child's pos is its offset in the doc.
+                    let selectedTopLevel = 0;
+                    view.state.doc.forEach((_node, offset) => {
+                      if (selectedIds.has(`block-${offset}`)) selectedTopLevel += 1;
+                    });
+
+                    if (selectedTopLevel === view.state.doc.childCount) {
                       // Don't delete everything, clear content instead
                       const tr = view.state.tr;
                       tr.replaceWith(

@@ -40,18 +40,82 @@ class _GfmStrikethroughExtension(Extension):
         )
 
 
+CUSTOM_BLOCK_PLACEHOLDER_RE = re.compile(
+    r'^<!--\s*(?:pdf-block|excel-block)\s+id="[^"]+"\s+src="[^"]+".*?\s*-->(?:\n|$)'
+)
+
+HTML_COMMENT_BLOCK_RE = re.compile(r"^<!--(?:(?!-->)[\s\S])*-->$")
+
+
+def _escape_for_attr(value: str) -> str:
+    return (
+        value.replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
 class _RawHtmlSentinelPostprocessor(RawHtmlPostprocessor):
     """Wrap each block-level raw-HTML block in a ``<div data-raw-html="…">``
     sentinel so the editor imports it as a single rawHtml atom node, kept
     byte-identical by source preservation, instead of flattening it into
-    images/links. Inline raw HTML is left untouched. Mirrors the marked and
-    Rust importers; see ``src/extensions/raw-html.ts``.
+    images/links. Block-level HTML comments get the parallel
+    ``<div data-html-comment="…">`` sentinel — they render nothing, so without
+    a node of their own they were dropped on import and lost on the next save.
+    Inline raw HTML is left untouched. Mirrors the marked and Rust importers;
+    see ``src/extensions/raw-html.ts`` and ``src/extensions/html-comment.ts``.
     """
+
+    def run(self, text: str) -> str:
+        """Restore stashed HTML, treating a comment as a node only at block level.
+
+        ``isblocklevel`` cannot answer this: it inspects the tag name, and a
+        comment has none, so it reports every comment as block level wherever it
+        sits. python-markdown signals the placement itself — a standalone block
+        occupies a whole paragraph in the intermediate text
+        (``<p>PLACEHOLDER</p>``) while an inline one appears bare. Wrapping an
+        inline ``<!-- omit in toc -->`` in a div would split the heading that
+        carries it and detach the marker from what it annotates, so inline
+        comments are restored as their original text.
+        """
+        replacements: dict[str, str] = {}
+        for i in range(self.md.htmlStash.html_counter):
+            raw = str(self.md.htmlStash.rawHtmlBlocks[i])
+            rendered = self.stash_to_string(raw)
+            placeholder = self.md.htmlStash.get_placeholder(i)
+            if self.isblocklevel(rendered):
+                replacements[f"<p>{placeholder}</p>"] = rendered
+            is_comment = bool(HTML_COMMENT_BLOCK_RE.match(raw.strip()))
+            replacements[placeholder] = raw if is_comment else rendered
+
+        if not replacements:
+            return text
+
+        def substitute_match(m: re.Match[str]) -> str:
+            key = m.group(0)
+            if key not in replacements:
+                if key[3:-4] in replacements:
+                    return f"<p>{replacements[key[3:-4]]}</p>"
+                return key
+            return replacements[key]
+
+        base_placeholder = markdown.util.HTML_PLACEHOLDER % r"([0-9]+)"
+        pattern = re.compile(f"<p>{base_placeholder}</p>|{base_placeholder}")
+        processed = pattern.sub(substitute_match, text)
+        return processed if processed == text else self.run(processed)
 
     def stash_to_string(self, text: object) -> str:
         html = str(text)
         head = html.lstrip()
         lower = head.lower()
+        stripped = html.strip()
+        # External-reference placeholders share the comment syntax but are owned
+        # by the pdf-block / excel-block nodes, so they pass through verbatim.
+        if HTML_COMMENT_BLOCK_RE.match(stripped) and not CUSTOM_BLOCK_PLACEHOLDER_RE.match(
+            stripped
+        ):
+            return f'<div data-html-comment="{_escape_for_attr(stripped)}" data-type="html-comment"></div>'
         # Raw HTML owned by other blocks (comment placeholders, toggle,
         # columns) must pass through untouched.
         claimed = (
@@ -64,15 +128,9 @@ class _RawHtmlSentinelPostprocessor(RawHtmlPostprocessor):
             # own parseHTML and must not be swallowed as a rawHtml passthrough.
             or "data-type=" in html
         )
-        if not claimed and self.isblocklevel(html.strip()):
+        if not claimed and self.isblocklevel(stripped):
             raw = html.rstrip("\n")
-            escaped = (
-                raw.replace("&", "&amp;")
-                .replace('"', "&quot;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-            )
-            return f'<div data-raw-html="{escaped}" data-type="raw-html"></div>'
+            return f'<div data-raw-html="{_escape_for_attr(raw)}" data-type="raw-html"></div>'
         return html
 
 

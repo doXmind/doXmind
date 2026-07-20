@@ -83,18 +83,22 @@ export function slashMatchScore(
   q: string
 ): number {
   if (!q) return 0;
+  // An exact hit outranks a prefix hit, otherwise "/table" ties "Table" with
+  // "Table of Contents" and registry order silently decides which one Enter
+  // inserts. Within a tier: prefix beats word-prefix beats substring.
   const score = (text: string, base: number): number => {
     const t = text.toLowerCase();
+    if (t === q) return base;
     if (!t.includes(q)) return Infinity;
-    if (t.startsWith(q)) return base;
-    if (t.split(/\s+/).some((word) => word.startsWith(q))) return base + 1;
-    return base + 2;
+    if (t.startsWith(q)) return base + 1;
+    if (t.split(/\s+/).some((word) => word.startsWith(q))) return base + 2;
+    return base + 3;
   };
   let best = score(item.title, 0);
   for (const kw of item.searchKeywords ?? []) {
-    best = Math.min(best, score(kw, 3));
+    best = Math.min(best, score(kw, 4));
   }
-  best = Math.min(best, score(item.description, 6));
+  best = Math.min(best, score(item.description, 8));
   return best;
 }
 
