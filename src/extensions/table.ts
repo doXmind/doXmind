@@ -1,5 +1,6 @@
 import { Table as BaseTable } from "@tiptap/extension-table";
 import type { JSONContent } from "@tiptap/core";
+import { columnResizing, columnResizingPluginKey } from "@tiptap/pm/tables";
 
 /**
  * GFM table serializer.
@@ -54,6 +55,36 @@ function escapeCellText(s: string): string {
 }
 
 export const Table = BaseTable.extend({
+  /**
+   * Upstream gates the resize plugin on `editor.isEditable` — read once, at
+   * construction. A disk-backed document mounts read-only and is unlocked a
+   * frame later, so every file opened from disk lost column resizing for the
+   * whole session. The plugin's own handlers re-check `view.editable` on each
+   * event, so installing it unconditionally is safe in a read-only editor.
+   */
+  addProseMirrorPlugins() {
+    const plugins = this.parent?.() ?? [];
+    if (!this.options.resizable) return plugins;
+    if (plugins.some((plugin) => plugin.spec.key === columnResizingPluginKey)) return plugins;
+
+    return [
+      columnResizing({
+        handleWidth: this.options.handleWidth,
+        cellMinWidth: this.options.cellMinWidth,
+        defaultCellMinWidth: this.options.cellMinWidth,
+        View: this.options.View,
+        lastColumnResizable: this.options.lastColumnResizable,
+      }),
+      ...plugins,
+    ];
+  },
+
+  /** The resize plugin supplies the table node view; a second one would fight it. */
+  addNodeView() {
+    if (this.options.resizable) return null;
+    return this.parent?.() ?? null;
+  },
+
   renderMarkdown(node: JSONContent, h): string {
     const rowNodes = node?.content;
     if (!rowNodes || rowNodes.length === 0) return "";
