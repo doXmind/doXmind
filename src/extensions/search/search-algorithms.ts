@@ -78,6 +78,12 @@ export function processSearches(
       regex.lastIndex = 0;
       for (const match of text.matchAll(regex)) {
         if (match.index === undefined || match[0].length === 0) continue;
+        // A match that swallows an inline leaf would replace the node itself —
+        // in regex mode `alpha.*omega` otherwise deletes the math node between
+        // the two words. Skipping these also keeps ranges disjoint, which
+        // replaceAll's backwards walk depends on: a textblock match can no
+        // longer contain the atom range reported separately below.
+        if (match[0].includes(LEAF_PLACEHOLDER)) continue;
         results.push({
           from: contentStart + match.index,
           to: contentStart + match.index + match[0].length,
