@@ -9,6 +9,12 @@ const toggle = {
   searchKeywords: ["collapse", "折叠"],
 };
 const linkToPage = { title: "Link to Page", description: "Link to another document" };
+const table = { title: "Table", description: "Insert a table" };
+const toc = {
+  title: "Table of Contents",
+  description: "Outline of headings",
+  searchKeywords: ["toc"],
+};
 
 describe("slashMatchScore", () => {
   it("empty query matches everything at rank 0", () => {
@@ -22,13 +28,23 @@ describe("slashMatchScore", () => {
   });
 
   it("supports multi-word queries", () => {
-    expect(slashMatchScore(twoColumns, "2 col")).toBe(0);
-    expect(slashMatchScore(linkToPage, "link to")).toBe(0);
+    // Assert matched-vs-unmatched and relative order, not the tier constants.
+    expect(slashMatchScore(twoColumns, "2 col")).toBeLessThan(Infinity);
+    expect(slashMatchScore(linkToPage, "link to")).toBeLessThan(Infinity);
     expect(slashMatchScore(columns, "link to")).toBe(Infinity);
   });
 
   it("matches non-English keywords", () => {
     expect(slashMatchScore(toggle, "折叠")).toBeLessThan(Infinity);
+  });
+
+  it("ranks an exact title match above a longer title with the same prefix", () => {
+    // "/table" + Enter must insert a Table, not a Table of Contents.
+    expect(slashMatchScore(table, "table")).toBeLessThan(slashMatchScore(toc, "table"));
+  });
+
+  it("still prefers the prefix match when neither title is exact", () => {
+    expect(slashMatchScore(toc, "table of")).toBeLessThan(slashMatchScore(table, "table of"));
   });
 
   it("returns Infinity for non-matches", () => {
