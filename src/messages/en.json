@@ -509,7 +509,10 @@
     "templateStudyNotes": "Study Notes",
     "templateStudyNotesDesc": "Lecture or study session notes",
     "templateJournal": "Journal Entry",
-    "templateJournalDesc": "Daily journal or reflection"
+    "templateJournalDesc": "Daily journal or reflection",
+    "updateReady": "Update ready — restart",
+    "updateReadyVersion": "Update ready · {version}",
+    "updateRestartHint": "A new version has been downloaded. Click to restart and apply it."
   },
   "settings": {
     "appearance": "Appearance",
@@ -584,7 +587,14 @@
     "aboutAcknowledgementsBody1": "doXmind is proprietary software built on a desktop stack from Apple, Rust, Tauri, Python, React, Next.js, TipTap, and ProseMirror.",
     "aboutAcknowledgementsBody2": "We thank the maintainers of the open-source libraries used inside the app. Their work makes a local-first Markdown editor practical to ship.",
     "aboutAcknowledgementsBody3": "doXmind itself is not open source; these acknowledgements are for the third-party components included with the product.",
-    "searchSettings": "Search settings"
+    "searchSettings": "Search settings",
+    "aboutCheckUpdates": "Check for Updates",
+    "aboutUpdateChecking": "Checking for updates…",
+    "aboutUpdateDownloading": "Update found — downloading in the background…",
+    "aboutUpdateReady": "{version} downloaded — restart to apply.",
+    "aboutUpdateRestart": "Restart to Update",
+    "aboutUpToDate": "You're on the latest version.",
+    "aboutUpdateError": "Couldn't check for updates. Check your connection and try again."
   },
   "welcome": {
     "recentWorkspaces": "Recent workspaces",
