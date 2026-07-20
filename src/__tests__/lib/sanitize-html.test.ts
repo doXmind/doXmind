@@ -105,3 +105,27 @@ describe("sanitization is display-only — stored source is untouched", () => {
     expect(original).toBe(copy);
   });
 });
+
+describe("sanitizeSvg — keeps mermaid labels renderable", () => {
+  // mermaid is configured with htmlLabels:false so labels arrive as native SVG
+  // <text>. DOMPurify strips <foreignObject> contents unconditionally, so HTML
+  // labels would render as empty boxes — see src/lib/mermaid-renderer.ts.
+  it("preserves native SVG <text> labels", () => {
+    const svg =
+      '<svg><g class="node"><rect width="80" height="20"/>' +
+      '<text x="10" y="15"><tspan>Start</tspan></text></g></svg>';
+    const out = sanitizeSvg(svg);
+    expect(out).toMatch(/<text/);
+    expect(out).toMatch(/Start/);
+    expect(out).toMatch(/<rect/);
+  });
+
+  it("drops foreignObject entirely rather than rendering it half-sanitized", () => {
+    const out = sanitizeSvg(
+      '<svg><foreignObject><div xmlns="http://www.w3.org/1999/xhtml">' +
+        '<span onclick="window.pwned=1">L</span></div></foreignObject></svg>'
+    );
+    expect(out).not.toMatch(/onclick/i);
+    expect(out.toLowerCase()).not.toMatch(/<script/);
+  });
+});

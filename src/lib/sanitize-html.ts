@@ -86,6 +86,9 @@ export function sanitizeSvg(svg: string): string {
   ensureConfigured();
   return DOMPurify.sanitize(svg, {
     USE_PROFILES: { svg: true, svgFilters: true },
+    // DOMPurify strips <foreignObject> contents as an mXSS vector and offers no
+    // config to keep them, so mermaid is configured with htmlLabels:false and
+    // emits labels as native SVG <text>, which survives sanitization intact.
     FORBID_TAGS: ["script", "foreignObject"],
     ADD_TAGS: ["use"],
   });

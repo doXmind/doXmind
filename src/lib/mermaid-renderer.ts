@@ -537,7 +537,16 @@ async function ensureInitialized(): Promise<typeof import("mermaid").default> {
       startOnLoad: false,
       theme: "base",
       themeVariables: isDark ? darkThemeVars : lightThemeVars,
-      securityLevel: "loose",
+      // Diagram source comes from the document, i.e. untrusted input
+      // (ADR-0011). "strict" makes mermaid escape label content instead of
+      // trusting it, and htmlLabels:false renders labels as native SVG <text>
+      // rather than HTML inside <foreignObject>. The second flag matters twice
+      // over: it removes the injection surface, and DOMPurify deliberately
+      // strips foreignObject contents as an mXSS vector — so HTML labels would
+      // render as empty boxes once sanitized.
+      securityLevel: "strict",
+      htmlLabels: false,
+      flowchart: { htmlLabels: false },
       suppressErrorRendering: true,
     });
     lastTheme = currentTheme;
@@ -613,7 +622,9 @@ export function renderMermaidSvgLight(code: string): Promise<string> {
           startOnLoad: false,
           theme: "base",
           themeVariables: lightThemeVars,
-          securityLevel: "loose",
+          securityLevel: "strict",
+          htmlLabels: false,
+          flowchart: { htmlLabels: false },
           suppressErrorRendering: true,
         });
         // Invalidate the cached theme so the next normal render path
