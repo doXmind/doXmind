@@ -86,7 +86,10 @@ export function WelcomeScreen() {
           lastOpened: "",
           editCount: 0,
           wordCount: 0,
-          preview: parent,
+          // No excerpt available at this layer; leave empty rather than
+          // stuffing the parent path in (the row's subtitle already shows it,
+          // and the preview block renders un-truncated).
+          preview: "",
         };
       });
   }, [recentsRaw, openFilePath]);
