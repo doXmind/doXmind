@@ -76,27 +76,29 @@ describe("page link → markdown", () => {
     expect(out).toContain("[Nested](notes/sub/Nested.md)");
   });
 
-  it("re-points the link at the target's current path after a rename", () => {
+  it("keeps its own href after the target is renamed", () => {
     const editor = makeEditor();
     editor.commands.setPageLink({ pageId: "id-other", pageTitle: "Other Doc" });
     useFileStore.setState({
-      files: useFileStore
-        .getState()
-        .files.map((f) =>
-          f.id === "id-other"
-            ? {
-                ...f,
-                name: "Renamed",
-                storageHandle: { ...f.storageHandle!, relPath: "Renamed.md" },
-              }
-            : f
-        ),
+      files: useFileStore.getState().files.map((f) =>
+        f.id === "id-other"
+          ? {
+              ...f,
+              name: "Renamed",
+              storageHandle: { ...f.storageHandle!, relPath: "Renamed.md" },
+            }
+          : f
+      ),
     });
     const out = markdownOf(editor);
     editor.destroy();
-    // The href follows the file; the label is the one captured when the link
-    // was made, and stays put until the link is re-made.
-    expect(out).toContain("[Other Doc](Renamed.md)");
+    // The href a node carries wins over one recomputed at serialize time:
+    // documentHrefForPage() resolves against the currently-selected document,
+    // so recomputing rewrote correct links in files that merely happened to be
+    // open elsewhere. Re-pointing after a rename therefore belongs to the
+    // rename operation, which knows both endpoints and can rewrite the stored
+    // hrefs — serialization does not and must not guess.
+    expect(out).toContain("[Other Doc](Other%20Doc.md)");
   });
 
   it("keeps emitting the bare title when the target is not in the workspace", () => {
