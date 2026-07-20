@@ -11,6 +11,7 @@ formatting, named ranges).
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import io
 import logging
@@ -213,6 +214,34 @@ def parse_workbook_json_bytes(
     return encoded
 
 
+def parse_csv_workbook_json_bytes(
+    csv_bytes: bytes,
+    *,
+    limits: ParseLimits | None = None,
+) -> bytes:
+    """Parse a CSV blob into the same single-sheet JSON model as an .xlsx."""
+    if not csv_bytes:
+        raise ValueError("empty csv body")
+    cache_key = _csv_cache_key(csv_bytes)
+    cached = _cached_workbook_json(cache_key)
+    if cached is not None:
+        return cached
+
+    parse_limits = limits or ParseLimits()
+    encoded = _cache_encode(_parse_csv_uncached(csv_bytes, parse_limits))
+    _store_workbook_json(cache_key, encoded)
+    return encoded
+
+
+def csv_to_xlsx_bytes(csv_bytes: bytes) -> bytes:
+    """Build a minimal .xlsx workbook from CSV bytes for export-edited."""
+    wb = _workbook_from_csv_bytes(csv_bytes, ParseLimits())
+    out = io.BytesIO()
+    wb.save(out)
+    wb.close()
+    return out.getvalue()
+
+
 def _workbook_cache_key(xlsx_bytes: bytes) -> str | None:
     if not xlsx_bytes:
         raise ValueError("empty xlsx body")
@@ -220,6 +249,69 @@ def _workbook_cache_key(xlsx_bytes: bytes) -> str | None:
         return None
     with perf_timed("excel.parse_workbook.hash", bytes=len(xlsx_bytes)):
         return hashlib.sha256(xlsx_bytes).hexdigest()
+
+
+def _csv_cache_key(csv_bytes: bytes) -> str | None:
+    if _xlsx_cache_disabled():
+        return None
+    with perf_timed("excel.parse_csv.hash", bytes=len(csv_bytes)):
+        return "csv:" + hashlib.sha256(csv_bytes).hexdigest()
+
+
+def _parse_csv_uncached(csv_bytes: bytes, parse_limits: ParseLimits) -> dict[str, Any]:
+    with perf_timed("excel.parse_csv.total", bytes=len(csv_bytes)):
+        wb = _workbook_from_csv_bytes(csv_bytes, parse_limits)
+        try:
+            sheet = wb.active
+            assert sheet is not None
+            sheet_dto, sheet_truncations = _parse_sheet(
+                sheet,
+                value_sheet_loader=None,
+                index=0,
+                limits=parse_limits,
+            )
+        finally:
+            wb.close()
+
+    return {
+        "version": 1,
+        "sheets": [sheet_dto],
+        "truncated": {
+            "sheets": False,
+            "rowsBy": {"sheet-0": True} if sheet_truncations.get("rows") else {},
+            "colsBy": {"sheet-0": True} if sheet_truncations.get("cols") else {},
+        },
+    }
+
+
+def _workbook_from_csv_bytes(csv_bytes: bytes, limits: ParseLimits) -> Workbook:
+    try:
+        text = csv_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError("failed to parse csv: expected UTF-8 text") from exc
+
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.title = "Sheet1"
+    raw_rows = 0
+    raw_cols = 0
+    try:
+        reader = csv.reader(io.StringIO(text))
+        for raw_rows, row in enumerate(reader, start=1):
+            raw_cols = max(raw_cols, len(row))
+            if raw_rows > limits.max_rows:
+                continue
+            for col_index, value in enumerate(row[: limits.max_cols], start=1):
+                if value != "":
+                    ws.cell(row=raw_rows, column=col_index, value=value)
+    except csv.Error as exc:
+        raise ValueError(f"failed to parse csv: {exc}") from exc
+    if raw_rows > limits.max_rows:
+        ws.cell(row=limits.max_rows + 1, column=1, value=None)
+    if raw_cols > limits.max_cols:
+        ws.cell(row=1, column=limits.max_cols + 1, value=None)
+    return wb
 
 
 def _cached_workbook_json(cache_key: str | None) -> bytes | None:

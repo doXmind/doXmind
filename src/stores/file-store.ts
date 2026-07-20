@@ -862,7 +862,11 @@ export const useFileStore = create<FileState>()(
 
           const documentType =
             options?.documentType ??
-            (/\.pdf$/i.test(name) ? "pdf" : /\.(xlsx|xlsm)$/i.test(name) ? "excel" : "markdown");
+            (/\.pdf$/i.test(name)
+              ? "pdf"
+              : /\.(xlsx|xlsm|csv)$/i.test(name)
+                ? "excel"
+                : "markdown");
 
           let entry;
           let storedContent = content;

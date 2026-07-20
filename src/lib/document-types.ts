@@ -2,9 +2,9 @@ import type { FileItem } from "@/types";
 import type { WorkspaceDocumentType } from "@/lib/storage/types";
 
 const PDF_RE = /\.pdf$/i;
-const EXCEL_RE = /\.(xlsx|xlsm)$/i;
+const EXCEL_RE = /\.(xlsx|xlsm|csv)$/i;
 const HTML_RE = /\.html?$/i;
-const ANY_DOC_RE = /\.(md|markdown|pdf|xlsx|xlsm|html?)$/i;
+const ANY_DOC_RE = /\.(md|markdown|pdf|xlsx|xlsm|csv|html?)$/i;
 
 export function documentTypeFromName(name: string): WorkspaceDocumentType {
   if (PDF_RE.test(name)) return "pdf";

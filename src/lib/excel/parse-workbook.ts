@@ -61,8 +61,9 @@ export async function fetchExcelWorkbook(
   filename = "workbook.xlsx",
   signal?: AbortSignal
 ): Promise<ExcelWorkbookDto> {
+  const isCsv = /\.csv$/i.test(filename);
   const blob = new Blob([new Uint8Array(bytes)], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    type: isCsv ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
   const formData = new FormData();
   formData.append("file", blob, filename);

@@ -68,9 +68,9 @@
         "rank": "Alternate"
       },
       {
-        "ext": ["xlsx", "xlsm"],
-        "name": "Excel Workbook",
-        "description": "Excel workbook",
+        "ext": ["xlsx", "xlsm", "csv"],
+        "name": "Spreadsheet",
+        "description": "Spreadsheet",
         "role": "Editor",
         "rank": "Alternate"
       }

@@ -2678,7 +2678,9 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = file.name;
+      anchor.download = /\.csv$/i.test(file.name)
+        ? file.name.replace(/\.csv$/i, ".xlsx")
+        : file.name;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);

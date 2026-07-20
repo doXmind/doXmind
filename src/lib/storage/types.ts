@@ -184,9 +184,9 @@ export interface PdfTextStyleRange {
 
 /**
  * Excel editor sidecar state. Stored under the `excel_editor` key in the
- * `.doxmind` sidecar that lives next to the `.xlsx` file. The `.xlsx` itself
- * remains the portable source of truth — `edits` are applied lazily on top of
- * the parsed workbook and flushed back to the binary on export.
+ * `.doxmind` sidecar that lives next to the source spreadsheet. The source
+ * file remains the portable source of truth — `edits` are applied lazily on top
+ * of the parsed workbook and flushed back to an `.xlsx` binary on export.
  *
  * The `cells` map is keyed by `"${sheetId}!${row},${col}"` (zero-based) so the
  * shape matches the JSON cell model returned by `/api/excel/parse-workbook`.
@@ -224,7 +224,7 @@ export interface ExcelEditorState {
    * Structural operations applied since the workbook was parsed. Replayed
    * in order on export so openpyxl's `insert_rows` / `delete_rows` /
    * `insert_cols` / `delete_cols` can re-create the user's structural
-   * changes against the original `.xlsx`.
+   * changes against the original spreadsheet.
    */
   ops?: ExcelStructuralOp[];
   /**
@@ -405,7 +405,7 @@ export interface StorageCreateInput {
 }
 
 export interface StorageImportInput {
-  /** Filename including extension. Must end in `.md`, `.pdf`, or `.xlsx`. */
+  /** Filename including extension. Must end in `.md`, `.pdf`, `.xlsx`, or `.csv`. */
   name: string;
   /** Destination folder (or null for workspace root). */
   parent: DocumentHandle | null;

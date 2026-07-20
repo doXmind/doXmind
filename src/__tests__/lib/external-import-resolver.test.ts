@@ -12,6 +12,7 @@ describe("extensionOf", () => {
     expect(extensionOf("Foo.MD")).toBe(".md");
     expect(extensionOf("Bar.PDF")).toBe(".pdf");
     expect(extensionOf("Baz.XLSX")).toBe(".xlsx");
+    expect(extensionOf("Data.CSV")).toBe(".csv");
   });
 
   it("returns null for files with no extension", () => {
@@ -43,6 +44,7 @@ describe("planExternalImport — whitelist", () => {
         { name: "Plan.md", srcPath: "/tmp/Plan.md" },
         { name: "Spec.pdf", srcPath: "/tmp/Spec.pdf" },
         { name: "Q3.xlsx", srcPath: "/tmp/Q3.xlsx" },
+        { name: "Data.csv", srcPath: "/tmp/Data.csv" },
       ],
       destFolderId: null,
       existingNames: [],
@@ -52,6 +54,7 @@ describe("planExternalImport — whitelist", () => {
       "Plan.md",
       "Spec.pdf",
       "Q3.xlsx",
+      "Data.csv",
     ]);
     expect(plan.rejected).toHaveLength(0);
     expect(plan.collisions).toHaveLength(0);
@@ -92,7 +95,7 @@ describe("planExternalImport — whitelist", () => {
   });
 
   it("rejects .markdown — only .md is whitelisted in this slice", () => {
-    // The PRD pins the whitelist to `.md / .pdf / .xlsx` literally. `.markdown`
+    // The PRD pins the whitelist to `.md / .pdf / .xlsx / .csv` literally. `.markdown`
     // is supported elsewhere but #67's whitelist test calls it out explicitly.
     const plan = planExternalImport({
       items: [{ name: "Doc.markdown" }],
@@ -103,7 +106,7 @@ describe("planExternalImport — whitelist", () => {
   });
 
   it("exports the canonical whitelist as a readonly tuple", () => {
-    expect(SUPPORTED_EXTENSIONS).toEqual([".md", ".pdf", ".xlsx"]);
+    expect(SUPPORTED_EXTENSIONS).toEqual([".md", ".pdf", ".xlsx", ".csv"]);
   });
 });
 
@@ -196,9 +199,9 @@ describe("nextKeepBothName", () => {
 
   it("increments past the highest existing (N) at the destination", () => {
     expect(nextKeepBothName("Foo.md", new Set(["Foo.md", "Foo (2).md"]))).toBe("Foo (3).md");
-    expect(
-      nextKeepBothName("Foo.md", new Set(["Foo.md", "Foo (2).md", "Foo (5).md"]))
-    ).toBe("Foo (6).md");
+    expect(nextKeepBothName("Foo.md", new Set(["Foo.md", "Foo (2).md", "Foo (5).md"]))).toBe(
+      "Foo (6).md"
+    );
   });
 
   it("anchors counting on the bare stem so `Foo (2).md` re-collisions land on `Foo (3).md`", () => {

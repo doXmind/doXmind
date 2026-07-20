@@ -17,7 +17,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const SUPPORTED_EXTS = [".md", ".markdown", ".pdf", ".xlsx", ".xlsm"];
+const SUPPORTED_EXTS = [".md", ".markdown", ".pdf", ".xlsx", ".xlsm", ".csv"];
 
 /**
  * Resolve an argv / file:// path into a canonical absolute path that points at
