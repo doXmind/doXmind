@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import type { Editor } from "@tiptap/react";
 import { BlockActionMenu } from "./block-action-menu";
+import { LinkModal } from "./link-modal";
 
 interface EditorContextMenuProps {
   editor: Editor;
@@ -46,15 +47,51 @@ function blockStartPosAtCoords(editor: Editor, x: number, y: number): number | n
  * Align / Duplicate / Copy / Move / Delete) for the block under the cursor,
  * instead of a text Cut/Copy/Paste menu. Reuses BlockActionMenu, which owns
  * its positioning, keyboard navigation, and dismissal.
+ *
+ * Also hosts the Mod+K link modal: this component is mounted for as long as
+ * the editor is, which a keyboard shortcut needs and the bubble menu (rendered
+ * only while a selection is hovered) cannot offer.
  */
 export function EditorContextMenu({ editor }: EditorContextMenuProps) {
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const [blockPos, setBlockPos] = useState<number | null>(null);
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
 
   const close = useCallback(() => {
     setPosition(null);
     setBlockPos(null);
   }, []);
+
+  // Mod+K. The bubble menu's tooltip and the shortcuts panel both advertise
+  // this as "Add link", but the global palette shortcut is on window and would
+  // otherwise take every press. Claim it here — this component is mounted for
+  // the whole life of the editor, unlike the bubble menu — and only when there
+  // is something to link; with no selection the palette still wins.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key !== "k") return;
+      if (!editor.isEditable) return;
+
+      const target = e.target as Node | null;
+      if (!editor.view.hasFocus() && !(target && editor.view.dom.contains(target))) return;
+
+      if (editor.state.selection.empty) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      setLinkModalOpen(true);
+    };
+
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
+  }, [editor]);
+
+  const handleLinkConfirm = useCallback(
+    (url: string) => {
+      editor.chain().focus().setLink({ href: url }).run();
+    },
+    [editor]
+  );
 
   useEffect(() => {
     const dom = editor.view.dom;
@@ -76,9 +113,16 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
     return () => dom.removeEventListener("contextmenu", handleContextMenu);
   }, [editor]);
 
-  if (position === null || blockPos === null) return null;
-
   return (
-    <BlockActionMenu editor={editor} blockPos={blockPos} position={position} onClose={close} />
+    <>
+      <LinkModal
+        open={linkModalOpen}
+        onClose={() => setLinkModalOpen(false)}
+        onConfirm={handleLinkConfirm}
+      />
+      {position !== null && blockPos !== null && (
+        <BlockActionMenu editor={editor} blockPos={blockPos} position={position} onClose={close} />
+      )}
+    </>
   );
 }
