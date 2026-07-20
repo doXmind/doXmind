@@ -43,6 +43,26 @@ interface RecentEntry {
   onActivate: () => void;
 }
 
+/**
+ * Compact an absolute path for display: abbreviate the home directory to `~`
+ * and middle-ellipsize deep paths so the meaningful tail (the segments nearest
+ * the file) stays visible instead of being clipped by CSS `truncate`. The full
+ * path remains available via the row's `title` tooltip.
+ */
+export function compactPath(rawPath: string): string {
+  const normalized = rawPath.replaceAll("\\", "/").replace(/\/+$/, "");
+  if (!normalized) return rawPath;
+  const home = normalized
+    .replace(/^\/Users\/[^/]+(?=\/|$)/, "~")
+    .replace(/^[A-Za-z]:\/Users\/[^/]+(?=\/|$)/, "~")
+    .replace(/^\/home\/[^/]+(?=\/|$)/, "~");
+  const hasRoot = home.startsWith("/");
+  const parts = home.split("/").filter(Boolean);
+  if (parts.length <= 5) return home || "/";
+  const compact = [...parts.slice(0, 2), "…", ...parts.slice(-2)].join("/");
+  return hasRoot ? `/${compact}` : compact;
+}
+
 interface FirstRunAction {
   title: string;
   body: string;
@@ -175,7 +195,7 @@ function RecentState({
                         {entry.title}
                       </span>
                       <span className="mt-0.5 block truncate text-[12.5px] text-muted-foreground">
-                        {entry.subtitle}
+                        {compactPath(entry.subtitle)}
                       </span>
                     </span>
                     <span className="shrink-0 text-[11px] text-muted-foreground/75">
@@ -292,7 +312,9 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
       subtitle: workspace.parent,
       preview: "",
       words: 0,
-      when: workspace.parent,
+      // Folders have no timestamp; leave the trailing slot empty instead of
+      // repeating the parent path the subtitle already shows.
+      when: "",
       isDocument: false,
       onActivate: () => onOpenRecentWorkspace(workspace.path),
     }));
