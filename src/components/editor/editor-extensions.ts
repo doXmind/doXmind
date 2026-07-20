@@ -27,6 +27,7 @@ import { TableOfContents } from "@/extensions/toc";
 import { WebBookmark } from "@/extensions/web-bookmark";
 import { PageMention } from "@/extensions/page-mention";
 import { LinkPaste } from "@/extensions/link-paste";
+import { MarkdownClipboard } from "@/extensions/markdown-clipboard";
 import { TrailingNode } from "@/extensions/trailing-node";
 import { SlashCommands } from "./slash-commands";
 import { SearchExtension } from "@/extensions/search";
@@ -159,6 +160,9 @@ export function getEditorExtensions(): Extensions {
 
     // Link paste auto-conversion
     LinkPaste,
+
+    // Markdown clipboard flavors (copy emits markdown, plain-text paste parses it)
+    MarkdownClipboard,
 
     // Ensure document always ends with an editable paragraph
     TrailingNode,

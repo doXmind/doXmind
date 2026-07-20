@@ -8,6 +8,7 @@
 
 import type { Editor } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { sliceToMarkdown } from "@/extensions/markdown-clipboard";
 
 export interface BlockInfo {
   /** Start position of the block in the document */
@@ -234,7 +235,8 @@ export function liftAtomBlock(editor: Editor, atomNodePos: number): boolean {
 }
 
 /**
- * Copy a block's HTML content to the clipboard
+ * Copy a block to the clipboard with the same two flavors a ⌘C produces:
+ * markdown as text/plain, rich markup as text/html.
  */
 export async function copyBlockToClipboard(
   editor: Editor,
@@ -243,21 +245,29 @@ export async function copyBlockToClipboard(
 ): Promise<boolean> {
   try {
     const slice = editor.state.doc.slice(from, to);
+    const markdown = sliceToMarkdown(editor, slice);
+
     const div = document.createElement("div");
     const fragment = (
       editor.view as unknown as {
         serializeForClipboard: (slice: unknown) => { dom: DocumentFragment };
       }
     ).serializeForClipboard?.(slice);
+    if (fragment) div.appendChild(fragment.dom);
 
-    if (fragment) {
-      div.appendChild(fragment.dom);
-    } else {
-      // Fallback: get text content
-      div.textContent = slice.content.textBetween(0, slice.content.size, "\n");
+    // Older WebViews expose writeText but not the multi-flavor write; markdown
+    // is the flavor worth keeping when only one fits.
+    if (div.innerHTML && typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/plain": new Blob([markdown], { type: "text/plain" }),
+          "text/html": new Blob([div.innerHTML], { type: "text/html" }),
+        }),
+      ]);
+      return true;
     }
 
-    await navigator.clipboard.writeText(div.textContent || "");
+    await navigator.clipboard.writeText(markdown);
     return true;
   } catch {
     // Clipboard API might not be available
