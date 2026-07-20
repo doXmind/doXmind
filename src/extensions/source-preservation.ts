@@ -22,6 +22,8 @@
 import { Extension } from "@tiptap/core";
 import { marked } from "marked";
 
+import { escapeMarkdownText } from "@/lib/markdown";
+
 export interface SourceBlock {
   /** Original Markdown bytes of the block, including its trailing blank line(s). */
   raw: string;
@@ -29,8 +31,18 @@ export interface SourceBlock {
   norm: string;
 }
 
+interface TextNodeJson {
+  type?: string;
+  text?: string;
+  marks?: Array<string | { type?: string }>;
+  content?: TextNodeJson[];
+}
+
 interface MarkdownManager {
   serialize: (doc: unknown) => string;
+  /** @tiptap/markdown internals — see `installTextEscaper`. */
+  codeTypes?: Set<string>;
+  encodeTextForMarkdown?: (text: string, node: TextNodeJson, parentNode?: TextNodeJson) => string;
 }
 
 interface SourcePreservationStorage {
@@ -159,7 +171,22 @@ export function preserveSerialize(
   const nextBaseline: SourceBlock[] = [];
   let i = 0;
   let j = 0;
+  // A block emitted straight after the file's last block would otherwise be
+  // glued to it by that block's single trailing newline, merging two paragraphs
+  // (or absorbing the new block into a list) when the `.md` is reopened without
+  // its sidecar. Pad the preceding part to a blank line — and mirror the pad
+  // into nextBaseline, so the next save preserves against the bytes written.
+  const padPreviousToBlankLine = () => {
+    const last = parts.length - 1;
+    if (last < 0) return;
+    const trailing = /\n*$/.exec(parts[last])![0].length;
+    if (trailing >= 2) return;
+    const padded = parts[last].slice(0, parts[last].length - trailing) + "\n\n";
+    parts[last] = padded;
+    nextBaseline[last].raw = padded;
+  };
   const emitFresh = (serialized: string, norm: string) => {
+    padPreviousToBlankLine();
     const raw = serialized + "\n\n";
     parts.push(raw);
     nextBaseline.push({ raw, norm });
@@ -219,6 +246,40 @@ export function buildBaseline(
   return baseline;
 }
 
+/**
+ * Swap @tiptap/markdown's HTML-entity-only text encoder for a markdown escaper.
+ *
+ * Text nodes never reach an extension's `renderMarkdown` — the manager returns
+ * their encoding directly — so patching the per-editor manager instance is the
+ * only hook. Code context is re-derived from the manager's own `codeTypes` set;
+ * text there must stay verbatim.
+ */
+function installTextEscaper(manager: MarkdownManager): void {
+  const original = manager.encodeTextForMarkdown;
+  if (typeof original !== "function") return;
+
+  manager.encodeTextForMarkdown = (text, node, parentNode) => {
+    const codeTypes = manager.codeTypes;
+    if (!codeTypes) return original.call(manager, text, node, parentNode);
+    const inCode =
+      (!!parentNode?.type && codeTypes.has(parentNode.type)) ||
+      (node.marks ?? []).some((m) => codeTypes.has(typeof m === "string" ? m : (m.type ?? "")));
+    if (inCode) return text;
+
+    // Leading-marker escapes only apply where a line actually begins: the first
+    // text of a paragraph, or the text right after a hard break. Headings, list
+    // markers and quote prefixes are emitted by their own handlers, so their
+    // text is never column zero.
+    const siblings = parentNode?.content;
+    const index = siblings ? siblings.indexOf(node) : -1;
+    const atLineStart =
+      parentNode?.type === "paragraph" &&
+      (index === 0 || (index > 0 && siblings![index - 1]?.type === "hardBreak"));
+
+    return escapeMarkdownText(text, atLineStart);
+  };
+}
+
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     sourcePreservation: {
@@ -268,6 +329,9 @@ export const SourcePreservation = Extension.create({
     const name = this.name;
     const original = editor.getMarkdown?.bind(editor);
     if (!original) return;
+
+    const escaperManager = getManager(editor);
+    if (escaperManager) installTextEscaper(escaperManager);
 
     editor.getMarkdown = () => {
       try {

@@ -1,6 +1,8 @@
 /**
  * Markdown→HTML conversion (via marked) for imported markdown → TipTap editor.
- * HTML→Markdown is handled by TipTap's @tiptap/markdown extension.
+ * HTML→Markdown is handled by TipTap's @tiptap/markdown extension, except for
+ * text escaping (`escapeMarkdownText`), which lives here so the escape rules sit
+ * next to the parse rules they have to survive.
  */
 
 import { marked } from "marked";
@@ -54,6 +56,40 @@ marked.use({
       if (isClaimedRawHtml(raw)) return original; // pass through untouched
       if (!raw.trim()) return "";
       return `<div data-raw-html="${escapeForAttr(raw)}" data-type="raw-html"></div>`;
+    },
+  },
+});
+
+// Map a `[!MARKER]` alert label onto one of the editor's four callout types.
+// Accepts doXmind's own names (what the serializer writes) plus the GFM alert
+// set, so alerts authored on GitHub import as callouts too. Must stay in sync
+// with `callout_type_for_alert` (Rust) and `_CALLOUT_TYPE_BY_ALERT` (Python) —
+// see docs/adr/0009 and conformance/.
+const CALLOUT_TYPE_BY_ALERT: Record<string, string> = {
+  INFO: "info",
+  NOTE: "info",
+  IMPORTANT: "info",
+  TIP: "tip",
+  WARNING: "warning",
+  ERROR: "error",
+  CAUTION: "error",
+};
+
+const ALERT_MARKER_RE = /^[ \t]*\[!([A-Za-z]+)\][ \t]*(?:\r?\n|$)/;
+
+// Parse the GFM alert blockquote the callout serializer emits. Without this the
+// syntax is write-only: a saved callout reopens as a plain blockquote and its
+// type is lost.
+marked.use({
+  renderer: {
+    blockquote(token: { text?: string }): string | false {
+      const source = token.text ?? "";
+      const match = ALERT_MARKER_RE.exec(source);
+      const type = match ? CALLOUT_TYPE_BY_ALERT[match[1].toUpperCase()] : undefined;
+      if (!match || !type) return false; // plain quote — default renderer
+      const inner = marked.parse(source.slice(match[0].length), { async: false }) as string;
+      // The callout schema is `block+`, so an alert with no body still needs one.
+      return `<div data-callout-type="${type}">${inner || "<p></p>"}</div>`;
     },
   },
 });
@@ -210,6 +246,49 @@ export function unwrapCjkMath(html: string): string {
   }
 
   return touched ? template.innerHTML : html;
+}
+
+// A paragraph whose whole line is `---` / `***` / `___` is a thematic break —
+// and a leading `---` also collides with the frontmatter delimiter.
+const THEMATIC_BREAK_RE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
+// Block constructs that only bite at the start of a line. A leading backslash
+// is escaped too, so text that literally reads `\# x` survives a round-trip.
+const LEADING_MARKER_RE = /^([ \t]*)(\\|#{1,6}(?=[ \t]|$)|[-+*](?=[ \t]|$)|>)/;
+// Ordered lists escape their delimiter, not the digits — only ASCII punctuation
+// is escapable, so `\1.` would stay a literal backslash.
+const ORDERED_MARKER_RE = /^([ \t]*\d{1,9})([.)])(?=[ \t]|$)/;
+// `[label](dest)`, `[label][ref]` and `[label]: dest`. A genuine link arrives as
+// a link mark, so a bracket pair still sitting in plain text is literal.
+const LINK_LIKE_RE = /\[[^[\]]*\](?=[([:])/g;
+
+/**
+ * Escape literal text so the `.md` reads back as text rather than structure.
+ *
+ * @tiptap/markdown only HTML-entity-encodes text, so typed or pasted `# foo`,
+ * `- foo`, `1. foo`, `---` and `[x](y)` come back as a heading, list, thematic
+ * break or link when the file is reopened without its sidecar.
+ *
+ * Deliberately minimal: only constructs that would change the parse are
+ * escaped. Over-escaping rewrites bytes inside untouched blocks, which makes
+ * the source-preservation baseline fail self-validation and disables byte
+ * fidelity for the whole document. `&` and `<` therefore stay HTML entities —
+ * `\<` is not a recognised escape in python-markdown, the importer the shipping
+ * app uses — while `>` becomes `\>`, which all three importers understand.
+ */
+export function escapeMarkdownText(text: string, atLineStart: boolean): string {
+  const entities = text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  // The leading-marker pass runs BEFORE the link pass, and therefore only ever
+  // sees backslashes the user typed. Its first alternative matches a literal
+  // backslash so that one survives the round-trip — run it second and it would
+  // escape the backslash the link pass just inserted at index 0, doubling it.
+  const marked = !atLineStart
+    ? entities
+    : THEMATIC_BREAK_RE.test(entities)
+      ? entities.replace(/[-*_]/, (c) => `\\${c}`)
+      : ORDERED_MARKER_RE.test(entities)
+        ? entities.replace(ORDERED_MARKER_RE, (_match, prefix, delim) => `${prefix}\\${delim}`)
+        : entities.replace(LEADING_MARKER_RE, (_match, indent, marker) => `${indent}\\${marker}`);
+  return marked.replace(LINK_LIKE_RE, (match) => `\\${match}`);
 }
 
 export function markdownToHtml(markdown: string): string {

@@ -24,6 +24,7 @@ import markdown
 from markdown.extensions import Extension
 from markdown.inlinepatterns import SimpleTagInlineProcessor
 from markdown.postprocessors import RawHtmlPostprocessor
+from markdown.treeprocessors import Treeprocessor
 
 
 class _GfmStrikethroughExtension(Extension):
@@ -38,6 +39,59 @@ class _GfmStrikethroughExtension(Extension):
         md.inlinePatterns.register(
             SimpleTagInlineProcessor(r"()~~(.+?)~~", "del"), "gfm_del", 105
         )
+
+
+# Map a ``[!MARKER]`` alert label onto one of the editor's four callout types.
+# Accepts doXmind's own names (what the serializer writes) plus the GFM alert
+# set, so alerts authored on GitHub import as callouts too. Must stay in sync
+# with `callout_type_for_alert` (Rust) and `CALLOUT_TYPE_BY_ALERT` (marked) —
+# see docs/adr/0009 and conformance/.
+_CALLOUT_TYPE_BY_ALERT = {
+    "INFO": "info",
+    "NOTE": "info",
+    "IMPORTANT": "info",
+    "TIP": "tip",
+    "WARNING": "warning",
+    "ERROR": "error",
+    "CAUTION": "error",
+}
+
+_ALERT_MARKER_RE = re.compile(r"^[ \t]*\[!([A-Za-z]+)\][ \t]*(?:\r?\n|$)")
+
+
+class _GfmAlertTreeprocessor(Treeprocessor):
+    """``> [!TYPE]`` blockquote → the editor's callout node.
+
+    The callout serializer emits GFM alert syntax; without the matching import
+    it is write-only — a saved callout reopens as a plain blockquote with its
+    type lost (#149).
+    """
+
+    def run(self, root: Any) -> None:
+        for quote in root.iter("blockquote"):
+            first = next(iter(quote), None)
+            if first is None or first.tag != "p" or not first.text:
+                continue
+            match = _ALERT_MARKER_RE.match(first.text)
+            if match is None:
+                continue
+            callout_type = _CALLOUT_TYPE_BY_ALERT.get(match.group(1).upper())
+            if callout_type is None:
+                continue
+            body = first.text[match.end() :]
+            if body or len(first):
+                first.text = body
+            else:
+                quote.remove(first)
+            quote.tag = "div"
+            quote.set("data-callout-type", callout_type)
+
+
+class _GfmAlertExtension(Extension):
+    def extendMarkdown(self, md: markdown.Markdown) -> None:
+        # After `inline` (20) so the paragraph's text is settled, before
+        # `raw_html` (30) restores the sentinel-wrapped HTML stash.
+        md.treeprocessors.register(_GfmAlertTreeprocessor(md), "gfm_alert", 25)
 
 
 CUSTOM_BLOCK_PLACEHOLDER_RE = re.compile(
@@ -193,6 +247,35 @@ class CorruptSidecarError(Exception):
         self.reason = reason
 
 
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+
+
+def close_unterminated_fence(md: str) -> str:
+    """Append the closing marker for a code fence left open at end of document.
+
+    CommonMark runs an unterminated fence to the end of the document, and both
+    the marked and Rust importers do. python-markdown instead abandons the
+    block and re-renders it as a paragraph, so every line collapses into one
+    once TipTap parses that ``<p>`` — indentation and line breaks gone (#149).
+    """
+    marker: str | None = None
+    for line in md.splitlines():
+        match = _FENCE_RE.match(line)
+        if not match:
+            continue
+        fence, info = match.group(1), match.group(2)
+        if marker is None:
+            # A backtick fence's info string may not contain a backtick.
+            if fence[0] == "`" and "`" in info:
+                continue
+            marker = fence
+        elif fence[0] == marker[0] and len(fence) >= len(marker) and not info.strip():
+            marker = None
+    if marker is None:
+        return md
+    return (md if md.endswith("\n") else md + "\n") + marker + "\n"
+
+
 def _render_task_item_text(text: str) -> str:
     rendered = markdown.markdown(text, extensions=["sane_lists"])
     if rendered.startswith("<p>") and rendered.endswith("</p>"):
@@ -272,7 +355,13 @@ def markdown_to_html(md: str) -> str:
     beats losing the structure outright.
     """
     converter = markdown.Markdown(
-        extensions=["tables", "fenced_code", "sane_lists", _GfmStrikethroughExtension()],
+        extensions=[
+            "tables",
+            "fenced_code",
+            "sane_lists",
+            _GfmStrikethroughExtension(),
+            _GfmAlertExtension(),
+        ],
         tab_length=2,
     )
     # Replace the built-in raw-HTML restorer with the sentinel-wrapping one
@@ -280,7 +369,9 @@ def markdown_to_html(md: str) -> str:
     converter.postprocessors.register(
         _RawHtmlSentinelPostprocessor(converter), "raw_html", 30
     )
-    return _mermaid_fence_to_chart_div(converter.convert(render_task_lists(md)))
+    return _mermaid_fence_to_chart_div(
+        converter.convert(render_task_lists(close_unterminated_fence(md)))
+    )
 
 
 def parse_yaml_scalar(value: str) -> Any:

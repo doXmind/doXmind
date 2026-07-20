@@ -24,7 +24,8 @@ export function getRegex(
   wholeWord: boolean = false,
   useRegex: boolean = false
 ): RegExp | null {
-  if (!searchTerm.trim()) return null;
+  // Whitespace is a legitimate thing to search for; only an empty term is a no-op.
+  if (!searchTerm) return null;
   try {
     let pattern: string;
     if (useRegex) {
@@ -42,7 +43,17 @@ export function getRegex(
 }
 
 /**
+ * Placeholder for inline leaf nodes (inline math, mentions) when flattening a
+ * textblock. Every inline leaf has nodeSize 1, so a single character keeps the
+ * flattened string index-aligned with document positions, and the character
+ * itself is one a user will not be searching for.
+ */
+const LEAF_PLACEHOLDER = "￼";
+
+/**
  * Find all keyword matches in a ProseMirror document.
+ * Matching runs over each textblock's concatenated inline text, so a match is
+ * found even when marks split it into several text nodes (`**nee**dle`).
  * Also searches inside atom node attributes (mermaid code, math latex).
  */
 export function processSearches(
@@ -58,17 +69,27 @@ export function processSearches(
   if (!regex) return results;
 
   doc.descendants((node, pos) => {
-    if (node.isText && node.text) {
-      const matches = [...node.text.matchAll(regex)];
-      matches.forEach((match) => {
-        if (match.index !== undefined) {
-          results.push({
-            from: pos + match.index,
-            to: pos + match.index + match[0].length,
-          });
-        }
-      });
-      return;
+    // Text nodes are matched through their parent textblock, never on their own.
+    if (node.isText) return false;
+
+    if (node.isTextblock) {
+      const text = node.textBetween(0, node.content.size, undefined, LEAF_PLACEHOLDER);
+      const contentStart = pos + 1;
+      regex.lastIndex = 0;
+      for (const match of text.matchAll(regex)) {
+        if (match.index === undefined || match[0].length === 0) continue;
+        // A match that swallows an inline leaf would replace the node itself —
+        // in regex mode `alpha.*omega` otherwise deletes the math node between
+        // the two words. Skipping these also keeps ranges disjoint, which
+        // replaceAll's backwards walk depends on: a textblock match can no
+        // longer contain the atom range reported separately below.
+        if (match[0].includes(LEAF_PLACEHOLDER)) continue;
+        results.push({
+          from: contentStart + match.index,
+          to: contentStart + match.index + match[0].length,
+        });
+      }
+      // Keep descending: inline atoms inside the block are searched below.
     }
 
     // Search inside atom nodes with content in attributes (mermaid charts, math blocks)
@@ -85,5 +106,6 @@ export function processSearches(
     }
   });
 
-  return results;
+  // Textblock matches are collected before the atoms nested inside them.
+  return results.sort((a, b) => a.from - b.from);
 }

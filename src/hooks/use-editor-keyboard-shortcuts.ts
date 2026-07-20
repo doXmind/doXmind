@@ -8,7 +8,9 @@ import { useLayoutStore } from "@/stores/layout-store";
  *
  * Handles:
  * - Ctrl+? / Cmd+? - Toggle keyboard shortcuts modal
- * - Ctrl+K / Cmd+K - Toggle command palette
+ * - Ctrl+K / Cmd+K - Toggle command palette. With text selected in the editor
+ *   this never fires: the editor claims the key first and adds a link instead,
+ *   which is what the bubble menu and the shortcuts panel advertise.
  * - Ctrl+F / Cmd+F - Find in document
  */
 export function useEditorKeyboardShortcuts() {
@@ -22,6 +24,7 @@ export function useEditorKeyboardShortcuts() {
     setSearchBarOpen,
     isFocusMode,
     toggleFocusMode,
+    isQuickSwitcherOpen,
     setQuickSwitcherOpen,
   } = useLayoutStore();
 
@@ -62,8 +65,21 @@ export function useEditorKeyboardShortcuts() {
         return;
       }
 
-      // Escape - Exit focus mode
+      // Escape - Exit focus mode. This listener sits on window, the last stop
+      // in the bubble path, so it must be the last claim on Escape: anything
+      // nearer the user (the editor's block selection, a popup, an open panel)
+      // gets to close first and only a genuinely unhandled Escape leaves
+      // focus mode.
       if (e.key === "Escape" && isFocusMode) {
+        if (e.defaultPrevented) return;
+        if (
+          isCommandPaletteOpen ||
+          isSearchBarOpen ||
+          isKeyboardShortcutsOpen ||
+          isQuickSwitcherOpen
+        ) {
+          return;
+        }
         e.preventDefault();
         toggleFocusMode();
         return;
@@ -86,6 +102,7 @@ export function useEditorKeyboardShortcuts() {
       setSearchBarOpen,
       isFocusMode,
       toggleFocusMode,
+      isQuickSwitcherOpen,
       setQuickSwitcherOpen,
     ]
   );

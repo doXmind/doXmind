@@ -7,6 +7,7 @@
 
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
+import type { EditorState } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { SelectableBlock } from "@/types/block-selection";
@@ -103,6 +104,37 @@ export function extractBlocks(doc: ProseMirrorNode): SelectableBlock[] {
   });
 
   return blocks;
+}
+
+/**
+ * Whether a suggestion popup (slash menu, @-mention) currently owns the
+ * keyboard. TipTap orders extension plugins so this one sees keydown before
+ * the suggestion plugins do, so Escape has to be handed back explicitly —
+ * otherwise the popup can never be dismissed.
+ */
+function hasOpenSuggestion(state: EditorState): boolean {
+  return state.plugins.some((plugin) => {
+    const pluginState = plugin.getState(state) as
+      | { active?: unknown; query?: unknown }
+      | undefined
+      | null;
+    return !!pluginState && pluginState.active === true && "query" in pluginState;
+  });
+}
+
+/**
+ * The block Escape should arm, chosen from the same flattened list that the
+ * decoration, extend and delete paths walk. Resolving independently (e.g. to a
+ * listItem, which extractBlocks never emits) yields an id nothing else can
+ * match: an invisible selection that silently eats the next Backspace.
+ */
+function findArmableBlock(doc: ProseMirrorNode, pos: number): SelectableBlock | null {
+  let innermost: SelectableBlock | null = null;
+  for (const block of extractBlocks(doc)) {
+    if (pos < block.from || pos > block.to) continue;
+    if (!innermost || block.from > innermost.from) innermost = block;
+  }
+  return innermost;
 }
 
 declare module "@tiptap/core" {
@@ -263,11 +295,17 @@ export const BlockSelectionExtension = Extension.create<BlockSelectionOptions>({
 
                   const hasSelection = pluginState.selectedBlockIds.size > 0;
 
+                  // Escape precedence: transient popups first, then block
+                  // selection. Anything open above the document gets the key.
+                  if (event.key === "Escape" && hasOpenSuggestion(view.state)) {
+                    return false;
+                  }
+
                   // Escape: Select the current block (enter block selection mode)
                   if (event.key === "Escape" && !hasSelection) {
                     const { $from } = view.state.selection;
                     if ($from.depth >= 1) {
-                      const block = findBlockAtPosition(view.state.doc, $from.pos);
+                      const block = findArmableBlock(view.state.doc, $from.pos);
                       if (block) {
                         const tr = view.state.tr.setMeta(BlockSelectionPluginKey, {
                           selectedBlockIds: new Set([block.id]),

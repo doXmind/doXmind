@@ -32,13 +32,6 @@ const QuickSwitcher = dynamic(
   () => import("@/components/ui/quick-switcher").then((m) => ({ default: m.QuickSwitcher })),
   { ssr: false }
 );
-const PresentationMode = dynamic(
-  () =>
-    import("@/components/editor/presentation-mode").then((m) => ({
-      default: m.PresentationMode,
-    })),
-  { ssr: false }
-);
 const PerfOverlay = dynamic(
   () => import("@/components/dev/perf-overlay").then((m) => ({ default: m.PerfOverlay })),
   { ssr: false }
@@ -65,7 +58,6 @@ export function EditorClient() {
   const isCommandPaletteOpen = useLayoutStore((s) => s.isCommandPaletteOpen);
   const setCommandPaletteOpen = useLayoutStore((s) => s.setCommandPaletteOpen);
   const isQuickSwitcherOpen = useLayoutStore((s) => s.isQuickSwitcherOpen);
-  const isPresentationMode = useLayoutStore((s) => s.isPresentationMode);
 
   // Boot: per-window state arrives via ?folder=... / ?file=... URL params,
   // set by Rust at window creation. If neither is present we land on the
@@ -201,7 +193,6 @@ export function EditorClient() {
         <CommandPalette open={isCommandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
       )}
       {isQuickSwitcherOpen && <QuickSwitcher />}
-      {isPresentationMode && <PresentationMode />}
       {perfEnabled && (
         <PerfOverlay
           onClose={() => {

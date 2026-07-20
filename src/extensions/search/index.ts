@@ -5,7 +5,7 @@
  */
 
 import { Extension } from "@tiptap/core";
-import { Plugin } from "@tiptap/pm/state";
+import { Plugin, type EditorState, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { scrollToPosition } from "@/lib/editor-utils";
 
@@ -13,6 +13,7 @@ import {
   SearchPluginKey,
   type SearchPluginState,
   type SearchExtensionOptions,
+  type SearchRange,
 } from "./search-types";
 
 import { processSearches } from "./search-algorithms";
@@ -20,6 +21,28 @@ import { processSearches } from "./search-algorithms";
 // Re-export types for external use
 export * from "./search-types";
 export { processSearches } from "./search-algorithms";
+
+/**
+ * Swap a matched range for the replacement text.
+ *
+ * A match may span several text nodes with different marks. The replacement is
+ * a single text node, so it cannot reproduce that split; it inherits the marks
+ * of the first character of the match. Replacing "needle" in `**nee**dle` gives
+ * a fully bold "pin" — the alternative (dropping marks entirely) loses more.
+ */
+function replaceRange(
+  tr: Transaction,
+  state: EditorState,
+  range: SearchRange,
+  replaceTerm: string
+): void {
+  if (!replaceTerm) {
+    tr.delete(range.from, range.to);
+    return;
+  }
+  const marks = state.doc.nodeAt(range.from)?.marks ?? [];
+  tr.replaceWith(range.from, range.to, state.schema.text(replaceTerm, marks));
+}
 
 export const SearchExtension = Extension.create<SearchExtensionOptions>({
   name: "search",
@@ -183,10 +206,26 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
     return {
       setSearchTerm:
         (term: string) =>
-        ({ tr, dispatch }) => {
+        ({ tr, state, dispatch }) => {
           if (dispatch) {
             tr.setMeta(SearchPluginKey, { searchTerm: term });
             dispatch(tr);
+
+            // The counter reports the first match as current, so bring it into
+            // view as the term is typed. Without this the user stares at "1 of
+            // N" with the match off screen, and the first Enter looks like it
+            // skipped a hit. The dispatch above is queued by the command
+            // manager, so the new results are recomputed here rather than read
+            // back off the (still stale) editor state.
+            const pluginState = SearchPluginKey.getState(state);
+            const [first] = processSearches(
+              state.doc,
+              term,
+              pluginState?.caseSensitive ?? false,
+              pluginState?.wholeWord ?? false,
+              pluginState?.useRegex ?? false
+            );
+            if (first) scrollToPosition(this.editor, first.from);
           }
           return true;
         },
@@ -274,7 +313,7 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
           if (!pluginState?.results.length || !dispatch) return false;
 
           const result = pluginState.results[pluginState.currentIndex];
-          tr.insertText(pluginState.replaceTerm, result.from, result.to);
+          replaceRange(tr, state, result, pluginState.replaceTerm);
           dispatch(tr);
 
           return true;
@@ -286,11 +325,11 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
           const pluginState = SearchPluginKey.getState(state);
           if (!pluginState?.results.length || !dispatch) return false;
 
-          let offset = 0;
-          pluginState.results.forEach(({ from, to }) => {
-            tr.insertText(pluginState.replaceTerm, from + offset, to + offset);
-            offset += pluginState.replaceTerm.length - (to - from);
-          });
+          // One transaction, so one undo step. Walking backwards keeps the
+          // remaining (earlier) match positions valid without remapping.
+          for (let i = pluginState.results.length - 1; i >= 0; i--) {
+            replaceRange(tr, state, pluginState.results[i], pluginState.replaceTerm);
+          }
           dispatch(tr);
 
           return true;

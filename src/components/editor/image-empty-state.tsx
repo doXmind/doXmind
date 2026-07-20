@@ -5,7 +5,11 @@ import { useTranslations } from "next-intl";
 import { Image as ImageIcon, Loader2 } from "lucide-react";
 import { notify } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
-import { useFileStore } from "@/stores/file-store";
+import {
+  assetAltTextFor,
+  assetFilenameFor,
+  importWorkspaceImageAsset,
+} from "@/lib/workspace-asset-import";
 import { parseUploadError } from "@/lib/utils/image-upload-errors";
 
 interface ImageEmptyStateProps {
@@ -24,7 +28,6 @@ type Tab = "upload" | "link";
  */
 export function ImageEmptyState({ onSetSrc }: ImageEmptyStateProps) {
   const t = useTranslations("editor");
-  const { currentFileId, files, rootPath } = useFileStore();
 
   // Start closed. The slash command opens a centralized image modal; this
   // empty state only shows for orphan empty image blocks (e.g. abandoned
@@ -70,19 +73,15 @@ export function ImageEmptyState({ onSetSrc }: ImageEmptyStateProps) {
       if (!file.type.startsWith("image/")) return;
       setIsUploading(true);
       try {
-        const uploadedUrl = await importDiskWorkspaceAsset({
-          file,
-          currentFile: files.find((item) => item.id === currentFileId),
-          rootPath,
-        });
-        onSetSrc(uploadedUrl, file.name.replace(/\.[^.]+$/, ""));
+        const assetPath = await importWorkspaceImageAsset(file);
+        onSetSrc(assetPath, assetAltTextFor(assetFilenameFor(file)));
       } catch (error) {
         notify.error(parseUploadError(error));
       } finally {
         setIsUploading(false);
       }
     },
-    [files, currentFileId, rootPath, onSetSrc]
+    [onSetSrc]
   );
 
   const handleFileSelect = useCallback(
@@ -242,29 +241,4 @@ export function ImageEmptyState({ onSetSrc }: ImageEmptyStateProps) {
       )}
     </div>
   );
-}
-
-async function importDiskWorkspaceAsset({
-  file,
-  currentFile,
-  rootPath,
-}: {
-  file: File;
-  currentFile: ReturnType<typeof useFileStore.getState>["files"][number] | undefined;
-  rootPath: string | null;
-}): Promise<string> {
-  const documentPath = currentFile?.storageHandle?.relPath ?? currentFile?.storageHandle?.path;
-  if (!rootPath || !documentPath) {
-    throw new Error("No document is open");
-  }
-
-  const { invoke } = await import("@tauri-apps/api/core");
-  const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-  const result = await invoke<{ path: string }>("workspace_import_asset", {
-    root: rootPath,
-    documentPath,
-    filename: file.name,
-    bytes,
-  });
-  return result.path;
 }

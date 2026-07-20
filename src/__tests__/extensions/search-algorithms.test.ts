@@ -60,7 +60,12 @@ describe("Search Algorithms", () => {
 
     it("returns null for empty search term", () => {
       expect(getRegex("", false)).toBeNull();
-      expect(getRegex("   ", false)).toBeNull();
+    });
+
+    it("searches whitespace-only terms", () => {
+      const regex = getRegex("  ", false);
+      expect(regex).not.toBeNull();
+      expect("a  b".match(regex!)).toHaveLength(1);
     });
 
     it("escapes special characters in search term", () => {
@@ -188,7 +193,6 @@ describe("Search Algorithms", () => {
 
     it("empty search term still returns null", () => {
       expect(getRegex("", false, true, true)).toBeNull();
-      expect(getRegex("   ", false, true, true)).toBeNull();
     });
   });
 });

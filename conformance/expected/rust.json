@@ -5,7 +5,9 @@
   "bullet_list": "<ul>\n<li>one</li>\n<li>two</li>\n</ul>\n",
   "cjk_with_dollar": "<p>价格是 $5 到 $10 元</p>\n",
   "emphasis_underscore": "<p>this is <em>em</em> here</p>\n",
+  "escaped_leading_markers": "<p># not a heading</p>\n<p>- not a list</p>\n<p>1. not ordered</p>\n<p>---</p>\n",
   "fenced_code": "<pre><code class=\"language-js\">const x = 1;\n</code></pre>\n",
+  "gfm_alert": "<div data-callout-type=\"warning\">\n<p>Heads up!</p>\n</div>",
   "heading": "<h1>Heading One</h1>\n",
   "horizontal_rule": "<p>above</p>\n<hr />\n<p>below</p>\n",
   "html_comment": "<!-- pdf-block id=\"a\" src=\"s.pdf\" -->",
@@ -23,5 +25,6 @@
   "raw_html_block": "<div data-raw-html=\"&lt;p align=&quot;center&quot;&gt;&lt;img src=&quot;b.svg&quot;&gt;&lt;/p&gt;\" data-type=\"raw-html\"></div>\n",
   "strikethrough": "<p>this is <del>gone</del> here</p>\n",
   "table": "<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody>\n<tr><td>1</td><td>2</td></tr>\n</tbody></table>\n",
-  "task_list": "<ul>\n<li><input disabled=\"\" type=\"checkbox\"/>\ntodo</li>\n<li><input disabled=\"\" type=\"checkbox\" checked=\"\"/>\ndone</li>\n</ul>\n"
+  "task_list": "<ul>\n<li><input disabled=\"\" type=\"checkbox\"/>\ntodo</li>\n<li><input disabled=\"\" type=\"checkbox\" checked=\"\"/>\ndone</li>\n</ul>\n",
+  "unterminated_fence": "<pre><code class=\"language-python\">def f():\n    return 1</code></pre>\n"
 }

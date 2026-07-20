@@ -17,6 +17,16 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 
 const PASSTHROUGH = /^(?:https?:|data:|blob:|asset:|tauri:|file:)/i;
 
+function decodePathSegments(path: string): string {
+  if (!path.includes("%")) return path;
+  try {
+    return path.split("/").map(decodeURIComponent).join("/");
+  } catch {
+    // A stray `%` that is not an escape sequence — take the path as written.
+    return path;
+  }
+}
+
 export function resolveImageSrc(
   src: string,
   rootPath: string | null | undefined,
@@ -27,14 +37,21 @@ export function resolveImageSrc(
   if (src.startsWith("/api/")) return src; // local sidecar
   if (!rootPath) return src;
 
-  const absolutePath = src.startsWith("/")
-    ? src
-    : joinPosix(rootPath, dirname(docRelPath ?? ""), stripLeadingDot(src));
+  // Markdown targets are percent-encoded (a raw space would truncate the
+  // link), but the filesystem wants the real characters. Decoding a path that
+  // was never encoded is a no-op, so documents written before this still work.
+  const decoded = decodePathSegments(src);
+  const absolutePath = decoded.startsWith("/")
+    ? decoded
+    : joinPosix(rootPath, dirname(docRelPath ?? ""), stripLeadingDot(decoded));
 
   try {
     return convertFileSrc(absolutePath);
   } catch {
-    return src;
+    // No asset protocol available (browser dev, tests). Hand back the decoded
+    // reference rather than the raw one — the percent escapes exist for the
+    // Markdown link, not for whatever loads the image.
+    return decoded;
   }
 }
 

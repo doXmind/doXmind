@@ -23,5 +23,11 @@
   { "name": "html_comment", "md": "<!-- pdf-block id=\"a\" src=\"s.pdf\" -->" },
   { "name": "html_comment_plain", "md": "<!-- markdownlint-disable MD013 -->" },
   { "name": "cjk_with_dollar", "md": "价格是 $5 到 $10 元" },
-  { "name": "inline_code_with_math", "md": "use `$x$` literally" }
+  { "name": "inline_code_with_math", "md": "use `$x$` literally" },
+  { "name": "gfm_alert", "md": "> [!WARNING]\n> Heads up!" },
+  { "name": "unterminated_fence", "md": "```python\ndef f():\n    return 1" },
+  {
+    "name": "escaped_leading_markers",
+    "md": "\\# not a heading\n\n\\- not a list\n\n1\\. not ordered\n\n\\---"
+  }
 ]
