@@ -37,6 +37,7 @@ import { AtomBlockLiftPlugin } from "@/extensions/atom-block-lift-plugin";
 import { SourcePreservation } from "@/extensions/source-preservation";
 import { HtmlSourcePreservation } from "@/extensions/html-source-preservation";
 import { RawHtml } from "@/extensions/raw-html";
+import { HtmlComment } from "@/extensions/html-comment";
 import { customBlockTipTapExtensions } from "@/extensions/registry";
 import type { Extensions } from "@tiptap/react";
 
@@ -131,6 +132,10 @@ export function getEditorExtensions(): Extensions {
     // Raw-HTML passthrough: a raw-HTML block survives as one atom node so it
     // round-trips byte-identical (see source preservation).
     RawHtml,
+
+    // HTML-comment passthrough: comments carry instructions for other tools, so
+    // they survive as an atom node instead of being dropped on import.
+    HtmlComment,
 
     // Custom Block Extensions registry — Self-contained (mermaid, callout, math,
     // toggle, page-link) and External-reference (pdf-block, excel-block) blocks.

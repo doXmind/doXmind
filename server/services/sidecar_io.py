@@ -40,18 +40,44 @@ class _GfmStrikethroughExtension(Extension):
         )
 
 
+CUSTOM_BLOCK_PLACEHOLDER_RE = re.compile(
+    r'^<!--\s*(?:pdf-block|excel-block)\s+id="[^"]+"\s+src="[^"]+".*?\s*-->(?:\n|$)'
+)
+
+HTML_COMMENT_BLOCK_RE = re.compile(r"^<!--(?:(?!-->)[\s\S])*-->$")
+
+
+def _escape_for_attr(value: str) -> str:
+    return (
+        value.replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
 class _RawHtmlSentinelPostprocessor(RawHtmlPostprocessor):
     """Wrap each block-level raw-HTML block in a ``<div data-raw-html="…">``
     sentinel so the editor imports it as a single rawHtml atom node, kept
     byte-identical by source preservation, instead of flattening it into
-    images/links. Inline raw HTML is left untouched. Mirrors the marked and
-    Rust importers; see ``src/extensions/raw-html.ts``.
+    images/links. Block-level HTML comments get the parallel
+    ``<div data-html-comment="…">`` sentinel — they render nothing, so without
+    a node of their own they were dropped on import and lost on the next save.
+    Inline raw HTML is left untouched. Mirrors the marked and Rust importers;
+    see ``src/extensions/raw-html.ts`` and ``src/extensions/html-comment.ts``.
     """
 
     def stash_to_string(self, text: object) -> str:
         html = str(text)
         head = html.lstrip()
         lower = head.lower()
+        stripped = html.strip()
+        # External-reference placeholders share the comment syntax but are owned
+        # by the pdf-block / excel-block nodes, so they pass through verbatim.
+        if HTML_COMMENT_BLOCK_RE.match(stripped) and not CUSTOM_BLOCK_PLACEHOLDER_RE.match(
+            stripped
+        ):
+            return f'<div data-html-comment="{_escape_for_attr(stripped)}" data-type="html-comment"></div>'
         # Raw HTML owned by other blocks (comment placeholders, toggle,
         # columns) must pass through untouched.
         claimed = (
@@ -64,15 +90,9 @@ class _RawHtmlSentinelPostprocessor(RawHtmlPostprocessor):
             # own parseHTML and must not be swallowed as a rawHtml passthrough.
             or "data-type=" in html
         )
-        if not claimed and self.isblocklevel(html.strip()):
+        if not claimed and self.isblocklevel(stripped):
             raw = html.rstrip("\n")
-            escaped = (
-                raw.replace("&", "&amp;")
-                .replace('"', "&quot;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-            )
-            return f'<div data-raw-html="{escaped}" data-type="raw-html"></div>'
+            return f'<div data-raw-html="{_escape_for_attr(raw)}" data-type="raw-html"></div>'
         return html
 
 

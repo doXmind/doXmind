@@ -279,6 +279,39 @@ fn is_claimed_raw_html(raw: &str) -> bool {
         || raw.contains("data-type=")
 }
 
+/// True when `raw` is exactly one block-level HTML comment and nothing else.
+fn is_html_comment_block(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    trimmed.starts_with("<!--")
+        && trimmed.ends_with("-->")
+        // A second `-->` means the block holds more than the one comment.
+        && trimmed.match_indices("-->").count() == 1
+}
+
+/// External-reference placeholders share the comment syntax but belong to the
+/// pdf-block / excel-block nodes, so they must pass through verbatim.
+fn is_custom_block_placeholder(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    let body = match trimmed
+        .strip_prefix("<!--")
+        .and_then(|rest| rest.strip_suffix("-->"))
+    {
+        Some(body) => body.trim_start(),
+        None => return false,
+    };
+    (body.starts_with("pdf-block") || body.starts_with("excel-block"))
+        && body.contains("id=\"")
+        && body.contains("src=\"")
+}
+
+fn escape_for_attr(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 fn wrap_raw_html_blocks<'a>(
     parser: impl Iterator<Item = CmarkEvent<'a>>,
 ) -> Vec<CmarkEvent<'a>> {
@@ -289,6 +322,17 @@ fn wrap_raw_html_blocks<'a>(
             return;
         }
         let raw = buffer.trim_end_matches('\n');
+        // Comments render nothing, so without a node of their own they were
+        // dropped on import and lost on the next save. Give them the parallel
+        // `data-html-comment` sentinel; see `src/extensions/html-comment.ts`.
+        if is_html_comment_block(raw) && !is_custom_block_placeholder(raw) {
+            let escaped = escape_for_attr(raw.trim());
+            let sentinel =
+                format!("<div data-html-comment=\"{escaped}\" data-type=\"html-comment\"></div>\n");
+            out.push(CmarkEvent::Html(CowStr::Boxed(sentinel.into_boxed_str())));
+            buffer.clear();
+            return;
+        }
         if is_claimed_raw_html(raw) {
             // Owned by another block (comment placeholders, toggle, columns) —
             // pass through verbatim so those importers still see it.
@@ -298,11 +342,7 @@ fn wrap_raw_html_blocks<'a>(
             buffer.clear();
             return;
         }
-        let escaped = raw
-            .replace('&', "&amp;")
-            .replace('"', "&quot;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;");
+        let escaped = escape_for_attr(raw);
         let sentinel = format!("<div data-raw-html=\"{escaped}\" data-type=\"raw-html\"></div>\n");
         out.push(CmarkEvent::Html(CowStr::Boxed(sentinel.into_boxed_str())));
         buffer.clear();
@@ -1489,6 +1529,30 @@ mod tests {
         let columns = markdown_to_html("<div data-columns=\"2\">\n\nx\n\n</div>\n");
         assert!(!columns.contains("data-raw-html"));
         assert!(columns.contains("data-columns"));
+    }
+
+    #[test]
+    fn markdown_to_html_wraps_html_comment_in_sentinel() {
+        let html = markdown_to_html("Intro\n\n<!-- markdownlint-disable MD013 -->\n\nAfter\n");
+        assert!(html.contains("data-html-comment=\""), "expected sentinel: {html}");
+        assert!(html.contains("&lt;!-- markdownlint-disable MD013 --&gt;"), "escaped: {html}");
+        assert!(!html.contains("data-raw-html"));
+
+        // Multi-line comments keep their interior bytes.
+        let multi = markdown_to_html("<!--\nSPDX-License-Identifier: MIT\n-->\n\nP\n");
+        assert!(multi.contains("SPDX-License-Identifier: MIT"), "{multi}");
+
+        // A placeholder is not a plain comment.
+        let placeholder = markdown_to_html("<!-- pdf-block id=\"a\" src=\"s.pdf\" -->\n");
+        assert!(!placeholder.contains("data-html-comment"));
+
+        // pulldown-cmark ends the HTML block at the comment, so a comment
+        // followed by markup yields two sentinels rather than one raw-HTML
+        // block (marked and python-markdown keep it as one). Either way no
+        // bytes are lost, which is what this sentinel exists to guarantee.
+        let mixed = markdown_to_html("<!-- c -->\n<div>x</div>\n");
+        assert!(mixed.contains("&lt;!-- c --&gt;"), "{mixed}");
+        assert!(mixed.contains("&lt;div&gt;x&lt;/div&gt;"), "{mixed}");
     }
 
     // ---- date formatter ----

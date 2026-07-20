@@ -82,11 +82,42 @@ export function stripFrontmatter(md: string): string {
  * whitespace so concatenating every entry reproduces the body byte-for-byte.
  * Uses the markdown manager's own lexer so block boundaries match parsing.
  */
+/**
+ * Re-insert body bytes the lexer consumed without emitting a token. Link
+ * reference definitions (`[a]: https://…`) are the case that matters: marked
+ * folds them into its link table and drops them from the token stream, so the
+ * concatenated raws no longer reproduce the body and the baseline is rejected
+ * — which disabled preservation for the whole file and reflowed every block.
+ * Skipped bytes are re-emitted as `space`, i.e. carried by the block they
+ * follow, keeping byte order intact. Returns the tokens unchanged if a raw
+ * can't be located, letting the usual self-validation reject the baseline.
+ */
+function withSkippedBytes(
+  body: string,
+  tokens: Array<{ type: string; raw: string }>
+): Array<{ type: string; raw: string }> {
+  const filled: Array<{ type: string; raw: string }> = [];
+  let cursor = 0;
+  for (const token of tokens) {
+    // A block token always starts at a line boundary. Requiring that rules out
+    // matching the token's text inside the skipped bytes, which would silently
+    // shift a block's raw onto the wrong node.
+    let at = body.indexOf(token.raw, cursor);
+    while (at > cursor && body[at - 1] !== "\n") at = body.indexOf(token.raw, at + 1);
+    if (at === -1) return tokens;
+    if (at > cursor) filled.push({ type: "space", raw: body.slice(cursor, at) });
+    filled.push(token);
+    cursor = at + token.raw.length;
+  }
+  if (cursor < body.length) filled.push({ type: "space", raw: body.slice(cursor) });
+  return filled;
+}
+
 export function lexSourceBlocks(
   body: string,
   lexer: (md: string) => Array<{ type: string; raw: string }>
 ): string[] {
-  const tokens = lexer(body);
+  const tokens = withSkippedBytes(body, lexer(body));
   const raws: string[] = [];
   let leading = "";
   // A `<details>` (toggle) or `<div data-columns>` (columns) block becomes a

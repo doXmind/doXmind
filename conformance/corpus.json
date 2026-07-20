@@ -21,6 +21,7 @@
   { "name": "horizontal_rule", "md": "above\n\n---\n\nbelow" },
   { "name": "raw_html_block", "md": "<p align=\"center\"><img src=\"b.svg\"></p>" },
   { "name": "html_comment", "md": "<!-- pdf-block id=\"a\" src=\"s.pdf\" -->" },
+  { "name": "html_comment_plain", "md": "<!-- markdownlint-disable MD013 -->" },
   { "name": "cjk_with_dollar", "md": "价格是 $5 到 $10 元" },
   { "name": "inline_code_with_math", "md": "use `$x$` literally" }
 ]
