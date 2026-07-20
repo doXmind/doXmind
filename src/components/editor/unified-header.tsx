@@ -116,7 +116,7 @@ export function UnifiedHeader() {
     [isMacTauri]
   );
 
-  const handleExport = async (format: "markdown" | "pdf" | "docx" | "xlsx") => {
+  const handleExport = async (format: "markdown" | "pdf" | "xlsx") => {
     const { currentFileId, files } = useFileStore.getState();
     const currentFile = currentFileId ? files.find((file) => file.id === currentFileId) : undefined;
     if (!currentFile) return;
@@ -512,9 +512,6 @@ export function UnifiedHeader() {
                           Markdown
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleExport("pdf")}>PDF</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleExport("docx")}>
-                          Word
-                        </DropdownMenuItem>
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
                   )}

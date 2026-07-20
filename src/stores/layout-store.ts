@@ -30,10 +30,6 @@ interface LayoutState {
   // Focus mode
   isFocusMode: boolean;
 
-  // Presentation mode
-  isPresentationMode: boolean;
-  presentationTextAlign: "left" | "center" | "right";
-
   // Search bar (Cmd+F)
   isSearchBarOpen: boolean;
 
@@ -73,10 +69,6 @@ interface LayoutState {
   // Focus mode actions
   setFocusMode: (enabled: boolean) => void;
   toggleFocusMode: () => void;
-
-  // Presentation mode actions
-  setPresentationMode: (enabled: boolean) => void;
-  setPresentationTextAlign: (align: "left" | "center" | "right") => void;
 
   // Version history actions
   setVersionHistoryOpen: (open: boolean) => void;
@@ -121,10 +113,6 @@ export const useLayoutStore = create<LayoutState>()(
 
       // Focus mode
       isFocusMode: false,
-
-      // Presentation mode
-      isPresentationMode: false,
-      presentationTextAlign: "center" as const,
 
       // Version history panel
       isVersionHistoryOpen: false,
@@ -224,14 +212,6 @@ export const useLayoutStore = create<LayoutState>()(
 
       toggleFocusMode: () => {
         set((state) => ({ isFocusMode: !state.isFocusMode }));
-      },
-
-      // Presentation mode actions
-      setPresentationMode: (enabled: boolean) => {
-        set({ isPresentationMode: enabled });
-      },
-      setPresentationTextAlign: (align: "left" | "center" | "right") => {
-        set({ presentationTextAlign: align });
       },
 
       // Version history actions
