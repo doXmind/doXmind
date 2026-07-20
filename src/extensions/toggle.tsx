@@ -95,8 +95,11 @@ export const Toggle = Node.create<ToggleOptions>({
   renderMarkdown(node, h) {
     const summaryNode = node.content?.[0];
     const bodyNode = node.content?.[1];
-    const summary = summaryNode ? h.renderChildren(summaryNode).trim() : "";
-    const body = bodyNode ? h.renderChildren(bodyNode).trim() : "";
+    // renderChild dispatches to the child's own renderMarkdown; renderChildren
+    // would flatten the body's blocks with an empty separator, gluing them into
+    // one paragraph that reimports as a single line.
+    const summary = summaryNode ? (h.renderChild?.(summaryNode, 0) ?? "").trim() : "";
+    const body = bodyNode ? (h.renderChild?.(bodyNode, 1) ?? "").trim() : "";
     if (!body) {
       return `<details>\n<summary>${summary}</summary>\n\n</details>`;
     }

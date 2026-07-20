@@ -23,5 +23,8 @@
   "html_comment": "<!-- pdf-block id=\"a\" src=\"s.pdf\" -->",
   "html_comment_plain": "<div data-html-comment=\"&lt;!-- markdownlint-disable MD013 --&gt;\" data-type=\"html-comment\"></div>",
   "cjk_with_dollar": "<p>\u4ef7\u683c\u662f $5 \u5230 $10 \u5143</p>",
-  "inline_code_with_math": "<p>use <code>$x$</code> literally</p>"
+  "inline_code_with_math": "<p>use <code>$x$</code> literally</p>",
+  "gfm_alert": "<div data-callout-type=\"warning\">\n<p>Heads up!</p>\n</div>",
+  "unterminated_fence": "<pre><code class=\"language-python\">def f():\n    return 1\n</code></pre>",
+  "escaped_leading_markers": "<p># not a heading</p>\n<p>- not a list</p>\n<p>1. not ordered</p>\n<p>---</p>"
 }
