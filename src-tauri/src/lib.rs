@@ -417,9 +417,18 @@ fn normalize_open_path(path: &str) -> Option<String> {
         return None;
     }
     let lower = abs.to_string_lossy().to_ascii_lowercase();
-    let supported = [".md", ".markdown", ".pdf", ".xlsx", ".xlsm", ".html", ".htm"]
-        .iter()
-        .any(|ext| lower.ends_with(ext));
+    let supported = [
+        ".md",
+        ".markdown",
+        ".pdf",
+        ".xlsx",
+        ".xlsm",
+        ".csv",
+        ".html",
+        ".htm",
+    ]
+    .iter()
+    .any(|ext| lower.ends_with(ext));
     if !supported {
         return None;
     }
@@ -1615,7 +1624,7 @@ fn workspace_read_excel_editor_state(
     let root = canonical_workspace_root(&root)?;
     let path = resolve_existing_workspace_path(&root, &path)?;
     if !is_excel_file(&path) {
-        return Err("Excel editor state is only enabled for .xlsx/.xlsm files".to_string());
+        return Err("Excel editor state is only enabled for .xlsx/.xlsm/.csv files".to_string());
     }
     read_excel_editor_state_light(&path)
 }
@@ -1726,7 +1735,7 @@ fn workspace_write_excel_editor_state(
     let root = canonical_workspace_root(&root)?;
     let path = resolve_existing_workspace_path(&root, &path)?;
     if !is_excel_file(&path) {
-        return Err("Excel editor state is only enabled for .xlsx/.xlsm files".to_string());
+        return Err("Excel editor state is only enabled for .xlsx/.xlsm/.csv files".to_string());
     }
     write_excel_slot(&path, |slot| {
         slot.insert("editor".to_string(), payload);
@@ -1741,7 +1750,7 @@ fn workspace_read_excel_doc_state(
     let root = canonical_workspace_root(&root)?;
     let path = resolve_existing_workspace_path(&root, &path)?;
     if !is_excel_file(&path) {
-        return Err("Excel document state is only enabled for .xlsx/.xlsm files".to_string());
+        return Err("Excel document state is only enabled for .xlsx/.xlsm/.csv files".to_string());
     }
     let sidecar = load_excel_sidecar(&path)?;
     Ok(Some(serde_json::json!({
@@ -1760,7 +1769,7 @@ fn workspace_write_excel_parsed_cache(
     let root = canonical_workspace_root(&root)?;
     let path = resolve_existing_workspace_path(&root, &path)?;
     if !is_excel_file(&path) {
-        return Err("Excel parsed cache is only enabled for .xlsx/.xlsm files".to_string());
+        return Err("Excel parsed cache is only enabled for .xlsx/.xlsm/.csv files".to_string());
     }
     if source_hash.trim().is_empty() {
         return Err("sourceHash is required".to_string());
@@ -2402,9 +2411,14 @@ fn doc_create_excel(
             .map_err(|err| format!("failed to create destination directory: {err}"))?;
     }
     // .xlsx is a ZIP archive — every valid file starts with the local file
-    // header signature `PK\x03\x04`. Reject anything else early so a corrupt
-    // blob doesn't silently land on disk.
-    if !bytes.starts_with(b"PK\x03\x04") {
+    // header signature `PK\x03\x04`. CSV is plain text and is accepted as-is.
+    if !resolved
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("csv"))
+        .unwrap_or(false)
+        && !bytes.starts_with(b"PK\x03\x04")
+    {
         return Err("payload is not an XLSX (missing PK ZIP header)".into());
     }
     fs::write(&resolved, &bytes).map_err(|err| format!("failed to write XLSX: {err}"))?;
@@ -2416,7 +2430,7 @@ fn doc_create_excel(
 /// the backend `doc_import_external` handler. The frontend rejects out-of-list
 /// files before the IPC call, but we re-validate here so a misbehaving caller
 /// can't smuggle a non-document file through Tauri's permission boundary.
-const IMPORT_SUPPORTED_EXTENSIONS: &[&str] = &["md", "pdf", "xlsx"];
+const IMPORT_SUPPORTED_EXTENSIONS: &[&str] = &["md", "pdf", "xlsx", "csv"];
 
 fn ensure_import_extension(name: &str) -> Result<(), String> {
     let ext = Path::new(name)
@@ -2426,7 +2440,7 @@ fn ensure_import_extension(name: &str) -> Result<(), String> {
     match ext.as_deref() {
         Some(value) if IMPORT_SUPPORTED_EXTENSIONS.contains(&value) => Ok(()),
         _ => Err(format!(
-            "only .md, .pdf, .xlsx are supported for external import: {name}"
+            "only .md, .pdf, .xlsx, .csv are supported for external import: {name}"
         )),
     }
 }
@@ -2566,7 +2580,7 @@ fn doc_delete(root: String, path: String) -> Result<DeleteResultDto, String> {
     }
     if !is_workspace_document_file(&source) {
         return Err(format!(
-            "document path must end in .md, .markdown, .pdf, .xlsx, or .xlsm: {path}"
+            "document path must end in .md, .markdown, .pdf, .xlsx, .xlsm, or .csv: {path}"
         ));
     }
 
@@ -2765,8 +2779,10 @@ fn ensure_excel_path(path: &str) -> Result<(), String> {
         .and_then(|ext| ext.to_str())
         .map(|ext| ext.to_ascii_lowercase());
     match extension.as_deref() {
-        Some("xlsx") | Some("xlsm") => Ok(()),
-        _ => Err(format!("document path must end in .xlsx or .xlsm: {path}")),
+        Some("xlsx") | Some("xlsm") | Some("csv") => Ok(()),
+        _ => Err(format!(
+            "document path must end in .xlsx, .xlsm, or .csv: {path}"
+        )),
     }
 }
 
@@ -2780,9 +2796,9 @@ fn workspace_document_extension(path: &str) -> Result<String, String> {
         .map(|ext| ext.to_ascii_lowercase())
         .unwrap_or_default();
     match extension.as_str() {
-        "md" | "markdown" | "pdf" | "xlsx" | "xlsm" => Ok(extension),
+        "md" | "markdown" | "pdf" | "xlsx" | "xlsm" | "csv" => Ok(extension),
         _ => Err(format!(
-            "document path must end in .md, .markdown, .pdf, .xlsx, or .xlsm: {path}"
+            "document path must end in .md, .markdown, .pdf, .xlsx, .xlsm, or .csv: {path}"
         )),
     }
 }
@@ -2945,7 +2961,7 @@ fn is_excel_file(path: &Path) -> bool {
         .and_then(|ext| ext.to_str())
         .map(|ext| {
             let lowered = ext.to_ascii_lowercase();
-            matches!(lowered.as_str(), "xlsx" | "xlsm")
+            matches!(lowered.as_str(), "xlsx" | "xlsm" | "csv")
         })
         .unwrap_or(false)
 }
@@ -5191,7 +5207,7 @@ mod tests {
         )
         .expect_err("non-whitelisted should error");
         assert!(
-            err.contains("only .md, .pdf, .xlsx are supported"),
+            err.contains("only .md, .pdf, .xlsx, .csv are supported"),
             "unexpected error: {err}"
         );
         assert!(
@@ -5222,7 +5238,7 @@ mod tests {
     #[test]
     fn doc_import_external_replace_overwrites_user_file_and_leaves_sidecar_untouched() {
         // Sidecar-untouched invariant: `mode: "replace"` rewrites the user
-        // file (.md/.pdf/.xlsx) but the pre-existing `.doxmind` sidecar must
+        // file (.md/.pdf/.xlsx/.csv) but the pre-existing `.doxmind` sidecar must
         // be byte-identical afterwards. The next open will trip the
         // Stale-sidecar / Salvage path because the markdown_hash no longer
         // matches — that's the right behavior since at the FS level a

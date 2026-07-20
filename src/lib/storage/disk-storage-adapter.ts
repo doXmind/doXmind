@@ -297,7 +297,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       input.documentType ??
       (/\.pdf$/i.test(input.name)
         ? "pdf"
-        : /\.(xlsx|xlsm)$/i.test(input.name)
+        : /\.(xlsx|xlsm|csv)$/i.test(input.name)
           ? "excel"
           : "markdown");
 
@@ -357,10 +357,10 @@ export class DiskStorageAdapter implements StorageAdapter {
     if (!input.srcPath && !input.bytes) {
       throw new ImportError("no-source", "importExternal requires either srcPath or bytes");
     }
-    if (!/\.(md|pdf|xlsx)$/i.test(input.name)) {
+    if (!/\.(md|pdf|xlsx|csv)$/i.test(input.name)) {
       throw new ImportError(
         "bad-extension",
-        `only .md, .pdf, .xlsx are supported for external import: ${input.name}`
+        `only .md, .pdf, .xlsx, .csv are supported for external import: ${input.name}`
       );
     }
     const destFolder = input.parent ? requireHandlePath(input.parent) : "";
@@ -727,10 +727,11 @@ function ensureMarkdownExtension(name: string): string {
 // A document rename changes only the base name; the file keeps its original
 // type. The new name may arrive with the wrong extension (the sidebar's display
 // name has none, so callers default it to ".md") — strip whatever document
-// extension came in and re-apply the source file's, so a .pdf/.xlsx can never
+// extension came in and re-apply the source file's, so a .pdf/.xlsx/.csv can never
 // be collapsed into a .md.
 function renameLeafPreservingExtension(currentPath: string, name: string): string {
-  const sourceExt = basename(currentPath).match(/\.(md|markdown|pdf|xlsx|xlsm)$/i)?.[0] ?? ".md";
+  const sourceExt =
+    basename(currentPath).match(/\.(md|markdown|pdf|xlsx|xlsm|csv)$/i)?.[0] ?? ".md";
   return `${stripDocumentExtension(basename(name))}${sourceExt}`;
 }
 
@@ -739,7 +740,7 @@ function ensurePdfExtension(name: string): string {
 }
 
 function ensureExcelExtension(name: string): string {
-  return /\.(xlsx|xlsm)$/i.test(name) ? name : `${name}.xlsx`;
+  return /\.(xlsx|xlsm|csv)$/i.test(name) ? name : `${name}.xlsx`;
 }
 
 function stripMarkdownExtension(name: string): string {
@@ -747,12 +748,12 @@ function stripMarkdownExtension(name: string): string {
 }
 
 function stripDocumentExtension(name: string): string {
-  return name.replace(/\.(md|markdown|pdf|xlsx|xlsm)$/i, "");
+  return name.replace(/\.(md|markdown|pdf|xlsx|xlsm|csv)$/i, "");
 }
 
 function documentTypeFromPath(path: string): WorkspaceDocumentType {
   if (/\.pdf$/i.test(path)) return "pdf";
-  if (/\.(xlsx|xlsm)$/i.test(path)) return "excel";
+  if (/\.(xlsx|xlsm|csv)$/i.test(path)) return "excel";
   if (/\.html?$/i.test(path)) return "html";
   return "markdown";
 }

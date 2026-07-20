@@ -15,7 +15,11 @@ from xml.etree import ElementTree as ET
 import pytest
 from openpyxl import Workbook
 
-from services.excel_workbook import parse_workbook, parse_workbook_json_bytes
+from services.excel_workbook import (
+    parse_csv_workbook_json_bytes,
+    parse_workbook,
+    parse_workbook_json_bytes,
+)
 
 
 def _build_xlsx(rows: int = 3, cols: int = 3) -> bytes:
@@ -240,6 +244,33 @@ def test_parse_workbook_json_bytes_reuses_wire_cache() -> None:
 
     assert second == first
     assert json.loads(second)["sheets"][0]["rowCount"] == 2
+
+
+def test_parse_csv_workbook_json_bytes_returns_single_sheet_grid() -> None:
+    from services.excel_workbook import _clear_xlsx_cache
+
+    _clear_xlsx_cache()
+    result = json.loads(
+        parse_csv_workbook_json_bytes(
+            b'name,amount,note\nAda,12,"keeps, comma"\nGrace,,blank amount\n'
+        )
+    )
+
+    sheet = result["sheets"][0]
+    assert sheet["name"] == "Sheet1"
+    assert sheet["rowCount"] == 3
+    assert sheet["colCount"] == 3
+    assert sheet["cells"] == [
+        {"row": 0, "col": 0, "value": "name", "formula": None},
+        {"row": 0, "col": 1, "value": "amount", "formula": None},
+        {"row": 0, "col": 2, "value": "note", "formula": None},
+        {"row": 1, "col": 0, "value": "Ada", "formula": None},
+        {"row": 1, "col": 1, "value": "12", "formula": None},
+        {"row": 1, "col": 2, "value": "keeps, comma", "formula": None},
+        {"row": 2, "col": 0, "value": "Grace", "formula": None},
+        {"row": 2, "col": 2, "value": "blank amount", "formula": None},
+    ]
+    assert result["truncated"] == {"sheets": False, "rowsBy": {}, "colsBy": {}}
 
 
 def test_parse_cache_disabled_via_env(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -828,7 +828,7 @@ def _is_pdf_path(path: Path) -> None:
 
 def _is_excel_path(path: Path) -> None:
     if not is_excel_file(path):
-        raise ValueError("Excel editor state is only enabled for .xlsx/.xlsm files")
+        raise ValueError("Excel editor state is only enabled for .xlsx/.xlsm/.csv files")
 
 
 def _open_pdf(path: Path):
@@ -1015,7 +1015,7 @@ def doc_create_excel(root: str, rel_path: str, byte_list: Any) -> dict[str, Any]
         data = bytes(int(b) & 0xFF for b in byte_list)
     except (TypeError, ValueError) as err:
         raise ValueError(f"invalid XLSX bytes payload: {err}") from err
-    if not data.startswith(b"PK\x03\x04"):
+    if path.suffix.lower() != ".csv" and not data.startswith(b"PK\x03\x04"):
         raise ValueError("payload is not an XLSX (missing PK ZIP header)")
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write(path, data)
@@ -1029,7 +1029,7 @@ def doc_create_excel(root: str, rel_path: str, byte_list: Any) -> dict[str, Any]
 # we re-validate on the backend boundary so a misbehaving caller (or browser
 # DataTransfer feeding a `.txt` straight through) can't smuggle a non-document
 # file into the workspace.
-IMPORT_SUPPORTED_EXTENSIONS = {".md", ".pdf", ".xlsx"}
+IMPORT_SUPPORTED_EXTENSIONS = {".md", ".pdf", ".xlsx", ".csv"}
 
 
 def doc_import_external(
@@ -1040,7 +1040,7 @@ def doc_import_external(
     name: str,
     mode: str,
 ) -> dict[str, Any]:
-    """Copy an external `.md`/`.pdf`/`.xlsx` into the workspace.
+    """Copy an external `.md`/`.pdf`/`.xlsx`/`.csv` into the workspace.
 
     Always-copy semantics: the source on disk (e.g. user's Downloads) is left
     untouched.
@@ -1070,7 +1070,7 @@ def doc_import_external(
     suffix = Path(name).suffix.lower()
     if suffix not in IMPORT_SUPPORTED_EXTENSIONS:
         raise ValueError(
-            f"only .md, .pdf, .xlsx are supported for external import: {name}"
+            f"only .md, .pdf, .xlsx, .csv are supported for external import: {name}"
         )
 
     destination = resolve_workspace_path_for_write(workspace, rel_path)
@@ -1221,7 +1221,7 @@ def doc_delete(root: str, rel_path: str) -> dict[str, Any]:
         raise ValueError(f"document is not a file: {rel_path}")
     if not is_workspace_document_file(source):
         raise ValueError(
-            f"document path must end in .md, .markdown, .pdf, .xlsx, or .xlsm: {rel_path}"
+            f"document path must end in .md, .markdown, .pdf, .xlsx, .xlsm, or .csv: {rel_path}"
         )
 
     sidecar_path = sidecar_path_for(source)
@@ -1397,11 +1397,11 @@ def ensure_pdf_path(path: str) -> None:
 
 
 def ensure_excel_path(path: str) -> None:
-    if Path(path).suffix.lower() not in (".xlsx", ".xlsm"):
-        raise ValueError(f"document path must end in .xlsx or .xlsm: {path}")
+    if Path(path).suffix.lower() not in (".xlsx", ".xlsm", ".csv"):
+        raise ValueError(f"document path must end in .xlsx, .xlsm, or .csv: {path}")
 
 
-WORKSPACE_DOCUMENT_SUFFIXES = {".md", ".markdown", ".pdf", ".xlsx", ".xlsm"}
+WORKSPACE_DOCUMENT_SUFFIXES = {".md", ".markdown", ".pdf", ".xlsx", ".xlsm", ".csv"}
 
 
 def ensure_same_document_extension(old_path: str, new_path: str) -> None:
@@ -1414,7 +1414,7 @@ def ensure_same_document_extension(old_path: str, new_path: str) -> None:
     for ext, path in ((old_ext, old_path), (new_ext, new_path)):
         if ext not in WORKSPACE_DOCUMENT_SUFFIXES:
             raise ValueError(
-                "document path must end in .md, .markdown, .pdf, .xlsx, or .xlsm: "
+                "document path must end in .md, .markdown, .pdf, .xlsx, .xlsm, or .csv: "
                 f"{path}"
             )
     if old_ext != new_ext:
@@ -1545,7 +1545,7 @@ def is_pdf_file(path: Path) -> bool:
 
 
 def is_excel_file(path: Path) -> bool:
-    return path.suffix.lower() in {".xlsx", ".xlsm"}
+    return path.suffix.lower() in {".xlsx", ".xlsm", ".csv"}
 
 
 def is_html_file(path: Path) -> bool:

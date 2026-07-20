@@ -3,7 +3,7 @@
 Mirrors ``api/pdf_editor.py``:
 
 * ``POST /api/excel/parse-workbook`` extracts a JSON cell model from an
-  uploaded ``.xlsx`` so the frontend can render its custom grid without
+  uploaded ``.xlsx`` or ``.csv`` so the frontend can render its custom grid without
   shipping openpyxl to the browser.
 * ``POST /api/excel/export-edited`` applies the sidecar edit payload onto the
   original workbook and returns the modified ``.xlsx`` bytes for download.
@@ -36,36 +36,44 @@ XLSX_CONTENT_TYPES = {
     "application/vnd.ms-excel.sheet.macroEnabled.12",
     "application/octet-stream",
 }
+CSV_CONTENT_TYPES = {"text/csv", "application/csv", "text/plain"}
+SPREADSHEET_CONTENT_TYPES = XLSX_CONTENT_TYPES | CSV_CONTENT_TYPES
 
 
 @router.post("/parse-workbook")
 async def parse_workbook_route(
-    file: UploadFile = File(..., description="XLSX/XLSM binary"),
+    file: UploadFile = File(..., description="XLSX/XLSM binary or CSV text"),
 ):
     """Parse an uploaded workbook into the JSON cell model.
 
     See :func:`services.excel_workbook.parse_workbook` for the schema.
     """
     settings = get_settings()
-    if file.content_type and file.content_type not in XLSX_CONTENT_TYPES:
+    if file.content_type and file.content_type not in SPREADSHEET_CONTENT_TYPES:
         raise UnsupportedFileTypeError(
-            message=f"Expected XLSX content type, got {file.content_type}"
+            message=f"Expected XLSX or CSV content type, got {file.content_type}"
         )
 
-    xlsx_bytes = await file.read()
-    if not xlsx_bytes:
+    spreadsheet_bytes = await file.read()
+    if not spreadsheet_bytes:
         raise BadRequestError(message="Empty workbook body")
-    if len(xlsx_bytes) > settings.max_import_file_size:
+    if len(spreadsheet_bytes) > settings.max_import_file_size:
         raise FileTooLargeError(
             max_size=settings.max_import_file_size,
-            actual_size=len(xlsx_bytes),
+            actual_size=len(spreadsheet_bytes),
         )
 
-    from services.excel_workbook import parse_workbook_json_bytes
+    from services.excel_workbook import parse_csv_workbook_json_bytes, parse_workbook_json_bytes
 
     try:
+        filename = file.filename or ""
+        is_csv = filename.lower().endswith(".csv") or file.content_type in CSV_CONTENT_TYPES
         return Response(
-            content=parse_workbook_json_bytes(xlsx_bytes),
+            content=(
+                parse_csv_workbook_json_bytes(spreadsheet_bytes)
+                if is_csv
+                else parse_workbook_json_bytes(spreadsheet_bytes)
+            ),
             media_type="application/json",
         )
     except ValueError as exc:
@@ -82,9 +90,9 @@ async def export_edited_route(
 ):
     """Apply edits onto the original workbook and stream back the result."""
     settings = get_settings()
-    if file.content_type and file.content_type not in XLSX_CONTENT_TYPES:
+    if file.content_type and file.content_type not in SPREADSHEET_CONTENT_TYPES:
         raise UnsupportedFileTypeError(
-            message=f"Expected XLSX content type, got {file.content_type}"
+            message=f"Expected XLSX or CSV content type, got {file.content_type}"
         )
 
     xlsx_bytes = await file.read()
@@ -103,10 +111,13 @@ async def export_edited_route(
     if not isinstance(payload, dict):
         raise BadRequestError(message="'edits' must be a JSON object")
 
-    from services.excel_workbook import export_edited_workbook
+    from services.excel_workbook import csv_to_xlsx_bytes, export_edited_workbook
 
     try:
-        edited = export_edited_workbook(xlsx_bytes, payload)
+        filename = file.filename or ""
+        is_csv = filename.lower().endswith(".csv") or file.content_type in CSV_CONTENT_TYPES
+        source_bytes = csv_to_xlsx_bytes(xlsx_bytes) if is_csv else xlsx_bytes
+        edited = export_edited_workbook(source_bytes, payload)
     except ValueError as exc:
         raise BadRequestError(message=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - defensive

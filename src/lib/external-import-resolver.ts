@@ -3,7 +3,7 @@
  *
  * Pure planner for sidebar external drag-and-drop. Splits the legality decision
  * (testable, no side effects) from the actual filesystem copy that the backend
- * does in `doc_import_external`. The plan phase enforces the .md/.pdf/.xlsx
+ * does in `doc_import_external`. The plan phase enforces the .md/.pdf/.xlsx/.csv
  * whitelist and detects same-name collisions at the destination, but does NOT
  * resolve them — collision RESOLUTION (Replace / Keep both / Skip) lands in
  * #69. The bucket shape below is intentionally extensible so #69 can attach a
@@ -17,12 +17,12 @@
  *     existingNames: ["Other.md"],
  *   });
  *   plan.accepted   // copy these straight through
- *   plan.rejected   // toast "Only .md/.pdf/.xlsx" — never copy
+ *   plan.rejected   // toast "Only .md/.pdf/.xlsx/.csv" — never copy
  *   plan.collisions // toast in this slice (#67); modal in #69
  */
 
 /** Whitelist of supported document extensions (lowercase, with dot). */
-export const SUPPORTED_EXTENSIONS = [".md", ".pdf", ".xlsx"] as const;
+export const SUPPORTED_EXTENSIONS = [".md", ".pdf", ".xlsx", ".csv"] as const;
 
 export type SupportedExtension = (typeof SUPPORTED_EXTENSIONS)[number];
 
@@ -205,7 +205,7 @@ export function nextKeepBothName(originalName: string, existing: Set<string>): s
   const match = KEEP_BOTH_NUMBERED_RE.exec(originalName);
   if (!match) {
     // No extension — extremely unlikely to reach here because the whitelist
-    // requires .md/.pdf/.xlsx, but be defensive: fall back to `<name> (2)`.
+    // requires .md/.pdf/.xlsx/.csv, but be defensive: fall back to `<name> (2)`.
     let n = 2;
     while (existing.has(`${originalName} (${n})`)) n += 1;
     return `${originalName} (${n})`;

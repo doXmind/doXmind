@@ -63,8 +63,8 @@ mac:
       name: PDF Document
       role: Editor
       rank: Alternate
-    - ext: [xlsx, xlsm]
-      name: Excel Workbook
+    - ext: [xlsx, xlsm, csv]
+      name: Spreadsheet
       role: Editor
       rank: Alternate
 
@@ -87,10 +87,13 @@ win:
       name: PDF Document
       role: Editor
     - ext: xlsx
-      name: Excel Workbook
+      name: Spreadsheet
       role: Editor
     - ext: xlsm
-      name: Excel Workbook
+      name: Spreadsheet
+      role: Editor
+    - ext: csv
+      name: Spreadsheet
       role: Editor
 
 nsis:

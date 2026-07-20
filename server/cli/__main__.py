@@ -151,7 +151,7 @@ def mkdir(
 
 @app.command("import")
 def import_doc(
-    src: str = typer.Argument(..., help="Path to an external .md/.pdf/.xlsx file."),
+    src: str = typer.Argument(..., help="Path to an external .md/.pdf/.xlsx/.csv file."),
     root: str = ROOT_OPTION,
     dest: str = typer.Option("", "--dest", help="Destination folder within the workspace."),
     name: str = typer.Option(None, "--name", help="Override the destination file name."),
@@ -220,7 +220,7 @@ def export(
 @app.command()
 def convert(
     path: str = typer.Argument(
-        ..., help=".pdf or .xlsx/.xlsm file (workspace-relative or absolute)."
+        ..., help=".pdf or .xlsx/.xlsm/.csv file (workspace-relative or absolute)."
     ),
     root: str = ROOT_OPTION,
 ) -> None:
@@ -231,10 +231,10 @@ def convert(
     suffix = source.suffix.lower()
     if suffix == ".pdf":
         result = convert_pdf(source)
-    elif suffix in {".xlsx", ".xlsm"}:
+    elif suffix in {".xlsx", ".xlsm", ".csv"}:
         result = convert_excel(source)
     else:
-        raise typer.BadParameter("convert supports .pdf and .xlsx/.xlsm files")
+        raise typer.BadParameter("convert supports .pdf and .xlsx/.xlsm/.csv files")
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
 
