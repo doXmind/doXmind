@@ -18,6 +18,13 @@ declare module "@tiptap/core" {
   }
 }
 
+const ALERT_MARKER_BY_TYPE: Record<CalloutType, string> = {
+  info: "NOTE",
+  tip: "TIP",
+  warning: "WARNING",
+  error: "CAUTION",
+};
+
 export const Callout = Node.create<CalloutOptions>({
   name: "callout",
 
@@ -33,9 +40,12 @@ export const Callout = Node.create<CalloutOptions>({
 
   defining: true,
 
-  // Markdown: GFM alert syntax — > [!TYPE]\n> content
+  // Markdown: GFM alert syntax — > [!TYPE]\n> content. The markers are the GFM
+  // set rather than our internal type names so GitHub renders them as alerts —
+  // and so an alert authored there survives an edit here unchanged. The three
+  // importers accept both spellings; see docs/adr/0009 and conformance/.
   renderMarkdown(node, h) {
-    const type = ((node.attrs?.type as string) || "info").toUpperCase();
+    const type = ALERT_MARKER_BY_TYPE[(node.attrs?.type as CalloutType) ?? "info"] ?? "NOTE";
     if (!node.content) return "";
     const childContent = h.renderChildren(node.content, "\n\n");
     const lines = childContent.split("\n");

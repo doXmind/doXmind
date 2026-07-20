@@ -112,7 +112,11 @@ describe("Self-contained block round-trips", () => {
 
   it("toggle renderMarkdown emits a <details><summary> block", () => {
     const [toggleNode] = CustomBlockExtensions.toggle.extensions;
-    const helpers = { renderChildren: (node: { id: string }) => (node.id === "summary" ? "Title" : "Body") };
+    // Toggle dispatches to each child's own renderMarkdown so the body's blocks
+    // keep their separator; the real helper set exposes renderChild for that.
+    const helpers = {
+      renderChild: (node: { id: string }) => (node.id === "summary" ? "Title" : "Body"),
+    };
     const rendered = configOf(toggleNode).renderMarkdown?.(
       { content: [{ id: "summary" }, { id: "body" }] },
       helpers

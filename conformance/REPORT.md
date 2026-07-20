@@ -4,9 +4,16 @@ Generated from `conformance/corpus.json` by running each importer. Each implemen
 
 The three importers feed the same TipTap schema, so they _should_ produce equivalent HTML. They don't yet — this table is the inventory #152 tracks.
 
-- **Agree across all three (17)**: heading, paragraph, emphasis_underscore, bold, strikethrough, inline_code, link_absolute, link_relative, bullet_list, ordered_list, blockquote, fenced_code, mermaid, raw_html_block, html_comment, html_comment_plain, inline_code_with_math
+- **Agree across all three (20)**: heading, paragraph, emphasis_underscore, bold, strikethrough, inline_code, link_absolute, link_relative, bullet_list, ordered_list, blockquote, fenced_code, mermaid, raw_html_block, html_comment, html_comment_plain, inline_code_with_math, gfm_alert, unterminated_fence, escaped_leading_markers
 - **Cosmetic divergence (4)** (different whitespace / attr order / self-close, TipTap parses equivalently): image, table, horizontal_rule, nested_list
 - **Semantic divergence (4)** (different node structure or behaviour): task_list, inline_math, block_math, cjk_with_dollar
+
+Added with the serialization-fidelity fixes (#149): `gfm_alert` (all three now
+parse `> [!TYPE]` into the callout node, so the syntax the serializer emits is
+no longer write-only), `unterminated_fence` (Python now closes a fence left open
+at EOF, matching CommonMark and the other two instead of flattening the code to
+a paragraph), and `escaped_leading_markers` (the serializer now backslash-escapes
+line-leading `#`/`-`/`1.`/`---`/`>`, which all three importers unescape).
 
 Resolved since the first inventory: `strikethrough` (Python now registers a GFM
 `~~x~~` → `<del>` inline pattern), `nested_list` (Python now runs with

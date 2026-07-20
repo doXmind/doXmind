@@ -212,10 +212,98 @@ pub fn markdown_to_html(body: &str) -> String {
     opts.insert(CmarkOptions::ENABLE_TASKLISTS);
     opts.insert(CmarkOptions::ENABLE_HEADING_ATTRIBUTES);
     let parser = CmarkParser::new_ext(body, opts);
-    let events = mermaid_fences_to_chart_divs(wrap_raw_html_blocks(parser).into_iter());
+    let events = gfm_alerts_to_callout_divs(mermaid_fences_to_chart_divs(
+        wrap_raw_html_blocks(parser).into_iter(),
+    ));
     let mut html = String::with_capacity(body.len());
     cmark_html::push_html(&mut html, events.into_iter());
     html
+}
+
+/// Map a `[!MARKER]` alert label onto one of the editor's four callout types.
+/// Accepts doXmind's own names (what the serializer writes) plus the GFM alert
+/// set, so alerts authored on GitHub import as callouts too.
+pub(crate) fn callout_type_for_alert(marker: &str) -> Option<&'static str> {
+    match marker.to_ascii_uppercase().as_str() {
+        "INFO" | "NOTE" | "IMPORTANT" => Some("info"),
+        "TIP" => Some("tip"),
+        "WARNING" => Some("warning"),
+        "ERROR" | "CAUTION" => Some("error"),
+        _ => None,
+    }
+}
+
+/// Read a leading `[!MARKER]` off the start of an alert's first paragraph.
+fn alert_marker(text: &str) -> Option<&'static str> {
+    let rest = text.strip_prefix("[!")?;
+    let (marker, tail) = rest.split_once(']')?;
+    if !tail.trim().is_empty() {
+        return None;
+    }
+    callout_type_for_alert(marker)
+}
+
+/// Rewrite a GFM alert blockquote (`> [!TYPE]` + body) into the editor's
+/// callout node (`<div data-callout-type="…">`). The serializer emits this
+/// syntax; without the matching import a saved callout reopens as a plain
+/// blockquote and its type is lost. Blockquotes without a recognised marker
+/// are left alone.
+fn gfm_alerts_to_callout_divs<'a>(events: Vec<CmarkEvent<'a>>) -> Vec<CmarkEvent<'a>> {
+    let mut out: Vec<CmarkEvent<'a>> = Vec::with_capacity(events.len());
+    // One entry per open blockquote: true when it was rewritten into a div and
+    // its End must therefore close the div instead.
+    let mut rewritten: Vec<bool> = Vec::new();
+    let mut index = 0;
+    while index < events.len() {
+        match &events[index] {
+            CmarkEvent::Start(CmarkTag::BlockQuote(_)) => {
+                // pulldown splits `[!TYPE]` across several Text events, so the
+                // marker is only visible once the paragraph's leading text run
+                // is joined back together.
+                let mut end = index + 2;
+                let mut leading = String::new();
+                if matches!(
+                    events.get(index + 1),
+                    Some(CmarkEvent::Start(CmarkTag::Paragraph))
+                ) {
+                    while let Some(CmarkEvent::Text(t)) = events.get(end) {
+                        leading.push_str(t);
+                        end += 1;
+                    }
+                }
+                let Some(kind) = alert_marker(&leading) else {
+                    rewritten.push(false);
+                    out.push(events[index].clone());
+                    index += 1;
+                    continue;
+                };
+                rewritten.push(true);
+                let div = format!("<div data-callout-type=\"{kind}\">");
+                out.push(CmarkEvent::Html(CowStr::Boxed(div.into_boxed_str())));
+                out.push(CmarkEvent::Start(CmarkTag::Paragraph));
+                // Drop the marker text and the soft break that separates it
+                // from the first body line; a marker-only paragraph stays empty
+                // so the callout still has the block child its schema requires.
+                index = end;
+                if matches!(events.get(index), Some(CmarkEvent::SoftBreak)) {
+                    index += 1;
+                }
+            }
+            CmarkEvent::End(pulldown_cmark::TagEnd::BlockQuote(_)) => {
+                if rewritten.pop().unwrap_or(false) {
+                    out.push(CmarkEvent::Html(CowStr::Borrowed("</div>")));
+                } else {
+                    out.push(events[index].clone());
+                }
+                index += 1;
+            }
+            _ => {
+                out.push(events[index].clone());
+                index += 1;
+            }
+        }
+    }
+    out
 }
 
 /// Rewrite ```` ```mermaid ```` fences into the editor's mermaidChart atom
@@ -1553,6 +1641,47 @@ mod tests {
         let mixed = markdown_to_html("<!-- c -->\n<div>x</div>\n");
         assert!(mixed.contains("&lt;!-- c --&gt;"), "{mixed}");
         assert!(mixed.contains("&lt;div&gt;x&lt;/div&gt;"), "{mixed}");
+    }
+
+    #[test]
+    fn markdown_to_html_parses_gfm_alerts_into_callouts() {
+        let html = markdown_to_html("> [!WARNING]\n> Heads up!\n");
+        assert!(html.contains("data-callout-type=\"warning\""), "{html}");
+        assert!(html.contains("Heads up!"), "{html}");
+        assert!(!html.contains("[!WARNING]"), "{html}");
+        assert!(!html.contains("<blockquote>"), "{html}");
+
+        // doXmind's own type names and the GFM set both map onto the four
+        // callout types the editor has.
+        for (marker, kind) in [
+            ("INFO", "info"),
+            ("NOTE", "info"),
+            ("IMPORTANT", "info"),
+            ("TIP", "tip"),
+            ("ERROR", "error"),
+            ("CAUTION", "error"),
+        ] {
+            let out = markdown_to_html(&format!("> [!{marker}]\n> x\n"));
+            assert!(
+                out.contains(&format!("data-callout-type=\"{kind}\"")),
+                "{out}"
+            );
+        }
+
+        // A plain blockquote, and an unknown marker, stay blockquotes.
+        let plain = markdown_to_html("> just a quote\n");
+        assert!(plain.contains("<blockquote>"), "{plain}");
+        let unknown = markdown_to_html("> [!NONSENSE]\n> x\n");
+        assert!(unknown.contains("<blockquote>"), "{unknown}");
+        assert!(unknown.contains("[!NONSENSE]"), "{unknown}");
+    }
+
+    #[test]
+    fn markdown_to_html_keeps_multi_block_alert_bodies() {
+        let html = markdown_to_html("> [!TIP]\n> First.\n>\n> Second.\n");
+        assert!(html.contains("data-callout-type=\"tip\""), "{html}");
+        assert!(html.contains("<p>First.</p>"), "{html}");
+        assert!(html.contains("<p>Second.</p>"), "{html}");
     }
 
     // ---- date formatter ----

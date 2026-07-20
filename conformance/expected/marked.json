@@ -23,5 +23,8 @@
   "html_comment": "<!-- pdf-block id=\"a\" src=\"s.pdf\" -->",
   "html_comment_plain": "<div data-html-comment=\"&lt;!-- markdownlint-disable MD013 --&gt;\" data-type=\"html-comment\"></div>",
   "cjk_with_dollar": "<p>价格是 $5 到$10 元</p>\n",
-  "inline_code_with_math": "<p>use <code>$x$</code> literally</p>\n"
+  "inline_code_with_math": "<p>use <code>$x$</code> literally</p>\n",
+  "gfm_alert": "<div data-callout-type=\"warning\"><p>Heads up!</p>\n</div>",
+  "unterminated_fence": "<pre><code class=\"language-python\">def f():\n    return 1\n</code></pre>\n",
+  "escaped_leading_markers": "<p># not a heading</p>\n<p>- not a list</p>\n<p>1. not ordered</p>\n<p>---</p>\n"
 }
