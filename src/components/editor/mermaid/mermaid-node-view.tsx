@@ -9,6 +9,7 @@ import {
   subscribeMermaidTheme,
 } from "@/lib/mermaid-renderer";
 import { MermaidEditorPanel } from "./mermaid-editor-panel";
+import { sanitizeSvg } from "@/lib/sanitize-html";
 
 /**
  * Module-level caches that survive ProseMirror node-view remounts during
@@ -231,7 +232,10 @@ function MermaidRenderedContent({ state, code }: { state: RenderState; code: str
   }
   // ready — project the SVG; React owns the subtree so ProseMirror can't wipe it.
   return (
-    <div className="mermaid-rendered-svg-host" dangerouslySetInnerHTML={{ __html: state.svg }} />
+    <div
+      className="mermaid-rendered-svg-host"
+      dangerouslySetInnerHTML={{ __html: sanitizeSvg(state.svg) }}
+    />
   );
 }
 

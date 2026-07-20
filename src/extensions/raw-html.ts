@@ -16,6 +16,8 @@
 
 import { Node } from "@tiptap/core";
 
+import { sanitizeDocumentHtml } from "@/lib/sanitize-html";
+
 export interface RawHtmlOptions {
   HTMLAttributes: Record<string, unknown>;
 }
@@ -84,9 +86,12 @@ export const RawHtml = Node.create<RawHtmlOptions>({
       dom.contentEditable = "false";
       dom.style.position = "relative";
       // Render the original markup so the user sees the real layout (centered
-      // badges, etc.). innerHTML does not execute <script>; this is the user's
-      // own local document, the same content any Markdown viewer would render.
-      dom.innerHTML = (node.attrs.html as string) || "";
+      // badges, etc.), but sanitize first: a document is untrusted input, and
+      // innerHTML fires event-handler attributes (`<img src=x onerror=…>`) even
+      // though it does not run <script>. The pristine markup stays in the
+      // `html` attribute above, so source preservation still re-emits the
+      // block byte-identically.
+      dom.innerHTML = sanitizeDocumentHtml((node.attrs.html as string) || "");
       return { dom };
     };
   },

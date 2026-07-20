@@ -68,12 +68,20 @@ export function MathNodeView({
           displayMode: isBlock,
           throwOnError: false,
           errorColor: "#ef4444",
-          trust: true,
+          // Documents are untrusted: `trust: true` would let \href / \url in a
+          // shared .md smuggle a javascript: URL into the rendered output.
+          trust: false,
         });
         setRenderError(null);
       } catch (err) {
         setRenderError((err as Error).message);
-        renderedRef.current.innerHTML = `<span class="text-destructive">${latexToRender}</span>`;
+        // Render the offending source as TEXT — interpolating it into HTML
+        // would turn a malformed equation into an injection point.
+        renderedRef.current.replaceChildren();
+        const errorSpan = document.createElement("span");
+        errorSpan.className = "text-destructive";
+        errorSpan.textContent = latexToRender;
+        renderedRef.current.appendChild(errorSpan);
       }
     });
     return () => {

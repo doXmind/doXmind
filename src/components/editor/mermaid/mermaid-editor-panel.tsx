@@ -9,6 +9,7 @@ import {
   getMermaidThemeKey,
   subscribeMermaidTheme,
 } from "@/lib/mermaid-renderer";
+import { sanitizeSvg } from "@/lib/sanitize-html";
 
 interface MermaidEditorPanelProps {
   code: string;
@@ -74,7 +75,7 @@ export function MermaidEditorPanel({
       if (!el) return;
       try {
         const svg = await renderMermaidSvg(trimmed);
-        el.innerHTML = svg;
+        el.innerHTML = sanitizeSvg(svg);
         const svgEl = el.querySelector("svg");
         if (svgEl) {
           svgEl.style.maxWidth = "100%";
