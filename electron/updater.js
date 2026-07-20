@@ -6,9 +6,14 @@
  * deps; the zip asset produced by electron-builder is the update payload.
  *
  * Flow: check on launch (after a short delay) and every few hours. Squirrel
- * downloads in the background; on `update-downloaded` we offer a restart.
- * `quitAndInstall` triggers the normal window-close path, so close-to-save
- * still flushes pending edits (main.js destroys each window within 3s).
+ * downloads in the background. Every state transition is broadcast to the
+ * renderers as an `os://update-state` event (see update-state.js), which
+ * drives the in-app "update ready — restart" pill and the Settings → About
+ * controls — a quiet push instead of a modal ambush. Native dialogs remain
+ * only on the user-initiated menu path ("Check for Updates…"), where an
+ * explicit answer is expected. `quitAndInstall` triggers the normal
+ * window-close path, so close-to-save still flushes pending edits (main.js
+ * destroys each window within 3s).
  *
  * Requirements for updates to actually flow:
  *   - app is signed (Squirrel.Mac validates the downloaded update)
@@ -16,22 +21,50 @@
  */
 
 const { app, autoUpdater, dialog } = require("electron");
+const { createUpdateState } = require("./update-state");
 
 const UPDATE_OWNER = "doXmind";
 const UPDATE_REPO = "releases";
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 let initialized = false;
-let downloadedVersion = null;
 let interactive = false; // a user-initiated check reports "no update" / errors
+let updateState = null; // created lazily so app.getVersion() is ready
+let broadcastFn = () => {};
 
 function feedUrl() {
   return `https://update.electronjs.org/${UPDATE_OWNER}/${UPDATE_REPO}/${process.platform}-${process.arch}/${app.getVersion()}`;
 }
 
-function initAutoUpdater() {
+function ensureState() {
+  if (!updateState) updateState = createUpdateState(app.getVersion());
+  return updateState;
+}
+
+function transition(event, payload) {
+  const next = ensureState().apply(event, payload);
+  if (next) broadcastFn(next);
+  return next;
+}
+
+/** Renderer-facing snapshot. `unsupported` outside the packaged app. */
+function getUpdateState() {
+  if (!app.isPackaged) {
+    return {
+      status: "unsupported",
+      currentVersion: app.getVersion(),
+      availableVersion: null,
+      error: null,
+      lastCheckedAt: null,
+    };
+  }
+  return ensureState().snapshot();
+}
+
+function initAutoUpdater({ broadcast } = {}) {
   if (initialized || !app.isPackaged) return;
   initialized = true;
+  if (typeof broadcast === "function") broadcastFn = broadcast;
 
   try {
     autoUpdater.setFeedURL({ url: feedUrl() });
@@ -40,12 +73,27 @@ function initAutoUpdater() {
     return;
   }
 
+  autoUpdater.on("checking-for-update", () => {
+    transition("checking");
+  });
+
+  autoUpdater.on("update-available", () => {
+    transition("available");
+  });
+
   autoUpdater.on("update-downloaded", (_event, releaseNotes, releaseName) => {
-    downloadedVersion = releaseName || "new version";
-    promptRestart(releaseName, releaseNotes);
+    transition("downloaded", { version: releaseName || null });
+    // Background downloads surface through the in-app pill only. A modal
+    // here would ambush whatever the user is typing; the menu path still
+    // answers with a dialog because the user explicitly asked.
+    if (interactive) {
+      interactive = false;
+      promptRestart(releaseName, releaseNotes);
+    }
   });
 
   autoUpdater.on("update-not-available", () => {
+    transition("not-available");
     if (!interactive) return;
     interactive = false;
     dialog.showMessageBox({
@@ -58,6 +106,7 @@ function initAutoUpdater() {
   autoUpdater.on("error", (err) => {
     // Offline / rate-limited background checks shouldn't nag.
     console.error("[updater] error:", err);
+    transition("error", { message: String((err && err.message) || err) });
     if (!interactive) return;
     interactive = false;
     dialog.showMessageBox({
@@ -77,6 +126,19 @@ function checkForUpdates() {
   } catch (err) {
     console.error("[updater] checkForUpdates failed:", err);
   }
+}
+
+/** Renderer button path — silent; state events carry the outcome. */
+function requestCheck() {
+  if (!app.isPackaged) return;
+  if (ensureState().snapshot().status === "downloaded") return; // already staged
+  checkForUpdates();
+}
+
+/** Renderer pill path — apply the staged update now. */
+function quitAndInstallNow() {
+  if (getUpdateState().status !== "downloaded") return;
+  autoUpdater.quitAndInstall();
 }
 
 function promptRestart(releaseName, releaseNotes) {
@@ -107,12 +169,19 @@ function checkForUpdatesInteractive() {
     });
     return;
   }
-  if (downloadedVersion) {
-    promptRestart(downloadedVersion, null);
+  const { status, availableVersion } = getUpdateState();
+  if (status === "downloaded") {
+    promptRestart(availableVersion, null);
     return;
   }
   interactive = true;
   checkForUpdates();
 }
 
-module.exports = { initAutoUpdater, checkForUpdatesInteractive };
+module.exports = {
+  initAutoUpdater,
+  checkForUpdatesInteractive,
+  getUpdateState,
+  requestCheck,
+  quitAndInstallNow,
+};

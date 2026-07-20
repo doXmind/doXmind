@@ -305,6 +305,14 @@ async function dispatch(event, cmd, args) {
   switch (cmd) {
     case "get_backend_url":
       return sidecarUrl;
+    case "update_get_state":
+      return require("./updater").getUpdateState();
+    case "update_check":
+      require("./updater").requestCheck();
+      return null;
+    case "update_restart":
+      require("./updater").quitAndInstallNow();
+      return null;
     case "pick_workspace_folder":
       return pickFolder(win, args.title);
     case "pick_workspace_file":
@@ -445,7 +453,11 @@ async function boot() {
   createWindow(first ? { kind: "file", path: first } : null);
 
   // Background update checks (packaged builds only; no-op in dev).
-  require("./updater").initAutoUpdater();
+  require("./updater").initAutoUpdater({
+    // Push every updater transition to the renderers so the in-app
+    // "update ready" pill and Settings → About stay live.
+    broadcast: (state) => emitToAll("os://update-state", state),
+  });
 }
 
 function enqueueOpenPath(raw) {

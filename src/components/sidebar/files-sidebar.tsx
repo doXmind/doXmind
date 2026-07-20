@@ -7,6 +7,7 @@ import { useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { FolderTree, type FolderTreeHandle } from "./folder-tree";
 import { BulkActionBar } from "./bulk-action-bar";
+import { UpdatePill } from "./update-pill";
 import { TemplatePicker, getLocalizedFileName, type FileTemplate } from "./template-picker";
 import { WorkspaceHeader } from "./workspace-header";
 import { useFileStore } from "@/stores/file-store";
@@ -174,6 +175,8 @@ export function FilesSidebar() {
       </ScrollArea>
 
       <BulkActionBar />
+
+      <UpdatePill />
 
       <div className="px-1.5 pb-3 pt-2">
         <Link

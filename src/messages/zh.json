@@ -509,7 +509,10 @@
     "templateStudyNotes": "学习笔记",
     "templateStudyNotesDesc": "课堂或学习笔记",
     "templateJournal": "日记",
-    "templateJournalDesc": "每日日记或反思"
+    "templateJournalDesc": "每日日记或反思",
+    "updateReady": "更新已就绪 — 重启应用",
+    "updateReadyVersion": "更新已就绪 · {version}",
+    "updateRestartHint": "新版本已下载完成，点击重启并应用更新。"
   },
   "settings": {
     "appearance": "外观",
@@ -584,7 +587,14 @@
     "aboutAcknowledgementsBody1": "doXmind 是闭源商业软件，构建于 Apple、Rust、Tauri、Python、React、Next.js、TipTap 与 ProseMirror 等桌面技术之上。",
     "aboutAcknowledgementsBody2": "感谢 app 内部使用的开源库维护者。他们的工作让本地优先 Markdown 编辑器可以被可靠地交付。",
     "aboutAcknowledgementsBody3": "doXmind 本身不是开源项目；这里的致谢仅面向产品中包含的第三方组件。",
-    "searchSettings": "搜索设置"
+    "searchSettings": "搜索设置",
+    "aboutCheckUpdates": "检查更新",
+    "aboutUpdateChecking": "正在检查更新…",
+    "aboutUpdateDownloading": "发现新版本 — 正在后台下载…",
+    "aboutUpdateReady": "{version} 已下载完成 — 重启后生效。",
+    "aboutUpdateRestart": "重启并更新",
+    "aboutUpToDate": "当前已是最新版本。",
+    "aboutUpdateError": "无法检查更新，请确认网络后重试。"
   },
   "welcome": {
     "recentWorkspaces": "最近的工作区",
