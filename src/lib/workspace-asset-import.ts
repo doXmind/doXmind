@@ -64,5 +64,8 @@ export async function importWorkspaceImageAsset(file: File): Promise<string> {
     filename: assetFilenameFor(file),
     bytes,
   });
-  return result.path;
+  // Percent-encode each segment: the caller writes this straight into a
+  // Markdown image target, where an unescaped space truncates the link. The
+  // asset resolver decodes, so the reference still points at the real file.
+  return result.path.split("/").map(encodeURIComponent).join("/");
 }
