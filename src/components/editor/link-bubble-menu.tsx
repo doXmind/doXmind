@@ -7,6 +7,7 @@ import { ExternalLink, Pencil, Trash2, Copy, Check } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { openEditorLink } from "@/lib/editor-navigation";
 
 interface LinkBubbleMenuProps {
   editor: Editor;
@@ -20,8 +21,22 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
   const [url, setUrl] = useState("");
   const [copied, setCopied] = useState(false);
 
-  // Get current link URL
-  const currentUrl = editor.getAttributes("link").href || "";
+  // The active link has to be held in state, not read during render: the menu's
+  // visibility is driven by the ProseMirror plugin, which does not re-render
+  // this component. Reading it inline left every handler holding the empty URL
+  // captured at mount until something else happened to re-render — the first
+  // link selected after a page load was inert.
+  const [currentUrl, setCurrentUrl] = useState("");
+  useEffect(() => {
+    const sync = () => setCurrentUrl(editor.getAttributes("link").href || "");
+    sync();
+    editor.on("selectionUpdate", sync);
+    editor.on("transaction", sync);
+    return () => {
+      editor.off("selectionUpdate", sync);
+      editor.off("transaction", sync);
+    };
+  }, [editor]);
 
   // Reset edit state when link changes
   useEffect(() => {
@@ -45,10 +60,10 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
     editor.chain().focus().extendMarkRange("link").unsetLink().run();
   }, [editor]);
 
+  // Relative and anchor links belong to the workspace, not the browser:
+  // window.open resolves them against /editor/<id> and lands on a dead route.
   const handleOpen = useCallback(() => {
-    if (currentUrl) {
-      window.open(currentUrl, "_blank", "noopener,noreferrer");
-    }
+    if (currentUrl) openEditorLink(currentUrl);
   }, [currentUrl]);
 
   const handleCopy = useCallback(async () => {
@@ -129,11 +144,8 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
               className="max-w-48 truncate px-2 text-sm text-muted-foreground hover:text-foreground"
               title={currentUrl}
               onClick={(e) => {
-                // Allow Ctrl/Cmd+Click to open
-                if (!e.ctrlKey && !e.metaKey) {
-                  e.preventDefault();
-                  handleOpen();
-                }
+                e.preventDefault();
+                handleOpen();
               }}
             >
               {currentUrl}

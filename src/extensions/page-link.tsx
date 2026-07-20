@@ -1,6 +1,12 @@
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { PageLinkNodeView } from "@/components/editor/page-link-node-view";
+import {
+  documentHrefForPage,
+  pageLinkAttrsFromParagraph,
+  renderPageMarkdownLink,
+  resolvePageId,
+} from "@/lib/editor-navigation";
 
 export interface PageLinkOptions {
   HTMLAttributes: Record<string, unknown>;
@@ -37,12 +43,19 @@ export const PageLink = Node.create<PageLinkOptions>({
     return {
       pageId: {
         default: "",
-        parseHTML: (element) => element.getAttribute("data-page-id") || "",
+        // Resolves to null when the element carries no id, leaving the
+        // paragraph rule below free to supply one; returning "" here would
+        // overwrite whatever that rule found.
+        parseHTML: (element) =>
+          resolvePageId(
+            element.getAttribute("data-page-id"),
+            element.getAttribute("data-page-href")
+          ),
         renderHTML: (attributes) => ({ "data-page-id": attributes.pageId }),
       },
       pageTitle: {
         default: "",
-        parseHTML: (element) => element.getAttribute("data-page-title") || "",
+        parseHTML: (element) => element.getAttribute("data-page-title") || null,
         renderHTML: (attributes) => ({ "data-page-title": attributes.pageTitle }),
       },
       pageIcon: {
@@ -50,22 +63,37 @@ export const PageLink = Node.create<PageLinkOptions>({
         parseHTML: (element) => element.getAttribute("data-page-icon") || null,
         renderHTML: (attributes) => ({ "data-page-icon": attributes.pageIcon }),
       },
+      // Path to the target relative to the document holding this node — the
+      // link that goes into the portable `.md`. Kept alongside pageId because
+      // an id only means something inside this workspace.
+      pageHref: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-page-href") || null,
+        renderHTML: (attributes) =>
+          attributes.pageHref ? { "data-page-href": attributes.pageHref } : {},
+      },
     };
   },
 
   renderMarkdown(node) {
-    const pageId = node.attrs?.pageId || "";
-    // Empty placeholder (no target page) has no portable markdown form — skip
-    // it. The node lives in the sidecar HTML and is restored from there on reopen.
-    if (!pageId) return "";
-    const title = node.attrs?.pageTitle || "Untitled";
-    return title;
+    return renderPageMarkdownLink(node.attrs ?? {});
   },
 
   parseHTML() {
     return [
       {
         tag: 'div[data-type="page-link"]',
+      },
+      {
+        // A paragraph that is nothing but a link to another workspace document
+        // is how a page link comes back from markdown alone (external edit, no
+        // sidecar). Restricted to the top level so link-only list items and
+        // table cells keep their own structure.
+        tag: "p",
+        context: "doc/",
+        priority: 1100,
+        getAttrs: (element) =>
+          element instanceof HTMLElement ? pageLinkAttrsFromParagraph(element) : false,
       },
     ];
   },
@@ -96,6 +124,7 @@ export const PageLink = Node.create<PageLinkOptions>({
                 pageId: attrs.pageId,
                 pageTitle: attrs.pageTitle,
                 pageIcon: attrs.pageIcon || null,
+                pageHref: documentHrefForPage(attrs.pageId),
               },
             },
             { type: "paragraph" },
