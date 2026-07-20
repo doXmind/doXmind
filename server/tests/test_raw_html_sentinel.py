@@ -86,3 +86,21 @@ def test_task_lists_are_not_wrapped() -> None:
     assert '<ul data-type="taskList">' in out
     assert '<li data-type="taskItem" data-checked="false"><p>Todo</p></li>' in out
     assert '<li data-type="taskItem" data-checked="true"><p>Done</p></li>' in out
+
+
+def test_inline_comment_is_not_wrapped_as_a_block_node() -> None:
+    """An inline comment must stay inside the block that carries it.
+
+    `isblocklevel` reports every comment as block level (it inspects a tag name
+    a comment does not have), so the block/inline decision has to come from
+    python-markdown's own placement signal instead.
+    """
+    html = markdown_to_html("## Section <!-- omit in toc -->\n\nBody.\n")
+    assert "<h2>Section <!-- omit in toc --></h2>" in html
+    assert "data-html-comment" not in html
+
+
+def test_block_comment_still_becomes_a_node() -> None:
+    html = markdown_to_html("# Doc\n\n<!-- TODO -->\n\nBody.\n")
+    assert 'data-type="html-comment"' in html
+    assert "<h1>Doc</h1>" in html
