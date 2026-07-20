@@ -35,13 +35,12 @@ import { cn, formatShortcut } from "@/lib/utils";
 import { turnIntoOptions, isTurnIntoSeparator } from "@/lib/block-actions";
 import { ColorPicker } from "./color-picker";
 import {
-  moveBlockUp,
-  moveBlockDown,
-  duplicateBlock,
   deleteBlock,
+  duplicateBlock,
   copyBlockToClipboard,
   getBlockAtPos,
 } from "@/lib/block-operations";
+import { moveBlockWithCaret } from "@/hooks/use-block-keyboard-shortcuts";
 
 interface BlockActionMenuProps {
   editor: Editor;
@@ -419,6 +418,14 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
     };
   }, [onClose]);
 
+  // Every entry here mutates the document, and the menu lives in a portal
+  // outside the editor — so without an explicit handback focus lands on
+  // <body> and the user's immediate Cmd+Z reaches nothing.
+  const closeAndRefocus = useCallback(() => {
+    onClose();
+    editor.view.focus();
+  }, [editor, onClose]);
+
   // Close on Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -427,48 +434,48 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
         if (activeSubmenu) {
           setActiveSubmenu(null);
         } else {
-          onClose();
+          closeAndRefocus();
         }
       }
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, activeSubmenu]);
+  }, [closeAndRefocus, activeSubmenu]);
 
   const handleDelete = useCallback(() => {
     if (block) {
       deleteBlock(editor, block.from, block.to);
     }
-    onClose();
-  }, [editor, block, onClose]);
+    closeAndRefocus();
+  }, [editor, block, closeAndRefocus]);
 
   const handleDuplicate = useCallback(() => {
     if (block) {
       duplicateBlock(editor, block.from, block.to);
     }
-    onClose();
-  }, [editor, block, onClose]);
+    closeAndRefocus();
+  }, [editor, block, closeAndRefocus]);
 
   const handleMoveUp = useCallback(() => {
     if (block) {
-      moveBlockUp(editor, block.from, block.to);
+      moveBlockWithCaret(editor, block.from, block.to, "up");
     }
-    onClose();
-  }, [editor, block, onClose]);
+    closeAndRefocus();
+  }, [editor, block, closeAndRefocus]);
 
   const handleMoveDown = useCallback(() => {
     if (block) {
-      moveBlockDown(editor, block.from, block.to);
+      moveBlockWithCaret(editor, block.from, block.to, "down");
     }
-    onClose();
-  }, [editor, block, onClose]);
+    closeAndRefocus();
+  }, [editor, block, closeAndRefocus]);
 
   const handleCopy = useCallback(async () => {
     if (block) {
       await copyBlockToClipboard(editor, block.from, block.to);
     }
-    onClose();
-  }, [editor, block, onClose]);
+    closeAndRefocus();
+  }, [editor, block, closeAndRefocus]);
 
   const handleTurnInto = useCallback(
     (action: (editor: Editor) => void) => {
@@ -491,9 +498,9 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
         }
       }
       action(editor);
-      onClose();
+      closeAndRefocus();
     },
-    [editor, block, onClose]
+    [editor, block, closeAndRefocus]
   );
 
   const handleColorChange = useCallback(
@@ -509,9 +516,9 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
         [attrKey]: colorValue || null,
       });
       editor.view.dispatch(tr);
-      onClose();
+      closeAndRefocus();
     },
-    [editor, onClose, resolveColorTarget]
+    [editor, closeAndRefocus, resolveColorTarget]
   );
 
   const handleAlignChange = useCallback(
@@ -524,9 +531,9 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
         textAlign: align === "left" ? null : align,
       });
       editor.view.dispatch(tr);
-      onClose();
+      closeAndRefocus();
     },
-    [editor, onClose, resolveAlignTarget]
+    [editor, closeAndRefocus, resolveAlignTarget]
   );
 
   // Build dynamic menu item IDs based on block type
@@ -850,10 +857,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
                       : "text-foreground hover:bg-accent/50",
                     item.isActive && "font-medium"
                   )}
-                  onClick={() => {
-                    item.action();
-                    onClose();
-                  }}
+                  onClick={item.action}
                   onMouseEnter={() => setSubmenuFocusIndex(idx)}
                   role="menuitem"
                 >

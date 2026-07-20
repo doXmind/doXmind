@@ -1,6 +1,6 @@
 import { Extension } from "@tiptap/core";
 import type { Editor, Range } from "@tiptap/core";
-import Suggestion from "@tiptap/suggestion";
+import Suggestion, { SuggestionPluginKey } from "@tiptap/suggestion";
 import { ReactRenderer } from "@tiptap/react";
 import { computePosition, flip, shift, offset } from "@floating-ui/dom";
 import {
@@ -1825,6 +1825,7 @@ export const SlashCommands = Extension.create({
         render: () => {
           let component: ReactRenderer<CommandListRef> | null = null;
           let wrapper: HTMLDivElement | null = null;
+          let suggestionEditor: Editor | null = null;
           let getClientRect: (() => DOMRect | null) | null = null;
           let scrollHandler: (() => void) | null = null;
           let positionToken = 0;
@@ -1873,6 +1874,7 @@ export const SlashCommands = Extension.create({
                 props,
                 editor: props.editor,
               });
+              suggestionEditor = props.editor;
 
               if (!props.clientRect) return;
               getClientRect = props.clientRect;
@@ -1910,6 +1912,12 @@ export const SlashCommands = Extension.create({
             onKeyDown: (props: { event: KeyboardEvent }) => {
               if (props.event.key === "Escape") {
                 if (wrapper) wrapper.style.display = "none";
+                // Hiding the popup is not enough: the suggestion plugin stays
+                // active and keeps claiming keys, so every later Escape dies
+                // here instead of reaching block selection. Exit for real.
+                suggestionEditor?.view.dispatch(
+                  suggestionEditor.state.tr.setMeta(SuggestionPluginKey, { exit: true })
+                );
                 return true;
               }
 
@@ -1932,6 +1940,7 @@ export const SlashCommands = Extension.create({
               }
               component?.destroy();
               getClientRect = null;
+              suggestionEditor = null;
               positionToken++;
             },
           };

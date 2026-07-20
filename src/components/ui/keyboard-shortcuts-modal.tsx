@@ -29,7 +29,7 @@ const shortcutGroups: ShortcutGroup[] = [
       { keys: ["Ctrl", "Shift", "S"], descriptionKey: "strikethrough" },
       { keys: ["Ctrl", "E"], descriptionKey: "inlineCode" },
       { keys: ["Ctrl", "Shift", "H"], descriptionKey: "highlight" },
-      { keys: ["Ctrl", "K"], descriptionKey: "addLink" },
+      { keys: ["Ctrl", "K"], descriptionKey: "addLinkSelected" },
     ],
   },
   {
@@ -46,7 +46,7 @@ const shortcutGroups: ShortcutGroup[] = [
   {
     titleKey: "navigationView",
     shortcuts: [
-      { keys: ["Ctrl", "K"], descriptionKey: "commandPalette" },
+      { keys: ["Ctrl", "K"], descriptionKey: "commandPaletteNoSelection" },
       { keys: ["Ctrl", "F"], descriptionKey: "findInDocument" },
       { keys: ["Ctrl", "?"], descriptionKey: "keyboardShortcuts" },
     ],
