@@ -186,7 +186,12 @@ export interface PageNodeAttrs {
  */
 export function renderPageMarkdownLink(attrs: PageNodeAttrs): string {
   const pageId = attrs.pageId || "";
-  const href = documentHrefForPage(pageId) ?? attrs.pageHref ?? "";
+  // The stored href wins. documentHrefForPage() resolves relative to whichever
+  // document is CURRENTLY open, so recomputing it while another file is
+  // selected — which is the state during a file switch — rewrites a correct,
+  // user-authored link into one relative to the wrong document. Only a freshly
+  // inserted node, which has no stored href yet, needs one computed.
+  const href = attrs.pageHref ?? documentHrefForPage(pageId) ?? "";
   const title = attrs.pageTitle || (pageId ? documentNameForPage(pageId) : null) || "";
   if (!href) return title || (pageId ? "Untitled" : "");
   const label = (title || "Untitled").replace(/([[\]])/g, "\\$1");

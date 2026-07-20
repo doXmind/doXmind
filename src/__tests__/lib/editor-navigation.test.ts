@@ -21,6 +21,7 @@ import {
   relativeDocumentHref,
   resolveEditorLink,
   scrollToHeadingAnchor,
+  renderPageMarkdownLink,
 } from "@/lib/editor-navigation";
 
 const now = "2026-07-20T00:00:00.000Z";
@@ -199,5 +200,24 @@ describe("page target lookup", () => {
 
   it("returns the target's current name in the workspace", () => {
     expect(documentNameForPage("id-other")).toBe("Other Doc");
+  });
+});
+
+describe("renderPageMarkdownLink — a stored href is never recomputed", () => {
+  it("keeps a user-authored href even when another document is selected", () => {
+    // documentHrefForPage() resolves against the CURRENTLY open file, so
+    // recomputing during a file switch rewrites a correct link to point at the
+    // wrong document. The href the node carries must win.
+    const out = renderPageMarkdownLink({
+      pageId: "some-id-that-is-not-in-the-store",
+      pageTitle: "Other Doc",
+      pageHref: "../../Other%20Doc.md",
+    });
+    expect(out).toBe("[Other Doc](../../Other%20Doc.md)");
+  });
+
+  it("computes an href only when the node has none", () => {
+    const out = renderPageMarkdownLink({ pageId: "", pageTitle: "Untitled", pageHref: null });
+    expect(out).not.toContain("](");
   });
 });
