@@ -9,8 +9,6 @@ import { useFileStore } from "@/stores/file-store";
 
 interface WorkspaceHeaderProps {
   onCreateFile: () => void;
-  onCreatePdf: () => void;
-  onCreateExcel: () => void;
   onCreateFolder: () => void;
   onOpenTemplatePicker: () => void;
   onCollapseAll: () => void;
@@ -25,8 +23,6 @@ function rootLabel(root: string | null): string {
 
 export function WorkspaceHeader({
   onCreateFile,
-  onCreatePdf,
-  onCreateExcel,
   onCreateFolder,
   onOpenTemplatePicker,
   onCollapseAll,
@@ -51,8 +47,6 @@ export function WorkspaceHeader({
         <div className="flex items-center gap-0.5 opacity-70 transition-opacity group-hover:opacity-100">
           <NewButton
             onCreateFile={onCreateFile}
-            onCreatePdf={onCreatePdf}
-            onCreateExcel={onCreateExcel}
             onCreateFolder={onCreateFolder}
             onOpenTemplatePicker={onOpenTemplatePicker}
           />

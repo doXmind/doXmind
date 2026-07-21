@@ -36,6 +36,7 @@ from services.sidecar_io import (
     read_sidecar,
     sidecar_path_for,
 )
+from services.attachment_inspection import inspect_attachment as inspect_attachment_sidecar
 from services.synthetic_document import (
     LegacySidecarError,
     ReadOnlyDocumentError,
@@ -229,6 +230,11 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
         )
     if command == "workspace_stat_binary":
         return stat_workspace_binary(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+        )
+    if command == "workspace_inspect_attachment":
+        return inspect_attachment(
             str(payload.get("root") or ""),
             str(payload.get("path") or ""),
         )
@@ -752,6 +758,13 @@ def stat_workspace_binary(root: str, rel_path: str) -> dict[str, Any]:
         raise ValueError("binary workspace stat is only enabled for PDF and Excel files")
     stat = path.stat()
     return {"mtimeNs": str(stat.st_mtime_ns), "size": stat.st_size}
+
+
+def inspect_attachment(root: str, rel_path: str) -> dict[str, Any]:
+    """Inspect legacy attachment edits without invoking migration or repair paths."""
+    workspace = canonical_workspace_root(root)
+    path = resolve_existing_workspace_path(workspace, rel_path)
+    return inspect_attachment_sidecar(path)
 
 
 def read_pdf_editor_state(root: str, rel_path: str) -> dict[str, Any] | None:

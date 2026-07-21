@@ -1,4 +1,5 @@
 import type {
+  AttachmentInspection,
   CorrelationReport,
   DocumentContent,
   DocumentHandle,
@@ -105,11 +106,8 @@ export class DiskStorageAdapter implements StorageAdapter {
 
   async read(handle: DocumentHandle): Promise<DocumentContent> {
     const docType = handle.documentType ?? documentTypeFromPath(requireHandlePath(handle));
-    if (docType === "pdf") {
-      throw new Error("PDF documents are binary; use readBinary instead");
-    }
-    if (docType === "excel") {
-      throw new Error("Excel documents are binary; use readBinary instead");
+    if (docType !== "markdown") {
+      throw new Error("Page read supports Markdown only; use attachment inspection instead");
     }
 
     const result = await perfAsync(
@@ -152,6 +150,13 @@ export class DiskStorageAdapter implements StorageAdapter {
       // null means "can't tell, assume cache is valid"; cache hit proceeds.
       return null;
     }
+  }
+
+  async inspectAttachment(handle: DocumentHandle): Promise<AttachmentInspection> {
+    return this.invoke<AttachmentInspection>("workspace_inspect_attachment", {
+      root: this.requireRoot(),
+      path: requireHandlePath(handle),
+    });
   }
 
   async readBinary(handle: DocumentHandle): Promise<Uint8Array> {
@@ -244,6 +249,11 @@ export class DiskStorageAdapter implements StorageAdapter {
   }
 
   async write(handle: DocumentHandle, content: StorageWriteInput): Promise<DocumentContent> {
+    const docType = handle.documentType ?? documentTypeFromPath(requireHandlePath(handle));
+    if (docType !== "markdown") {
+      throw new Error("Page write supports Markdown only; open attachments externally instead");
+    }
+
     // Partial payload: only include keys the caller actually wants to update.
     // Meta-only writes (cover/icon/etc.) must NOT send empty html/markdown,
     // or the server will overwrite the body with "" and wipe the document.
@@ -293,42 +303,19 @@ export class DiskStorageAdapter implements StorageAdapter {
       return folderEntryFromPath(path);
     }
 
-    const documentType =
-      input.documentType ??
-      (/\.pdf$/i.test(input.name)
-        ? "pdf"
-        : /\.(xlsx|xlsm|csv)$/i.test(input.name)
-          ? "excel"
-          : "markdown");
-
-    if (documentType === "pdf") {
-      if (!input.binary || input.binary.byteLength === 0) {
-        throw new Error("Creating a PDF requires non-empty binary bytes");
-      }
-      const path = ensurePdfExtension(childPath(input.parent, input.name));
-      // Tauri's IPC serializes Uint8Array as a JSON number array — that's how
-      // the existing `workspace_read_binary` command returns bytes too. The
-      // HTTP fallback (`/api/workspace/invoke`) re-uses the same shape via
-      // JSON, so a plain array works for both transports.
-      const document = await this.invoke<WorkspaceDocumentDto>("doc_create_pdf", {
-        root: this.requireRoot(),
-        path,
-        bytes: Array.from(input.binary),
-      });
-      return entryFromDocument(document);
-    }
-
-    if (documentType === "excel") {
-      if (!input.binary || input.binary.byteLength === 0) {
-        throw new Error("Creating an Excel workbook requires non-empty binary bytes");
-      }
-      const path = ensureExcelExtension(childPath(input.parent, input.name));
-      const document = await this.invoke<WorkspaceDocumentDto>("doc_create_excel", {
-        root: this.requireRoot(),
-        path,
-        bytes: Array.from(input.binary),
-      });
-      return entryFromDocument(document);
+    // Reject stale callers compiled against the old binary-create contract.
+    // Imported attachments use importExternal; primary creation is Page-only.
+    const legacyInput = input as StorageCreateInput & {
+      documentType?: WorkspaceDocumentType;
+      binary?: Uint8Array;
+    };
+    if (
+      (legacyInput.documentType && legacyInput.documentType !== "markdown") ||
+      legacyInput.binary
+    ) {
+      throw new Error(
+        "Workspace creation supports Markdown pages only; import attachments instead"
+      );
     }
 
     const path = ensureMarkdownExtension(childPath(input.parent, input.name));
@@ -733,14 +720,6 @@ function renameLeafPreservingExtension(currentPath: string, name: string): strin
   const sourceExt =
     basename(currentPath).match(/\.(md|markdown|pdf|xlsx|xlsm|csv)$/i)?.[0] ?? ".md";
   return `${stripDocumentExtension(basename(name))}${sourceExt}`;
-}
-
-function ensurePdfExtension(name: string): string {
-  return /\.pdf$/i.test(name) ? name : `${name}.pdf`;
-}
-
-function ensureExcelExtension(name: string): string {
-  return /\.(xlsx|xlsm|csv)$/i.test(name) ? name : `${name}.xlsx`;
 }
 
 function stripMarkdownExtension(name: string): string {

@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 import { storeLogger } from "@/lib/logger";
 import { eventBus } from "@/lib/events";
 import type { FileItem } from "@/types";
-import { documentTypeFromName } from "@/lib/document-types";
+import { documentTypeFromName, isMarkdownFile } from "@/lib/document-types";
 import {
   createStorageAdapter,
   type DocumentHandle,
@@ -140,12 +140,7 @@ interface FileState {
   openFolder: (root: string) => Promise<void>;
   openFile: (absolutePath: string) => Promise<void>;
   closeOpened: () => void;
-  createFile: (
-    name: string,
-    content?: string,
-    parentId?: string | null,
-    options?: { documentType?: "markdown" | "pdf" | "excel" }
-  ) => Promise<string>;
+  createFile: (name: string, content?: string, parentId?: string | null) => Promise<string>;
   updateFile: (
     id: string,
     updates: Partial<Pick<FileItem, "name" | "content" | "contentMarkdown">>
@@ -629,7 +624,7 @@ export const useFileStore = create<FileState>()(
             async () => {
               const file = get().files.find((f) => f.id === fileId);
               if (!file) return;
-              if (file.documentType === "pdf" || file.documentType === "excel") {
+              if (!isMarkdownFile(file)) {
                 set((state) => ({
                   loadedContentIds: new Set([...state.loadedContentIds, fileId]),
                 }));
@@ -764,9 +759,9 @@ export const useFileStore = create<FileState>()(
         const now = new Date().toISOString();
         let looseFile: FileItem;
 
-        if (documentType === "pdf" || documentType === "excel") {
-          // Binary documents are loaded on demand by their workspaces; we just
-          // need a stable FileItem so the editor can resolve the current file.
+        if (documentType !== "markdown") {
+          // Attachments are represented by a stable FileItem only. Their
+          // read-only workspace must not load source content or sidecar state.
           looseFile = {
             id: handle.id,
             name: fileBase,
@@ -849,69 +844,27 @@ export const useFileStore = create<FileState>()(
         void unregisterWindowTarget();
       },
 
-      createFile: async (
-        name: string,
-        content: string = "",
-        parentId: string | null = null,
-        options?: { documentType?: "markdown" | "pdf" | "excel" }
-      ) => {
+      createFile: async (name: string, content: string = "", parentId: string | null = null) => {
         try {
           // Validate parentId (a folder) exists; fall back to root if stale
           const validParentId =
             parentId && get().files.some((f) => f.id === parentId) ? parentId : null;
 
-          const documentType =
-            options?.documentType ??
-            (/\.pdf$/i.test(name)
-              ? "pdf"
-              : /\.(xlsx|xlsm|csv)$/i.test(name)
-                ? "excel"
-                : "markdown");
-
-          let entry;
-          let storedContent = content;
-          if (documentType === "pdf") {
-            const { createBlankPdfBytes } = await import("@/lib/pdf/blank-pdf");
-            const bytes = await createBlankPdfBytes();
-            entry = await getAdapter(get()).create({
-              name,
-              kind: "document",
-              parent: parentHandleForId(get().files, validParentId),
-              documentType: "pdf",
-              binary: bytes,
-            });
-            // PDFs aren't displayed via `content` — the editor reads the
-            // binary on demand. Keep the in-memory content empty so we don't
-            // accidentally feed PDF bytes into a markdown viewer.
-            storedContent = "";
-          } else if (documentType === "excel") {
-            const { createBlankExcelBytes } = await import("@/lib/excel/blank-excel");
-            const bytes = createBlankExcelBytes();
-            entry = await getAdapter(get()).create({
-              name,
-              kind: "document",
-              parent: parentHandleForId(get().files, validParentId),
-              documentType: "excel",
-              binary: bytes,
-            });
-            storedContent = "";
-          } else {
-            entry = await getAdapter(get()).create({
-              name,
-              kind: "document",
-              parent: parentHandleForId(get().files, validParentId),
-              content: { html: content, markdown: "" },
-            });
-          }
+          const entry = await getAdapter(get()).create({
+            name,
+            kind: "document",
+            parent: parentHandleForId(get().files, validParentId),
+            content: { html: content, markdown: "" },
+          });
           const newFile = {
             ...fileFromEntry(entry, {
-              content: storedContent,
-              editorHtml: storedContent,
-              browsingHtml: storedContent,
+              content,
+              editorHtml: content,
+              browsingHtml: content,
               contentMarkdown: "",
               outline: [],
             }),
-            content: storedContent,
+            content,
           };
 
           set((state) => ({

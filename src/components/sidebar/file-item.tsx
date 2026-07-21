@@ -30,10 +30,11 @@ import { ConfirmModal } from "@/components/ui/confirm-modal";
 import {
   getDisplayName,
   isExcelFile,
+  isMarkdownFile,
   isPdfFile,
   withOriginalExtension,
 } from "@/lib/document-types";
-import { revealFileInFinder } from "@/lib/storage/reveal";
+import { openFileExternally, revealFileInFinder } from "@/lib/storage/reveal";
 import { exportMarkdownAsPdf } from "@/lib/markdown-pdf-export";
 import { getSidebarTreePaddingLeft } from "./tree-layout";
 
@@ -74,6 +75,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   // and doubles as the place to tell the user the hidden sidecar moves too.
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const isCurrentFileDirty = useEditorStore((s) => (isActive ? s.isDirty : false));
+  const isAttachment = !isMarkdownFile(file);
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -87,7 +89,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      const itemCount = getMenuItemCount(!!file.parentId);
+      const itemCount = getMenuItemCount(!!file.parentId, isAttachment);
       const exportOffset = file.parentId ? 1 : 0; // Shift export items if "Move to Root" is present
       switch (e.key) {
         case "Escape":
@@ -106,6 +108,42 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
         case "Enter":
         case " ":
           e.preventDefault();
+          if (isAttachment) {
+            if (contextMenuFocusIndex === 0) {
+              setContextMenu(null);
+              setContextMenuFocusIndex(-1);
+              openFileExternally(file).catch((error) => {
+                log.error("Failed to open file externally", error);
+                const { title, description } = getErrorMessage(error);
+                notify.error(title, { description });
+              });
+            } else if (contextMenuFocusIndex === 1) {
+              setContextMenu(null);
+              setContextMenuFocusIndex(-1);
+              setNewName(getNameWithoutExtension(file.name));
+              setIsRenaming(true);
+            } else if (contextMenuFocusIndex === 2) {
+              setContextMenu(null);
+              setContextMenuFocusIndex(-1);
+              revealFileInFinder(file).catch((error) => {
+                log.error("Failed to reveal file in Finder", error);
+                const { title, description } = getErrorMessage(error);
+                notify.error(title, { description });
+              });
+            } else if (contextMenuFocusIndex === 3 && file.parentId) {
+              setContextMenu(null);
+              setContextMenuFocusIndex(-1);
+              moveFileToFolder(file.id, null).catch((error) => {
+                log.error("Failed to move file to root", error);
+                notify.error(t("failedToMove"));
+              });
+            } else if (contextMenuFocusIndex === (file.parentId ? 4 : 3)) {
+              setContextMenu(null);
+              setContextMenuFocusIndex(-1);
+              handleDelete();
+            }
+            break;
+          }
           // Execute the action based on focused index
           // Indices: 0=Rename, 1=Reveal, [2=MoveToRoot], 2+offset..4+offset=Export, 5+offset=Delete
           if (contextMenuFocusIndex === 0) {
@@ -364,6 +402,21 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
     setIsRenaming(true);
   };
 
+  const handleOpenExternally = async () => {
+    try {
+      await openFileExternally(file);
+    } catch (error) {
+      log.error("Failed to open file externally", error);
+      const { title, description } = getErrorMessage(error);
+      notify.error(title, { description });
+    }
+  };
+
+  const handleContextMenuOpenExternally = () => {
+    setContextMenu(null);
+    void handleOpenExternally();
+  };
+
   const handleContextMenuRevealInFinder = async () => {
     setContextMenu(null);
     try {
@@ -557,6 +610,8 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
             <FileActionsMenuItems
               variant="dropdown"
               hasParent={!!file.parentId}
+              isAttachment={isAttachment}
+              onOpenExternally={handleOpenExternally}
               onRename={() => {
                 setNewName(getNameWithoutExtension(file.name));
                 setIsRenaming(true);
@@ -602,9 +657,11 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
             <FileActionsMenuItems
               variant="context"
               hasParent={!!file.parentId}
+              isAttachment={isAttachment}
               focusIndex={contextMenuFocusIndex}
               onFocusIndex={setContextMenuFocusIndex}
               contextMenuReady={contextMenuReady}
+              onOpenExternally={handleContextMenuOpenExternally}
               onRename={handleContextMenuRename}
               onRevealInFinder={handleContextMenuRevealInFinder}
               onMoveToRoot={handleContextMenuMoveToRoot}

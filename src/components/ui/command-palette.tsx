@@ -132,7 +132,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
       // File commands
       {
         id: "new-file",
-        label: "New Document",
+        label: "New Page",
         icon: <FilePlus className="h-4 w-4" />,
         shortcut: ["Ctrl", "N"],
         category: "file",

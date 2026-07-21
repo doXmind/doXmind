@@ -2,6 +2,10 @@
 
 Source of truth for the new Settings page redesign.
 
+Product scope follows [`PRODUCT_DIRECTION.md`](PRODUCT_DIRECTION.md): Markdown
+Page is the only editable content type, so PDF/Excel editor settings and a
+default document-type selector are intentionally excluded.
+
 Status legend:
 
 - `[done]` — UI exists today
@@ -115,20 +119,6 @@ General  ·  Appearance  ·  Editor  ·  Workspace  ·  Backup & Privacy  ·  Ab
 | Default code block language      | Dropdown | plain   | `[new]` |
 | Show line numbers in code blocks | Toggle   | off     | `[new]` |
 
-### 3e. PDF
-
-| Item           | Control                                | Default   | Status  |
-| -------------- | -------------------------------------- | --------- | ------- |
-| Render quality | Segmented: Low / Medium / High         | Medium    | `[new]` |
-| Default zoom   | Segmented: Fit width / Fit page / 100% | Fit width | `[new]` |
-
-### 3f. Excel
-
-| Item                | Control  | Default    | Status  |
-| ------------------- | -------- | ---------- | ------- |
-| Show gridlines      | Toggle   | on         | `[new]` |
-| Default date format | Dropdown | YYYY-MM-DD | `[new]` |
-
 ---
 
 ## 4. Workspace
@@ -143,13 +133,12 @@ General  ·  Appearance  ·  Editor  ·  Workspace  ·  Backup & Privacy  ·  Ab
 
 ### File tree
 
-| Item                          | Control                              | Default  | Status  |
-| ----------------------------- | ------------------------------------ | -------- | ------- |
-| Sort by                       | Segmented: Name / Modified / Created | Name     | `[new]` |
-| Folders first                 | Toggle                               | on       | `[new]` |
-| Show hidden files (dot-files) | Toggle                               | off      | `[new]` |
-| Show `.doxmind` sidecars      | Toggle                               | off      | `[new]` |
-| New file default type         | Segmented: Markdown / PDF / Excel    | Markdown | `[new]` |
+| Item                          | Control                              | Default | Status  |
+| ----------------------------- | ------------------------------------ | ------- | ------- |
+| Sort by                       | Segmented: Name / Modified / Created | Name    | `[new]` |
+| Folders first                 | Toggle                               | on      | `[new]` |
+| Show hidden files (dot-files) | Toggle                               | off     | `[new]` |
+| Show `.doxmind` sidecars      | Toggle                               | off     | `[new]` |
 
 ### External edits
 
@@ -278,12 +267,12 @@ These looked plausible but fail one of the design principles above. Dropped, wit
 
 ## Implementation cost (for sequencing)
 
-| Bucket                               | Items                                                                                                                                                  | Effort |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| Already done — only needs new layout | All of Appearance                                                                                                                                      | 0      |
-| Small (< half day each)              | Language, Startup, file tree sort/hidden/sidecar visibility, smart typography, tab size, code block options, recent workspace removable                | small  |
-| Medium (1–2 days each)               | Image paste strategy, external edits behavior, orphan sidecar cleanup, snapshot foundation, line endings, line wrap                                    | medium |
-| Large (≥ 3 days)                     | PDF / Excel editor preferences (need each store wired up), search excluded folders (touches indexer), sidebar trash panel migration, About scaffolding | large  |
+| Bucket                               | Items                                                                                                                                   | Effort |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Already done — only needs new layout | All of Appearance                                                                                                                       | 0      |
+| Small (< half day each)              | Language, Startup, file tree sort/hidden/sidecar visibility, smart typography, tab size, code block options, recent workspace removable | small  |
+| Medium (1–2 days each)               | Image paste strategy, external edits behavior, orphan sidecar cleanup, snapshot foundation, line endings, line wrap                     | medium |
+| Large (≥ 3 days)                     | Search excluded folders (touches indexer), sidebar trash panel migration, About scaffolding                                             | large  |
 
 Recommended order:
 
@@ -292,4 +281,3 @@ Recommended order:
 3. **Markdown editor preferences** — typography, save, image paste
 4. **Trash migration to sidebar panel** — required before settings can drop the Trash tab
 5. **Backup & Privacy + About** — completes the IA
-6. **PDF / Excel preferences** — last, lowest engagement

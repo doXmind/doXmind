@@ -1,5 +1,10 @@
 # doXmind CLI & MCP server
 
+> Product scope follows [`PRODUCT_DIRECTION.md`](PRODUCT_DIRECTION.md). Create
+> and edit operations apply to Markdown Pages only. PDF, spreadsheet, and HTML
+> commands are Attachment read/convert or legacy-recovery surfaces; they do not
+> establish editable document types.
+
 doXmind ships two standalone shells over the same workspace (ADR
 [0010](adr/0010-cli-and-mcp-share-a-shell-agnostic-core.md)):
 

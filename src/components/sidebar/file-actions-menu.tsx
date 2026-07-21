@@ -1,6 +1,6 @@
 "use client";
 
-import { FileDown, FolderOpen, Home, Pencil, Trash2 } from "lucide-react";
+import { ExternalLink, FileDown, FolderOpen, Home, Pencil, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import {
@@ -11,6 +11,7 @@ import {
 
 export interface FileActionsMenuItemsProps {
   /** Action handlers */
+  onOpenExternally?: () => void;
   onRename: () => void;
   onMoveToRoot: () => void;
   onRevealInFinder: () => void;
@@ -19,6 +20,7 @@ export interface FileActionsMenuItemsProps {
 
   /** State */
   hasParent: boolean;
+  isAttachment?: boolean;
 
   /** Rendering variant */
   variant: "dropdown" | "context";
@@ -35,7 +37,7 @@ export interface FileActionsMenuItemsProps {
  * Shared menu items used by both the DropdownMenu (mobile three-dot button)
  * and the right-click ContextMenu in FileItem.
  *
- * Menu item indices (for keyboard navigation):
+ * Page menu item indices (for keyboard navigation):
  *   0 - Rename
  *   1 - Reveal in Finder
  *   2 - Move to Root  (only when hasParent is true; shifts subsequent indices by 1)
@@ -43,25 +45,41 @@ export interface FileActionsMenuItemsProps {
  *   3+offset - Export PDF
  *   4+offset - Export Word
  *   5+offset - Move to Trash
+ *
+ * Attachment indices: Open externally, Rename, Reveal, [Move to Root], Delete.
  */
 export function FileActionsMenuItems({
+  onOpenExternally,
   onRename,
   onMoveToRoot,
   onRevealInFinder,
   onExport,
   onDelete,
   hasParent,
+  isAttachment = false,
   variant,
   focusIndex = -1,
   onFocusIndex,
   contextMenuReady = false,
 }: FileActionsMenuItemsProps) {
   const t = useTranslations("sidebar");
+  const tAttachment = useTranslations("attachment");
   const exportOffset = hasParent ? 1 : 0;
 
   if (variant === "dropdown") {
     return (
       <>
+        {isAttachment && (
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenExternally?.();
+            }}
+          >
+            <ExternalLink className="mr-2 h-4 w-4" />
+            {tAttachment("openExternally")}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           onClick={(e) => {
             e.stopPropagation();
@@ -94,37 +112,41 @@ export function FileActionsMenuItems({
             </DropdownMenuItem>
           </>
         )}
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-xs text-muted-foreground">
-          {t("exportAs")}
-        </DropdownMenuLabel>
-        <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation();
-            onExport("markdown");
-          }}
-        >
-          <FileDown className="mr-2 h-4 w-4" />
-          {t("markdownFormat")}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation();
-            onExport("pdf");
-          }}
-        >
-          <FileDown className="mr-2 h-4 w-4" />
-          {t("pdfFormat")}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation();
-            onExport("docx");
-          }}
-        >
-          <FileDown className="mr-2 h-4 w-4" />
-          {t("wordFormat")}
-        </DropdownMenuItem>
+        {!isAttachment && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
+              {t("exportAs")}
+            </DropdownMenuLabel>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                onExport("markdown");
+              }}
+            >
+              <FileDown className="mr-2 h-4 w-4" />
+              {t("markdownFormat")}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                onExport("pdf");
+              }}
+            >
+              <FileDown className="mr-2 h-4 w-4" />
+              {t("pdfFormat")}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                onExport("docx");
+              }}
+            >
+              <FileDown className="mr-2 h-4 w-4" />
+              {t("wordFormat")}
+            </DropdownMenuItem>
+          </>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={(e) => {
@@ -155,15 +177,31 @@ export function FileActionsMenuItems({
         (destructive ? "hover:bg-destructive/10" : "hover:bg-[var(--sidebar-hover)]"),
       focusIndex === index && (destructive ? "bg-destructive/10" : "bg-[var(--sidebar-active)]")
     );
+  const renameIndex = isAttachment ? 1 : 0;
+  const revealIndex = renameIndex + 1;
+  const moveIndex = revealIndex + 1;
+  const deleteIndex = isAttachment ? moveIndex + exportOffset : 5 + exportOffset;
 
   return (
     <>
+      {isAttachment && (
+        <button
+          role="menuitem"
+          onClick={onOpenExternally}
+          onMouseEnter={() => setFocus(0)}
+          className={contextItemClass(0)}
+        >
+          <ExternalLink className="mr-2 h-4 w-4" />
+          {tAttachment("openExternally")}
+        </button>
+      )}
+
       {/* Rename */}
       <button
         role="menuitem"
         onClick={onRename}
-        onMouseEnter={() => setFocus(0)}
-        className={contextItemClass(0)}
+        onMouseEnter={() => setFocus(renameIndex)}
+        className={contextItemClass(renameIndex)}
       >
         <Pencil className="mr-2 h-4 w-4" />
         {t("rename")}
@@ -173,8 +211,8 @@ export function FileActionsMenuItems({
       <button
         role="menuitem"
         onClick={onRevealInFinder}
-        onMouseEnter={() => setFocus(1)}
-        className={contextItemClass(1)}
+        onMouseEnter={() => setFocus(revealIndex)}
+        className={contextItemClass(revealIndex)}
       >
         <FolderOpen className="mr-2 h-4 w-4" />
         {t("revealInFinder")}
@@ -188,8 +226,8 @@ export function FileActionsMenuItems({
           <button
             role="menuitem"
             onClick={onMoveToRoot}
-            onMouseEnter={() => setFocus(2)}
-            className={contextItemClass(2)}
+            onMouseEnter={() => setFocus(moveIndex)}
+            className={contextItemClass(moveIndex)}
           >
             <Home className="mr-2 h-4 w-4" />
             {t("moveToRoot")}
@@ -197,43 +235,49 @@ export function FileActionsMenuItems({
         </>
       )}
 
-      <div className="my-1 h-px bg-border" />
+      {!isAttachment && (
+        <>
+          <div className="my-1 h-px bg-border" />
 
-      {/* Export submenu label */}
-      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">{t("exportAs")}</div>
+          {/* Export submenu label */}
+          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+            {t("exportAs")}
+          </div>
 
-      {/* Export Markdown */}
-      <button
-        role="menuitem"
-        onClick={() => onExport("markdown")}
-        onMouseEnter={() => setFocus(2 + exportOffset)}
-        className={contextItemClass(2 + exportOffset)}
-      >
-        <FileDown className="mr-2 h-4 w-4" />
-        {t("markdownFormat")}
-      </button>
+          {/* Export Markdown */}
+          <button
+            role="menuitem"
+            onClick={() => onExport("markdown")}
+            onMouseEnter={() => setFocus(2 + exportOffset)}
+            className={contextItemClass(2 + exportOffset)}
+          >
+            <FileDown className="mr-2 h-4 w-4" />
+            {t("markdownFormat")}
+          </button>
 
-      {/* Export PDF */}
-      <button
-        role="menuitem"
-        onClick={() => onExport("pdf")}
-        onMouseEnter={() => setFocus(3 + exportOffset)}
-        className={contextItemClass(3 + exportOffset)}
-      >
-        <FileDown className="mr-2 h-4 w-4" />
-        {t("pdfFormat")}
-      </button>
+          {/* Export PDF */}
+          <button
+            role="menuitem"
+            onClick={() => onExport("pdf")}
+            onMouseEnter={() => setFocus(3 + exportOffset)}
+            className={contextItemClass(3 + exportOffset)}
+          >
+            <FileDown className="mr-2 h-4 w-4" />
+            {t("pdfFormat")}
+          </button>
 
-      {/* Export Word */}
-      <button
-        role="menuitem"
-        onClick={() => onExport("docx")}
-        onMouseEnter={() => setFocus(4 + exportOffset)}
-        className={contextItemClass(4 + exportOffset)}
-      >
-        <FileDown className="mr-2 h-4 w-4" />
-        {t("wordFormat")}
-      </button>
+          {/* Export Word */}
+          <button
+            role="menuitem"
+            onClick={() => onExport("docx")}
+            onMouseEnter={() => setFocus(4 + exportOffset)}
+            className={contextItemClass(4 + exportOffset)}
+          >
+            <FileDown className="mr-2 h-4 w-4" />
+            {t("wordFormat")}
+          </button>
+        </>
+      )}
 
       <div className="my-1 h-px bg-border" />
 
@@ -241,8 +285,8 @@ export function FileActionsMenuItems({
       <button
         role="menuitem"
         onClick={onDelete}
-        onMouseEnter={() => setFocus(5 + exportOffset)}
-        className={contextItemClass(5 + exportOffset, true)}
+        onMouseEnter={() => setFocus(deleteIndex)}
+        className={contextItemClass(deleteIndex, true)}
       >
         <Trash2 className="mr-2 h-4 w-4" />
         {t("moveToTrash")}
@@ -255,8 +299,10 @@ export function FileActionsMenuItems({
  * Returns the total number of actionable items in the menu.
  * Used by the keyboard navigation handler in FileItem.
  *
- * Items: Rename, Reveal, [Move to Root], Export x3, Delete = 6 or 7
+ * Page items: Rename, Reveal, [Move to Root], Export x3, Delete = 6 or 7.
+ * Attachment items: Open externally, Rename, Reveal, [Move to Root], Delete = 4 or 5.
  */
-export function getMenuItemCount(hasParent: boolean): number {
+export function getMenuItemCount(hasParent: boolean, isAttachment = false): number {
+  if (isAttachment) return hasParent ? 5 : 4;
   return hasParent ? 7 : 6;
 }

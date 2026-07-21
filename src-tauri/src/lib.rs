@@ -47,6 +47,7 @@ const MIGRATE_DISABLED_VALUES: &[&str] = &["0", "false", "no", "off"];
 /// `_MIGRATE_ENABLED_VALUES` in Python.
 const MIGRATE_ENABLED_VALUES: &[&str] = &["1", "true", "yes", "on"];
 
+mod attachment_inspection;
 #[cfg(target_os = "macos")]
 mod dock_menu;
 #[cfg(target_os = "macos")]
@@ -973,6 +974,16 @@ fn workspace_stat_binary(root: String, path: String) -> Result<serde_json::Value
         "mtimeNs": mtime_ns.to_string(),
         "size": meta.len(),
     }))
+}
+
+#[tauri::command]
+fn workspace_inspect_attachment(
+    root: String,
+    path: String,
+) -> Result<attachment_inspection::AttachmentInspection, String> {
+    let root = canonical_workspace_root(&root)?;
+    let path = resolve_existing_workspace_path(&root, &path)?;
+    attachment_inspection::inspect_attachment(&path)
 }
 
 #[tauri::command]
@@ -3770,6 +3781,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
             doc_write_workspace,
             workspace_read_binary,
             workspace_stat_binary,
+            workspace_inspect_attachment,
             workspace_read_pdf_editor_state,
             workspace_write_pdf_editor_state,
             workspace_read_pdf_doc_state,
@@ -4070,7 +4082,7 @@ fn build_tray_menu(
 ) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
     use tauri::menu::SubmenuBuilder;
 
-    let new_file = MenuItemBuilder::with_id("tray-new-file", "New Document")
+    let new_file = MenuItemBuilder::with_id("tray-new-file", "New Page")
         .accelerator("CmdOrCtrl+N")
         .build(app)?;
     let open_file = MenuItemBuilder::with_id("tray-open-file", "Open File…").build(app)?;

@@ -384,6 +384,44 @@ describe("useFileStore disk workspace", () => {
     expect(useFileStore.getState().loadedContentIds.has("doc-1")).toBe(true);
   });
 
+  it("marks HTML attachments loaded without reading them as Pages", async () => {
+    useFileStore.setState({
+      files: [
+        {
+          ...markdownFile("path:reference", "reference.html"),
+          documentType: "html",
+          storageHandle: {
+            mode: "disk",
+            id: "path:reference",
+            kind: "document",
+            documentType: "html",
+            relPath: "reference.html",
+          },
+        },
+      ],
+    });
+
+    await useFileStore.getState().loadFileContent("path:reference");
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(useFileStore.getState().loadedContentIds.has("path:reference")).toBe(true);
+  });
+
+  it("opens a loose HTML attachment without reading it as a Page", async () => {
+    await useFileStore.getState().openFile("/workspace/reference.html");
+
+    const state = useFileStore.getState();
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(state.openTarget).toBe("file");
+    expect(state.rootPath).toBe("/workspace");
+    expect(state.files).toHaveLength(1);
+    expect(state.files[0]).toMatchObject({
+      name: "reference.html",
+      documentType: "html",
+      content: "",
+    });
+  });
+
   it("creates a new local markdown document", async () => {
     invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
       if (command === "doc_create") {
@@ -414,60 +452,34 @@ describe("useFileStore disk workspace", () => {
     expect(useFileStore.getState().getFile("doc-new")?.content).toBe("<p>Draft</p>");
   });
 
-  it("creates a blank PDF as binary via doc_create_pdf", async () => {
+  it("keeps primary creation on the Markdown Page path for attachment-like names", async () => {
     invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
-      if (command === "doc_create_pdf") {
-        // Sanity-check the payload shape: bytes are passed as a JSON-safe
-        // number array, and the path keeps its `.pdf` extension.
-        expect(payload.path).toBe("Untitled.pdf");
-        expect(Array.isArray(payload.bytes)).toBe(true);
-        expect((payload.bytes as number[]).length).toBeGreaterThan(0);
+      if (command === "doc_create") {
+        expect(payload).toMatchObject({
+          root: "/workspace",
+          payload: {
+            path: "Untitled.pdf.md",
+            html: "",
+            markdown: "",
+          },
+        });
         return {
-          id: "doc-pdf",
-          idSource: "path",
-          path: "Untitled.pdf",
-          name: "Untitled.pdf",
-          title: "Untitled",
-          documentType: "pdf",
-          hasSidecar: false,
+          id: "page-new",
+          idSource: "frontmatter",
+          path: "Untitled.pdf.md",
+          name: "Untitled.pdf.md",
+          title: "Untitled.pdf",
+          documentType: "markdown",
+          hasSidecar: true,
         };
       }
       throw new Error(`Unexpected command: ${command}`);
     });
 
-    const id = await useFileStore
-      .getState()
-      .createFile("Untitled.pdf", "", null, { documentType: "pdf" });
+    const id = await useFileStore.getState().createFile("Untitled.pdf");
 
-    expect(id).toBe("doc-pdf");
-    expect(useFileStore.getState().currentFileId).toBe("doc-pdf");
-  });
-
-  it("creates a blank Excel workbook as binary via doc_create_excel", async () => {
-    invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
-      if (command === "doc_create_excel") {
-        expect(payload.path).toBe("Untitled.xlsx");
-        expect(Array.isArray(payload.bytes)).toBe(true);
-        expect((payload.bytes as number[]).slice(0, 4)).toEqual([0x50, 0x4b, 0x03, 0x04]);
-        return {
-          id: "doc-excel",
-          idSource: "path",
-          path: "Untitled.xlsx",
-          name: "Untitled.xlsx",
-          title: "Untitled",
-          documentType: "excel",
-          hasSidecar: false,
-        };
-      }
-      throw new Error(`Unexpected command: ${command}`);
-    });
-
-    const id = await useFileStore
-      .getState()
-      .createFile("Untitled.xlsx", "", null, { documentType: "excel" });
-
-    expect(id).toBe("doc-excel");
-    expect(useFileStore.getState().currentFileId).toBe("doc-excel");
+    expect(id).toBe("page-new");
+    expect(useFileStore.getState().currentFileId).toBe("page-new");
   });
 
   it("writes content updates through doc_write_workspace", async () => {

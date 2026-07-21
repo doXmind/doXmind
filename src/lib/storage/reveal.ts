@@ -22,6 +22,13 @@ export async function revealFileInFinder(file: FileItem): Promise<void> {
   await revealItemInDir(path);
 }
 
+export async function openFileExternally(file: FileItem): Promise<void> {
+  const path = absolutePathForFile(file);
+  if (!path) throw new Error("File has no absolute path to open");
+  const { openPath } = await import("@tauri-apps/plugin-opener");
+  await openPath(path);
+}
+
 export async function revealPathInFinder(path: string): Promise<void> {
   const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
   await revealItemInDir(path);

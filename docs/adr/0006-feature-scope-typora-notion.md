@@ -1,5 +1,9 @@
 # 功能广度：大于 Typora，小于 Notion
 
+Status: product-scope sections superseded by
+[ADR-0012](0012-local-markdown-knowledge-workspace.md). Markdown round-trip and
+the concrete math-gating decisions below remain active implementation rules.
+
 doXmind 在能做和不能做之间没有显式的边界。任何"能加一个 Notion 风的小 feature"的提案都很容易通过——单看每个 feature 都不重，但叠在一起会让产品偏离"本地 markdown IDE"的定位，重蹈 Notion 的功能膨胀。
 
 之所以记录这条决定，是因为这个边界一旦松动就回不来：每个加进来的 feature 都有对应的 sidecar 字段、UI 入口、序列化路径。等再来一次"我们其实不需要这个"的产品收敛时，要拆掉的代码面积已经成倍了。

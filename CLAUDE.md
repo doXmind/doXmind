@@ -4,13 +4,15 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-doXmind is a **fully-local desktop IDE** for documents. It is a Tauri shell wrapping a Next.js frontend and a localhost FastAPI sidecar. There is no auth, no cloud sync, no AI runtime, no telemetry, no billing/sharing — the user's files on disk are the source of truth.
+doXmind is a **fully-local, Markdown-native knowledge workspace**. It is a desktop shell wrapping a Next.js frontend and a localhost FastAPI sidecar. There is no auth, no cloud sync, no AI runtime, no telemetry, no billing/sharing — the user's files on disk are the source of truth.
 
-Three document types are first-class citizens:
+There is one first-class content type:
 
-- **Markdown** — rich TipTap editor with custom blocks (math, mermaid, callouts, …). Persisted as a portable `.md` file plus a hidden same-name `.doxmind` sidecar that stores the lossless editor HTML and doXmind-only extras.
-- **PDF** — block-based annotation/edit surface. Editor state lives in a hidden sidecar next to the original PDF.
-- **Excel** — workbook editor with formulas, filters, autofill, formatting, and structural row/col ops. Editor state lives in a hidden sidecar next to the original `.xlsx`.
+- **Page** — a rich TipTap editor backed by a portable `.md` or `.markdown` file. A hidden same-name `.doxmind` sidecar stores lossless editor HTML, caches, and replaceable UI state; it must not be the only copy of user-authored knowledge.
+
+PDF, spreadsheet, HTML, image, and other non-Markdown files are **Attachments**. They may be previewed, referenced, searched, revealed, or opened externally, but they do not get independent create/edit/save product stacks. Existing PDF/Excel editors and sidecars are legacy-recovery machinery: preserve old user edits until an explicit export/recovery bridge exists, but do not expand those editors.
+
+The active product boundary and roadmap live in [docs/PRODUCT_DIRECTION.md](docs/PRODUCT_DIRECTION.md) and [ADR-0012](docs/adr/0012-local-markdown-knowledge-workspace.md).
 
 ## 1. Think Before Coding
 
@@ -70,17 +72,16 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## Storage Model
 
-The user's filesystem is the source of truth. Each document is represented by the original portable file plus a hidden sidecar holding doXmind-only state.
+The user's filesystem is the source of truth. Each Markdown Page is represented by the portable file plus a hidden sidecar holding doXmind-only state. Attachments remain ordinary source files; new attachment editor state must not be created.
 A `<sidecar>.lock` file appears next to each sidecar during migration; these files are tiny, persist after use, and must not be deleted manually.
 
 ```text
 ~/Documents/notes/
 ├── Project Plan.md
 ├── .Project Plan.doxmind          # markdown sidecar (HTML + extras)
-├── Q3 Forecast.xlsx
-├── .Q3 Forecast.doxmind            # excel editor state
-├── Spec.pdf
-├── .Spec.doxmind                   # pdf editor state
+├── attachments/
+│   ├── Q3 Forecast.xlsx
+│   └── Spec.pdf
 └── assets/
     └── diagram.png
 ```
@@ -112,7 +113,7 @@ Markdown save algorithm:
 2. Hash the just-written Markdown.
 3. Write `.doxmind = { html, markdown_hash, id, extras }`.
 
-PDF and Excel follow the same hidden-sidecar pattern; their state schemas are owned by `services/pdf_blocks.py` and `services/excel_workbook.py` respectively.
+Legacy PDF/Excel sidecars may still exist. Do not delete, overwrite, or strand them; their schemas remain readable only for compatibility and recovery until the ADR-0012 removal gate is complete.
 
 ## Environment Variables
 
@@ -132,6 +133,8 @@ There are no API keys or external service credentials.
 This product intentionally excludes JWT auth, OAuth user login, password reset, email verification, Stripe billing, credits, quotas, sharing links, community publishing, comments, follows, bookmarks, notifications, telemetry, RLHF reporting, S3, Postgres, Redis, Docker deployment, hosted cloud sync, chat, agents, providers, OpenRouter, autocomplete, quick edit, document review, prompts, knowledge-base retrieval, `markitdown`, and Notion-style database blocks (removed July 2026; legacy `extras.databases` sidecar data is passed through untouched, never rendered).
 
 Do not rebuild these by accident. If a feature needs to return, make the product decision explicit and design it around the local desktop IDE model.
+
+Do not add blank PDF/Excel creation, PDF/Excel/HTML editing features, or new attachment sidecar writers. Reading and exporting existing legacy state is permitted only as a recovery path.
 
 ## Commit hygiene
 

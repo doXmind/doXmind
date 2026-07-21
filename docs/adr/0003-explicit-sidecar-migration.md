@@ -1,5 +1,9 @@
 # Sidecar 迁移采用显式一次性策略，不动用户原文件
 
+Status: active only as a legacy migration and recovery contract under
+[ADR-0012](0012-local-markdown-knowledge-workspace.md). New Attachments must not
+create editor sidecars.
+
 把 PDF / Excel 的旧 sidecar shape（独立的 `pdf_editor` / `excel_editor` 字段、独立的 endpoints）统一到 markdown sidecar shape（**Synthetic Document** 的形态）有三种迁移路径：
 
 - **(a) 边界翻译**：硬盘永远保留旧 shape，只在 read/write 边界做翻译。

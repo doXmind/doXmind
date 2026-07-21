@@ -25,7 +25,7 @@ export function WorkspaceHome() {
 
   const handleCreateNew = async () => {
     try {
-      const newId = await createFile(nextUntitledName(), "", null, { documentType: "markdown" });
+      const newId = await createFile(nextUntitledName(), "", null);
       navigateToEditorFile(newId);
     } catch (error) {
       log.error("Failed to create workspace document", error);

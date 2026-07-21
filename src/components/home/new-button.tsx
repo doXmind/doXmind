@@ -11,15 +11,11 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { useTranslations } from "next-intl";
-import { MarkdownGlyph, PdfGlyph, SpreadsheetGlyph } from "@/components/icons/document-glyphs";
+import { MarkdownGlyph } from "@/components/icons/document-glyphs";
 
 interface NewButtonProps {
-  /** Default markdown create — kept for backwards compat. */
+  /** Create the only first-class workspace content: a Markdown-backed Page. */
   onCreateFile: () => void;
-  /** Optional explicit PDF create. When omitted the PDF entry is hidden. */
-  onCreatePdf?: () => void;
-  /** Optional explicit Excel create. When omitted the Excel entry is hidden. */
-  onCreateExcel?: () => void;
   onCreateFolder: () => void;
   onOpenTemplatePicker: () => void;
   disableFolder?: boolean;
@@ -28,8 +24,6 @@ interface NewButtonProps {
 
 export const NewButton = memo(function NewButton({
   onCreateFile,
-  onCreatePdf,
-  onCreateExcel,
   onCreateFolder,
   onOpenTemplatePicker,
   disableFolder,
@@ -51,20 +45,8 @@ export const NewButton = memo(function NewButton({
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuItem onClick={onCreateFile}>
           <MarkdownGlyph className="mr-2 h-4 w-4" />
-          {t("newMarkdown")}
+          {t("newDocument")}
         </DropdownMenuItem>
-        {onCreatePdf && (
-          <DropdownMenuItem onClick={onCreatePdf}>
-            <PdfGlyph className="mr-2 h-4 w-4" />
-            {t("newPdf")}
-          </DropdownMenuItem>
-        )}
-        {onCreateExcel && (
-          <DropdownMenuItem onClick={onCreateExcel}>
-            <SpreadsheetGlyph className="mr-2 h-4 w-4" />
-            {t("newExcel")}
-          </DropdownMenuItem>
-        )}
         {!hideFolder && (
           <DropdownMenuItem onClick={onCreateFolder} disabled={disableFolder}>
             <FolderPlus className="mr-2 h-4 w-4" />

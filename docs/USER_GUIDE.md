@@ -1,6 +1,9 @@
 # doXmind User Guide
 
-This guide covers the current doXmind desktop workflow for Markdown, PDF, and Excel workbooks. doXmind is local-first: your documents stay in folders you control, and editor-only state is stored beside them in hidden `.doxmind` sidecars.
+This guide covers doXmind's Markdown Page workflow and the transition of PDF,
+spreadsheet, and HTML files into ordinary Attachments. doXmind is local-first:
+Pages and attachments stay in folders you control, and replaceable editor state
+is stored beside Pages in hidden `.doxmind` sidecars.
 
 For source installation and developer commands, see the [project README](../README.md).
 
@@ -39,11 +42,11 @@ Use **File → Open File…** (`Cmd/Ctrl+O`), double-click a registered document
 - Its parent folder is used only for source-file and sidecar access.
 - Closing the standalone document returns to the welcome screen.
 
-### Start a new document
+### Start a new Page
 
-Choose **Start writing** on the welcome screen to create an untitled Markdown buffer. The document stays in memory until its first save, when doXmind asks where to put it.
+Choose **Start writing** on the welcome screen to create an untitled Markdown buffer. The Page stays in memory until its first save, when doXmind asks where to put it.
 
-When a folder is already open, **File → New Document** (`Cmd/Ctrl+N`) creates a real Markdown file inside that workspace instead.
+When a folder is already open, **File → New Page** (`Cmd/Ctrl+N`) creates a real Markdown file inside that workspace instead.
 
 ### Recent items and drag-and-drop
 
@@ -61,11 +64,12 @@ The sidebar is a direct view of the selected folder.
 
 Use the **+** menu in the workspace header, or right-click a folder/empty area, to create:
 
-- A blank Markdown document
-- A blank PDF
-- A blank Excel workbook
+- A blank Markdown Page
 - A folder
-- A Markdown document from a built-in template such as Meeting Notes, Blog Post, Study Notes, or Journal
+- A Page from a built-in template such as Meeting Notes, Blog Post, Study Notes, or Journal
+
+PDF and spreadsheet files are added as Attachments by dragging/importing an
+existing file; doXmind does not create blank versions of them.
 
 ### Work with files
 
@@ -87,7 +91,11 @@ To recover the complete document state:
 2. Restore the source file.
 3. Restore its hidden `.doxmind` companion to the same original folder.
 
-On macOS, press `Cmd+Shift+.` in Finder or Trash if hidden files are not visible. Restoring only a PDF/XLSX source loses edits stored in its sidecar; restoring only Markdown text can lose rich editor-only state. doXmind does not maintain a separate in-app Trash.
+On macOS, press `Cmd+Shift+.` in Finder or Trash if hidden files are not visible.
+Restore legacy PDF/XLSX sidecars together with their source until old edits have
+been exported. A Markdown Page can be rebuilt from its text if its sidecar is
+missing, although editor-only presentation state may be lost. doXmind does not
+maintain a separate in-app Trash.
 
 ## 4. Edit Markdown
 
@@ -144,7 +152,11 @@ You can edit the same `.md` file in another application. When the Markdown hash 
 
 Avoid editing the same document simultaneously in doXmind and another writer: the last save can overwrite the other process's changes.
 
-## 5. Read and edit PDFs
+## 5. Recover legacy PDF edits
+
+> PDF editing is frozen legacy compatibility, not an active product surface.
+> Use this section only to review and export edits made with an older doXmind
+> build. New PDFs should remain Attachments and be opened in the system PDF app.
 
 Open a PDF from the sidebar or as a standalone file.
 
@@ -175,7 +187,12 @@ Text editing depends on text that can be extracted from the PDF. Scanned/image-o
 - **Export PDF** from **More actions (⋯)** creates a new PDF with the current edits applied. Choose a destination if prompted; otherwise check the configured Downloads folder.
 - The original PDF is not silently rewritten by open, edit, save, sidecar migration, or cache refresh.
 
-## 6. Edit Excel workbooks
+## 6. Recover legacy workbook edits
+
+> Spreadsheet editing is frozen legacy compatibility, not an active product
+> surface. Use this section only to review and export edits already stored in a
+> legacy sidecar. New workbooks should remain Attachments and be opened in the
+> system spreadsheet app.
 
 Open an `.xlsx` workbook from a workspace or as a standalone file.
 
@@ -229,9 +246,10 @@ The current settings surface contains:
 
 Settings are stored locally on the device.
 
-## 8. Understand source files and sidecars
+## 8. Understand Pages, Attachments, and sidecars
 
-The companion filename depends on the document type:
+New Markdown Pages use a companion sidecar. Older builds may also have created
+legacy sidecars for PDF and spreadsheet attachments:
 
 | Source document       | Sidecar                        |
 | --------------------- | ------------------------------ |
@@ -239,15 +257,18 @@ The companion filename depends on the document type:
 | `Research Report.pdf` | `.Research Report.pdf.doxmind` |
 | `Quarterly Plan.xlsx` | `.Quarterly Plan.xlsx.doxmind` |
 
-Keep the source and sidecar together when moving, backing up, or restoring a document. Save on PDF/XLSX changes the sidecar, not the original binary; Export creates the portable edited copy.
+Keep a source and any existing sidecar together when moving, backing up, or
+restoring it. New Attachments do not need editor sidecars; the PDF/XLSX rows
+above document legacy recovery data only.
 
 ### What each file means
 
-- **Markdown:** the `.md` text is the portable source. The sidecar preserves richer editor HTML and extras.
-- **PDF:** the original binary is the source. The sidecar stores your text edits, free text, and highlights.
-- **Excel:** the original workbook is the source. The sidecar stores your workbook edits.
+- **Markdown Page:** the `.md` text and frontmatter are the portable source. The sidecar preserves lossless editor HTML and replaceable state.
+- **Attachment:** the original file is the source. Normal attachments do not receive new editor state.
+- **Legacy PDF/Excel sidecar:** stores edits made by older doXmind builds until the user exports or recovers them.
 
-Do not manually delete a sidecar if you want to keep PDF annotations, spreadsheet edits, or rich Markdown-only state.
+Do not manually delete a legacy sidecar if you still need its PDF annotations or
+spreadsheet edits. Never delete `.bak` or `.lock` files as part of cleanup.
 
 ### Advanced: legacy migration files
 
@@ -265,7 +286,7 @@ The current public desktop release is for macOS, where shortcuts use `Cmd`. Brow
 
 | Action                                   | Shortcut           |
 | ---------------------------------------- | ------------------ |
-| New document in an open workspace        | `Cmd/Ctrl+N`       |
+| New Page in an open workspace            | `Cmd/Ctrl+N`       |
 | New window                               | `Cmd/Ctrl+Shift+N` |
 | Open file                                | `Cmd/Ctrl+O`       |
 | Open folder                              | `Cmd/Ctrl+Shift+O` |
@@ -286,7 +307,7 @@ Standard editing shortcuts for undo, redo, cut, copy, paste, and select all also
 
 ### A file does not appear in a workspace
 
-- Confirm it is a stable document type: Markdown, PDF, or XLSX/XLSM.
+- Confirm it is a Markdown Page or a supported local Attachment.
 - Refresh or reopen the folder after changing files outside doXmind.
 - DOCX and PPTX are not supported workspace documents.
 

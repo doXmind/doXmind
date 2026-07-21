@@ -77,10 +77,7 @@ describe("DiskStorageAdapter HTTP fallback error shapes", () => {
     // Codex round-5 caught this regression vs c1c59c9: before adding the
     // scalar branch, `{detail: 42}` fell through every typeof check and
     // got dropped to "Workspace command failed: <command>".
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(jsonResponse(400, { detail: 42 }))
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(400, { detail: 42 })));
     const adapter = new DiskStorageAdapter({ root: "/workspace" });
     await expect(
       adapter.writeExcelEditorState(baseHandle, { version: 1, activeSheetId: "a" })
@@ -88,13 +85,28 @@ describe("DiskStorageAdapter HTTP fallback error shapes", () => {
   });
 
   it("preserves scalar boolean details", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(jsonResponse(400, { detail: true }))
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(400, { detail: true })));
     const adapter = new DiskStorageAdapter({ root: "/workspace" });
     await expect(
       adapter.writeExcelEditorState(baseHandle, { version: 1, activeSheetId: "a" })
     ).rejects.toThrowError(/\btrue\b/);
+  });
+});
+
+describe("DiskStorageAdapter primary creation boundary", () => {
+  it("rejects callers using the removed binary document contract", async () => {
+    const directInvoke = vi.fn();
+    const adapter = new DiskStorageAdapter({ root: "/workspace", invoke: directInvoke });
+
+    await expect(
+      adapter.create({
+        name: "Blank.pdf",
+        kind: "document",
+        documentType: "pdf",
+        binary: new Uint8Array([1]),
+      } as never)
+    ).rejects.toThrow("Workspace creation supports Markdown pages only");
+
+    expect(directInvoke).not.toHaveBeenCalled();
   });
 });

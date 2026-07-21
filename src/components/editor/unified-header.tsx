@@ -36,7 +36,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { useIsTauri } from "@/hooks/use-is-tauri";
-import { getDisplayName, isExcelFile, isPdfFile } from "@/lib/document-types";
+import { getDisplayName, isExcelFile, isMarkdownFile, isPdfFile } from "@/lib/document-types";
 import { exportMarkdownAsPdf } from "@/lib/markdown-pdf-export";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { shouldStartWindowDrag } from "@/lib/window-drag-region";
@@ -84,6 +84,7 @@ export function UnifiedHeader() {
   // welcome screen there's no file to title, so showing "Untitled"
   // would just be noise.
   const isExcel = currentFile ? isExcelFile(currentFile) : false;
+  const isCurrentPage = currentFile ? isMarkdownFile(currentFile) : false;
   const title = currentFileName ? getDisplayName(currentFileName) : "";
   const closeRequestFile = closeRequestId
     ? files.find((file) => file.id === closeRequestId)
@@ -203,7 +204,13 @@ export function UnifiedHeader() {
   };
 
   const handleCloseTab = (fileId: string) => {
-    if (fileId === currentFileId && useEditorStore.getState().isDirty) {
+    const file = useFileStore.getState().files.find((candidate) => candidate.id === fileId);
+    if (
+      fileId === currentFileId &&
+      file &&
+      isMarkdownFile(file) &&
+      useEditorStore.getState().isDirty
+    ) {
       setCloseRequestId(fileId);
       return;
     }
@@ -211,9 +218,11 @@ export function UnifiedHeader() {
   };
 
   const handleCloseDocument = () => {
-    const activeId = useFileStore.getState().currentFileId;
+    const store = useFileStore.getState();
+    const activeId = store.currentFileId;
     if (!activeId) return;
-    if (useEditorStore.getState().isDirty) {
+    const activeFile = store.files.find((file) => file.id === activeId);
+    if (activeFile && isMarkdownFile(activeFile) && useEditorStore.getState().isDirty) {
       setCloseRequestId(activeId);
       return;
     }
@@ -353,6 +362,7 @@ export function UnifiedHeader() {
               >
                 {tabFiles.map((file) => {
                   const isActive = file.id === currentFileId;
+                  const isPage = isMarkdownFile(file);
                   const displayName = getDisplayName(file.name);
                   return (
                     <div
@@ -380,9 +390,9 @@ export function UnifiedHeader() {
                       <span className="text-ui-sm min-w-0 flex-1 truncate font-medium">
                         {displayName}
                       </span>
-                      {isActive && isSaving ? (
+                      {isActive && isPage && isSaving ? (
                         <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
-                      ) : isActive && isDirty ? (
+                      ) : isActive && isPage && isDirty ? (
                         <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
                       ) : null}
                       <span
@@ -448,7 +458,7 @@ export function UnifiedHeader() {
 
           {/* Options menu — pinned to the header's far-right corner. */}
           <div className="absolute right-4 top-0 flex h-full items-center md:right-6">
-            {currentFileName && (
+            {currentFileName && isCurrentPage && (
               <DropdownMenu>
                 <Tooltip content={t("moreTooltip")} side="bottom">
                   <DropdownMenuTrigger asChild>

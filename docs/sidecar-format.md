@@ -6,17 +6,17 @@ and External-reference Custom Block placeholders. Frontend
 workspace routes, and desktop/Tauri commands must derive equivalent parsers and
 serializers from this document.
 
-Markdown is the only first-class Document type. PDF and Excel files are
-Second-class files represented as Synthetic Documents with exactly one
-External-reference Custom Block (`pdf-block` or `excel-block`). Those Synthetic
-Documents use this same Sidecar shape; they do not own a separate PDF or Excel
-Sidecar contract.
+Markdown Page is the only first-class content type. Under ADR-0012, PDF and
+Excel are Attachments and must not receive new editor state. The Synthetic
+Document and External-reference contracts below remain normative only for
+reading, migrating, correlating, and exporting sidecars created by older
+versions. They are a legacy recovery format, not a new-write product model.
 
 ## Markdown Sidecar JSON Shape
 
 A Sidecar is a hidden `.doxmind` JSON file next to a Document's `.md` file. For
-a Synthetic Document opened from a Second-class file such as `.pdf` or `.xlsx`,
-the Sidecar uses the same markdown shape and lives next to the original binary.
+a legacy Synthetic Document opened for recovery from `.pdf` or `.xlsx`, the
+Sidecar uses the same markdown shape and lives next to the original binary.
 
 The canonical reader/writer lives in the backend Sidecar I/O path:
 
@@ -126,7 +126,7 @@ Reader contract for partial Sidecars:
 partial shape is exclusive to `MarkdownDocumentState.write_slot` against a
 previously-absent Sidecar.
 
-### Synthetic Document Shape for PDF and Excel
+### Legacy Synthetic Document Shape for PDF and Excel
 
 A Synthetic Document Sidecar lives next to its source binary and keeps the
 binary filename in the sidecar name:
@@ -165,7 +165,7 @@ for the matching block type:
 }
 ```
 
-Synthetic Document reader/writer contract:
+Legacy Synthetic Document recovery contract:
 
 - The only supported PDF/Excel state location is
   `extras.blocks.<block_id>`, where `<block_id>` matches the single placeholder
@@ -186,6 +186,9 @@ Synthetic Document reader/writer contract:
 - `markdown_hash` hashes the generated Synthetic Document markdown
   (frontmatter plus the one placeholder), not the source PDF/XLSX bytes. Source
   binary freshness belongs to `parsedCache.sourceHash`.
+- New Attachments MUST NOT create this shape. Writes are permitted only while
+  preserving or exporting already-existing legacy state until ADR-0012's
+  recovery gate is complete.
 
 Legacy top-level `pdf_editor`, `pdf_parsed_cache`, `excel_editor`, and
 `excel_parsed_cache` fields are accepted only as migration input. On first open
@@ -238,10 +241,10 @@ Release validation MUST exercise both runtime paths against these fixtures:
 - Desktop/Tauri path: `src-tauri/src/lib.rs` includes the same fixture files in
   Rust tests so desktop commands and browser-dev routes cannot drift.
 
-Any Sidecar change that touches Synthetic Documents must update all four
-fixtures and both runtime validations together. A change that adds a separate
-PDF-only or Excel-only top-level Sidecar field is a contract regression unless a
-new ADR explicitly replaces the Markdown-first model.
+Any compatibility change that touches Synthetic Documents must update all four
+fixtures and both runtime validations together. A change that creates this
+shape for a new Attachment, or adds a separate PDF-only or Excel-only top-level
+field, is a contract regression unless a new ADR replaces ADR-0012.
 
 ## Block Placeholder Grammar
 

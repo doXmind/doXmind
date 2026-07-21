@@ -1,5 +1,9 @@
 # CLI 与 MCP 是新的 shell，三个前端共用一套 shell 无关的 core
 
+Status: amended by [ADR-0012](0012-local-markdown-knowledge-workspace.md).
+Create/edit applies to Markdown Pages; PDF/Excel operations are Attachment
+read/convert or legacy recovery only.
+
 doXmind 要新增两个入口：一个面向人/脚本的 `doxmind` **CLI**（完整文档工具箱），
 一个面向外部 AI agent 的 **MCP server**（完整工作区控制）。在此之前，全部文档
 操作只通过一个 shell 暴露：Electron 调 FastAPI sidecar 的 `POST
