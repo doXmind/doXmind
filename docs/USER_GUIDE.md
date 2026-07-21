@@ -46,7 +46,7 @@ Use **File → Open File…** (`Cmd/Ctrl+O`), double-click a registered document
 
 ### Start a new Page
 
-Choose **Start writing** on the welcome screen to create an untitled Markdown buffer. The Page stays in memory until its first save, when doXmind asks where to put it.
+Choose **New** on the welcome screen to create an untitled Markdown buffer. The Page stays in memory until its first save, when doXmind asks where to put it.
 
 When a folder is already open, **File → New Page** (`Cmd/Ctrl+N`) creates a real Markdown file inside that workspace instead.
 

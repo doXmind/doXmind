@@ -79,7 +79,7 @@ The public release channel currently provides a macOS package for Apple silicon:
 
 1. Download the `.dmg` from [doXmind Releases](https://github.com/doXmind/releases/releases/latest).
 2. Drag doXmind to Applications and open it.
-3. Choose **Open Folder** to mount an existing workspace, **Open File** to work with one standalone file, or start a new Markdown Page.
+3. On the welcome screen, choose **New** for an untitled Markdown Page or **Open Folder** for a workspace. Use **File → Open File…** (`Cmd+O`) for one standalone file.
 
 See the [User Guide](docs/USER_GUIDE.md) for the complete workflow, storage behavior, shortcuts, and recovery notes.
 
