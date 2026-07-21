@@ -1,5 +1,7 @@
 import type {
   AttachmentInspection,
+  AttachmentRecoveryRead,
+  AttachmentRecoverySource,
   CorrelationReport,
   DocumentContent,
   DocumentHandle,
@@ -156,6 +158,17 @@ export class DiskStorageAdapter implements StorageAdapter {
     return this.invoke<AttachmentInspection>("workspace_inspect_attachment", {
       root: this.requireRoot(),
       path: requireHandlePath(handle),
+    });
+  }
+
+  async readAttachmentRecovery(
+    handle: DocumentHandle,
+    source: AttachmentRecoverySource
+  ): Promise<AttachmentRecoveryRead> {
+    return this.invoke<AttachmentRecoveryRead>("workspace_read_attachment_recovery", {
+      root: this.requireRoot(),
+      path: requireHandlePath(handle),
+      source,
     });
   }
 
@@ -348,6 +361,12 @@ export class DiskStorageAdapter implements StorageAdapter {
       throw new ImportError(
         "bad-extension",
         `only .md, .pdf, .xlsx, .csv are supported for external import: ${input.name}`
+      );
+    }
+    if (input.mode === "replace" && !/\.md$/i.test(input.name)) {
+      throw new ImportError(
+        "replace-not-allowed",
+        `replace is only available for Markdown pages: ${input.name}`
       );
     }
     const destFolder = input.parent ? requireHandlePath(input.parent) : "";
@@ -734,7 +753,8 @@ function documentTypeFromPath(path: string): WorkspaceDocumentType {
   if (/\.pdf$/i.test(path)) return "pdf";
   if (/\.(xlsx|xlsm|csv)$/i.test(path)) return "excel";
   if (/\.html?$/i.test(path)) return "html";
-  return "markdown";
+  if (/\.(md|markdown)$/i.test(path)) return "markdown";
+  return "other";
 }
 
 function legacySourceToState(source: DocReadResultDto["source"]): DocumentSourceState {

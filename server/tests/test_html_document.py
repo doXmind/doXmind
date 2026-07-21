@@ -1,11 +1,13 @@
-"""HTML document type — read/write vertical (#139). The .html body IS the
-editor HTML: no frontmatter, no markdown conversion."""
+"""Frozen HTML compatibility helpers and the read-only Attachment boundary."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from api.workspace import is_html_file, is_workspace_document_file, read_doc, write_doc
+from services.sidecar_io import sidecar_path_for
 
 
 def test_html_extension_detection() -> None:
@@ -51,22 +53,38 @@ def test_no_frontmatter_is_parsed_from_html(tmp_path: Path) -> None:
     assert r["markdown"] == "<h1>Title</h1>\n<p>body</p>\n"
 
 
-def test_write_doc_workspace_accepts_and_saves_html(tmp_path: Path) -> None:
-    # Regression (#139): the save entry point used to reject .html via
-    # ensure_markdown_path, so html opened but could not be saved.
-    from api.workspace import read_doc, write_doc_workspace
+def test_write_doc_workspace_rejects_html_without_touching_source_or_sidecar(
+    tmp_path: Path,
+) -> None:
+    from api.workspace import write_doc_workspace
 
-    (tmp_path / "page.html").write_text("<p>old</p>", encoding="utf-8")
-    write_doc_workspace(
-        str(tmp_path),
-        "page.html",
-        {"html": "<h1>New</h1><p>body</p>", "markdown": "# ignored", "meta": {"id": "h1"}},
+    html_path = tmp_path / "page.html"
+    write_doc(
+        html_path,
+        {
+            "html": "<p>legacy</p>",
+            "markdown": "",
+            "meta": {"id": "h1"},
+            "extras": {"legacy": True},
+        },
     )
+    sidecar_path = sidecar_path_for(html_path)
+    before = {
+        path: (path.read_bytes(), path.stat().st_mtime_ns)
+        for path in (html_path, sidecar_path)
+    }
 
-    on_disk = (tmp_path / "page.html").read_text(encoding="utf-8")
-    assert on_disk == "<h1>New</h1><p>body</p>"  # editor HTML written verbatim
-    assert "# ignored" not in on_disk  # markdown serialization not leaked
+    with pytest.raises(ValueError, match=r"\.md or \.markdown"):
+        write_doc_workspace(
+            str(tmp_path),
+            "page.html",
+            {
+                "html": "<h1>New</h1><p>body</p>",
+                "markdown": "# ignored",
+                "meta": {"id": "h1"},
+            },
+        )
 
-    r = read_doc(tmp_path / "page.html")
-    assert r["sourceState"] == "sidecar_fresh"
-    assert r["editorHtml"] == "<h1>New</h1><p>body</p>"
+    for path, (contents, mtime_ns) in before.items():
+        assert path.read_bytes() == contents
+        assert path.stat().st_mtime_ns == mtime_ns

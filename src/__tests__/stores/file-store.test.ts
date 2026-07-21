@@ -50,6 +50,20 @@ function markdownFile(id: string, name: string) {
   };
 }
 
+function attachmentFile(id: string, name: string, documentType: "pdf" | "excel" | "html") {
+  return {
+    ...markdownFile(id, name),
+    documentType,
+    storageHandle: {
+      mode: "disk" as const,
+      id,
+      kind: "document" as const,
+      documentType,
+      relPath: name,
+    },
+  };
+}
+
 function mockRead(path = "Doc.md", html = "<p>Hello</p>", markdown = "Hello") {
   invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
     if (command === "doc_read") {
@@ -830,6 +844,49 @@ describe("useFileStore disk workspace", () => {
 
     expect(invokeMock).toHaveBeenCalledWith("doc_delete", { root: "/workspace", path: "Doc.md" });
     expect(useFileStore.getState().files).toHaveLength(0);
+  });
+
+  it("excludes PDF, Excel, and HTML attachments from sidebar selection", () => {
+    const firstPage = markdownFile("page-1", "First.md");
+    const secondPage = markdownFile("page-2", "Second.md");
+    const pdf = attachmentFile("pdf", "Spec.pdf", "pdf");
+    const excel = attachmentFile("excel", "Forecast.xlsx", "excel");
+    const html = attachmentFile("html", "Guide.html", "html");
+    useFileStore.setState({
+      files: [firstPage, pdf, excel, html, secondPage],
+      currentFolderId: null,
+    });
+
+    useFileStore.getState().toggleFileSelection(pdf.id);
+    expect(useFileStore.getState().selectedFileIds).toEqual(new Set());
+
+    useFileStore.getState().selectAll();
+    expect(useFileStore.getState().selectedFileIds).toEqual(new Set([firstPage.id, secondPage.id]));
+
+    useFileStore.getState().clearSelection();
+    useFileStore.getState().selectFileRange(firstPage.id, secondPage.id);
+    expect(useFileStore.getState().selectedFileIds).toEqual(new Set([firstPage.id, secondPage.id]));
+  });
+
+  it.each([
+    attachmentFile("pdf", "Spec.pdf", "pdf"),
+    attachmentFile("excel", "Forecast.xlsx", "excel"),
+    attachmentFile("html", "Guide.html", "html"),
+  ])("does not bulk move or delete $documentType attachments", async (attachment) => {
+    useFileStore.setState({
+      files: [attachment],
+      selectedFileIds: new Set([attachment.id]),
+    });
+
+    await useFileStore.getState().bulkMoveFiles([attachment.id], "folder:archive");
+    expect(useFileStore.getState().getFile(attachment.id)?.parentId).toBeNull();
+    expect(invokeMock).not.toHaveBeenCalled();
+
+    useFileStore.setState({ selectedFileIds: new Set([attachment.id]) });
+    await useFileStore.getState().bulkDeleteFiles([attachment.id]);
+    expect(useFileStore.getState().getFile(attachment.id)).toBeDefined();
+    expect(useFileStore.getState().selectedFileIds).toEqual(new Set());
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 
   it("preserves the original delete error if reverting with loadFiles also throws", async () => {

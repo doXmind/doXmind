@@ -22,6 +22,12 @@ from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 from send2trash import send2trash
 
+from services.attachment_inspection import (
+    inspect_attachment as inspect_attachment_sidecar,
+)
+from services.attachment_inspection import (
+    read_attachment_recovery as read_attachment_recovery_sidecar,
+)
 from services.sidecar_io import (
     SIDECAR_VERSION,
     Corrupt,
@@ -36,7 +42,6 @@ from services.sidecar_io import (
     read_sidecar,
     sidecar_path_for,
 )
-from services.attachment_inspection import inspect_attachment as inspect_attachment_sidecar
 from services.synthetic_document import (
     LegacySidecarError,
     ReadOnlyDocumentError,
@@ -237,6 +242,12 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
         return inspect_attachment(
             str(payload.get("root") or ""),
             str(payload.get("path") or ""),
+        )
+    if command == "workspace_read_attachment_recovery":
+        return read_attachment_recovery(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+            str(payload.get("source") or ""),
         )
     if command == "workspace_read_pdf_editor_state":
         return read_pdf_editor_state(
@@ -767,6 +778,13 @@ def inspect_attachment(root: str, rel_path: str) -> dict[str, Any]:
     return inspect_attachment_sidecar(path)
 
 
+def read_attachment_recovery(root: str, rel_path: str, source: str) -> dict[str, Any]:
+    """Read one explicit legacy recovery source without migration or fallback."""
+    workspace = canonical_workspace_root(root)
+    path = resolve_existing_workspace_path(workspace, rel_path)
+    return read_attachment_recovery_sidecar(path, source)
+
+
 def read_pdf_editor_state(root: str, rel_path: str) -> dict[str, Any] | None:
     """Deprecated: delegates to ``SyntheticDocumentFactory.open_pdf``.
 
@@ -802,6 +820,7 @@ def write_pdf_parsed_cache(root: str, rel_path: str, source_hash: str, parsed: A
         _open_pdf,
         "parsedCache",
         {"sourceHash": source_hash, "parsed": parsed},
+        cache_guard="pdf_editor",
     )
 
 
@@ -831,6 +850,7 @@ def write_excel_parsed_cache(root: str, rel_path: str, source_hash: str, parsed:
         _open_excel,
         "parsedCache",
         {"sourceHash": source_hash, "parsed": parsed},
+        cache_guard="excel_editor",
     )
 
 
@@ -900,12 +920,16 @@ def _write_block_slot_field(
     opener,
     slot_field: str,
     value: Any,
+    *,
+    cache_guard: str | None = None,
 ) -> None:
     from dataclasses import replace as _replace
 
     workspace = canonical_workspace_root(root)
     path = resolve_existing_workspace_path(workspace, rel_path)
     type_check(path)
+    if cache_guard is not None:
+        _reject_parsed_cache_rebind(path, cache_guard)
     factory = SyntheticDocumentFactory()
     document = opener(path)
     extras = dict(document.snapshot.extras or {})
@@ -913,12 +937,52 @@ def _write_block_slot_field(
     blocks = dict(blocks_raw) if isinstance(blocks_raw, dict) else {}
     slot_raw = blocks.get(document.block_id)
     slot = dict(slot_raw) if isinstance(slot_raw, dict) else {}
+    if cache_guard is not None:
+        _reject_non_empty_editor_state(slot.get("editor"))
     slot[slot_field] = value
     blocks[document.block_id] = slot
     extras["blocks"] = blocks
     new_snapshot = _replace(document.snapshot, extras=extras)
     factory.write_full(document, new_snapshot)
     _invalidate_scan_cache(workspace)
+
+
+def _reject_parsed_cache_rebind(path: Path, legacy_editor_key: str) -> None:
+    """Fail before migration/write when existing editor state could be rebound."""
+    result = read_sidecar(sidecar_path_for(path))
+    if not isinstance(result, Loaded):
+        return
+
+    sidecar = result.data
+    editors = [sidecar.get(legacy_editor_key)] if legacy_editor_key in sidecar else []
+    extras = sidecar.get("extras")
+    blocks = extras.get("blocks") if isinstance(extras, dict) else None
+    if isinstance(blocks, dict):
+        editors.extend(
+            slot["editor"]
+            for slot in blocks.values()
+            if isinstance(slot, dict) and "editor" in slot
+        )
+
+    for editor in editors:
+        _reject_non_empty_editor_state(editor)
+
+
+def _reject_non_empty_editor_state(editor: Any) -> None:
+    if _state_value_is_non_empty(editor):
+        raise ValueError(
+            "parsed-cache refresh is disabled when the target slot has non-empty editor state"
+        )
+
+
+def _state_value_is_non_empty(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (str, list, dict)):
+        return bool(value)
+    return True
 
 
 def write_doc_workspace(root: str, rel_path: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1061,12 +1125,9 @@ def doc_import_external(
     `mode`:
     - ``"create"`` — refuse to overwrite. A name clash raises ``FileExistsError``
       and the FastAPI layer translates it to a 409.
-    - ``"replace"`` — overwrite the user file at the destination. The
-      pre-existing ``.doxmind`` sidecar is **deliberately left untouched** so
-      the next open trips the Stale-sidecar / Salvage path (CONTEXT.md
-      "Stale sidecar" definition + ADR 0002). At the FS level a Replace is
-      indistinguishable from an external edit, so reusing the same recovery
-      path keeps the sidecar contract consistent.
+    - ``"replace"`` — overwrite an existing Markdown Page. Attachments must
+      use Keep both or Skip so replacing their source file cannot strand
+      same-name legacy recovery evidence.
     """
     if mode not in {"create", "replace"}:
         raise ValueError(f"unsupported import mode: {mode}")
@@ -1085,6 +1146,8 @@ def doc_import_external(
         raise ValueError(
             f"only .md, .pdf, .xlsx, .csv are supported for external import: {name}"
         )
+    if mode == "replace" and suffix != ".md":
+        raise ValueError(f"replace is only available for Markdown pages: {name}")
 
     destination = resolve_workspace_path_for_write(workspace, rel_path)
     if mode == "create" and destination.exists():
@@ -1114,8 +1177,9 @@ def doc_import_external(
         # `shutil.copyfile` is the always-copy primitive: it preserves the
         # source on disk byte-for-byte. We deliberately don't call `copy2` —
         # carrying mtime / metadata across is a UX call we haven't made yet.
-        # In replace mode this overwrites only the user file; the hidden
-        # sidecar next to it is intentionally NOT touched.
+        # Replace reaches this branch only for Markdown Pages. Attachments are
+        # rejected before destination resolution so recovery evidence remains
+        # byte-for-byte untouched.
         shutil.copyfile(source, destination)
     else:
         raise ValueError("doc_import_external requires either srcPath or bytes")
@@ -1170,6 +1234,9 @@ def move_document_pair(root: str, old_path: str, new_path: str) -> dict[str, Any
     workspace = canonical_workspace_root(root)
     ensure_same_document_extension(old_path, new_path)
     source = resolve_existing_workspace_path(workspace, old_path)
+    if not source.is_file():
+        raise ValueError(f"document is not a file: {old_path}")
+    ensure_page_move_path(old_path)
     destination = resolve_workspace_path_for_write(workspace, new_path)
     if destination.exists():
         raise ValueError(f"destination already exists: {new_path}")
@@ -1232,10 +1299,8 @@ def doc_delete(root: str, rel_path: str) -> dict[str, Any]:
     source = resolve_existing_workspace_path(workspace, rel_path)
     if not source.is_file():
         raise ValueError(f"document is not a file: {rel_path}")
-    if not is_workspace_document_file(source):
-        raise ValueError(
-            f"document path must end in .md, .markdown, .pdf, .xlsx, .xlsm, or .csv: {rel_path}"
-        )
+    if not is_markdown_file(source):
+        raise ValueError(f"attachments cannot be deleted: {rel_path}")
 
     sidecar_path = sidecar_path_for(source)
     sidecar_existed = sidecar_path.exists()
@@ -1296,6 +1361,10 @@ def workspace_delete_folder(root: str, rel_path: str) -> dict[str, Any]:
     source = resolve_existing_workspace_path(workspace, rel_path)
     if not source.is_dir():
         raise ValueError(f"folder is not a directory: {rel_path}")
+    if folder_contains_attachment_evidence(source):
+        raise ValueError(
+            f"folder contains attachment recovery evidence and cannot be deleted: {rel_path}"
+        )
     _move_to_os_trash(source)
     _invalidate_scan_cache(workspace)
     return {
@@ -1397,11 +1466,15 @@ def ensure_markdown_path(path: str) -> None:
         raise ValueError(f"document path must end in .md or .markdown: {path}")
 
 
+def ensure_page_move_path(path: str) -> None:
+    if Path(path).suffix.lower() not in {".md", ".markdown"}:
+        raise ValueError(f"attachments cannot be renamed or moved: {path}")
+
+
 def ensure_text_document_path(path: str) -> None:
-    # Markdown and HTML are the text document types that share the read/write
-    # workspace path (#139). HTML routes to write_html_doc inside write_doc.
-    if Path(path).suffix.lower() not in {".md", ".markdown", ".html", ".htm"}:
-        raise ValueError(f"document path must end in .md, .markdown, .html, or .htm: {path}")
+    # Wire-compatible name retained for callers; only Markdown Pages are
+    # writable through the normal workspace surface. HTML is an Attachment.
+    ensure_markdown_path(path)
 
 
 def ensure_pdf_path(path: str) -> None:
@@ -1414,20 +1487,54 @@ def ensure_excel_path(path: str) -> None:
         raise ValueError(f"document path must end in .xlsx, .xlsm, or .csv: {path}")
 
 
-WORKSPACE_DOCUMENT_SUFFIXES = {".md", ".markdown", ".pdf", ".xlsx", ".xlsm", ".csv"}
+WORKSPACE_DOCUMENT_SUFFIXES = {
+    ".md",
+    ".markdown",
+    ".pdf",
+    ".xlsx",
+    ".xlsm",
+    ".csv",
+    ".html",
+    ".htm",
+}
+WORKSPACE_ATTACHMENT_SUFFIXES = {".pdf", ".xlsx", ".xlsm", ".csv", ".html", ".htm"}
+ATTACHMENT_EVIDENCE_SUFFIXES = (".doxmind", ".doxmind.bak", ".doxmind.lock")
+ATTACHMENT_CORRUPT_EVIDENCE_MARKER = ".doxmind.corrupt-"
+
+
+def folder_contains_attachment_evidence(folder: Path) -> bool:
+    for path in folder.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() in WORKSPACE_ATTACHMENT_SUFFIXES:
+            return True
+        lower_name = path.name.lower()
+        corrupt_source_name, marker, _ = lower_name.partition(
+            ATTACHMENT_CORRUPT_EVIDENCE_MARKER
+        )
+        if marker and Path(corrupt_source_name).suffix in WORKSPACE_ATTACHMENT_SUFFIXES:
+            return True
+        for evidence_suffix in ATTACHMENT_EVIDENCE_SUFFIXES:
+            if lower_name.endswith(evidence_suffix):
+                source_name = lower_name[: -len(evidence_suffix)]
+                if Path(source_name).suffix in WORKSPACE_ATTACHMENT_SUFFIXES:
+                    return True
+                break
+    return False
 
 
 def ensure_same_document_extension(old_path: str, new_path: str) -> None:
-    """A rename or in-place move may target any document type, but must not
-    change the file's type: the destination keeps the source's extension so a
-    ``.pdf`` can't silently become a ``.md``. Mirrors the Tauri backend's
-    ``ensure_same_document_extension`` so both runtimes honour the contract."""
+    """Keep a Page's exact Markdown extension during rename or move.
+
+    ``move_document_pair`` rejects Attachments before this check; the broader
+    suffix validation remains defensive for malformed destination paths.
+    """
     old_ext = Path(old_path).suffix.lower()
     new_ext = Path(new_path).suffix.lower()
     for ext, path in ((old_ext, old_path), (new_ext, new_path)):
         if ext not in WORKSPACE_DOCUMENT_SUFFIXES:
             raise ValueError(
-                "document path must end in .md, .markdown, .pdf, .xlsx, .xlsm, or .csv: "
+                "document path must end in .md, .markdown, .pdf, .xlsx, .xlsm, .csv, .html, or .htm: "
                 f"{path}"
             )
     if old_ext != new_ext:

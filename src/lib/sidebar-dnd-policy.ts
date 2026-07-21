@@ -14,9 +14,11 @@
  *                              targets themselves; sub-page semantics are
  *                              explicitly out of scope per PRD #63).
  *     - Drop on root spacer → null.
- *  2. Reject self-drop and ancestor-cycle for folder sources.
- *  3. Reject same-name folder collisions at the destination.
- *  4. Return `no-op-same-parent` if source already lives there.
+ *  2. Reject attachment sources; their recovery evidence must remain beside
+ *     the original file.
+ *  3. Reject self-drop and ancestor-cycle for folder sources.
+ *  4. Reject same-name folder collisions at the destination.
+ *  5. Return `no-op-same-parent` if source already lives there.
  *
  * The function never mutates input and never reaches into stores or
  * backends — feed it a tree snapshot, get a verdict back.
@@ -27,12 +29,14 @@ export type DnDVerdict =
   | "cycle"
   | "no-op-same-parent"
   | "name-collision"
-  | "would-be-self";
+  | "would-be-self"
+  | "attachment-source";
 
 export interface DnDNode {
   id: string;
   name: string;
   isFolder: boolean;
+  isAttachment?: boolean;
   parentId: string | null;
 }
 
@@ -56,10 +60,7 @@ export interface DnDDecision {
  *  - target is a document       → target.parentId
  *  - target id missing from tree → null (treat as root, conservative)
  */
-function resolveDestinationParent(
-  targetId: string | null,
-  tree: DnDNode[]
-): string | null {
+function resolveDestinationParent(targetId: string | null, tree: DnDNode[]): string | null {
   if (targetId === null) return null;
   const target = tree.find((n) => n.id === targetId);
   if (!target) return null;
@@ -71,11 +72,7 @@ function resolveDestinationParent(
  * appears in that chain (i.e. dropping a folder onto its descendant would
  * create a cycle). Defends against malformed trees with a visited set.
  */
-function isAncestor(
-  candidateId: string,
-  nodeId: string,
-  tree: DnDNode[]
-): boolean {
+function isAncestor(candidateId: string, nodeId: string, tree: DnDNode[]): boolean {
   const byId = new Map(tree.map((n) => [n.id, n]));
   let current: string | null = nodeId;
   const visited = new Set<string>();
@@ -98,6 +95,10 @@ export function evaluateSidebarDrop(input: DnDInput): DnDDecision {
   // because drag payloads come from rendered rows.
   if (!source) {
     return { verdict: "ok", destinationParentId: null };
+  }
+
+  if (source.isAttachment) {
+    return { verdict: "attachment-source", destinationParentId: source.parentId };
   }
 
   // Drop on self → would-be-self (resolved before parent resolution because

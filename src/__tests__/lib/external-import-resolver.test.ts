@@ -276,6 +276,25 @@ describe("resolveImportPlan", () => {
     ]);
   });
 
+  it.each(["Spec.pdf", "Forecast.xlsx", "Data.csv"])(
+    "rejects replace for attachment collision %s",
+    (name) => {
+      const plan = planExternalImport({
+        items: [{ name, srcPath: `/tmp/${name}` }],
+        destFolderId: null,
+        existingNames: [name],
+      });
+
+      expect(() =>
+        resolveImportPlan({
+          plan,
+          existingNames: [name],
+          decisions: { [name]: "replace" },
+        })
+      ).toThrow(/replace is only available for Markdown pages/i);
+    }
+  );
+
   it("keep-both renames the file to `Foo (2).md` when the base name clashes", () => {
     const plan = planExternalImport({
       items: [{ name: "Plan.md", srcPath: "/tmp/Plan.md" }],
@@ -335,20 +354,20 @@ describe("resolveImportPlan", () => {
       items: [
         { name: "A.md", srcPath: "/tmp/A.md" }, // accepted
         { name: "B.txt", srcPath: "/tmp/B.txt" }, // rejected
-        { name: "C.pdf", srcPath: "/tmp/C.pdf" }, // collision → replace
+        { name: "C.md", srcPath: "/tmp/C.md" }, // collision → replace
         { name: "D.xlsx", srcPath: "/tmp/D.xlsx" }, // collision → keep-both
         { name: "E.png" }, // rejected
         { name: "F.md", srcPath: "/tmp/F.md" }, // collision → skip
       ],
       destFolderId: "folder-x",
-      existingNames: ["C.pdf", "D.xlsx", "F.md"],
+      existingNames: ["C.md", "D.xlsx", "F.md"],
     });
 
     const resolved = resolveImportPlan({
       plan,
-      existingNames: ["C.pdf", "D.xlsx", "F.md"],
+      existingNames: ["C.md", "D.xlsx", "F.md"],
       decisions: {
-        "C.pdf": "replace",
+        "C.md": "replace",
         "D.xlsx": "keep-both",
         "F.md": "skip",
       },
@@ -359,8 +378,8 @@ describe("resolveImportPlan", () => {
       { item: plan.accepted[0].item, extension: ".md", name: "A.md", mode: "create" },
       {
         item: plan.collisions[0].item,
-        extension: ".pdf",
-        name: "C.pdf",
+        extension: ".md",
+        name: "C.md",
         mode: "replace",
       },
       {

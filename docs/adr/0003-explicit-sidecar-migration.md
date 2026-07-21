@@ -10,7 +10,14 @@ create editor sidecars.
 - **(b) 升级即写**：打开旧 sidecar 时按旧 shape 读，下次 save 时写新 shape；迁移是 save 的副作用。
 - **(c) 显式迁移**：打开旧 sidecar 时立即原地重写成新 shape；迁移是 open 的独立步骤。
 
-**决定**：选 **(c) 显式一次性迁移**。打开任何旧 PDF/Excel 文件时，立即把它的 `.foo.pdf.doxmind` / `.foo.xlsx.doxmind` 重写成 markdown shape，旧 shape 备份到 `<sidecar>.bak`。
+**历史决定**：旧版 Synthetic Document reader 选 **(c) 显式一次性迁移**。
+当且仅当这个冻结的兼容 reader 被直接调用时，它会把旧 sidecar 重写成
+markdown shape，并把旧 shape 备份到 `<sidecar>.bak`。
+
+**当前边界（ADR-0012）**：正常打开 PDF/Excel/CSV Attachment 不再调用上述
+reader，也不会迁移、修复、备份或重写任何 sidecar。当前恢复桥只读主 sidecar
+与 `.bak`，所有输出均为新的、未经验证的副本。以下迁移规则保留为历史格式和
+冻结兼容代码的契约，不是当前 Attachment open 的行为。
 
 **理由**：
 
@@ -19,9 +26,13 @@ create editor sidecars.
 3. **删旧代码的时机明确**：所有用户文件迁移完之后，旧 shape 的 read 路径可以删除。(b) 因为用户可能永远不 save，旧路径必须无限期保留。
 4. **延续 ADR-0001**：second-class file 的硬盘表达统一到 Synthetic Document，是 "PDF/Excel 不是 first-class" 这条定位的自然延伸。
 
-**关键边界**：迁移**只动 doXmind 自己写的 sidecar 文件**（例如 `.foo.pdf.doxmind` / `.foo.xlsx.doxmind`），**绝不动用户的 `foo.pdf` / `foo.xlsx` 原文件**。本地 IDE 的硬盘契约是"用户文件不被悄悄改"——sidecar 是 doXmind 的内部状态，不在这条契约里。
+**历史迁移边界**：冻结迁移只会改 doXmind sidecar，绝不改 PDF/XLSX 原文件。
+在当前 Attachment 模型中，legacy sidecar、`.bak`、`.lock` 和 forensic copy
+也属于必须保留的用户恢复证据；正常打开和恢复尝试对它们全部零写入。
 
-**逃生开关**：环境变量 `DOXMIND_SIDECAR_MIGRATE=0` 可以禁用迁移，让用户在新版本里继续用旧 shape（read-only 模式，不能保存）。默认开。
+**冻结兼容栈开关**：`DOXMIND_SIDECAR_MIGRATE=0` 只会禁用 deprecated
+Synthetic Document reader 的迁移并使其只读。正常 Attachment 打开与当前恢复桥
+从不调用该栈，因此不依赖这个开关。
 
 ## 新 shape 的具体契约
 

@@ -1,17 +1,41 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { AlertTriangle, ExternalLink, File, FolderOpen, Loader2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
-import { createStorageAdapter, type AttachmentInspection } from "@/lib/storage";
+import { isExcelFile, isHtmlFile, isPdfFile } from "@/lib/document-types";
+import { downloadLocalFile } from "@/lib/download";
+import { exportEditedWorkbook } from "@/lib/excel/export-edited";
+import {
+  createStorageAdapter,
+  type AttachmentInspection,
+  type AttachmentRecoveryRead,
+  type AttachmentRecoverySource,
+  type ExcelEditorState,
+  type PdfEditorState,
+} from "@/lib/storage";
 import { openFileExternally, revealFileInFinder } from "@/lib/storage/reveal";
-import { cn } from "@/lib/utils";
+import { cn, sha256Hex } from "@/lib/utils";
 import { useFileStore } from "@/stores/file-store";
 import type { FileItem } from "@/types";
 
 export interface AttachmentWorkspaceServices {
   inspect: (file: FileItem) => Promise<AttachmentInspection>;
+  readRecovery: (
+    file: FileItem,
+    source: AttachmentRecoverySource
+  ) => Promise<AttachmentRecoveryRead>;
+  readBinary: (file: FileItem) => Promise<Uint8Array>;
+  exportPdf: (bytes: Uint8Array, state: PdfEditorState) => Promise<Uint8Array>;
+  exportExcel: (
+    bytes: Uint8Array,
+    state: ExcelEditorState,
+    sourceFileName: string
+  ) => Promise<Blob>;
+  hashBinary?: (bytes: Uint8Array) => Promise<string>;
+  download: (data: Blob | Uint8Array, fileName: string, mimeType: string) => void;
   openExternally: (file: FileItem) => Promise<void>;
   reveal: (file: FileItem) => Promise<void>;
 }
@@ -19,15 +43,46 @@ export interface AttachmentWorkspaceServices {
 interface AttachmentWorkspaceProps {
   file: FileItem;
   services?: AttachmentWorkspaceServices;
-  onOpenLegacyRecovery?: () => void;
+}
+
+function adapterFor(file: FileItem) {
+  if (!file.storageHandle) throw new Error("Attachment is not stored on disk");
+  return createStorageAdapter({ disk: { root: useFileStore.getState().rootPath } });
 }
 
 const defaultServices: AttachmentWorkspaceServices = {
   inspect: async (file) => {
-    if (!file.storageHandle) throw new Error("Attachment is not stored on disk");
-    const adapter = createStorageAdapter({ disk: { root: useFileStore.getState().rootPath } });
-    return adapter.inspectAttachment(file.storageHandle);
+    if (!isPdfFile(file) && !isExcelFile(file) && !isHtmlFile(file)) {
+      return {
+        documentType: "other",
+        recoveryStatus: "none",
+        sidecarStatus: "missing",
+        sidecarPath: "",
+        recoverySources: [],
+        recommendedSource: null,
+      };
+    }
+    return adapterFor(file).inspectAttachment(file.storageHandle!);
   },
+  readRecovery: async (file, source) => {
+    return adapterFor(file).readAttachmentRecovery(file.storageHandle!, source);
+  },
+  readBinary: async (file) => {
+    const adapter = adapterFor(file);
+    if (!adapter.readBinary) throw new Error("Attachment binary reader is unavailable");
+    return adapter.readBinary(file.storageHandle!);
+  },
+  exportPdf: async (bytes, state) => {
+    const [{ buildPdfRecoveryPayload }, { exportEditedPdfStrict }] = await Promise.all([
+      import("@/lib/pdf/recovery"),
+      import("@/lib/pdf/export-edited"),
+    ]);
+    const payload = await buildPdfRecoveryPayload(bytes, state);
+    return exportEditedPdfStrict(bytes, payload);
+  },
+  exportExcel: exportEditedWorkbook,
+  hashBinary: sha256Hex,
+  download: downloadLocalFile,
   openExternally: openFileExternally,
   reveal: revealFileInFinder,
 };
@@ -35,12 +90,14 @@ const defaultServices: AttachmentWorkspaceServices = {
 export function AttachmentWorkspace({
   file,
   services = defaultServices,
-  onOpenLegacyRecovery,
 }: AttachmentWorkspaceProps) {
   const t = useTranslations("attachment");
   const [inspection, setInspection] = useState<AttachmentInspection | null>(null);
   const [inspectionError, setInspectionError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [exportingSource, setExportingSource] = useState<AttachmentRecoverySource | null>(null);
+  const [exportComplete, setExportComplete] = useState(false);
+  const fileGenerationRef = useRef(0);
   const filePath = file.storageHandle?.relPath || file.storageHandle?.path || file.name;
   const fileName = filePath.split("/").filter(Boolean).pop() || file.name;
   const typeLabel =
@@ -48,12 +105,18 @@ export function AttachmentWorkspace({
       ? t("pdfLabel")
       : file.documentType === "excel"
         ? t("spreadsheetLabel")
-        : t("htmlLabel");
+        : file.documentType === "html"
+          ? t("htmlLabel")
+          : t("genericLabel");
 
   useEffect(() => {
     let cancelled = false;
+    fileGenerationRef.current += 1;
     setInspection(null);
     setInspectionError(null);
+    setActionError(null);
+    setExportComplete(false);
+    setExportingSource(null);
     void services.inspect(file).then(
       (result) => {
         if (!cancelled) setInspection(result);
@@ -75,6 +138,70 @@ export function AttachmentWorkspace({
       await action(file);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const availableSources =
+    inspection?.recoverySources.filter((candidate) => candidate.recoveryStatus === "available") ??
+    [];
+  const inspectedRecommendation = availableSources.some(
+    (candidate) => candidate.source === inspection?.recommendedSource
+  )
+    ? inspection!.recommendedSource
+    : null;
+  const requiresSourceChoice = availableSources.length > 1 && inspectedRecommendation === null;
+  const recommendedSource =
+    inspectedRecommendation ?? (availableSources.length === 1 ? availableSources[0].source : null);
+  const hasUnknownSource =
+    inspection?.recoveryStatus === "unknown" ||
+    inspection?.recoverySources.some((candidate) => candidate.recoveryStatus === "unknown");
+
+  const exportRecovery = async (source: AttachmentRecoverySource) => {
+    const fileGeneration = fileGenerationRef.current;
+    setActionError(null);
+    setExportComplete(false);
+    setExportingSource(source);
+    try {
+      const [recovery, bytes] = await Promise.all([
+        services.readRecovery(file, source),
+        services.readBinary(file),
+      ]);
+      if (recovery.source !== source) {
+        throw new Error("Recovery source did not match the selected candidate");
+      }
+      if (inspection && recovery.documentType !== inspection.documentType) {
+        throw new Error("Recovery state did not match the attachment type");
+      }
+      const currentSourceHash = await (services.hashBinary ?? sha256Hex)(bytes);
+      if (
+        typeof recovery.sourceHash !== "string" ||
+        !/^[a-f0-9]{64}$/i.test(recovery.sourceHash) ||
+        currentSourceHash.toLowerCase() !== recovery.sourceHash.toLowerCase()
+      ) {
+        throw new Error(t("sourceChanged"));
+      }
+      if (fileGenerationRef.current !== fileGeneration) return;
+      const sourceFileName = attachmentSourceFileName(file);
+      if (recovery.documentType === "pdf") {
+        const exported = await services.exportPdf(bytes, recovery.editorState);
+        if (fileGenerationRef.current !== fileGeneration) return;
+        services.download(exported, recoveredFileName(sourceFileName, "pdf"), "application/pdf");
+      } else {
+        const exported = await services.exportExcel(bytes, recovery.editorState, sourceFileName);
+        if (fileGenerationRef.current !== fileGeneration) return;
+        services.download(
+          exported,
+          recoveredFileName(sourceFileName, "excel"),
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+      }
+      if (fileGenerationRef.current === fileGeneration) setExportComplete(true);
+    } catch (error) {
+      if (fileGenerationRef.current === fileGeneration) {
+        setActionError(error instanceof Error ? error.message : String(error));
+      }
+    } finally {
+      if (fileGenerationRef.current === fileGeneration) setExportingSource(null);
     }
   };
 
@@ -126,15 +253,52 @@ export function AttachmentWorkspace({
         )}
 
         {inspection?.recoveryStatus === "available" && (
-          <RecoveryNotice
-            title={t("legacyTitle")}
-            description={t("legacyDescription")}
-            actionLabel={onOpenLegacyRecovery ? t("openRecovery") : undefined}
-            onAction={onOpenLegacyRecovery}
-          />
+          <RecoveryNotice title={t("legacyTitle")} description={t("legacyDescription")}>
+            {requiresSourceChoice && (
+              <p className="mt-3 text-sm text-muted-foreground">{t("chooseRecoverySource")}</p>
+            )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {requiresSourceChoice ? (
+                availableSources.map((candidate) => (
+                  <Button
+                    key={candidate.source}
+                    variant="outline"
+                    size="sm"
+                    disabled={exportingSource !== null}
+                    onClick={() => void exportRecovery(candidate.source)}
+                  >
+                    {exportingSource === candidate.source && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    {candidate.source === "sidecar" ? t("exportMainSidecar") : t("exportBackup")}
+                  </Button>
+                ))
+              ) : recommendedSource ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={exportingSource !== null}
+                  onClick={() => void exportRecovery(recommendedSource)}
+                >
+                  {exportingSource !== null && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {inspection.documentType === "pdf"
+                    ? t("exportRecoveredPdf")
+                    : t("exportRecoveredSpreadsheet")}
+                </Button>
+              ) : null}
+            </div>
+            {/\.xlsm$/i.test(filePath) && (
+              <p className="mt-3 text-sm text-amber-700 dark:text-amber-400">{t("macroWarning")}</p>
+            )}
+            {exportComplete && (
+              <p role="status" className="mt-3 text-sm text-muted-foreground">
+                {t("recoveryExported")}
+              </p>
+            )}
+          </RecoveryNotice>
         )}
 
-        {inspection?.recoveryStatus === "unknown" && (
+        {hasUnknownSource && (
           <RecoveryNotice
             title={t("unknownTitle")}
             description={t("unknownDescription")}
@@ -149,14 +313,12 @@ export function AttachmentWorkspace({
 function RecoveryNotice({
   title,
   description,
-  actionLabel,
-  onAction,
+  children,
   destructive = false,
 }: {
   title: string;
   description: string;
-  actionLabel?: string;
-  onAction?: () => void;
+  children?: ReactNode;
   destructive?: boolean;
 }) {
   return (
@@ -178,13 +340,19 @@ function RecoveryNotice({
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold text-foreground">{title}</h2>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
-          {actionLabel && onAction && (
-            <Button variant="outline" size="sm" className="mt-3" onClick={onAction}>
-              {actionLabel}
-            </Button>
-          )}
+          {children}
         </div>
       </div>
     </div>
   );
+}
+
+function attachmentSourceFileName(file: FileItem): string {
+  const path = file.storageHandle?.relPath || file.storageHandle?.path || file.name;
+  return path.split("/").filter(Boolean).pop() || file.name;
+}
+
+function recoveredFileName(sourceFileName: string, type: "pdf" | "excel"): string {
+  const base = sourceFileName.replace(/\.(?:pdf|xlsx|xlsm|csv)$/i, "");
+  return `${base} recovered.${type === "pdf" ? "pdf" : "xlsx"}`;
 }

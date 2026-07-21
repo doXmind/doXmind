@@ -2,12 +2,19 @@ export type WorkspaceMode = "disk";
 
 export type WorkspaceEntryKind = "document" | "folder";
 export type WorkspacePageType = "markdown";
-export type WorkspaceAttachmentType = "pdf" | "excel" | "html";
-/** File-format discriminator retained for attachment scanning and legacy compatibility. */
+export type WorkspaceAttachmentType = "pdf" | "excel" | "html" | "other";
+/** Supported attachment dispatch plus a safe `other` fallback; this does not expand scan/open whitelists. */
 export type WorkspaceDocumentType = WorkspacePageType | WorkspaceAttachmentType;
 
 export type AttachmentRecoveryStatus = "none" | "available" | "unknown";
 export type AttachmentSidecarStatus = "missing" | "legacy" | "current" | "unreadable";
+export type AttachmentRecoverySource = "sidecar" | "backup";
+
+export interface AttachmentRecoveryCandidate {
+  source: AttachmentRecoverySource;
+  recoveryStatus: AttachmentRecoveryStatus;
+  sidecarStatus: AttachmentSidecarStatus;
+}
 
 /** Result of a strictly read-only legacy-recovery inspection. */
 export interface AttachmentInspection {
@@ -15,6 +22,8 @@ export interface AttachmentInspection {
   recoveryStatus: AttachmentRecoveryStatus;
   sidecarStatus: AttachmentSidecarStatus;
   sidecarPath: string;
+  recoverySources: AttachmentRecoveryCandidate[];
+  recommendedSource: AttachmentRecoverySource | null;
 }
 
 export interface DocumentHandle {
@@ -284,6 +293,22 @@ export interface ExcelEditorState {
   conditionalFormats?: Record<string, ExcelConditionalFormatRule[]>;
 }
 
+export type AttachmentRecoveryRead =
+  | {
+      documentType: "pdf";
+      source: AttachmentRecoverySource;
+      sidecarStatus: "legacy" | "current";
+      sourceHash: string;
+      editorState: PdfEditorState;
+    }
+  | {
+      documentType: "excel";
+      source: AttachmentRecoverySource;
+      sidecarStatus: "legacy" | "current";
+      sourceHash: string;
+      editorState: ExcelEditorState;
+    };
+
 export interface ExcelCellComment {
   text: string;
   author?: string;
@@ -423,16 +448,19 @@ export interface StorageImportInput {
   bytes?: Uint8Array;
   /**
    * Import mode. `"create"` (the default) refuses to overwrite. `"replace"`
-   * (added in #69) overwrites the user file at the destination but leaves the
-   * hidden `.doxmind` sidecar untouched — the next open trips the Salvage
-   * path, which is the right behavior because at the FS level a Replace is
-   * indistinguishable from an external edit.
+   * is available only for Markdown Pages; attachments must use Keep both or
+   * Skip so same-name legacy recovery evidence cannot be stranded.
    */
   mode?: "create" | "replace";
 }
 
 /** Discriminator for `ImportError.code` so callers can react without string-matching. */
-export type ImportErrorCode = "destination-exists" | "bad-extension" | "no-source" | "unknown";
+export type ImportErrorCode =
+  | "destination-exists"
+  | "bad-extension"
+  | "no-source"
+  | "replace-not-allowed"
+  | "unknown";
 
 export class ImportError extends Error {
   readonly code: ImportErrorCode;
@@ -511,6 +539,10 @@ export interface StorageAdapter {
    */
   statBinary?(handle: DocumentHandle): Promise<{ mtimeNs: string; size: number } | null>;
   inspectAttachment(handle: DocumentHandle): Promise<AttachmentInspection>;
+  readAttachmentRecovery(
+    handle: DocumentHandle,
+    source: AttachmentRecoverySource
+  ): Promise<AttachmentRecoveryRead>;
   /** @deprecated Legacy PDF sidecar recovery only; not a primary Page API. */
   readPdfEditorState?(handle: DocumentHandle): Promise<PdfEditorState | null>;
   /** @deprecated Kept temporarily so existing sidecar edits remain recoverable. */

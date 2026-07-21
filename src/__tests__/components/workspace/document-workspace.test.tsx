@@ -1,6 +1,5 @@
 import { NextIntlClientProvider } from "next-intl";
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { DocumentWorkspace } from "@/components/workspace/document-workspace";
 import en from "@/messages/en.json";
@@ -11,11 +10,7 @@ vi.mock("@/components/workspace/markdown-runtime", () => ({
 }));
 
 vi.mock("@/components/workspace/attachment-workspace", () => ({
-  AttachmentWorkspace: ({ onOpenLegacyRecovery }: { onOpenLegacyRecovery?: () => void }) => (
-    <div data-testid="attachment-workspace">
-      {onOpenLegacyRecovery && <button onClick={onOpenLegacyRecovery}>Recover legacy edits</button>}
-    </div>
-  ),
+  AttachmentWorkspace: () => <div data-testid="attachment-workspace" />,
 }));
 
 vi.mock("@/components/pdf-editor/pdf-editor-workspace", () => ({
@@ -77,6 +72,20 @@ const excelFile: FileItem = {
   },
 };
 
+const otherAttachment: FileItem = {
+  ...htmlFile,
+  id: "path:reference.docx",
+  name: "reference.docx",
+  documentType: "other",
+  storageHandle: {
+    ...htmlFile.storageHandle!,
+    id: "path:reference.docx",
+    documentType: "other",
+    path: "reference.docx",
+    relPath: "reference.docx",
+  },
+};
+
 function renderWorkspace(file: FileItem) {
   return render(
     <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
@@ -100,45 +109,11 @@ describe("DocumentWorkspace", () => {
     expect(screen.queryByTestId("markdown-runtime")).not.toBeInTheDocument();
   });
 
-  it("loads the legacy PDF editor only after an explicit recovery action", async () => {
-    const user = userEvent.setup();
+  it("never mounts the legacy PDF editor", () => {
     renderWorkspace(pdfFile);
-
-    expect(screen.queryByTestId("pdf-legacy-recovery")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Recover legacy edits" }));
-
-    expect(await screen.findByTestId("pdf-legacy-recovery")).toBeInTheDocument();
-    expect(screen.getByText("Legacy recovery mode")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Export recovered PDF" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Exit recovery" })).toBeInTheDocument();
-  });
-
-  it("returns a recovered PDF to its read-only attachment surface", async () => {
-    const user = userEvent.setup();
-    renderWorkspace(pdfFile);
-
-    await user.click(screen.getByRole("button", { name: "Recover legacy edits" }));
-    await user.click(await screen.findByRole("button", { name: "Exit recovery" }));
 
     expect(screen.getByTestId("attachment-workspace")).toBeInTheDocument();
     expect(screen.queryByTestId("pdf-legacy-recovery")).not.toBeInTheDocument();
-  });
-
-  it("exports recovered PDF edits through the legacy editor bridge", async () => {
-    const user = userEvent.setup();
-    const exportEvents: Event[] = [];
-    const handleExport = (event: Event) => exportEvents.push(event);
-    window.addEventListener("doxmind:export-pdf", handleExport);
-
-    try {
-      renderWorkspace(pdfFile);
-      await user.click(screen.getByRole("button", { name: "Recover legacy edits" }));
-      await user.click(await screen.findByRole("button", { name: "Export recovered PDF" }));
-
-      expect(exportEvents).toHaveLength(1);
-    } finally {
-      window.removeEventListener("doxmind:export-pdf", handleExport);
-    }
   });
 
   it("routes spreadsheets through the read-only attachment surface", () => {
@@ -148,23 +123,17 @@ describe("DocumentWorkspace", () => {
     expect(screen.queryByTestId("excel-legacy-recovery")).not.toBeInTheDocument();
   });
 
-  it("exports recovered spreadsheet edits through the legacy editor bridge", async () => {
-    const user = userEvent.setup();
-    const exportEvents: Event[] = [];
-    const handleExport = (event: Event) => exportEvents.push(event);
-    window.addEventListener("doxmind:export-xlsx", handleExport);
+  it("never mounts the legacy spreadsheet editor", () => {
+    renderWorkspace(excelFile);
 
-    try {
-      renderWorkspace(excelFile);
-      await user.click(screen.getByRole("button", { name: "Recover legacy edits" }));
+    expect(screen.getByTestId("attachment-workspace")).toBeInTheDocument();
+    expect(screen.queryByTestId("excel-legacy-recovery")).not.toBeInTheDocument();
+  });
 
-      expect(await screen.findByTestId("excel-legacy-recovery")).toBeInTheDocument();
-      expect(screen.getByText("Legacy recovery mode")).toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: "Export recovered spreadsheet" }));
+  it("routes unknown non-Markdown files through the read-only attachment surface", () => {
+    renderWorkspace(otherAttachment);
 
-      expect(exportEvents).toHaveLength(1);
-    } finally {
-      window.removeEventListener("doxmind:export-xlsx", handleExport);
-    }
+    expect(screen.getByTestId("attachment-workspace")).toBeInTheDocument();
+    expect(screen.queryByTestId("markdown-runtime")).not.toBeInTheDocument();
   });
 });

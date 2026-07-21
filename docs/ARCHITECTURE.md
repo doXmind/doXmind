@@ -21,11 +21,17 @@ The product surface is intentionally narrow:
 - The editor renders each `.md` as rich content via TipTap.
 - Editor-only state and cached HTML are stored in a hidden `.doxmind` sidecar
   next to each `.md`; user-authored knowledge never lives only there.
-- PDF, spreadsheet, HTML, and image files are Attachments. They remain visible
-  and locally accessible without becoming separate editing products.
+- Supported PDF, spreadsheet, and HTML files are Attachments. They remain
+  visible and locally accessible without becoming separate editing products.
+  The `other` type is only a safe read-only fallback for an unknown format that
+  reaches the shared surface; it does not extend workspace scanning or native
+  opening. Images inserted into Pages remain local assets rather than standalone
+  workspace documents.
 - Existing PDF/Excel Synthetic Documents are frozen legacy-recovery formats,
-  not foundations for new features. Retired `extras.databases` data is preserved
-  as pass-through bytes only and is never rendered.
+  not foundations for new features. Recovery uses an independent zero-write
+  inspector and exporter rather than mounting the legacy editors. Retired
+  `extras.databases` data is preserved as pass-through bytes only and is never
+  rendered.
 - Import, OCR, and export run locally with no network calls.
 
 ## Source of truth: the dual-file model
@@ -87,8 +93,55 @@ view follows the file, not a stale sidecar.
 
 For legacy Synthetic PDF/Excel Documents, `markdown_hash` hashes the generated
 frontmatter plus the single placeholder comment; source binary freshness belongs
-to `parsedCache.sourceHash`. The compatibility reader/export path must not mutate
-the source `.pdf` or `.xlsx`. New Attachments do not get editor sidecars.
+to `parsedCache.sourceHash`. That cache hash is not editor-state provenance:
+historical builds could refresh it while preserving older edits. The Attachment
+recovery path does not use that legacy document lifecycle: it strictly parses
+the main sidecar and `.bak`
+independently, reads only the selected `editor` state, and combines it with the
+source bytes in an isolated exporter. It does not invoke legacy readers, writers,
+migration, or caches, and it must not mutate the source, main sidecar, `.bak`, or
+`.lock`. New Attachments do not get editor sidecars.
+
+### Attachment inspection and legacy recovery
+
+Opening a supported PDF, spreadsheet (`.xlsx`, `.xlsm`, or `.csv`), or HTML file
+dispatches to the read-only Attachment surface. Ordinary inspection reads
+metadata and existing files only; it creates no attachment sidecar and never
+mounts a PDF or Excel editor. Unknown formats are not part of the scan/native-open
+whitelist; `other` only prevents an unexpected file from falling through to the
+Markdown editor. Until the legacy recovery gate passes, the sidebar exposes only
+Open Externally and Reveal for Attachments; move, rename, delete, and same-name
+replacement are rejected so recovery evidence cannot be stranded.
+
+For PDF and Excel recovery, the desktop and browser-dev adapters implement the
+same strict contract:
+
+1. Inspect the main sidecar and `<sidecar>.bak` independently without writing.
+2. Classify each candidate conservatively. Corrupt, future-version, mixed-shape,
+   invalid-version, or otherwise unsupported state is `unknown`, not empty.
+3. Require a valid `parsedCache.sourceHash` as an early mismatch guard.
+   Immediately before an attempt, hash the exact source bytes that will be sent
+   to the exporter and refuse a mismatch. A match does not prove that the editor
+   state originated from that exact historical file version.
+4. If both candidates are recoverable and differ, require the user to choose.
+   If they contain the same recovery state, recommend the main sidecar.
+5. Read only the selected editor state, its cache hash, and the original source
+   bytes. Label every historical recovery as an explicit, unverified attempt.
+   A byte-based PDF/XLSX exporter creates a new downloaded `recovered.pdf` or
+   `recovered.xlsx`; it never calls the legacy editor/export lifecycle or changes
+   an existing file.
+6. Refuse the whole export when strict validation or application accounting
+   fails. Excel `filters` or `filterMode` state is not silently dropped, and
+   `.xlsm` recovery produces an
+   `.xlsx` with an explicit warning that macros are not included.
+
+Tests snapshot the source, main sidecar, backup, lock file, mtimes, and directory
+membership around inspection and recovery. This protects both the local-first
+boundary in [ADR-0012](./adr/0012-local-markdown-knowledge-workspace.md) and the
+untrusted-document boundary in
+[ADR-0011](./adr/0011-documents-are-untrusted-input.md). Unknown or unsupported
+state—including edits with a missing or mismatched cache hash—remains evidence
+for a manual recovery path; it must not be deleted during legacy-code removal.
 
 ## Three-layer architecture
 
@@ -251,9 +304,10 @@ self-contained block or behavior:
   `search`, `trailing-node`, `atom-block-lift`.
 
 Extensions that carry user semantics must round-trip through Markdown or
-frontmatter. PDF/Excel external-reference blocks may read legacy `extras` only
-so existing user state can be recovered; no new attachment editor state is
-written. Retired `extras.databases` data remains pass-through only.
+frontmatter. The independent Attachment recovery path may parse legacy
+PDF/Excel `extras` to export existing user state; TipTap does not mount those
+external-reference blocks for Attachment recovery, and no new attachment editor
+state is written. Retired `extras.databases` data remains pass-through only.
 
 ## Import pipeline
 
@@ -322,10 +376,11 @@ local-desk/
 | --------------------------------------- | ---------------------------------------- |
 | Page body, properties, aliases, links   | `~/.../Foo.md` (user filesystem)         |
 | Editor HTML and replaceable UI/cache    | `~/.../.Foo.doxmind` (sidecar)           |
-| Attachments                             | Workspace user files                     |
+| Supported Attachments                   | Workspace user files                     |
 | Search/link/property/collection indexes | Workspace `.doxmind/` (rebuildable)      |
 | Retired DatabaseBlock bytes             | Legacy `extras.databases` (pass-through) |
-| Legacy PDF/Excel edit recovery state    | Existing attachment sidecars             |
+| Legacy PDF/Excel edit recovery state    | Existing main sidecars and `.bak` files  |
+| Legacy migration/recovery evidence      | Existing `.lock` and `.corrupt-*` files  |
 | Workspace pointer + settings            | `~/.doxmind/config.json`                 |
 | Marker model install state              | `~/.doxmind/marker-models.json`          |
 | App-level metadata                      | `~/.doxmind/doxmind.db` (`AppMetadata`)  |

@@ -15,6 +15,9 @@ from services.synthetic_document import (
     SyntheticDocumentFactory,
 )
 
+SOURCE_HASH = "a" * 64
+BACKUP_SOURCE_HASH = "b" * 64
+
 
 def _hard_delete(path: Path) -> None:
     """Test shim for `_move_to_os_trash` — hard-deletes instead of moving to OS Trash so the
@@ -66,8 +69,8 @@ def _legacy_pdf_payload(pdf_path: Path) -> dict:
         "id": "legacy-pdf",
         "source_path": pdf_path.name,
         "updated_at": "2024-01-01T00:00:00Z",
-        "pdf_editor": {"version": 1, "edits": {"1:0": {"text": "x"}}},
-        "pdf_parsed_cache": {"sourceHash": "abc", "parsed": {"pages": []}},
+        "pdf_editor": {"version": 1, "edits": {"p0-t0": {"text": "x"}}},
+        "pdf_parsed_cache": {"sourceHash": SOURCE_HASH, "parsed": {"pages": []}},
     }
 
 
@@ -81,7 +84,7 @@ def _legacy_excel_payload(xlsx_path: Path) -> dict:
             "version": 1,
             "cells": {"Sheet1!0,0": {"value": "changed"}},
         },
-        "excel_parsed_cache": {"sourceHash": "abc", "parsed": {"sheets": []}},
+        "excel_parsed_cache": {"sourceHash": SOURCE_HASH, "parsed": {"sheets": []}},
     }
 
 
@@ -148,12 +151,48 @@ def test_inspect_attachment_finds_legacy_pdf_edits_without_writing(sync_client, 
         "recoveryStatus": "available",
         "sidecarStatus": "legacy",
         "sidecarPath": sidecar_path.name,
+        "recoverySources": [
+            {
+                "source": "sidecar",
+                "recoveryStatus": "available",
+                "sidecarStatus": "legacy",
+            },
+            {
+                "source": "backup",
+                "recoveryStatus": "none",
+                "sidecarStatus": "missing",
+            },
+        ],
+        "recommendedSource": "sidecar",
     }
     assert sidecar_path.read_bytes() == original_sidecar
     assert sidecar_path.stat().st_mtime_ns == original_mtime
     assert not sidecar_path.with_name(f"{sidecar_path.name}.bak").exists()
     assert not sidecar_path.with_name(f"{sidecar_path.name}.lock").exists()
     assert list(tmp_path.glob(f"{sidecar_path.name}.corrupt-*")) == []
+
+
+def test_read_attachment_recovery_returns_selected_pdf_state_without_writing(sync_client, tmp_path):
+    pdf_path = _make_pdf(tmp_path, "Recover.pdf")
+    sidecar_path = _write_legacy_pdf_sidecar(pdf_path)
+    lock_path = sidecar_path.with_name(f"{sidecar_path.name}.lock")
+    lock_path.write_bytes(b"existing lock must remain untouched")
+    before = _workspace_snapshot(tmp_path)
+
+    recovery = invoke(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": pdf_path.name, "source": "sidecar"},
+    )
+
+    assert recovery == {
+        "documentType": "pdf",
+        "source": "sidecar",
+        "sidecarStatus": "legacy",
+        "editorState": _legacy_pdf_payload(pdf_path)["pdf_editor"],
+        "sourceHash": SOURCE_HASH,
+    }
+    assert _workspace_snapshot(tmp_path) == before
 
 
 def test_inspect_attachment_without_sidecar_stays_untouched(sync_client, tmp_path):
@@ -171,6 +210,11 @@ def test_inspect_attachment_without_sidecar_stays_untouched(sync_client, tmp_pat
         "recoveryStatus": "none",
         "sidecarStatus": "missing",
         "sidecarPath": sidecar_path.name,
+        "recoverySources": [
+            {"source": "sidecar", "recoveryStatus": "none", "sidecarStatus": "missing"},
+            {"source": "backup", "recoveryStatus": "none", "sidecarStatus": "missing"},
+        ],
+        "recommendedSource": None,
     }
     assert not sidecar_path.exists()
 
@@ -195,7 +239,144 @@ def test_inspect_attachment_reports_unknown_when_only_backup_sidecar_exists(
         "recoveryStatus": "unknown",
         "sidecarStatus": "missing",
         "sidecarPath": sidecar_path.name,
+        "recoverySources": [
+            {"source": "sidecar", "recoveryStatus": "none", "sidecarStatus": "missing"},
+            {
+                "source": "backup",
+                "recoveryStatus": "unknown",
+                "sidecarStatus": "unreadable",
+            },
+        ],
+        "recommendedSource": None,
     }
+    assert _workspace_snapshot(tmp_path) == before
+
+
+def test_backup_only_recovery_is_recommended_and_read_without_writing(sync_client, tmp_path):
+    pdf_path = _make_pdf(tmp_path, "Backup-recovery.pdf")
+    sidecar_path = sidecar_path_for(pdf_path)
+    backup_path = sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    backup_path.write_text(json.dumps(_legacy_pdf_payload(pdf_path)), encoding="utf-8")
+    lock_path = sidecar_path.with_name(f"{sidecar_path.name}.lock")
+    lock_path.write_bytes(b"pre-existing lock")
+    before = _workspace_snapshot(tmp_path)
+
+    inspection = invoke(
+        sync_client,
+        "workspace_inspect_attachment",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+    recovery = invoke(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": pdf_path.name, "source": "backup"},
+    )
+
+    assert inspection["recoveryStatus"] == "available"
+    assert inspection["recommendedSource"] == "backup"
+    assert inspection["recoverySources"] == [
+        {"source": "sidecar", "recoveryStatus": "none", "sidecarStatus": "missing"},
+        {
+            "source": "backup",
+            "recoveryStatus": "available",
+            "sidecarStatus": "legacy",
+        },
+    ]
+    assert recovery == {
+        "documentType": "pdf",
+        "source": "backup",
+        "sidecarStatus": "legacy",
+        "editorState": _legacy_pdf_payload(pdf_path)["pdf_editor"],
+        "sourceHash": SOURCE_HASH,
+    }
+    assert _workspace_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize(("backup_text", "recommended"), [("x", "sidecar"), ("y", None)])
+def test_recovery_recommends_sidecar_only_when_two_available_states_match(
+    sync_client, tmp_path, backup_text, recommended
+):
+    pdf_path = _make_pdf(tmp_path, "Two-sources.pdf")
+    sidecar_path = _write_legacy_pdf_sidecar(pdf_path)
+    backup_path = sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    block_id = "pdf-backup"
+    backup_path.write_text(
+        json.dumps(
+            {
+                "version": SIDECAR_VERSION,
+                "html": f'<!-- {PDF_BLOCK_TYPE} id="{block_id}" src="{pdf_path.name}" -->',
+                "extras": {
+                    "blocks": {
+                        block_id: {
+                            "editor": {
+                                "version": 1,
+                                "edits": {"p0-t0": {"text": backup_text}},
+                            },
+                            "parsedCache": {"sourceHash": SOURCE_HASH, "parsed": {}},
+                        }
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    before = _workspace_snapshot(tmp_path)
+
+    inspection = invoke(
+        sync_client,
+        "workspace_inspect_attachment",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+
+    assert inspection["recoveryStatus"] == "available"
+    assert inspection["recommendedSource"] == recommended
+    assert inspection["recoverySources"] == [
+        {
+            "source": "sidecar",
+            "recoveryStatus": "available",
+            "sidecarStatus": "legacy",
+        },
+        {
+            "source": "backup",
+            "recoveryStatus": "available",
+            "sidecarStatus": "current",
+        },
+    ]
+    assert _workspace_snapshot(tmp_path) == before
+
+
+def test_read_recovery_never_falls_back_from_damaged_main_to_available_backup(
+    sync_client, tmp_path
+):
+    pdf_path = _make_pdf(tmp_path, "No-fallback.pdf")
+    sidecar_path = sidecar_path_for(pdf_path)
+    sidecar_path.write_bytes(b"{broken")
+    backup_path = sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    backup_path.write_text(json.dumps(_legacy_pdf_payload(pdf_path)), encoding="utf-8")
+    lock_path = sidecar_path.with_name(f"{sidecar_path.name}.lock")
+    lock_path.write_bytes(b"unchanged")
+    before = _workspace_snapshot(tmp_path)
+
+    inspection = invoke(
+        sync_client,
+        "workspace_inspect_attachment",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+    response = error_response(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": pdf_path.name, "source": "sidecar"},
+    )
+
+    assert inspection["recoveryStatus"] == "available"
+    assert inspection["recommendedSource"] == "backup"
+    assert inspection["recoverySources"][0] == {
+        "source": "sidecar",
+        "recoveryStatus": "unknown",
+        "sidecarStatus": "unreadable",
+    }
+    assert response.status_code == 400
+    assert "sidecar" in response.json()["detail"]
     assert _workspace_snapshot(tmp_path) == before
 
 
@@ -245,7 +426,8 @@ def test_inspect_attachment_finds_current_pdf_edits_without_writing(sync_client,
                     "editor": {
                         "version": 2,
                         "paragraphEdits": {"p0-b1": {"text": "Changed"}},
-                    }
+                    },
+                    "parsedCache": {"sourceHash": SOURCE_HASH, "parsed": {}},
                 }
             }
         },
@@ -287,6 +469,11 @@ def test_inspect_attachment_proves_valid_current_sidecar_has_no_editor(
         "recoveryStatus": "none",
         "sidecarStatus": "current",
         "sidecarPath": sidecar_path.name,
+        "recoverySources": [
+            {"source": "sidecar", "recoveryStatus": "none", "sidecarStatus": "current"},
+            {"source": "backup", "recoveryStatus": "none", "sidecarStatus": "missing"},
+        ],
+        "recommendedSource": None,
     }
     assert _workspace_snapshot(tmp_path) == before
 
@@ -307,9 +494,316 @@ def test_inspect_attachment_finds_legacy_excel_edits_without_writing(sync_client
         "recoveryStatus": "available",
         "sidecarStatus": "legacy",
         "sidecarPath": sidecar_path.name,
+        "recoverySources": [
+            {
+                "source": "sidecar",
+                "recoveryStatus": "available",
+                "sidecarStatus": "legacy",
+            },
+            {"source": "backup", "recoveryStatus": "none", "sidecarStatus": "missing"},
+        ],
+        "recommendedSource": "sidecar",
     }
     assert sidecar_path.read_bytes() == original_sidecar
     assert not sidecar_path.with_name(f"{sidecar_path.name}.bak").exists()
+
+
+def test_read_attachment_recovery_returns_current_excel_state_without_writing(
+    sync_client, tmp_path
+):
+    excel_path = _make_excel(tmp_path, "Current.xlsx")
+    block_id = "excel-current"
+    editor_state = {
+        "version": 1,
+        "cells": {"Sheet1!0,0": {"value": "changed"}},
+        "frozen": {"Sheet1": {"rows": 1, "cols": 0}},
+    }
+    sidecar_path = _write_synthetic_sidecar(
+        excel_path,
+        block_type=EXCEL_BLOCK_TYPE,
+        block_id=block_id,
+        extras={
+            "blocks": {
+                block_id: {
+                    "editor": editor_state,
+                    "parsedCache": {"sourceHash": SOURCE_HASH, "parsed": {}},
+                }
+            }
+        },
+    )
+    backup_path = sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    backup_path.write_bytes(b"unreadable backup")
+    lock_path = sidecar_path.with_name(f"{sidecar_path.name}.lock")
+    lock_path.write_bytes(b"existing lock")
+    before = _workspace_snapshot(tmp_path)
+
+    recovery = invoke(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": excel_path.name, "source": "sidecar"},
+    )
+
+    assert recovery == {
+        "documentType": "excel",
+        "source": "sidecar",
+        "sidecarStatus": "current",
+        "editorState": editor_state,
+        "sourceHash": SOURCE_HASH,
+    }
+    assert _workspace_snapshot(tmp_path) == before
+
+
+def test_recovery_reads_hash_from_the_selected_main_or_backup_candidate(
+    sync_client, tmp_path
+):
+    pdf_path = _make_pdf(tmp_path, "Candidate-hashes.pdf")
+    sidecar_path = sidecar_path_for(pdf_path)
+    main_payload = _legacy_pdf_payload(pdf_path)
+    backup_payload = _legacy_pdf_payload(pdf_path)
+    backup_payload["pdf_parsed_cache"]["sourceHash"] = BACKUP_SOURCE_HASH
+    sidecar_path.write_text(json.dumps(main_payload), encoding="utf-8")
+    backup_path = sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    backup_path.write_text(json.dumps(backup_payload), encoding="utf-8")
+    before = _workspace_snapshot(tmp_path)
+
+    inspection = invoke(
+        sync_client,
+        "workspace_inspect_attachment",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+    main = invoke(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": pdf_path.name, "source": "sidecar"},
+    )
+    backup = invoke(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": pdf_path.name, "source": "backup"},
+    )
+
+    assert inspection["recommendedSource"] is None
+    assert main["sourceHash"] == SOURCE_HASH
+    assert backup["sourceHash"] == BACKUP_SOURCE_HASH
+    assert _workspace_snapshot(tmp_path) == before
+
+
+def test_recovery_reads_and_normalizes_hash_from_a_current_backup_slot(
+    sync_client, tmp_path
+):
+    excel_path = _make_excel(tmp_path, "Current-backup.xlsx")
+    sidecar_path = sidecar_path_for(excel_path)
+    backup_path = sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    block_id = "excel-current-backup"
+    backup_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "html": (
+                    f'<!-- {EXCEL_BLOCK_TYPE} id="{block_id}" '
+                    f'src="{excel_path.name}" -->'
+                ),
+                "extras": {
+                    "blocks": {
+                        block_id: {
+                            "editor": {
+                                "version": 1,
+                                "cells": {"Sheet1!0,0": {"value": "changed"}},
+                            },
+                            "parsedCache": {
+                                "sourceHash": BACKUP_SOURCE_HASH.upper(),
+                                "parsed": {},
+                            },
+                        }
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    before = _workspace_snapshot(tmp_path)
+
+    recovery = invoke(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": excel_path.name, "source": "backup"},
+    )
+
+    assert recovery["sourceHash"] == BACKUP_SOURCE_HASH
+    assert recovery["sidecarStatus"] == "current"
+    assert _workspace_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("shape", ["legacy", "current"])
+@pytest.mark.parametrize(
+    "cache",
+    [
+        None,
+        {},
+        {"sourceHash": ""},
+        {"sourceHash": "not-a-sha256"},
+        {"sourceHash": 42},
+        "not-an-object",
+    ],
+    ids=["missing", "missing-hash", "empty", "short", "non-string", "non-object"],
+)
+def test_edited_recovery_requires_a_valid_source_hash_without_hiding_the_state(
+    sync_client, tmp_path, shape, cache
+):
+    excel_path = _make_excel(tmp_path, f"Invalid-cache-{shape}.xlsx")
+    sidecar_path = sidecar_path_for(excel_path)
+    if shape == "legacy":
+        payload = _legacy_excel_payload(excel_path)
+        if cache is None:
+            payload.pop("excel_parsed_cache")
+        else:
+            payload["excel_parsed_cache"] = cache
+    else:
+        block_id = "excel-invalid-cache"
+        slot = {
+            "editor": {
+                "version": 1,
+                "cells": {"Sheet1!0,0": {"value": "changed"}},
+            }
+        }
+        if cache is not None:
+            slot["parsedCache"] = cache
+        payload = {
+            "version": 2,
+            "html": (
+                f'<!-- {EXCEL_BLOCK_TYPE} id="{block_id}" src="{excel_path.name}" -->'
+            ),
+            "extras": {"blocks": {block_id: slot}},
+        }
+    sidecar_path.write_text(json.dumps(payload), encoding="utf-8")
+    before = _workspace_snapshot(tmp_path)
+
+    inspection = invoke(
+        sync_client,
+        "workspace_inspect_attachment",
+        {"root": str(tmp_path), "path": excel_path.name},
+    )
+    recovery_response = error_response(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": excel_path.name, "source": "sidecar"},
+    )
+
+    assert inspection["recoveryStatus"] == "unknown"
+    assert inspection["recoverySources"][0] == {
+        "source": "sidecar",
+        "recoveryStatus": "unknown",
+        "sidecarStatus": "unreadable",
+    }
+    assert recovery_response.status_code == 400
+    assert _workspace_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("filters", {"Sheet1!0": ["East"]}),
+        ("filterMode", {"Sheet1": True}),
+    ],
+)
+def test_excel_filter_state_is_not_claimed_as_recoverable(sync_client, tmp_path, field, value):
+    excel_path = _make_excel(tmp_path, "Filtered.xlsx")
+    sidecar_path = sidecar_path_for(excel_path)
+    payload = _legacy_excel_payload(excel_path)
+    payload["excel_editor"][field] = value
+    sidecar_path.write_text(json.dumps(payload), encoding="utf-8")
+    backup_path = sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    backup_path.write_bytes(b"preserve backup bytes")
+    lock_path = sidecar_path.with_name(f"{sidecar_path.name}.lock")
+    lock_path.write_bytes(b"preserve lock bytes")
+    before = _workspace_snapshot(tmp_path)
+
+    inspection = invoke(
+        sync_client,
+        "workspace_inspect_attachment",
+        {"root": str(tmp_path), "path": excel_path.name},
+    )
+    response = error_response(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": excel_path.name, "source": "sidecar"},
+    )
+
+    assert inspection["recoveryStatus"] == "unknown"
+    assert inspection["recommendedSource"] is None
+    assert inspection["recoverySources"][0] == {
+        "source": "sidecar",
+        "recoveryStatus": "unknown",
+        "sidecarStatus": "unreadable",
+    }
+    assert response.status_code == 400
+    assert _workspace_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("invalid_version", [None, True, "1", 2, 99])
+def test_recovery_rejects_invalid_excel_editor_version_without_writing(
+    sync_client, tmp_path, invalid_version
+):
+    excel_path = _make_excel(tmp_path, "Invalid-editor-version.xlsx")
+    sidecar_path = sidecar_path_for(excel_path)
+    payload = _legacy_excel_payload(excel_path)
+    payload["excel_editor"]["version"] = invalid_version
+    sidecar_path.write_text(json.dumps(payload), encoding="utf-8")
+    backup_path = sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    backup_path.write_bytes(b"preserve backup")
+    lock_path = sidecar_path.with_name(f"{sidecar_path.name}.lock")
+    lock_path.write_bytes(b"preserve lock")
+    before = _workspace_snapshot(tmp_path)
+
+    inspection = invoke(
+        sync_client,
+        "workspace_inspect_attachment",
+        {"root": str(tmp_path), "path": excel_path.name},
+    )
+    response = error_response(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": excel_path.name, "source": "sidecar"},
+    )
+
+    assert inspection["recoverySources"][0] == {
+        "source": "sidecar",
+        "recoveryStatus": "unknown",
+        "sidecarStatus": "unreadable",
+    }
+    assert response.status_code == 400
+    assert _workspace_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("document_type", ["pdf", "excel"])
+def test_recovery_treats_missing_editor_version_as_v1(sync_client, tmp_path, document_type):
+    if document_type == "pdf":
+        attachment_path = _make_pdf(tmp_path, "Versionless.pdf")
+        payload = _legacy_pdf_payload(attachment_path)
+        editor_key = "pdf_editor"
+    else:
+        attachment_path = _make_excel(tmp_path, "Versionless.xlsx")
+        payload = _legacy_excel_payload(attachment_path)
+        editor_key = "excel_editor"
+    payload[editor_key].pop("version")
+    sidecar_path = sidecar_path_for(attachment_path)
+    sidecar_path.write_text(json.dumps(payload), encoding="utf-8")
+    before = _workspace_snapshot(tmp_path)
+
+    inspection = invoke(
+        sync_client,
+        "workspace_inspect_attachment",
+        {"root": str(tmp_path), "path": attachment_path.name},
+    )
+    recovery = invoke(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": attachment_path.name, "source": "sidecar"},
+    )
+
+    assert inspection["recoverySources"][0]["recoveryStatus"] == "available"
+    assert recovery["editorState"] == payload[editor_key]
+    assert _workspace_snapshot(tmp_path) == before
 
 
 def test_inspect_attachment_reports_unknown_excel_schema_without_writing(
@@ -343,6 +837,15 @@ def test_inspect_attachment_reports_unknown_excel_schema_without_writing(
         "recoveryStatus": "unknown",
         "sidecarStatus": "unreadable",
         "sidecarPath": sidecar_path.name,
+        "recoverySources": [
+            {
+                "source": "sidecar",
+                "recoveryStatus": "unknown",
+                "sidecarStatus": "unreadable",
+            },
+            {"source": "backup", "recoveryStatus": "none", "sidecarStatus": "missing"},
+        ],
+        "recommendedSource": None,
     }
     assert sidecar_path.read_bytes() == original_sidecar
     assert sidecar_path.stat().st_mtime_ns == original_mtime
@@ -382,6 +885,15 @@ def test_inspect_attachment_reports_unknown_pdf_fields_without_writing(
         "recoveryStatus": "unknown",
         "sidecarStatus": "unreadable",
         "sidecarPath": sidecar_path.name,
+        "recoverySources": [
+            {
+                "source": "sidecar",
+                "recoveryStatus": "unknown",
+                "sidecarStatus": "unreadable",
+            },
+            {"source": "backup", "recoveryStatus": "none", "sidecarStatus": "missing"},
+        ],
+        "recommendedSource": None,
     }
     assert _workspace_snapshot(tmp_path) == before
 
@@ -449,9 +961,85 @@ def test_inspect_attachment_reports_legacy_and_current_editors_as_unknown(
         "workspace_inspect_attachment",
         {"root": str(tmp_path), "path": pdf_path.name},
     )
+    response = error_response(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": pdf_path.name, "source": "sidecar"},
+    )
 
     assert inspection["recoveryStatus"] == "unknown"
     assert inspection["sidecarStatus"] == "unreadable"
+    assert response.status_code == 400
+    assert _workspace_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("invalid_version", [None, True, False])
+def test_recovery_rejects_legacy_sidecar_with_null_or_boolean_version(
+    sync_client, tmp_path, invalid_version
+):
+    pdf_path = _make_pdf(tmp_path, "Invalid-legacy-version.pdf")
+    sidecar_path = sidecar_path_for(pdf_path)
+    payload = _legacy_pdf_payload(pdf_path)
+    payload["version"] = invalid_version
+    sidecar_path.write_text(json.dumps(payload), encoding="utf-8")
+    backup_path = sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    backup_path.write_bytes(b"preserve backup")
+    lock_path = sidecar_path.with_name(f"{sidecar_path.name}.lock")
+    lock_path.write_bytes(b"preserve lock")
+    before = _workspace_snapshot(tmp_path)
+
+    inspection = invoke(
+        sync_client,
+        "workspace_inspect_attachment",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+    response = error_response(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": pdf_path.name, "source": "sidecar"},
+    )
+
+    assert inspection["recoverySources"][0] == {
+        "source": "sidecar",
+        "recoveryStatus": "unknown",
+        "sidecarStatus": "unreadable",
+    }
+    assert response.status_code == 400
+    assert _workspace_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("invalid_version", [None, True, "1", 99])
+def test_recovery_rejects_invalid_pdf_editor_version_without_writing(
+    sync_client, tmp_path, invalid_version
+):
+    pdf_path = _make_pdf(tmp_path, "Invalid-editor-version.pdf")
+    sidecar_path = sidecar_path_for(pdf_path)
+    payload = _legacy_pdf_payload(pdf_path)
+    payload["pdf_editor"]["version"] = invalid_version
+    sidecar_path.write_text(json.dumps(payload), encoding="utf-8")
+    backup_path = sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    backup_path.write_bytes(b"preserve backup")
+    lock_path = sidecar_path.with_name(f"{sidecar_path.name}.lock")
+    lock_path.write_bytes(b"preserve lock")
+    before = _workspace_snapshot(tmp_path)
+
+    inspection = invoke(
+        sync_client,
+        "workspace_inspect_attachment",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+    response = error_response(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": pdf_path.name, "source": "sidecar"},
+    )
+
+    assert inspection["recoverySources"][0] == {
+        "source": "sidecar",
+        "recoveryStatus": "unknown",
+        "sidecarStatus": "unreadable",
+    }
+    assert response.status_code == 400
     assert _workspace_snapshot(tmp_path) == before
 
 
@@ -482,9 +1070,15 @@ def test_inspect_attachment_rejects_unsupported_current_sidecar_version(
         "workspace_inspect_attachment",
         {"root": str(tmp_path), "path": pdf_path.name},
     )
+    response = error_response(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": pdf_path.name, "source": "sidecar"},
+    )
 
     assert inspection["recoveryStatus"] == "unknown"
     assert inspection["sidecarStatus"] == "unreadable"
+    assert response.status_code == 400
     assert _workspace_snapshot(tmp_path) == before
 
 
@@ -581,9 +1175,225 @@ def test_inspect_attachment_reports_corrupt_sidecar_without_forensic_write(sync_
         "recoveryStatus": "unknown",
         "sidecarStatus": "unreadable",
         "sidecarPath": sidecar_path.name,
+        "recoverySources": [
+            {
+                "source": "sidecar",
+                "recoveryStatus": "unknown",
+                "sidecarStatus": "unreadable",
+            },
+            {"source": "backup", "recoveryStatus": "none", "sidecarStatus": "missing"},
+        ],
+        "recommendedSource": None,
     }
     assert sidecar_path.read_bytes() == corrupt_bytes
     assert list(tmp_path.glob(f"{sidecar_path.name}.corrupt-*")) == []
+
+
+@pytest.mark.parametrize("source", ["sidecar", "backup"])
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_attachment_recovery_rejects_non_json_numeric_constants(
+    sync_client, tmp_path, source, constant
+):
+    pdf_path = _make_pdf(tmp_path, "Constants.pdf")
+    sidecar_path = sidecar_path_for(pdf_path)
+    candidate_path = (
+        sidecar_path
+        if source == "sidecar"
+        else sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    )
+    constant_value = {
+        "NaN": float("nan"),
+        "Infinity": float("inf"),
+        "-Infinity": float("-inf"),
+    }[constant]
+    candidate_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pdf_editor": {
+                    "version": 1,
+                    "edits": {"p0-t0": {"text": "changed"}},
+                },
+                "pdf_parsed_cache": {
+                    "sourceHash": SOURCE_HASH,
+                    "parsed": {"constant": constant_value},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    before = _workspace_snapshot(tmp_path)
+
+    inspection = invoke(
+        sync_client,
+        "workspace_inspect_attachment",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+    recovery_response = error_response(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": pdf_path.name, "source": source},
+    )
+
+    selected = inspection["recoverySources"][0 if source == "sidecar" else 1]
+    assert selected == {
+        "source": source,
+        "recoveryStatus": "unknown",
+        "sidecarStatus": "unreadable",
+    }
+    assert recovery_response.status_code == 400
+    assert _workspace_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("source", ["sidecar", "backup"])
+@pytest.mark.parametrize("overflow", ["1e400", "-1e400"])
+def test_attachment_recovery_rejects_out_of_range_json_numbers(
+    sync_client, tmp_path, source, overflow
+):
+    pdf_path = _make_pdf(tmp_path, "Overflow.pdf")
+    sidecar_path = sidecar_path_for(pdf_path)
+    candidate_path = (
+        sidecar_path
+        if source == "sidecar"
+        else sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    )
+    candidate_path.write_text(
+        (
+            '{"version":1,'
+            '"pdf_editor":{"version":1,"edits":{"p0-t0":{"text":"changed"}}},'
+            '"pdf_parsed_cache":{"sourceHash":"'
+            + SOURCE_HASH
+            + '","parsed":{"n":'
+            + overflow
+            + "}}}"
+        ),
+        encoding="utf-8",
+    )
+    before = _workspace_snapshot(tmp_path)
+
+    inspection = invoke(
+        sync_client,
+        "workspace_inspect_attachment",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+    recovery_response = error_response(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": pdf_path.name, "source": source},
+    )
+
+    selected = inspection["recoverySources"][0 if source == "sidecar" else 1]
+    assert selected == {
+        "source": source,
+        "recoveryStatus": "unknown",
+        "sidecarStatus": "unreadable",
+    }
+    assert recovery_response.status_code == 400
+    assert _workspace_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize(
+    ("edits", "expected_status"),
+    [
+        ({"p0-t0": {"text": "changed"}}, "available"),
+        ({"p12-t34": {"text": "changed"}}, "available"),
+        ({}, "none"),
+        ({"1:0": {"text": "unmappable"}}, "unknown"),
+        ({"2:0": {"text": "unmappable"}}, "unknown"),
+        ({"p-1-t0": {"text": "unmappable"}}, "unknown"),
+        ({"p0-t": {"text": "unmappable"}}, "unknown"),
+        (None, "unknown"),
+        ([], "unknown"),
+    ],
+)
+def test_legacy_pdf_edits_require_exportable_pdfjs_item_ids(
+    sync_client, tmp_path, edits, expected_status
+):
+    pdf_path = _make_pdf(tmp_path, "Historical-ids.pdf")
+    sidecar_path = sidecar_path_for(pdf_path)
+    payload = _legacy_pdf_payload(pdf_path)
+    payload["pdf_editor"]["edits"] = edits
+    sidecar_path.write_text(json.dumps(payload), encoding="utf-8")
+    before = _workspace_snapshot(tmp_path)
+
+    inspection = invoke(
+        sync_client,
+        "workspace_inspect_attachment",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+
+    assert inspection["recoverySources"][0]["recoveryStatus"] == expected_status
+    assert inspection["recoverySources"][0]["sidecarStatus"] == (
+        "unreadable" if expected_status == "unknown" else "legacy"
+    )
+    assert _workspace_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("source", ["sidecar", "backup"])
+@pytest.mark.parametrize("target_exists", [True, False], ids=["existing", "dangling"])
+def test_attachment_recovery_rejects_symlinked_candidates_without_following(
+    sync_client, tmp_path, source, target_exists
+):
+    pdf_path = _make_pdf(tmp_path, "Linked.pdf")
+    sidecar_path = sidecar_path_for(pdf_path)
+    candidate_path = (
+        sidecar_path
+        if source == "sidecar"
+        else sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    )
+    external_path = tmp_path.parent / f"{tmp_path.name}-{source}-external.json"
+    external_bytes = json.dumps(
+        {
+            "version": 1,
+            "pdf_editor": {
+                "version": 1,
+                "edits": {"p0-t0": {"text": "do-not-disclose"}},
+            },
+            "pdf_parsed_cache": {
+                "sourceHash": "do-not-disclose-hash",
+                "parsed": {"pages": []},
+            },
+        }
+    ).encode()
+    if target_exists:
+        external_path.write_bytes(external_bytes)
+        external_mtime = external_path.stat().st_mtime_ns
+    candidate_path.symlink_to(external_path)
+    link_target = candidate_path.readlink()
+    link_mtime = candidate_path.lstat().st_mtime_ns
+    before_names = sorted(path.name for path in tmp_path.iterdir())
+
+    inspection_response = sync_client.post(
+        "/api/workspace/invoke",
+        json={
+            "command": "workspace_inspect_attachment",
+            "payload": {"root": str(tmp_path), "path": pdf_path.name},
+        },
+    )
+    recovery_response = error_response(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": pdf_path.name, "source": source},
+    )
+
+    assert inspection_response.status_code == 200
+    inspection = inspection_response.json()
+    selected = inspection["recoverySources"][0 if source == "sidecar" else 1]
+    assert selected == {
+        "source": source,
+        "recoveryStatus": "unknown",
+        "sidecarStatus": "unreadable",
+    }
+    assert recovery_response.status_code == 400
+    assert "do-not-disclose" not in inspection_response.text
+    assert "do-not-disclose" not in recovery_response.text
+    assert candidate_path.is_symlink()
+    assert candidate_path.readlink() == link_target
+    assert candidate_path.lstat().st_mtime_ns == link_mtime
+    assert sorted(path.name for path in tmp_path.iterdir()) == before_names
+    if target_exists:
+        assert external_path.read_bytes() == external_bytes
+        assert external_path.stat().st_mtime_ns == external_mtime
 
 
 def test_inspect_html_attachment_never_requires_recovery(sync_client, tmp_path):
@@ -601,8 +1411,93 @@ def test_inspect_html_attachment_never_requires_recovery(sync_client, tmp_path):
         "recoveryStatus": "none",
         "sidecarStatus": "missing",
         "sidecarPath": sidecar_path_for(html_path).name,
+        "recoverySources": [],
+        "recommendedSource": None,
     }
     assert not sidecar_path_for(html_path).exists()
+
+
+@pytest.mark.parametrize(
+    ("sidecar_bytes", "recovery_status", "sidecar_status"),
+    [
+        (b"{}", "none", "current"),
+        (b"{broken", "unknown", "unreadable"),
+        (b"[]", "unknown", "unreadable"),
+    ],
+)
+def test_inspect_html_sidecar_is_strict_and_never_offers_recovery(
+    sync_client, tmp_path, sidecar_bytes, recovery_status, sidecar_status
+):
+    html_path = tmp_path / "With-sidecar.html"
+    html_path.write_text("<p>reference</p>", encoding="utf-8")
+    sidecar_path = sidecar_path_for(html_path)
+    sidecar_path.write_bytes(sidecar_bytes)
+    backup_path = sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    backup_path.write_bytes(b"ignored HTML backup")
+    lock_path = sidecar_path.with_name(f"{sidecar_path.name}.lock")
+    lock_path.write_bytes(b"existing lock")
+    before = _workspace_snapshot(tmp_path)
+
+    inspection = invoke(
+        sync_client,
+        "workspace_inspect_attachment",
+        {"root": str(tmp_path), "path": html_path.name},
+    )
+
+    assert inspection == {
+        "documentType": "html",
+        "recoveryStatus": recovery_status,
+        "sidecarStatus": sidecar_status,
+        "sidecarPath": sidecar_path.name,
+        "recoverySources": [],
+        "recommendedSource": None,
+    }
+    assert _workspace_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("source", ["", "auto", "main"])
+def test_read_attachment_recovery_rejects_invalid_source_without_writing(
+    sync_client, tmp_path, source
+):
+    pdf_path = _make_pdf(tmp_path, "Invalid-source.pdf")
+    sidecar_path = _write_legacy_pdf_sidecar(pdf_path)
+    backup_path = sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    backup_path.write_bytes(b"backup")
+    lock_path = sidecar_path.with_name(f"{sidecar_path.name}.lock")
+    lock_path.write_bytes(b"lock")
+    before = _workspace_snapshot(tmp_path)
+
+    response = error_response(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": pdf_path.name, "source": source},
+    )
+
+    assert response.status_code == 400
+    assert "source" in response.json()["detail"]
+    assert _workspace_snapshot(tmp_path) == before
+
+
+def test_read_attachment_recovery_rejects_html_without_writing(sync_client, tmp_path):
+    html_path = tmp_path / "Recovery.html"
+    html_path.write_text("<p>reference</p>", encoding="utf-8")
+    sidecar_path = sidecar_path_for(html_path)
+    sidecar_path.write_text("{}", encoding="utf-8")
+    backup_path = sidecar_path.with_name(f"{sidecar_path.name}.bak")
+    backup_path.write_bytes(b"backup")
+    lock_path = sidecar_path.with_name(f"{sidecar_path.name}.lock")
+    lock_path.write_bytes(b"lock")
+    before = _workspace_snapshot(tmp_path)
+
+    response = error_response(
+        sync_client,
+        "workspace_read_attachment_recovery",
+        {"root": str(tmp_path), "path": html_path.name, "source": "sidecar"},
+    )
+
+    assert response.status_code == 400
+    assert "PDF and Excel" in response.json()["detail"]
+    assert _workspace_snapshot(tmp_path) == before
 
 
 def test_inspect_attachment_reports_ambiguous_editor_slots_as_unknown(sync_client, tmp_path):
@@ -999,8 +1894,7 @@ def test_doc_import_external_rejects_unknown_mode(sync_client, tmp_path):
 def test_doc_import_external_replace_overwrites_user_file_and_leaves_sidecar_intact(
     sync_client, tmp_path
 ):
-    """Sidecar-untouched invariant — `mode: "replace"` rewrites the `.md`/`.pdf`/`.xlsx`
-    but the pre-existing `.doxmind` sidecar must be byte-identical afterwards.
+    """Markdown replace leaves its pre-existing `.doxmind` sidecar byte-identical.
 
     The next open will trip the Stale-sidecar / Salvage path (ADR 0002)
     because the markdown_hash no longer matches; that's the right behavior
@@ -1054,32 +1948,60 @@ def test_doc_import_external_replace_overwrites_user_file_and_leaves_sidecar_int
     assert sidecar.stat().st_mtime_ns == sidecar_mtime_before
 
 
-def test_doc_import_external_replace_via_bytes_leaves_sidecar_intact(sync_client, tmp_path):
-    """Replace via the browser-dev `bytes` path; same sidecar invariant."""
-    root = tmp_path
-    dest = root / "Q3.xlsx"
-    dest.write_bytes(b"PK\x03\x04old")
-    sidecar = root / ".Q3.doxmind"
-    sidecar_payload = b'{"version": 1, "id": "x", "html": ""}'
+@pytest.mark.parametrize(
+    ("name", "destination_payload", "incoming_payload"),
+    [
+        ("Spec.pdf", b"%PDF-1.4\nold\n", b"%PDF-1.4\nincoming\n"),
+        ("Q3.xlsx", b"PK\x03\x04old", b"PK\x03\x04incoming"),
+    ],
+)
+def test_doc_import_external_rejects_attachment_replace_without_touching_recovery_evidence(
+    sync_client, tmp_path, name, destination_payload, incoming_payload
+):
+    root = tmp_path / "workspace"
+    root.mkdir()
+    destination = root / name
+    destination.write_bytes(destination_payload)
+    sidecar = sidecar_path_for(destination)
+    sidecar_payload = b'{"version":1,"pdf_editor":{"version":1,"edits":{}}}'
     sidecar.write_bytes(sidecar_payload)
 
-    new_payload = b"PK\x03\x04new bytes"
+    incoming = tmp_path / "Downloads" / name
+    incoming.parent.mkdir(exist_ok=True)
+    incoming.write_bytes(incoming_payload)
 
-    created = invoke(
-        sync_client,
-        "doc_import_external",
-        {
-            "root": str(root),
-            "bytes": list(new_payload),
-            "destFolder": "",
-            "name": "Q3.xlsx",
-            "mode": "replace",
+    destination_mtime = destination.stat().st_mtime_ns
+    sidecar_mtime = sidecar.stat().st_mtime_ns
+    incoming_mtime = incoming.stat().st_mtime_ns
+
+    response = sync_client.post(
+        "/api/workspace/invoke",
+        json={
+            "command": "doc_import_external",
+            "payload": {
+                "root": str(root),
+                "srcPath": str(incoming),
+                "destFolder": "",
+                "name": name,
+                "mode": "replace",
+            },
         },
     )
 
-    assert created["path"] == "Q3.xlsx"
-    assert dest.read_bytes() == new_payload
-    assert sidecar.read_bytes() == sidecar_payload
+    assert response.status_code == 400
+    assert "replace is only available for Markdown pages" in str(response.json()["detail"])
+    assert (destination.read_bytes(), destination.stat().st_mtime_ns) == (
+        destination_payload,
+        destination_mtime,
+    )
+    assert (sidecar.read_bytes(), sidecar.stat().st_mtime_ns) == (
+        sidecar_payload,
+        sidecar_mtime,
+    )
+    assert (incoming.read_bytes(), incoming.stat().st_mtime_ns) == (
+        incoming_payload,
+        incoming_mtime,
+    )
 
 
 def test_doc_import_external_replace_requires_existing_destination(sync_client, tmp_path):
@@ -1277,6 +2199,185 @@ def test_workspace_excel_missing_sidecar_read_synthesizes_markdown_shape_block_s
 
 
 @pytest.mark.parametrize(
+    ("make_file", "block_type", "write_cache_command", "editor", "parsed"),
+    [
+        (
+            _make_pdf,
+            PDF_BLOCK_TYPE,
+            "workspace_write_pdf_parsed_cache",
+            {"version": 1, "edits": {"p0-t0": {"text": "saved"}}},
+            {"pages": [{"index": 0}]},
+        ),
+        (
+            _make_excel,
+            EXCEL_BLOCK_TYPE,
+            "workspace_write_excel_parsed_cache",
+            {"version": 1, "cells": {"Sheet1!0,0": {"value": "saved"}}},
+            {"sheets": [{"id": "Sheet1"}]},
+        ),
+    ],
+)
+def test_workspace_parsed_cache_write_rejects_non_empty_editor_without_mutating_files(
+    sync_client,
+    tmp_path,
+    make_file,
+    block_type,
+    write_cache_command,
+    editor,
+    parsed,
+):
+    file_path = make_file(tmp_path)
+    block_id = f"guarded-{block_type}"
+    sidecar_path = _write_synthetic_sidecar(
+        file_path,
+        block_type=block_type,
+        block_id=block_id,
+        extras={
+            "blocks": {
+                block_id: {
+                    "editor": editor,
+                    "parsedCache": {"sourceHash": "old-hash", "parsed": {"old": True}},
+                }
+            }
+        },
+    )
+    source_before = (file_path.read_bytes(), file_path.stat().st_mtime_ns)
+    sidecar_before = (sidecar_path.read_bytes(), sidecar_path.stat().st_mtime_ns)
+
+    response = error_response(
+        sync_client,
+        write_cache_command,
+        {
+            "root": str(tmp_path),
+            "path": file_path.name,
+            "sourceHash": "new-hash",
+            "parsed": parsed,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "non-empty editor state" in response.json()["detail"]
+    assert (file_path.read_bytes(), file_path.stat().st_mtime_ns) == source_before
+    assert (sidecar_path.read_bytes(), sidecar_path.stat().st_mtime_ns) == sidecar_before
+
+
+@pytest.mark.parametrize(
+    ("make_file", "block_type", "write_cache_command", "orphan_editor", "parsed"),
+    [
+        (
+            _make_pdf,
+            PDF_BLOCK_TYPE,
+            "workspace_write_pdf_parsed_cache",
+            {"version": 1, "edits": {"p0-t0": {"text": "orphaned"}}},
+            {"pages": [{"index": 0}]},
+        ),
+        (
+            _make_excel,
+            EXCEL_BLOCK_TYPE,
+            "workspace_write_excel_parsed_cache",
+            {"version": 1, "cells": {"Sheet1!0,0": {"value": "orphaned"}}},
+            {"sheets": [{"id": "Sheet1"}]},
+        ),
+    ],
+)
+def test_workspace_parsed_cache_write_rejects_orphan_editor_without_mutating_files(
+    sync_client,
+    tmp_path,
+    make_file,
+    block_type,
+    write_cache_command,
+    orphan_editor,
+    parsed,
+):
+    file_path = make_file(tmp_path)
+    block_id = f"canonical-{block_type}"
+    sidecar_path = _write_synthetic_sidecar(
+        file_path,
+        block_type=block_type,
+        block_id=block_id,
+        extras={
+            "blocks": {
+                block_id: {"editor": {}},
+                "orphan-recovery": {"editor": orphan_editor},
+            }
+        },
+    )
+    source_before = (file_path.read_bytes(), file_path.stat().st_mtime_ns)
+    sidecar_before = (sidecar_path.read_bytes(), sidecar_path.stat().st_mtime_ns)
+
+    response = error_response(
+        sync_client,
+        write_cache_command,
+        {
+            "root": str(tmp_path),
+            "path": file_path.name,
+            "sourceHash": "new-hash",
+            "parsed": parsed,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "non-empty editor state" in response.json()["detail"]
+    assert (file_path.read_bytes(), file_path.stat().st_mtime_ns) == source_before
+    assert (sidecar_path.read_bytes(), sidecar_path.stat().st_mtime_ns) == sidecar_before
+
+
+@pytest.mark.parametrize(
+    ("make_file", "block_type", "write_cache_command", "parsed"),
+    [
+        (
+            _make_pdf,
+            PDF_BLOCK_TYPE,
+            "workspace_write_pdf_parsed_cache",
+            {"pages": [{"index": 0}]},
+        ),
+        (
+            _make_excel,
+            EXCEL_BLOCK_TYPE,
+            "workspace_write_excel_parsed_cache",
+            {"sheets": [{"id": "Sheet1"}]},
+        ),
+    ],
+)
+def test_workspace_parsed_cache_write_allows_empty_editor_state(
+    sync_client,
+    tmp_path,
+    make_file,
+    block_type,
+    write_cache_command,
+    parsed,
+):
+    file_path = make_file(tmp_path)
+    block_id = f"empty-{block_type}"
+    sidecar_path = _write_synthetic_sidecar(
+        file_path,
+        block_type=block_type,
+        block_id=block_id,
+        extras={"blocks": {block_id: {"editor": {}}}, "keep": {"value": True}},
+    )
+    source_before = file_path.read_bytes()
+
+    invoke(
+        sync_client,
+        write_cache_command,
+        {
+            "root": str(tmp_path),
+            "path": file_path.name,
+            "sourceHash": "fresh-hash",
+            "parsed": parsed,
+        },
+    )
+
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert file_path.read_bytes() == source_before
+    assert sidecar["extras"]["keep"] == {"value": True}
+    assert sidecar["extras"]["blocks"][block_id] == {
+        "editor": {},
+        "parsedCache": {"sourceHash": "fresh-hash", "parsed": parsed},
+    }
+
+
+@pytest.mark.parametrize(
     ("make_file", "write_legacy", "write_cache_command", "legacy_keys", "block_type"),
     [
         (
@@ -1305,7 +2406,10 @@ def test_workspace_legacy_second_class_sidecar_is_migration_input_only(
     block_type,
 ):
     file_path = make_file(tmp_path)
-    write_legacy(file_path)
+    legacy_sidecar_path = write_legacy(file_path)
+    legacy_sidecar = json.loads(legacy_sidecar_path.read_text(encoding="utf-8"))
+    legacy_sidecar[legacy_keys[0]] = {}
+    legacy_sidecar_path.write_text(json.dumps(legacy_sidecar), encoding="utf-8")
 
     invoke(
         sync_client,
@@ -1364,12 +2468,12 @@ def test_workspace_pdf_migrated_slot_writes_preserve_block_id_and_merge_extras(
     assert "pdf_parsed_cache" not in sidecar
 
 
-def test_workspace_excel_migrated_slot_writes_preserve_block_id_and_merge_extras(
+def test_workspace_excel_empty_editor_cache_write_preserves_block_id_and_merge_extras(
     sync_client, tmp_path
 ):
     xlsx_path = _make_excel(tmp_path)
     block_id = "stable-excel-block"
-    editor = {"version": 1, "sheets": [{"name": "Q1"}]}
+    editor = {}
     _write_synthetic_sidecar(
         xlsx_path,
         block_type=EXCEL_BLOCK_TYPE,
@@ -1581,37 +2685,109 @@ def test_workspace_maps_corrupt_sidecar_error_to_structured_422(sync_client, tmp
     )
 
 
-def test_doc_delete_pdf_removes_pair_from_workspace(sync_client, tmp_path, patched_os_trash):
+def test_workspace_delete_folder_rejects_nested_pdf_recovery_evidence(
+    sync_client, tmp_path, patched_os_trash
+):
+    folder = tmp_path / "archive"
+    folder.mkdir()
+    pdf_path = _make_pdf(folder, "Spec.pdf")
+    sidecar_path = sidecar_path_for(pdf_path)
+    sidecar_path.write_bytes(b"pdf sidecar")
+    sidecar_path.with_name(f"{sidecar_path.name}.bak").write_bytes(b"pdf backup")
+    sidecar_path.with_name(f"{sidecar_path.name}.lock").write_bytes(b"pdf lock")
+    before = _workspace_snapshot(tmp_path)
+
+    response = error_response(
+        sync_client,
+        "workspace_delete_folder",
+        {"root": str(tmp_path), "path": "archive"},
+    )
+
+    assert response.status_code == 400
+    assert "folder contains attachment recovery evidence" in response.json()["detail"]
+    assert _workspace_snapshot(tmp_path) == before
+
+
+def test_workspace_delete_folder_rejects_orphaned_xlsx_recovery_evidence(
+    sync_client, tmp_path, patched_os_trash
+):
+    folder = tmp_path / "archive"
+    folder.mkdir()
+    (folder / ".Budget.xlsx.doxmind.bak").write_bytes(b"xlsx backup")
+    (folder / ".Budget.xlsx.doxmind.lock").write_bytes(b"xlsx lock")
+    (folder / ".Budget.xlsx.doxmind.corrupt-20260721").write_bytes(b"xlsx forensic copy")
+    before = _workspace_snapshot(tmp_path)
+
+    response = error_response(
+        sync_client,
+        "workspace_delete_folder",
+        {"root": str(tmp_path), "path": "archive"},
+    )
+
+    assert response.status_code == 400
+    assert "folder contains attachment recovery evidence" in response.json()["detail"]
+    assert _workspace_snapshot(tmp_path) == before
+
+
+def test_workspace_delete_folder_still_deletes_page_only_tree(
+    sync_client, tmp_path, patched_os_trash
+):
+    folder = tmp_path / "notes"
+    folder.mkdir()
+    (folder / "Page.md").write_text("# Page\n", encoding="utf-8")
+    (folder / ".Page.doxmind").write_bytes(b"page sidecar")
+
+    result = invoke(
+        sync_client,
+        "workspace_delete_folder",
+        {"root": str(tmp_path), "path": "notes"},
+    )
+
+    assert result == {"path": "notes", "sidecarPath": None}
+    assert not folder.exists()
+
+
+def test_doc_delete_pdf_rejects_without_touching_recovery_evidence(
+    sync_client, tmp_path, patched_os_trash
+):
     pdf_path = _make_pdf(tmp_path, "Spec.pdf")
     sidecar_path = sidecar_path_for(pdf_path)
     sidecar_path.write_text(json.dumps({"id": "pdf"}), encoding="utf-8")
+    sidecar_path.with_name(f"{sidecar_path.name}.bak").write_bytes(b"pdf backup")
+    sidecar_path.with_name(f"{sidecar_path.name}.lock").write_bytes(b"pdf lock")
+    before = _workspace_snapshot(tmp_path)
 
-    result = invoke(
+    response = error_response(
         sync_client,
         "doc_delete",
         {"root": str(tmp_path), "path": "Spec.pdf"},
     )
 
-    assert result == {"path": "Spec.pdf", "sidecarPath": ".Spec.pdf.doxmind"}
-    assert not pdf_path.exists()
-    assert not sidecar_path.exists()
+    assert response.status_code == 400
+    assert "attachments cannot be deleted" in response.json()["detail"]
+    assert _workspace_snapshot(tmp_path) == before
 
 
-def test_doc_delete_xlsx_removes_pair_from_workspace(sync_client, tmp_path, patched_os_trash):
+def test_doc_delete_xlsx_rejects_without_touching_recovery_evidence(
+    sync_client, tmp_path, patched_os_trash
+):
     xlsx_path = tmp_path / "Budget.xlsx"
     xlsx_path.write_bytes(b"PK\x03\x04")
     sidecar_path = sidecar_path_for(xlsx_path)
     sidecar_path.write_text(json.dumps({"id": "xlsx"}), encoding="utf-8")
+    sidecar_path.with_name(f"{sidecar_path.name}.bak").write_bytes(b"xlsx backup")
+    sidecar_path.with_name(f"{sidecar_path.name}.lock").write_bytes(b"xlsx lock")
+    before = _workspace_snapshot(tmp_path)
 
-    result = invoke(
+    response = error_response(
         sync_client,
         "doc_delete",
         {"root": str(tmp_path), "path": "Budget.xlsx"},
     )
 
-    assert result == {"path": "Budget.xlsx", "sidecarPath": ".Budget.xlsx.doxmind"}
-    assert not xlsx_path.exists()
-    assert not sidecar_path.exists()
+    assert response.status_code == 400
+    assert "attachments cannot be deleted" in response.json()["detail"]
+    assert _workspace_snapshot(tmp_path) == before
 
 
 def test_doc_delete_rejects_unknown_extension(sync_client, tmp_path, patched_os_trash):
@@ -1625,7 +2801,7 @@ def test_doc_delete_rejects_unknown_extension(sync_client, tmp_path, patched_os_
     )
 
     assert response.status_code == 400
-    assert "must end in .md" in response.json()["detail"]
+    assert "attachments cannot be deleted" in response.json()["detail"]
     assert note_path.exists()
 
 
@@ -1644,38 +2820,97 @@ def test_doc_rename_markdown_moves_pair(sync_client, tmp_path):
     assert not doc.exists()
 
 
-def test_doc_rename_pdf_keeps_extension_and_moves_sidecar(sync_client, tmp_path):
+def test_doc_rename_pdf_rejects_without_touching_recovery_evidence(sync_client, tmp_path):
     pdf_path = _make_pdf(tmp_path, "Spec.pdf")
     sidecar_path = sidecar_path_for(pdf_path)
     sidecar_path.write_text(json.dumps({"id": "pdf"}), encoding="utf-8")
+    sidecar_path.with_name(f"{sidecar_path.name}.bak").write_bytes(b"pdf backup")
+    sidecar_path.with_name(f"{sidecar_path.name}.lock").write_bytes(b"pdf lock")
+    before = _workspace_snapshot(tmp_path)
 
-    result = invoke(
+    response = error_response(
         sync_client,
         "doc_rename",
         {"root": str(tmp_path), "oldPath": "Spec.pdf", "newPath": "Report.pdf"},
     )
 
-    assert result["path"] == "Report.pdf"
-    assert result["documentType"] == "pdf"
-    assert not pdf_path.exists()
-    assert (tmp_path / "Report.pdf").exists()
-    assert not sidecar_path.exists()
-    assert sidecar_path_for(tmp_path / "Report.pdf").exists()
+    assert response.status_code == 400
+    assert "attachments cannot be renamed or moved" in response.json()["detail"]
+    assert _workspace_snapshot(tmp_path) == before
 
 
-def test_doc_rename_xlsx_keeps_extension(sync_client, tmp_path):
+def test_doc_rename_xlsx_rejects_without_touching_recovery_evidence(sync_client, tmp_path):
     xlsx_path = _make_excel(tmp_path, "Budget.xlsx")
+    sidecar_path = sidecar_path_for(xlsx_path)
+    sidecar_path.write_bytes(b"xlsx sidecar")
+    sidecar_path.with_name(f"{sidecar_path.name}.bak").write_bytes(b"xlsx backup")
+    sidecar_path.with_name(f"{sidecar_path.name}.lock").write_bytes(b"xlsx lock")
+    before = _workspace_snapshot(tmp_path)
 
-    result = invoke(
+    response = error_response(
         sync_client,
         "doc_rename",
         {"root": str(tmp_path), "oldPath": "Budget.xlsx", "newPath": "Q1.xlsx"},
     )
 
-    assert result["path"] == "Q1.xlsx"
-    assert result["documentType"] == "excel"
-    assert (tmp_path / "Q1.xlsx").exists()
-    assert not xlsx_path.exists()
+    assert response.status_code == 400
+    assert "attachments cannot be renamed or moved" in response.json()["detail"]
+    assert _workspace_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("source_name", ["Spec.pdf", "Budget.xlsx", "Archive.html"])
+def test_doc_move_attachment_rejects_without_touching_recovery_evidence(
+    sync_client, tmp_path, source_name
+):
+    source_path = tmp_path / source_name
+    source_path.write_bytes(b"attachment source")
+    sidecar_path = sidecar_path_for(source_path)
+    sidecar_path.write_bytes(b"attachment sidecar")
+    sidecar_path.with_name(f"{sidecar_path.name}.bak").write_bytes(b"attachment backup")
+    sidecar_path.with_name(f"{sidecar_path.name}.lock").write_bytes(b"attachment lock")
+    before = _workspace_snapshot(tmp_path)
+
+    response = error_response(
+        sync_client,
+        "doc_move",
+        {"root": str(tmp_path), "oldPath": source_name, "newPath": f"archive/{source_name}"},
+    )
+
+    assert response.status_code == 400
+    assert "attachments cannot be renamed or moved" in response.json()["detail"]
+    assert _workspace_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize(
+    ("command", "source_name"),
+    [("workspace_rename_folder", "Spec.pdf"), ("doc_move", "Budget.xlsx")],
+)
+def test_folder_move_keeps_attachment_and_all_recovery_evidence(
+    sync_client, tmp_path, command, source_name
+):
+    folder = tmp_path / "inbox"
+    folder.mkdir()
+    source_path = folder / source_name
+    source_path.write_bytes(b"attachment source")
+    sidecar_path = sidecar_path_for(source_path)
+    sidecar_path.write_bytes(b"attachment sidecar")
+    sidecar_path.with_name(f"{sidecar_path.name}.bak").write_bytes(b"attachment backup")
+    sidecar_path.with_name(f"{sidecar_path.name}.lock").write_bytes(b"attachment lock")
+    before = _workspace_snapshot(folder)
+
+    result = invoke(
+        sync_client,
+        command,
+        {"root": str(tmp_path), "oldPath": "inbox", "newPath": "archive/inbox"},
+    )
+
+    if command == "doc_move":
+        assert result == {"kind": "folder", "path": "archive/inbox"}
+    else:
+        assert result is None
+    destination = tmp_path / "archive" / "inbox"
+    assert not folder.exists()
+    assert _workspace_snapshot(destination) == before
 
 
 def test_doc_rename_rejects_type_change(sync_client, tmp_path):

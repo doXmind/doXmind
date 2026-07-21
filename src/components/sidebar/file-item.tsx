@@ -120,32 +120,17 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
             } else if (contextMenuFocusIndex === 1) {
               setContextMenu(null);
               setContextMenuFocusIndex(-1);
-              setNewName(getNameWithoutExtension(file.name));
-              setIsRenaming(true);
-            } else if (contextMenuFocusIndex === 2) {
-              setContextMenu(null);
-              setContextMenuFocusIndex(-1);
               revealFileInFinder(file).catch((error) => {
                 log.error("Failed to reveal file in Finder", error);
                 const { title, description } = getErrorMessage(error);
                 notify.error(title, { description });
               });
-            } else if (contextMenuFocusIndex === 3 && file.parentId) {
-              setContextMenu(null);
-              setContextMenuFocusIndex(-1);
-              moveFileToFolder(file.id, null).catch((error) => {
-                log.error("Failed to move file to root", error);
-                notify.error(t("failedToMove"));
-              });
-            } else if (contextMenuFocusIndex === (file.parentId ? 4 : 3)) {
-              setContextMenu(null);
-              setContextMenuFocusIndex(-1);
-              handleDelete();
             }
             break;
           }
           // Execute the action based on focused index
-          // Indices: 0=Rename, 1=Reveal, [2=MoveToRoot], 2+offset..4+offset=Export, 5+offset=Delete
+          // Indices: 0=Rename, 1=Reveal, [2=MoveToRoot], 2+offset..3+offset=Export,
+          // 4+offset=Delete
           if (contextMenuFocusIndex === 0) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
@@ -176,10 +161,6 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
             setContextMenuFocusIndex(-1);
             handleExport("pdf");
           } else if (contextMenuFocusIndex === 4 + exportOffset) {
-            setContextMenu(null);
-            setContextMenuFocusIndex(-1);
-            handleExport("docx");
-          } else if (contextMenuFocusIndex === 5 + exportOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
             handleDelete();
@@ -237,11 +218,12 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   const handleClick = (e?: React.MouseEvent) => {
     if (isRenaming) return;
 
-    // Multi-select: Ctrl+click toggles selection, Shift+click selects range
-    if (e?.ctrlKey || e?.metaKey) {
+    // Only Pages participate in bulk mutations. Attachment clicks always open
+    // the attachment, even when a selection modifier is held.
+    if (!isAttachment && (e?.ctrlKey || e?.metaKey)) {
       toggleFileSelection(file.id);
       lastClickedFileId = file.id;
-    } else if (e?.shiftKey && lastClickedFileId) {
+    } else if (!isAttachment && e?.shiftKey && lastClickedFileId) {
       selectFileRange(lastClickedFileId, file.id);
     } else {
       // Normal click: clear selection if any, then set as current file.
@@ -252,12 +234,15 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
         clearSelection();
       }
       setCurrentFile(file.id);
-      lastClickedFileId = file.id;
+      if (!isAttachment) {
+        lastClickedFileId = file.id;
+      }
     }
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isAttachment) return;
     setNewName(getNameWithoutExtension(file.name));
     setIsRenaming(true);
   };
@@ -265,19 +250,29 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   // Auto-enter rename mode for newly created files
   useEffect(() => {
     if (file.id === justCreatedFileId) {
-      setNewName(getNameWithoutExtension(file.name));
-      setIsRenaming(true);
+      if (!isAttachment) {
+        setNewName(getNameWithoutExtension(file.name));
+        setIsRenaming(true);
+      }
       clearJustCreatedFileId();
     }
-  }, [file.id, justCreatedFileId, file.name, clearJustCreatedFileId]);
+  }, [file.id, justCreatedFileId, file.name, clearJustCreatedFileId, isAttachment]);
 
   // Drag handler for moving files to folders
   const handleDragStart = (e: React.DragEvent) => {
+    if (isAttachment) {
+      e.preventDefault();
+      return;
+    }
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", file.id);
   };
 
   const handleRename = async () => {
+    if (isAttachment) {
+      setIsRenaming(false);
+      return;
+    }
     const trimmedName = newName.trim();
     // Bail on empty or unchanged names before any I/O. Compare against the
     // displayed (extension-stripped) name — that's what the input shows.
@@ -285,10 +280,8 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
       setIsRenaming(false);
       return;
     }
-    // The display name has its extension stripped, so recover the real filename
-    // from the storage handle. Deriving the extension from the stripped display
-    // name would default every type to ".md" and the backend would reject a
-    // .pdf/.xlsx rename.
+    // Preserve whether the Page uses .md or .markdown when rebuilding the
+    // filename from the extension-stripped display name.
     const currentFilename =
       file.storageHandle?.relPath?.split("/").pop() ||
       file.storageHandle?.path?.split("/").pop() ||
@@ -318,10 +311,12 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
 
   const handleDelete = (e?: React.MouseEvent) => {
     e?.stopPropagation();
+    if (isAttachment) return;
     setIsDeleteConfirmOpen(true);
   };
 
   const handleDeleteConfirmed = async () => {
+    if (isAttachment) return;
     try {
       await deleteFile(file.id);
       const nextId = useFileStore.getState().currentFileId;
@@ -338,7 +333,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
     }
   };
 
-  const handleExport = (format: "markdown" | "pdf" | "docx") => {
+  const handleExport = (format: "markdown" | "pdf") => {
     const formatLabel = format === "markdown" ? "Markdown" : format.toUpperCase();
 
     // PDF: route through the PyMuPDF export pipeline. The orchestrator
@@ -361,11 +356,6 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
           notify.error(t("failedToExport", { format: formatLabel }));
         }
       })();
-      return;
-    }
-
-    if (format !== "markdown") {
-      notify.error(t("diskExportOnlyMarkdown"));
       return;
     }
 
@@ -398,6 +388,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   // Context menu action handlers (close menu, then execute)
   const handleContextMenuRename = () => {
     setContextMenu(null);
+    if (isAttachment) return;
     setNewName(getNameWithoutExtension(file.name));
     setIsRenaming(true);
   };
@@ -430,6 +421,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
 
   const handleContextMenuMoveToRoot = async () => {
     setContextMenu(null);
+    if (isAttachment) return;
     try {
       await moveFileToFolder(file.id, null);
     } catch (error) {
@@ -440,10 +432,11 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
 
   const handleContextMenuDelete = () => {
     setContextMenu(null);
+    if (isAttachment) return;
     handleDelete();
   };
 
-  const handleContextMenuExport = (format: "markdown" | "pdf" | "docx") => {
+  const handleContextMenuExport = (format: "markdown" | "pdf") => {
     setContextMenu(null);
     handleExport(format);
   };
@@ -483,7 +476,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
       // Tauri drag-drop listener resolves a drop on a file row to that
       // file's parent folder.
       data-drop-target-id={file.id}
-      draggable={!isRenaming && !isSelectionMode}
+      draggable={!isAttachment && !isRenaming && !isSelectionMode}
       onDragStart={handleDragStart}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
@@ -502,7 +495,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
       style={{ paddingLeft: getSidebarTreePaddingLeft(depth) }}
     >
       {/* Checkbox for multi-select */}
-      {(isSelectionMode || isSelected) && (
+      {!isAttachment && (isSelectionMode || isSelected) && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -613,6 +606,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
               isAttachment={isAttachment}
               onOpenExternally={handleOpenExternally}
               onRename={() => {
+                if (isAttachment) return;
                 setNewName(getNameWithoutExtension(file.name));
                 setIsRenaming(true);
               }}
@@ -626,6 +620,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
                 }
               }}
               onMoveToRoot={async () => {
+                if (isAttachment) return;
                 try {
                   await moveFileToFolder(file.id, null);
                 } catch (error) {
@@ -672,22 +667,24 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
           document.body
         )}
 
-      <ConfirmModal
-        open={isDeleteConfirmOpen}
-        onClose={() => setIsDeleteConfirmOpen(false)}
-        onConfirm={handleDeleteConfirmed}
-        title={
-          isCurrentFileDirty
-            ? t("moveToTrashTitleUnsaved", { name: file.name })
-            : t("moveToTrashTitleSingle", { name: file.name })
-        }
-        description={
-          isCurrentFileDirty
-            ? t("moveToTrashDescUnsaved")
-            : t("moveToTrashDescSingle", { sidecar: sidecarFilenameFor(file.name) })
-        }
-        confirmLabel={t("moveToTrash")}
-      />
+      {!isAttachment && (
+        <ConfirmModal
+          open={isDeleteConfirmOpen}
+          onClose={() => setIsDeleteConfirmOpen(false)}
+          onConfirm={handleDeleteConfirmed}
+          title={
+            isCurrentFileDirty
+              ? t("moveToTrashTitleUnsaved", { name: file.name })
+              : t("moveToTrashTitleSingle", { name: file.name })
+          }
+          description={
+            isCurrentFileDirty
+              ? t("moveToTrashDescUnsaved")
+              : t("moveToTrashDescSingle", { sidecar: sidecarFilenameFor(file.name) })
+          }
+          confirmLabel={t("moveToTrash")}
+        />
+      )}
     </div>
   );
 }

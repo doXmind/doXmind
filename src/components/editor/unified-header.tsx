@@ -13,6 +13,7 @@ import {
   Loader2,
   Save,
   X,
+  File as FileIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -52,6 +53,7 @@ function TabDocumentIcon({ file }: { file: FileItem }) {
   if (isPdfFile(file)) return <PdfGlyph className="h-4 w-4" />;
   if (isExcelFile(file)) return <SpreadsheetGlyph className="h-4 w-4" />;
   if (/\.csv$/i.test(file.name)) return <CsvGlyph className="h-4 w-4" />;
+  if (!isMarkdownFile(file)) return <FileIcon className="h-4 w-4" />;
   return <MarkdownGlyph className="h-4 w-4 text-[var(--sidebar-icon)]" />;
 }
 
@@ -83,7 +85,6 @@ export function UnifiedHeader() {
   // Only show a title when an actual document is loaded — on the
   // welcome screen there's no file to title, so showing "Untitled"
   // would just be noise.
-  const isExcel = currentFile ? isExcelFile(currentFile) : false;
   const isCurrentPage = currentFile ? isMarkdownFile(currentFile) : false;
   const title = currentFileName ? getDisplayName(currentFileName) : "";
   const closeRequestFile = closeRequestId
@@ -117,26 +118,10 @@ export function UnifiedHeader() {
     [isMacTauri]
   );
 
-  const handleExport = async (format: "markdown" | "pdf" | "xlsx") => {
+  const handleExport = async (format: "markdown" | "pdf") => {
     const { currentFileId, files } = useFileStore.getState();
     const currentFile = currentFileId ? files.find((file) => file.id === currentFileId) : undefined;
     if (!currentFile) return;
-
-    // PDF export when the active document is a PDF: hand off to the PDF
-    // editor (PyMuPDF redact + insert_htmlbox pipeline). The editor owns
-    // the raw bytes + edits, so it does the actual download.
-    if (format === "pdf" && isPdfFile(currentFile)) {
-      window.dispatchEvent(new CustomEvent("doxmind:export-pdf"));
-      return;
-    }
-
-    // Excel export — same pattern. The Excel editor holds the original
-    // bytes plus the sidecar edit payload and round-trips them through
-    // /api/excel/export-edited.
-    if (format === "xlsx" && isExcelFile(currentFile)) {
-      window.dispatchEvent(new CustomEvent("doxmind:export-xlsx"));
-      return;
-    }
 
     // Markdown -> PDF: render with the local Python/PyMuPDF sidecar, then let
     // the desktop shell write the returned PDF bytes to the selected file.
@@ -169,10 +154,6 @@ export function UnifiedHeader() {
   };
 
   const handleFind = () => {
-    if (currentFile && isExcelFile(currentFile)) {
-      window.dispatchEvent(new CustomEvent("doxmind:excel-find"));
-      return;
-    }
     toggleSearchBar();
   };
 
@@ -473,8 +454,8 @@ export function UnifiedHeader() {
                   </DropdownMenuTrigger>
                 </Tooltip>
                 <DropdownMenuContent align="end" className="w-56">
-                  {/* Save state lives in the bottom status bar for Markdown;
-                        mirrored here because PDF/Excel have no status bar. */}
+                  {/* Save state lives in the Page status bar and is mirrored
+                      here so the compact menu remains self-contained. */}
                   <div className="text-ui-xs flex items-center gap-1.5 px-2 py-1.5 text-muted-foreground">
                     {isSaving ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -506,25 +487,18 @@ export function UnifiedHeader() {
 
                   <DropdownMenuSeparator />
 
-                  {isExcel ? (
-                    <DropdownMenuItem onClick={() => handleExport("xlsx")}>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
                       <Download className="mr-2 h-4 w-4" />
-                      Export as Excel
-                    </DropdownMenuItem>
-                  ) : (
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <Download className="mr-2 h-4 w-4" />
-                        {t("export")}
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent>
-                        <DropdownMenuItem onClick={() => handleExport("markdown")}>
-                          Markdown
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleExport("pdf")}>PDF</DropdownMenuItem>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                  )}
+                      {t("export")}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuItem onClick={() => handleExport("markdown")}>
+                        Markdown
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleExport("pdf")}>PDF</DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
 
                   <DropdownMenuItem onClick={handleFind}>
                     <Search className="mr-2 h-4 w-4" />

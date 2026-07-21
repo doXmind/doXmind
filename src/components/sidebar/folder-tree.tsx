@@ -43,6 +43,7 @@ import {
 import { ImportError } from "@/lib/storage";
 import { ImportConflictModal } from "./import-conflict-modal";
 import { getSidebarTreePaddingLeft } from "./tree-layout";
+import { isMarkdownFile } from "@/lib/document-types";
 
 const log = storeLogger.child("FolderTree");
 
@@ -150,7 +151,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   );
 
   // Build a D1-shaped tree snapshot from the file store. The policy module
-  // only needs the four fields it asks for, so we strip out everything else
+  // only needs identity, hierarchy, and attachment status, so we strip out everything else
   // — keeps the verdict path independent of FileItem evolution.
   const dndTree: DnDNode[] = useMemo(
     () =>
@@ -158,6 +159,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         id: f.id,
         name: f.name,
         isFolder: f.isFolder,
+        isAttachment: !f.isFolder && !isMarkdownFile(f),
         parentId: f.parentId,
       })),
     [files]
@@ -415,6 +417,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     switch (decision.verdict) {
       case "cycle":
       case "would-be-self":
+      case "attachment-source":
         // Cursor already showed not-allowed during the drag; nothing to do
         // on drop beyond eating the event so the parent doesn't pick it up.
         return;

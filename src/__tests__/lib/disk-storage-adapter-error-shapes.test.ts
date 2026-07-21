@@ -109,4 +109,23 @@ describe("DiskStorageAdapter primary creation boundary", () => {
 
     expect(directInvoke).not.toHaveBeenCalled();
   });
+
+  it.each(["Spec.pdf", "Forecast.xlsx", "Data.csv"])(
+    "rejects attachment replace before invoking the backend for %s",
+    async (name) => {
+      const directInvoke = vi.fn();
+      const adapter = new DiskStorageAdapter({ root: "/workspace", invoke: directInvoke });
+
+      await expect(
+        adapter.importExternal({
+          name,
+          parent: null,
+          bytes: new Uint8Array([1, 2, 3]),
+          mode: "replace",
+        })
+      ).rejects.toMatchObject({ code: "replace-not-allowed" });
+
+      expect(directInvoke).not.toHaveBeenCalled();
+    }
+  );
 });

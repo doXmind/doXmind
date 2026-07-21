@@ -9,6 +9,14 @@ describe("attachment inspection", () => {
       recoveryStatus: "available" as const,
       sidecarStatus: "legacy" as const,
       sidecarPath: ".Spec.pdf.doxmind",
+      recoverySources: [
+        {
+          source: "sidecar" as const,
+          recoveryStatus: "available" as const,
+          sidecarStatus: "legacy" as const,
+        },
+      ],
+      recommendedSource: "sidecar" as const,
     };
     const invoke = vi.fn().mockResolvedValue(inspection);
     const adapter = new DiskStorageAdapter({ root: "/workspace", invoke });
@@ -26,6 +34,36 @@ describe("attachment inspection", () => {
       root: "/workspace",
       path: "Research/Spec.pdf",
     });
+  });
+
+  it("reads one explicitly selected recovery candidate without using a legacy editor reader", async () => {
+    const recovery = {
+      documentType: "pdf" as const,
+      source: "backup" as const,
+      sidecarStatus: "legacy" as const,
+      sourceHash: "a".repeat(64),
+      editorState: { version: 1 as const, edits: { "p0-t0": { text: "Recovered" } } },
+    };
+    const invoke = vi.fn().mockResolvedValue(recovery);
+    const adapter = new DiskStorageAdapter({ root: "/workspace", invoke });
+    const handle: DocumentHandle = {
+      mode: "disk",
+      id: "path:spec",
+      kind: "document",
+      documentType: "pdf",
+      path: "Research/Spec.pdf",
+      relPath: "Research/Spec.pdf",
+    };
+
+    await expect(adapter.readAttachmentRecovery(handle, "backup")).resolves.toEqual(recovery);
+    expect(invoke).toHaveBeenCalledWith("workspace_read_attachment_recovery", {
+      root: "/workspace",
+      path: "Research/Spec.pdf",
+      source: "backup",
+    });
+    expect(invoke.mock.calls.flat().join(" ")).not.toMatch(
+      /workspace_(?:read|write)_(?:pdf|excel)/
+    );
   });
 
   it("keeps attachments out of the Page read contract", async () => {

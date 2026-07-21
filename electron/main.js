@@ -24,6 +24,7 @@ const { findFreePort, spawnSidecar, waitForHealth } = require("./sidecar");
 const { isWorkspaceCommand, proxyWorkspace } = require("./workspace-proxy");
 const { createAssetScope } = require("./asset-scope");
 const { WindowRegistry, normalizeOpenPath } = require("./window-registry");
+const { saveWindowPdf } = require("./pdf-save");
 const menus = require("./menus");
 const { createWindowLifecycle } = require("./window-lifecycle");
 
@@ -207,16 +208,6 @@ function resolveDroppedPath(p) {
   } catch {
     return null;
   }
-}
-
-function saveWindowPdf({ targetPath, bytes }) {
-  if (!targetPath) throw new Error("save_window_pdf requires targetPath");
-  const buf = Buffer.from(bytes || []);
-  if (buf.subarray(0, 5).toString("latin1") !== "%PDF-") {
-    throw new Error("payload is not a PDF (missing %PDF- header)");
-  }
-  fs.writeFileSync(targetPath, buf);
-  return null;
 }
 
 function registerEventListener(sender, args) {

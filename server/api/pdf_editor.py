@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import Response
@@ -27,6 +28,17 @@ from exceptions import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _parse_finite_json_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError(f"JSON number is out of range: {value}")
+    return parsed
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"invalid JSON numeric constant: {value}")
 
 
 def _parse_page_indexes(raw: str | None) -> list[int] | None:
@@ -96,6 +108,10 @@ async def parse_blocks(
 async def export_edited(
     file: UploadFile = File(..., description="Original PDF binary"),
     edits: str = Form(..., description="JSON-encoded edit payload"),
+    strict_recovery: bool = Form(
+        False,
+        description="Reject any recovery payload that cannot be applied completely",
+    ),
 ):
     """Apply paragraph / single-run / free-text / highlight edits to a PDF.
 
@@ -119,8 +135,12 @@ async def export_edited(
         )
 
     try:
-        payload = json.loads(edits)
-    except json.JSONDecodeError as exc:
+        payload = json.loads(
+            edits,
+            parse_float=_parse_finite_json_float,
+            parse_constant=_reject_json_constant,
+        )
+    except (json.JSONDecodeError, ValueError) as exc:
         raise BadRequestError(message="Invalid JSON in 'edits'") from exc
     if not isinstance(payload, dict):
         raise BadRequestError(message="'edits' must be a JSON object")
@@ -128,7 +148,11 @@ async def export_edited(
     from services.pdf_export import export_edited_pdf
 
     try:
-        edited_bytes = export_edited_pdf(pdf_bytes, payload)
+        edited_bytes = export_edited_pdf(
+            pdf_bytes,
+            payload,
+            strict_recovery=strict_recovery,
+        )
     except ValueError as exc:
         raise BadRequestError(message=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - defensive

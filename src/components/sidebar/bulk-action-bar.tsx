@@ -16,6 +16,7 @@ import { notify } from "@/lib/notifications";
 import { getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
+import { isMarkdownFile } from "@/lib/document-types";
 
 const log = storeLogger.child("BulkActionBar");
 
@@ -28,14 +29,17 @@ export function BulkActionBar() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const folders = getFolders();
-  const selectedCount = selectedFileIds.size;
+  const selectedPageIds = Array.from(selectedFileIds).filter((fileId) => {
+    const file = files.find((item) => item.id === fileId);
+    return file && !file.isFolder && isMarkdownFile(file);
+  });
+  const selectedCount = selectedPageIds.length;
 
   if (selectedCount === 0) return null;
 
   const handleMove = async (folderId: string | null) => {
     try {
-      const fileIds = Array.from(selectedFileIds);
-      await bulkMoveFiles(fileIds, folderId);
+      await bulkMoveFiles(selectedPageIds, folderId);
     } catch (error) {
       log.error("Failed to bulk move files", error);
       const { title, description } = getErrorMessage(error);
@@ -47,8 +51,7 @@ export function BulkActionBar() {
     setShowDeleteModal(false);
     setIsDeleting(true);
     try {
-      const fileIds = Array.from(selectedFileIds);
-      await bulkDeleteFiles(fileIds);
+      await bulkDeleteFiles(selectedPageIds);
       // Navigate to the next file or welcome screen
       const nextId = useFileStore.getState().currentFileId;
       navigateToEditorFile(nextId);
@@ -62,8 +65,7 @@ export function BulkActionBar() {
   };
 
   const handleExport = () => {
-    const fileIds = Array.from(selectedFileIds);
-    const selectedFiles = files.filter((f) => fileIds.includes(f.id));
+    const selectedFiles = files.filter((file) => selectedPageIds.includes(file.id));
 
     // Export as a combined markdown file
     const content = selectedFiles

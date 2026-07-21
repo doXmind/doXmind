@@ -13,10 +13,10 @@ import { storeLogger } from "@/lib/logger";
 
 const log = storeLogger.child("NativeMenu");
 
-const FILE_FILTERS = [
+export const NATIVE_FILE_FILTERS = [
   {
     name: "Documents",
-    extensions: ["md", "markdown", "pdf", "xlsx", "xlsm", "docx", "pptx"],
+    extensions: ["md", "markdown", "pdf", "xlsx", "xlsm", "csv", "html", "htm"],
   },
 ];
 
@@ -61,7 +61,7 @@ export function NativeMenuListener() {
 
     const openFilePicker = async () => {
       try {
-        const selected = await pickNativeFile("Open File", FILE_FILTERS);
+        const selected = await pickNativeFile("Open File", NATIVE_FILE_FILTERS);
         if (!selected) return;
         await openWindowForTarget({ kind: "file", path: selected });
       } catch (error) {

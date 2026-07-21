@@ -148,9 +148,14 @@ General  ·  Appearance  ·  Editor  ·  Workspace  ·  Backup & Privacy  ·  Ab
 
 ### Sidecar maintenance
 
-| Item                     | Control                                  | Default | Status  |
-| ------------------------ | ---------------------------------------- | ------- | ------- |
-| Clean up orphan sidecars | Button (scan + report + one-click clean) | —       | `[new]` |
+| Item                          | Control                               | Default | Status  |
+| ----------------------------- | ------------------------------------- | ------- | ------- |
+| Clean up orphan Page sidecars | Button (scan + report before removal) | —       | `[new]` |
+
+This maintenance action is limited to same-name Markdown Page sidecars that a
+fresh scan proves are orphaned. It must never delete or offer to delete PDF/XLSX
+sidecars, `.bak`, `.lock`, or corrupt forensic copies; those remain legacy
+recovery evidence.
 
 ### Search
 
@@ -234,18 +239,18 @@ These looked plausible but fail one of the design principles above. Dropped, wit
 
 ### From Editor — PDF
 
-| Dropped                 | Why                                                                                   |
-| ----------------------- | ------------------------------------------------------------------------------------- |
-| Default annotation tool | Tools should be sticky in the editor toolbar (last-used wins). Not an app preference. |
-| Default highlight color | Belongs to the in-editor color picker, not Settings.                                  |
+| Dropped                 | Why                                                                   |
+| ----------------------- | --------------------------------------------------------------------- |
+| Default annotation tool | PDF editing is removed; Attachments do not expose editor preferences. |
+| Default highlight color | PDF editing is removed; Attachments do not expose editor preferences. |
 
 ### From Editor — Excel
 
-| Dropped                   | Why                                                   |
-| ------------------------- | ----------------------------------------------------- |
-| Show row & column headers | Per-sheet view setting, not an app preference.        |
-| Decimal display precision | Per-cell formatting. Excel itself models it that way. |
-| Default font              | Per-cell formatting.                                  |
+| Dropped                   | Why                                                                        |
+| ------------------------- | -------------------------------------------------------------------------- |
+| Show row & column headers | Spreadsheet editing is removed; Attachments have no grid preferences.      |
+| Decimal display precision | Spreadsheet editing is removed; use the system spreadsheet application.    |
+| Default font              | Spreadsheet editing is removed; Attachments do not expose cell formatting. |
 
 ### From Workspace
 

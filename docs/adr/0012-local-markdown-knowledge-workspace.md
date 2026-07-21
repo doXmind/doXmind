@@ -21,14 +21,19 @@ PDF 与 Excel 编辑都是没有自然终点的兼容性工程。继续扩展它
    `.markdown`。
 2. 产品方向是“Notion 式编辑与组织 + Obsidian 式本地文件、链接与可重建索引”。
    这不包含 Notion 的云协作系统，也不要求先复制 Obsidian 的插件市场。
-3. PDF、spreadsheet、HTML、图片等非 Markdown 文件统一建模为
-   **Attachment**。Attachment 可以显示在文件树中，被预览、引用、搜索元数据、
-   Reveal 或 Open Externally，但不拥有独立的新建、编辑、保存和导出产品栈。
+3. 当前工作区扫描和原生打开支持的非 Markdown 文档（PDF、spreadsheet、HTML）
+   统一建模为 **Attachment**。Attachment 可以显示在文件树中，被预览、引用、
+   搜索元数据、Reveal 或 Open Externally，但不拥有独立的新建、编辑、保存和导出
+   产品栈。未知格式抵达共享 surface 时可使用 `other` 安全只读 fallback，但这不
+   扩张扫描或原生打开白名单。插入 Page 的图片保持为 Markdown assets，不承诺把
+   独立图片文件列为 workspace document。
 4. 立即移除空白 PDF/Excel 的主导航入口，并把 primary create contract 收缩为
    Page 或 Folder。后端遗留命令在兼容桥完成前可以保留，但不再是产品 API。
 5. PDF/Excel 编辑器进入 legacy compatibility：冻结功能；先提供旧 sidecar 的
    检测与显式导出/恢复，再删除编辑器、写端点、parser cache 和专属依赖。任何
-   清理都不得静默删除或覆盖源文件、sidecar、`.bak` 或 `.lock`。
+   清理都不得静默删除或覆盖源文件、sidecar、`.bak` 或 `.lock`。恢复门禁通过前，
+   Attachment 只提供 Open Externally 和 Reveal，不提供可能分离证据的 move、rename、
+   delete 或同名 replace。
 6. Page 的正文、properties、tags、aliases 和 links 必须位于 Markdown 或 YAML
    frontmatter。Sidecar 只能保存 lossless editor HTML、cache 和可替代 UI state，
    不能是知识内容的唯一副本。

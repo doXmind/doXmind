@@ -17,6 +17,10 @@ import { perfAsync, perfSync } from "@/lib/perf";
 const log = storeLogger.child("File");
 const SELF_SAVE_REFRESH_SUPPRESSION_MS = 2500;
 
+function isSidebarMutableEntry(file: FileItem | undefined): file is FileItem {
+  return !!file && (file.isFolder || isMarkdownFile(file));
+}
+
 let suppressWorkspaceRefreshUntil = 0;
 
 export function suppressWorkspaceRefreshForSelfSave(): void {
@@ -174,11 +178,9 @@ interface FileState {
    * External-import entry point used by sidebar DnD (#67). Always copies; the
    * source file (e.g. from Downloads) is left untouched.
    *
-   * `mode` defaults to `"create"`. `"replace"` (added in #69) overwrites the
-   * user file at the destination but leaves the hidden `.doxmind` sidecar
-   * untouched — the next open trips the Stale-sidecar / Salvage path
-   * (ADR 0002), which is the right behavior because at the FS level a
-   * Replace is indistinguishable from an external edit.
+   * `mode` defaults to `"create"`. `"replace"` is available only for Markdown
+   * Pages. Attachment collisions must use Keep both or Skip so legacy recovery
+   * evidence remains correlated with its source file.
    *
    * Throws `ImportError` with `code: "destination-exists"` if `mode === "create"`
    * and a name clash is detected on the backend (race window between the D2
@@ -545,11 +547,15 @@ export const useFileStore = create<FileState>()(
                 ? state.currentFolderId
                 : null;
 
-            // Clear selection of files that no longer exist
+            // Keep selection only for existing Pages. Attachments are
+            // intentionally excluded from sidebar bulk mutations.
+            const selectableFileIds = new Set(
+              files.filter((file) => !file.isFolder && isMarkdownFile(file)).map((file) => file.id)
+            );
             const validSelectedFileIds = new Set(
               Array.from(state.selectedFileIds)
                 .map((id) => idMigrationByOldId.get(id) ?? id)
-                .filter((id) => newFileIds.has(id))
+                .filter((id) => selectableFileIds.has(id))
             );
             const validOpenTabIds = state.openTabIds
               .map((id) => idMigrationByOldId.get(id) ?? id)
@@ -1358,7 +1364,7 @@ export const useFileStore = create<FileState>()(
           bytes,
           mode,
         });
-        // Replace mode overwrites a file that already exists in the workspace.
+        // Replace mode overwrites a Markdown Page that already exists in the workspace.
         // Surface that as a refreshed entry rather than a fresh insertion so
         // the sidebar doesn't end up with two rows for the same path.
         if (mode === "replace") {
@@ -1366,8 +1372,9 @@ export const useFileStore = create<FileState>()(
             (f) => !f.isFolder && f.parentId === validParentId && f.name === name
           );
           if (existing) {
-            // Touch updatedAt by replacing the entry in place; the sidecar is
-            // intentionally left alone on disk so the next open trips Salvage.
+            // Touch updatedAt by replacing the entry in place; the Markdown
+            // sidecar is intentionally left alone on disk so the next open
+            // imports the externally changed portable source.
             // Name doesn't change here, but re-sort to be defensive — under
             // modified-newest the touched entry should move to the top.
             set((state) => ({
@@ -1454,6 +1461,11 @@ export const useFileStore = create<FileState>()(
       toggleFileSelection: (fileId) =>
         set((state) => {
           const next = new Set(state.selectedFileIds);
+          const file = state.files.find((item) => item.id === fileId);
+          if (!file || file.isFolder || !isMarkdownFile(file)) {
+            next.delete(fileId);
+            return { selectedFileIds: next };
+          }
           if (next.has(fileId)) {
             next.delete(fileId);
           } else {
@@ -1464,7 +1476,9 @@ export const useFileStore = create<FileState>()(
 
       selectFileRange: (fromId, toId) => {
         const { files, currentFolderId } = get();
-        const visibleFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+        const visibleFiles = files.filter(
+          (file) => !file.isFolder && file.parentId === currentFolderId && isMarkdownFile(file)
+        );
         const fromIndex = visibleFiles.findIndex((f) => f.id === fromId);
         const toIndex = visibleFiles.findIndex((f) => f.id === toId);
 
@@ -1485,17 +1499,27 @@ export const useFileStore = create<FileState>()(
 
       selectAll: () => {
         const { files, currentFolderId } = get();
-        const visibleFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+        const visibleFiles = files.filter(
+          (file) => !file.isFolder && file.parentId === currentFolderId && isMarkdownFile(file)
+        );
         set({ selectedFileIds: new Set(visibleFiles.map((f) => f.id)) });
       },
 
       bulkMoveFiles: async (fileIds, folderId) => {
+        const mutableFileIds = fileIds.filter((fileId) =>
+          isSidebarMutableEntry(get().files.find((file) => file.id === fileId))
+        );
+        if (mutableFileIds.length === 0) {
+          set({ selectedFileIds: new Set() });
+          return;
+        }
+
         // Optimistic update — re-sort because parentId changes shuffle the
         // moved files into a different bucket (see moveFileToFolder).
         set((state) => ({
           files: sortFilesByOption(
             state.files.map((file) =>
-              fileIds.includes(file.id)
+              mutableFileIds.includes(file.id)
                 ? { ...file, parentId: folderId, updatedAt: new Date().toISOString() }
                 : file
             ),
@@ -1507,7 +1531,7 @@ export const useFileStore = create<FileState>()(
         try {
           const adapter = getAdapter(get());
           await Promise.all(
-            fileIds.map((fileId) => {
+            mutableFileIds.map((fileId) => {
               const file = get().files.find((item) => item.id === fileId);
               return file
                 ? adapter.move(handleForFile(file), parentHandleForId(get().files, folderId))
@@ -1524,9 +1548,17 @@ export const useFileStore = create<FileState>()(
 
       bulkDeleteFiles: async (fileIds) => {
         const state = get();
-        const newFiles = state.files.filter((f) => !fileIds.includes(f.id));
-        const newOpenTabIds = state.openTabIds.filter((tabId) => !fileIds.includes(tabId));
-        const newCurrentId = fileIds.includes(state.currentFileId || "")
+        const mutableFileIds = fileIds.filter((fileId) =>
+          isSidebarMutableEntry(state.files.find((file) => file.id === fileId))
+        );
+        if (mutableFileIds.length === 0) {
+          set({ selectedFileIds: new Set() });
+          return;
+        }
+
+        const newFiles = state.files.filter((f) => !mutableFileIds.includes(f.id));
+        const newOpenTabIds = state.openTabIds.filter((tabId) => !mutableFileIds.includes(tabId));
+        const newCurrentId = mutableFileIds.includes(state.currentFileId || "")
           ? (newOpenTabIds[0] ?? null)
           : state.currentFileId;
 
@@ -1541,7 +1573,7 @@ export const useFileStore = create<FileState>()(
         try {
           const adapter = getAdapter(state);
           await Promise.all(
-            fileIds.map((fileId) => {
+            mutableFileIds.map((fileId) => {
               const file = state.files.find((item) => item.id === fileId);
               return file ? adapter.delete(handleForFile(file)) : Promise.resolve();
             })

@@ -82,3 +82,26 @@ export async function exportEditedPdfViaBackend(
     return null;
   }
 }
+
+/** Recovery-only exporter. Unlike the legacy editor bridge, every failure is fatal. */
+export async function exportEditedPdfStrict(
+  pdfBytes: Uint8Array,
+  edits: ExportEditsPayload,
+  options: { signal?: AbortSignal } = {}
+): Promise<Uint8Array> {
+  const formData = new FormData();
+  const blob = new Blob([new Uint8Array(pdfBytes)], { type: "application/pdf" });
+  formData.append("file", blob, "document.pdf");
+  formData.append("edits", JSON.stringify(edits));
+  formData.append("strict_recovery", "true");
+
+  const response = await fetch(`${apiClient.resolveBaseUrl()}/api/pdf/export-edited`, {
+    method: "POST",
+    body: formData,
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    throw new Error(`PDF recovery export failed (${response.status})`);
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}

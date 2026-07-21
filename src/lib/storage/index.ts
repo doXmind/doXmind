@@ -1,5 +1,8 @@
 export type {
   AttachmentInspection,
+  AttachmentRecoveryCandidate,
+  AttachmentRecoveryRead,
+  AttachmentRecoverySource,
   AttachmentRecoveryStatus,
   AttachmentSidecarStatus,
   CorrelationEvent,

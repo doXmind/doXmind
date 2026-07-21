@@ -13,14 +13,18 @@ doXmind 是一个完全本地、Markdown 原生的知识工作区。用户硬盘
 无价值的全仓改名。
 
 **Attachment**：
-Workspace 内的非 Markdown 文件，例如 PDF、XLSX、CSV、HTML 或图片。Attachment
-可以被列出、预览、引用、索引元数据、Reveal 或 Open Externally，但不拥有独立的
-新建、编辑、保存和导出产品栈。原文件始终是唯一权威内容。
+Workspace 当前支持扫描和原生打开的非 Markdown 文档：PDF、XLSX/XLSM/CSV、
+HTML/HTM。Attachment 可以被列出、预览、引用、索引元数据、Reveal 或 Open
+Externally，但不拥有独立的新建、编辑、保存和导出产品栈。原文件始终是唯一权威
+内容。未知格式即使通过兼容路径抵达共享 surface，也只能使用 `other` 安全只读
+fallback；这不代表该格式会被扫描、列出或注册为原生打开类型。插入 Page 的图片是
+Markdown assets，不承诺把独立图片文件列为 workspace document。
 _Avoid_: PDF Document、Excel Document、Second-class editable file。
 
 **Workspace**：
-用户选择的真实根目录。doXmind 扫描其中的 Page、文件夹和 Attachment，并维护
-可删除、可重建的本地索引。文件树映射真实目录，不维护一套隐藏的云端层级。
+用户选择的真实根目录。doXmind 扫描其中的 Page、文件夹和受支持 Attachment，并
+维护可删除、可重建的本地索引。文件树映射受支持文档所在的真实目录，不维护一套
+隐藏的云端层级，也不是通用文件浏览器。
 
 **Sidecar**：
 和 Page 同目录、同名、隐藏的 `.doxmind` JSON 文件。它保存 lossless editor HTML、
@@ -51,9 +55,9 @@ Page 的结构化字段，保存在 YAML frontmatter。Tags、aliases、日期�
 索引和 rename repair，但 link 关系不能只存在 Sidecar 或 TipTap node attribute 中。
 
 **Workspace Index**：
-从 Page 和 Attachment 文件派生的搜索、path/id、properties、links、backlinks、
-unresolved links 与 collection membership 索引。它不是事实源；删除后全量扫描必须
-得到等价结果。
+从 Page 和受支持 Attachment 文件派生的搜索、path/id、properties、links、
+backlinks、unresolved links 与 collection membership 索引。它不是事实源；删除
+后全量扫描必须得到等价结果。
 
 **Collection**：
 基于 Page Properties 的 query 和 view。一行/卡片/事件是一篇普通 Page；Table、
@@ -76,8 +80,10 @@ Sidecar、迁移、`.bak`、`.lock` 和 block correlation 规则继续作为恢�
 
 **Delete**：
 通过操作系统 Trash/Recycle Bin 删除真实文件。Page 和同名 Sidecar 成对移动；带
-legacy sidecar 的 Attachment 也必须保留成对处理。doXmind 不维护第二套软删除库，
-也绝不把 scope reduction 当作删除用户 sidecar 的理由。
+legacy sidecar 的 Attachment 必须连同 `.bak`、`.lock` 和 forensic copies 保留成套
+证据，因此当前 Attachment surface 不提供 move、rename 或 delete，只提供 Open
+Externally 和 Reveal。doXmind 不维护第二套软删除库，也绝不把 scope reduction 当作
+删除用户 sidecar 的理由。
 
 ## Storage relationships
 
@@ -100,7 +106,8 @@ Workspace/
 - Properties 与 links 属于 Markdown/frontmatter，不属于 Sidecar。
 - Backlinks、search、graph 和 Collection membership 属于 Workspace Index。
 - 一个 Attachment = 一个普通用户文件；新打开不得产生编辑 sidecar。
-- Legacy PDF/Excel sidecar 是待恢复的用户状态，直到显式导出完成前都不能删除。
+- Legacy PDF/Excel sidecar、`.bak`、`.lock` 与 forensic copy 始终是用户恢复
+  证据；一次成功尝试也不是删除信号。
 
 ## Page open/save contract
 
@@ -150,9 +157,11 @@ conversion 必须是用户显式触发的单向导入，不得悄悄修改原文
 ## Flagged ambiguities
 
 - `WorkspaceDocumentType` 目前仍叫 Document，是 wire/compatibility 名称；其
-  `pdf | excel | html` 值只表示 Attachment format，不表示可编辑能力。
+  `pdf | excel | html` 值对应当前受支持 Attachment format；`other` 只是在未知格式
+  已抵达共享 surface 时防止误入 Markdown editor 的只读 fallback，不扩张扫描或
+  原生打开白名单。这些值都不表示可编辑能力。
 - UI 使用 Page，内部可以继续使用 `Document`。不要为了术语一致性做全仓机械改名。
-- 当前代码仍可能路由到 legacy PDF/Excel editor；这是恢复桥尚未完成，不是产品
-  边界反复。
+- 冻结的 legacy PDF/Excel editor bundle 与 writer 仍待 removal gate 后删除，但
+  正常路由已经不能挂载它们。
 - 当前 `page-link` 和 `extras.databases` 不满足 portable truth 原则；两者必须按
   `docs/PRODUCT_DIRECTION.md` 的 LINK/COLL 任务迁移后才能继续扩展。
