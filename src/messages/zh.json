@@ -384,7 +384,7 @@
     "recoveryExported": "未经验证的恢复副本已下载，使用前请与原文件核对。",
     "sourceChanged": "当前附件与恢复缓存不匹配，未导出任何内容；请保留全部恢复文件。",
     "unknownTitle": "恢复状态需要检查",
-    "unknownDescription": "doXmind 无法安全判断全部旧版恢复记录，未修改任何文件。请保留源文件、主 sidecar、备份与 lock 文件，以便手工恢复。"
+    "unknownDescription": "doXmind 无法安全判断全部旧版恢复记录，未修改任何文件。请将源文件、主 sidecar、备份、lock 文件及所有 .corrupt-* 副本一起保留，以便手工恢复。"
   },
   "sidebar": {
     "settings": "设置",

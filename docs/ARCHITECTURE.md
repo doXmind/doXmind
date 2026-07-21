@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the runtime architecture of doXmind Mini, the local
+This document describes the runtime architecture of doXmind, the local
 sidecar edition. It is the entry point for understanding how the editor, the
 storage layer, and the desktop shell fit together.
 
@@ -11,7 +11,7 @@ boundary and roadmap, see [`PRODUCT_DIRECTION.md`](./PRODUCT_DIRECTION.md) and
 
 ## Product shape
 
-doXmind Mini is a local-first, single-user Markdown knowledge workspace. There is
+doXmind is a local-first, single-user Markdown knowledge workspace. There is
 no auth, sync, sharing, billing, telemetry, or AI runtime in this branch.
 Pages and attachments live on the user's filesystem.
 
@@ -100,7 +100,9 @@ the main sidecar and `.bak`
 independently, reads only the selected `editor` state, and combines it with the
 source bytes in an isolated exporter. It does not invoke legacy readers, writers,
 migration, or caches, and it must not mutate the source, main sidecar, `.bak`, or
-`.lock`. New Attachments do not get editor sidecars.
+`.lock`. Pre-existing `.corrupt-*` forensic copies are also recovery evidence
+and must remain untouched, although the bridge does not read them. New
+Attachments do not get editor sidecars.
 
 ### Attachment inspection and legacy recovery
 
@@ -117,6 +119,7 @@ For PDF and Excel recovery, the desktop and browser-dev adapters implement the
 same strict contract:
 
 1. Inspect the main sidecar and `<sidecar>.bak` independently without writing.
+   `.lock` and `.corrupt-*` artifacts are preserved evidence, not recovery input.
 2. Classify each candidate conservatively. Corrupt, future-version, mixed-shape,
    invalid-version, or otherwise unsupported state is `unknown`, not empty.
 3. Require a valid `parsedCache.sourceHash` as an early mismatch guard.
@@ -135,9 +138,11 @@ same strict contract:
    `.xlsm` recovery produces an
    `.xlsx` with an explicit warning that macros are not included.
 
-Tests snapshot the source, main sidecar, backup, lock file, mtimes, and directory
-membership around inspection and recovery. This protects both the local-first
-boundary in [ADR-0012](./adr/0012-local-markdown-knowledge-workspace.md) and the
+Automated tests snapshot the source, main sidecar, backup, lock file, mtimes,
+and directory membership around inspection and recovery. The packaged release
+gate also places pre-existing `.corrupt-*` artifacts beside real fixtures and
+proves they remain untouched. This protects both the local-first boundary in
+[ADR-0012](./adr/0012-local-markdown-knowledge-workspace.md) and the
 untrusted-document boundary in
 [ADR-0011](./adr/0011-documents-are-untrusted-input.md). Unknown or unsupported
 state—including edits with a missing or mismatched cache hash—remains evidence

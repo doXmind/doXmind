@@ -1,6 +1,6 @@
 {
   "name": "doxmind",
-  "version": "1.7.8",
+  "version": "1.8.0",
   "private": true,
   "main": "electron/main.js",
   "engines": {
@@ -39,8 +39,7 @@
     "electron": "electron .",
     "electron:smoke": "node scripts/electron-smoke.mjs",
     "build:sidecar:electron": "node scripts/build-sidecar.mjs --electron",
-    "dist:electron": "npm run build:sidecar:electron && npm run build && electron-builder --publish never",
-    "release:electron": "npm run build:sidecar:electron && npm run build && electron-builder --publish always"
+    "dist:electron": "npm run build:sidecar:electron && npm run build && electron-builder --publish never"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -77,7 +76,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "diff": "^8.0.3",
-    "dompurify": "^3.3.1",
+    "dompurify": "^3.4.12",
     "framer-motion": "^12.26.2",
     "html-to-image": "^1.11.13",
     "hyperformula": "^3.2.0",
@@ -86,9 +85,9 @@
     "lowlight": "^3.2.0",
     "lucide-react": "^0.468.0",
     "marked": "^15.0.4",
-    "mermaid": "^11.12.3",
-    "next": "^15.1.0",
-    "next-intl": "^4.8.3",
+    "mermaid": "^11.16.0",
+    "next": "^15.5.21",
+    "next-intl": "^4.13.3",
     "next-themes": "^0.4.4",
     "papaparse": "^5.5.3",
     "pdf-lib": "^1.17.1",

@@ -6,10 +6,13 @@
 # Local unsigned test pack:
 #         CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --publish never
 #
-# Auto-update: the zip target is the Squirrel.Mac update payload. Publishing a
-# release (with the dmg + zip assets) to the PUBLIC repo below is all the
-# server-side that update.electronjs.org needs. Keep `repo` in sync with
-# UPDATE_REPO in electron/updater.js.
+# Auto-update: the zip target is the Squirrel.Mac update payload. Publishing the
+# verified assets to the public `doXmind/releases` repo is all the server-side
+# that update.electronjs.org needs. Keep that destination in sync with
+# UPDATE_REPO in electron/updater.js and `.github/workflows/release.yml`.
+# The generic provider below exists only so electron-builder emits fresh update
+# metadata. Generic publishing never uploads for us; the release workflow owns
+# the explicit draft upload after verification.
 
 appId: com.doxmind.desktop
 productName: doXmind
@@ -61,11 +64,11 @@ mac:
       rank: Owner
     - ext: [pdf]
       name: PDF Document
-      role: Editor
+      role: Viewer
       rank: Alternate
     - ext: [xlsx, xlsm, csv]
       name: Spreadsheet
-      role: Editor
+      role: Viewer
       rank: Alternate
 
 dmg:
@@ -85,16 +88,16 @@ win:
       role: Editor
     - ext: pdf
       name: PDF Document
-      role: Editor
+      role: Viewer
     - ext: xlsx
       name: Spreadsheet
-      role: Editor
+      role: Viewer
     - ext: xlsm
       name: Spreadsheet
-      role: Editor
+      role: Viewer
     - ext: csv
       name: Spreadsheet
-      role: Editor
+      role: Viewer
 
 nsis:
   oneClick: false
@@ -104,14 +107,6 @@ nsis:
   artifactName: doXmind-${version}-${arch}-setup.${ext}
   shortcutName: doXmind
 
-# Where `electron-builder --publish always` uploads release assets. This repo
-# must be PUBLIC for update.electronjs.org to serve updates from it.
 publish:
-  provider: github
-  owner: doXmind
-  repo: releases
-  # Must stay 'draft': the releases repo has no pre-existing git tag, and
-  # GitHub rejects creating a *published* release without one (422). The draft
-  # holds the assets; a follow-up `gh release edit --draft=false` (CI step /
-  # manual) creates the tag against main and makes the auto-update feed see it.
-  releaseType: draft
+  provider: generic
+  url: https://github.com/doXmind/releases/releases/latest/download

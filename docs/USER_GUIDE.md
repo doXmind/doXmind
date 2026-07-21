@@ -6,6 +6,8 @@ local-first: Pages and attachments stay in folders you control, and replaceable
 editor state is stored beside Pages in hidden `.doxmind` sidecars.
 
 For source installation and developer commands, see the [project README](../README.md).
+For the 1.8.0 behavior change, upgrade precautions, and fallback-validation
+status, see the [1.8.0 release notes](releases/1.8.0.md).
 
 ## 1. Install and launch
 
@@ -27,7 +29,7 @@ Use **File → Open Folder…** (`Cmd/Ctrl+Shift+O`) when several related docume
 
 - The folder becomes the workspace root.
 - The sidebar shows supported documents and subfolders under that root.
-- New documents are written directly into that folder.
+- New Pages are written directly into that folder.
 - Files opened inside the workspace use tabs in the same window.
 
 <p align="center">
@@ -44,7 +46,7 @@ Use **File → Open File…** (`Cmd/Ctrl+O`), double-click a registered document
 
 ### Start a new Page
 
-Choose **Start writing** on the welcome screen to create an untitled Markdown buffer. The Page stays in memory until its first save, when doXmind asks where to put it.
+Choose **New** on the welcome screen to create an untitled Markdown buffer. The Page stays in memory until its first save, when doXmind asks where to put it.
 
 When a folder is already open, **File → New Page** (`Cmd/Ctrl+N`) creates a real Markdown file inside that workspace instead.
 
@@ -81,9 +83,10 @@ as Attachments. The current in-workspace external drop/import accepts `.pdf` and
 - Rename Pages and folders from the sidebar context menu; a Page keeps its Markdown extension.
 - Attachments expose **Open Externally** and **Reveal** rather than direct move,
   rename, or delete. Moving or renaming their parent folder keeps the complete
-  subtree together, including sidecar, `.bak`, and `.lock`; deleting a folder
-  that contains an Attachment or recovery evidence is blocked. Manage that set
-  outside doXmind only after preserving a complete copy.
+  subtree together, including sidecar, `.bak`, `.lock`, and `.corrupt-*`
+  recovery evidence; deleting a folder that contains an Attachment or recovery
+  evidence is blocked. Manage that set outside doXmind only after preserving a
+  complete copy.
 - Use **File → Reveal in Finder** (`Cmd/Ctrl+Alt+R`) to locate the active source file.
 - Use `Cmd/Ctrl+B` to show or hide the sidebar.
 - Use `F11` for focus mode; press `Esc` or `F11` again to leave it.
@@ -192,9 +195,9 @@ If supported recovery evidence is found:
 
 Recovery is all-or-nothing. If the selected state cannot be matched safely to
 the source PDF, no partial file is downloaded. The source PDF, main sidecar,
-`.bak`, `.lock`, mtimes, and surrounding directory contents remain unchanged.
-Keep all of those files when the recovery status says it needs attention; that
-state still requires a manual recovery path.
+`.bak`, `.lock`, every `.corrupt-*` artifact, mtimes, and surrounding directory
+contents remain unchanged. Keep all of those files when the recovery status
+says it needs attention; that state still requires a manual recovery path.
 
 ## 6. Recover legacy workbook edits
 
@@ -215,14 +218,32 @@ Missing sheets, malformed targets, a missing or mismatched cache hash, and any
 mutation the exporter cannot account for fail the whole operation. In
 particular, saved `filters`, `filterMode`, structural row/column/merge operations,
 lossy sheet operations, or UI-only metadata may require a compatible older build
-instead. Keep the source, sidecar, `.bak`, and `.lock` for manual recovery.
+instead. Keep the source, sidecar, `.bak`, `.lock`, and every `.corrupt-*`
+artifact for manual recovery.
 CSV recovery also produces `.xlsx`. For an `.xlsm` source, the recovered output
 is `.xlsx` and does not include macros; doXmind shows this warning before export.
 
 If an attempt is unavailable or fails, preserve the original folder unchanged.
-Make copies of the attachment, main sidecar, `.bak`, and `.lock` in an isolated
-folder before trying a compatible older doXmind build. Never let an older build
-migrate or repair the only copy of this evidence.
+Do not guess which older release is compatible. The exact fallback version,
+download, and checksum must first be published as **verified** in the
+[1.8.0 release notes](releases/1.8.0.md). Until that entry exists, stop and keep
+the evidence unchanged.
+
+After a fallback build is verified and published:
+
+1. Quit every running doXmind process.
+2. Duplicate the attachment's containing folder into an isolated recovery
+   location. Confirm the copy contains the source, main sidecar, every `.bak`,
+   `.lock`, and `.corrupt-*` file before proceeding.
+3. Download only the exact build and artifact whose checksum appears in the
+   release notes, verify the checksum, and extract it to a temporary location.
+   Do not install it over the current doXmind app or point it at the original
+   workspace.
+4. Run that extracted build against the isolated copy and export recovery
+   output to a new file. Do not allow the older build to migrate or repair the
+   only copy of any evidence.
+5. Compare the exported copy with the original attachment. Keep the untouched
+   evidence set until the result has been independently verified and archived.
 
 ## 7. Settings
 
@@ -262,7 +283,8 @@ above document legacy recovery data only.
 - **Legacy PDF/Excel sidecar:** preserves historical editor state and remains recovery evidence even after an export attempt.
 
 Do not manually delete a legacy sidecar if you still need its PDF annotations or
-spreadsheet edits. Never delete `.bak` or `.lock` files as part of cleanup.
+spreadsheet edits. Never delete `.bak`, `.lock`, or `.corrupt-*` files as part of
+cleanup.
 
 ### Advanced: legacy recovery files
 
@@ -272,11 +294,12 @@ An older doXmind build may have left several recovery artifacts:
 - `<sidecar>.lock` coordinates the migration and can remain afterward.
 - `<sidecar>.corrupt-*` is a recovery copy created when corrupt data could not be migrated safely.
 
-The current Attachment recovery flow only reads these files. It does not create,
-rename, overwrite, or delete them. Do not delete `.lock`, `.bak`, or the main
-sidecar merely because they are small or hidden, and do not move a backup over
-the main sidecar before exporting: the UI can inspect both candidates and asks
-you to choose when their saved states differ.
+The current Attachment recovery flow inspects only the main sidecar and `.bak`.
+It does not read `.lock` or `.corrupt-*`, and it does not create, rename,
+overwrite, or delete any recovery evidence. Do not delete these files merely
+because they are small or hidden, and do not move a backup over the main sidecar
+before exporting: the UI can inspect both candidates and asks you to choose when
+their saved states differ.
 
 ## 9. Keyboard shortcuts
 
@@ -322,7 +345,10 @@ surface; it does not expand workspace scanning or native opening.
 Corrupt JSON, future or invalid versions, mixed legacy/current shapes, and
 unsupported recovery state are reported conservatively instead of being treated
 as empty. doXmind does not rewrite or migrate the evidence. Keep the source,
-main sidecar, `.bak`, and `.lock` together for manual recovery.
+main sidecar, every `.bak`, `.lock`, and `.corrupt-*` file together for manual
+recovery. If the app cannot offer a recovery attempt, follow the verified
+fallback status and isolated-copy procedure in the
+[1.8.0 release notes](releases/1.8.0.md); do not try an arbitrary older build.
 
 ### Changes are missing from a recovered workbook
 

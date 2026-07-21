@@ -3,6 +3,7 @@
  * Headless smoke test for the Electron shell's non-GUI plumbing:
  *   - the static server resolves the Next export (incl. SPA deep routes),
  *   - the sidecar spawns and reports /health,
+ *   - the native recursive workspace watcher emits a scoped change,
  *   - the workspace proxy reaches the sidecar (scan / doc_read / import_asset),
  *     exercising the Phase 0 additions.
  *
@@ -23,6 +24,7 @@ const { startStaticServer } = require("../electron/static-server.js");
 const { findFreePort, spawnSidecar, waitForHealth } = require("../electron/sidecar.js");
 const { proxyWorkspace } = require("../electron/workspace-proxy.js");
 const { WindowRegistry, normalizeOpenPath } = require("../electron/window-registry.js");
+const { createWorkspaceWatchers } = require("../electron/workspace-watchers.js");
 
 let pass = 0;
 let fail = 0;
@@ -62,6 +64,37 @@ async function main() {
   check("normalizeOpenPath rejects unsupported extension", normalizeOpenPath(path.join(regWs, "Note.txt")) === null);
   check("normalizeOpenPath rejects a missing file", normalizeOpenPath(path.join(regWs, "Ghost.md")) === null);
   fs.rmSync(regWs, { recursive: true, force: true });
+
+  console.log("workspace watcher:");
+  const watchWs = fs.mkdtempSync(path.join(os.tmpdir(), "doxmind-watch-"));
+  let resolveChanged = null;
+  const workspaceWatchers = createWorkspaceWatchers({
+    onChanged: (webContentsId, payload) => resolveChanged?.({ webContentsId, payload }),
+    debounceMs: 25,
+    maxCoalesceMs: 100,
+  });
+  try {
+    workspaceWatchers.watch(901, watchWs);
+    // macOS may report a root event when FSEvents first attaches. Let that
+    // initial coalesce window drain so only the write below can satisfy the
+    // assertion.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const changed = new Promise((resolve) => {
+      resolveChanged = resolve;
+    });
+    fs.writeFileSync(path.join(watchWs, "External.md"), "# external\n");
+    const event = await Promise.race([
+      changed,
+      new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
+    ]);
+    check(
+      "recursive native watch emits a canonical, webContents-scoped change",
+      event?.webContentsId === 901 && event?.payload?.root === fs.realpathSync(watchWs)
+    );
+  } finally {
+    workspaceWatchers.remove(901);
+    fs.rmSync(watchWs, { recursive: true, force: true });
+  }
 
   console.log("static server:");
   const server = await startStaticServer(out);

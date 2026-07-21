@@ -1,30 +1,32 @@
 name: Release (macOS arm64)
 
-# Builds, signs, notarizes, and publishes the Electron app to the public
-# doXmind/releases repo — the same flow as `npm run release:electron` locally,
-# but using APPLE_* secrets instead of the local keychain profile.
+# Manual two-phase release flow for doXmind/releases.
 #
-# Trigger: MANUAL ONLY (workflow_dispatch from the Actions tab). Releases are
-# cut locally via `npm run release:electron` on the maintainer's signing
-# machine; this workflow is kept as a fallback and is deliberately NOT wired to
-# tag pushes, so pushing a `vX.Y.Z` release tag does not kick off a (redundant)
-# CI build.
+# publish=false creates one signed/notarized draft candidate. It refuses to
+# replace an existing release because changing any candidate asset invalidates
+# the hashes and packaged-app validation recorded for that candidate.
 #
-# Required repository secrets:
-#   CSC_LINK                  base64 of the Developer ID Application .p12
-#   CSC_KEY_PASSWORD          password for that .p12
-#   APPLE_ID                  Apple ID email (notarization)
-#   APPLE_APP_SPECIFIC_PASSWORD  app-specific password for that Apple ID
-#   APPLE_TEAM_ID             Apple Developer Team ID (46KF5Z549N)
-#   RELEASES_TOKEN            PAT with `repo` scope on doXmind/releases
-#                             (the default GITHUB_TOKEN can't push to another repo)
+# publish=true runs only from main. It never builds or uploads: it verifies the
+# existing draft's exact six assets against the committed checksum manifest and
+# latest-mac.yml, then makes those same bytes public.
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the existing verified draft without rebuilding it
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: release-macos
+  cancel-in-progress: false
 
 jobs:
-  release:
-    runs-on: macos-14 # arm64 runner
+  candidate:
+    if: ${{ !inputs.publish }}
+    runs-on: macos-14-xlarge
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -38,48 +40,175 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Require main and refuse to replace an existing candidate
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          test "${GITHUB_REF}" = "refs/heads/main"
+          VERSION="$(node -p "require('./package.json').version")"
+          if gh release view "v${VERSION}" --repo doXmind/releases >/dev/null 2>&1; then
+            echo "Release v${VERSION} already exists; use a new version instead of replacing verified bytes." >&2
+            exit 1
+          fi
+
+      - name: Install JS dependencies
+        run: npm ci
+
       - name: Build the PyInstaller sidecar (one-dir)
         run: |
+          test "$(uname -m)" = "arm64"
           python3.12 -m venv server/.venv
           server/.venv/bin/pip install --upgrade pip
           server/.venv/bin/pip install -r server/requirements.txt pyinstaller
           npm run build:sidecar:electron
 
-      - name: Install JS deps
-        run: npm ci
-
       - name: Build the renderer (static export)
         run: npm run build
 
-      - name: Build, sign, notarize, and upload (draft)
+      - name: Build, sign, and notarize the candidate
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npx electron-builder --publish always
+        run: npx electron-builder --publish never
 
-      # The versioned DMG remains the canonical release artifact. Upload a
-      # fixed-name copy as well so doxmind.com can link to the latest release
-      # without hard-coding a version number.
-      - name: Upload stable website download
+      - name: Verify and create the six-asset draft candidate
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
+          set -euo pipefail
           VERSION="$(node -p "require('./package.json').version")"
-          cp "dist-electron/doXmind-${VERSION}-arm64.dmg" "dist-electron/doXmind-mac-arm64.dmg"
-          gh release upload "v${VERSION}" "dist-electron/doXmind-mac-arm64.dmg" \
+          VERSIONED_DMG="dist-electron/doXmind-${VERSION}-arm64.dmg"
+          ALIAS_DMG="dist-electron/doXmind-mac-arm64.dmg"
+          cp "${VERSIONED_DMG}" "${ALIAS_DMG}"
+          cmp "${VERSIONED_DMG}" "${ALIAS_DMG}"
+          EXPECTED=(
+            "doXmind-${VERSION}-arm64-mac.zip"
+            "doXmind-${VERSION}-arm64-mac.zip.blockmap"
+            "doXmind-${VERSION}-arm64.dmg"
+            "doXmind-${VERSION}-arm64.dmg.blockmap"
+            "doXmind-mac-arm64.dmg"
+            "latest-mac.yml"
+          )
+          CANDIDATE_MANIFEST="${RUNNER_TEMP}/doxmind-${VERSION}-candidate.sha256"
+          (
+            cd dist-electron
+            shasum -a 256 "${EXPECTED[@]}"
+          ) > "${CANDIDATE_MANIFEST}"
+          node scripts/verify-release-artifacts.mjs \
+            dist-electron "${CANDIDATE_MANIFEST}" "${VERSION}"
+          gh release create "v${VERSION}" \
+            "dist-electron/doXmind-${VERSION}-arm64-mac.zip" \
+            "dist-electron/doXmind-${VERSION}-arm64-mac.zip.blockmap" \
+            "${VERSIONED_DMG}" \
+            "dist-electron/doXmind-${VERSION}-arm64.dmg.blockmap" \
+            "${ALIAS_DMG}" \
+            "dist-electron/latest-mac.yml" \
             --repo doXmind/releases \
-            --clobber
+            --draft \
+            --title "doXmind ${VERSION}" \
+            --notes-file "docs/releases/${VERSION}.md" \
+            --target main
 
-      # electron-builder uploads to a DRAFT release (the releases repo has no
-      # pre-existing tag). Publish it so update.electronjs.org serves it: this
-      # creates the tag against main and marks it latest.
-      - name: Publish the release
+      - name: Confirm the draft contains exactly six candidate assets
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
           VERSION="$(node -p "require('./package.json').version")"
-          gh release edit "v${VERSION}" --repo doXmind/releases --draft=false --latest --target main
+          EXPECTED="$(printf '%s\n' \
+            "doXmind-${VERSION}-arm64-mac.zip" \
+            "doXmind-${VERSION}-arm64-mac.zip.blockmap" \
+            "doXmind-${VERSION}-arm64.dmg" \
+            "doXmind-${VERSION}-arm64.dmg.blockmap" \
+            "doXmind-mac-arm64.dmg" \
+            "latest-mac.yml" | LC_ALL=C sort)"
+          ACTUAL="$(gh release view "v${VERSION}" --repo doXmind/releases \
+            --json assets,isDraft \
+            --jq 'if .isDraft then .assets[].name else error("release is not a draft") end' |
+            LC_ALL=C sort)"
+          test "${ACTUAL}" = "${EXPECTED}"
+
+  publish-existing:
+    if: ${{ inputs.publish }}
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Require the main branch and a ready checklist
+        run: |
+          test "${GITHUB_REF}" = "refs/heads/main"
+          VERSION="$(node -p "require('./package.json').version")"
+          CHECKLIST="docs/releases/${VERSION}-checklist.md"
+          NOTES="docs/releases/${VERSION}.md"
+          MANIFEST="docs/releases/${VERSION}-artifacts.sha256"
+          grep -qx 'Status: READY TO PUBLISH' "${CHECKLIST}"
+          ! grep -Eq 'Pending release validation|^- \[ \]' "${CHECKLIST}"
+          ! grep -Eq 'Pending release validation|Not yet (designated|recorded)' "${NOTES}"
+          git ls-files --error-unmatch "${MANIFEST}"
+
+      - name: Require exactly six assets in the existing draft
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          EXPECTED="$(printf '%s\n' \
+            "doXmind-${VERSION}-arm64-mac.zip" \
+            "doXmind-${VERSION}-arm64-mac.zip.blockmap" \
+            "doXmind-${VERSION}-arm64.dmg" \
+            "doXmind-${VERSION}-arm64.dmg.blockmap" \
+            "doXmind-mac-arm64.dmg" \
+            "latest-mac.yml" | LC_ALL=C sort)"
+          ACTUAL="$(gh release view "v${VERSION}" --repo doXmind/releases \
+            --json assets,isDraft \
+            --jq 'if .isDraft then .assets[].name else error("release is not a draft") end' |
+            LC_ALL=C sort)"
+          test "${ACTUAL}" = "${EXPECTED}"
+
+      - name: Download and verify the existing draft bytes
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          ASSET_DIR="${RUNNER_TEMP}/doxmind-release-${VERSION}"
+          mkdir "${ASSET_DIR}"
+          gh release download "v${VERSION}" --repo doXmind/releases \
+            --dir "${ASSET_DIR}" \
+            --pattern "doXmind-${VERSION}-arm64-mac.zip" \
+            --pattern "doXmind-${VERSION}-arm64-mac.zip.blockmap" \
+            --pattern "doXmind-${VERSION}-arm64.dmg" \
+            --pattern "doXmind-${VERSION}-arm64.dmg.blockmap" \
+            --pattern "doXmind-mac-arm64.dmg" \
+            --pattern "latest-mac.yml"
+          node scripts/verify-release-artifacts.mjs \
+            "${ASSET_DIR}" \
+            "docs/releases/${VERSION}-artifacts.sha256" \
+            "${VERSION}"
+
+      - name: Publish the verified draft without changing its assets
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          MANIFEST="docs/releases/${VERSION}-artifacts.sha256"
+          test "$(gh release view "v${VERSION}" --repo doXmind/releases \
+            --json isDraft --jq '.isDraft')" = "true"
+          EXPECTED_DIGESTS="$(LC_ALL=C sort "${MANIFEST}")"
+          REMOTE_DIGESTS="$(gh release view "v${VERSION}" --repo doXmind/releases \
+            --json assets \
+            --jq '.assets[] | "\(.digest | ltrimstr("sha256:"))  \(.name)"' | \
+            LC_ALL=C sort)"
+          test "${REMOTE_DIGESTS}" = "${EXPECTED_DIGESTS}"
+          gh release edit "v${VERSION}" \
+            --repo doXmind/releases \
+            --notes-file "docs/releases/${VERSION}.md" \
+            --draft=false \
+            --latest \
+            --target main

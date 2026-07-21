@@ -140,7 +140,9 @@ describe("AttachmentWorkspace", () => {
 
     expect(await screen.findByText("Recovery status needs attention")).toBeInTheDocument();
     expect(
-      screen.getByText(/keep the source, main sidecar, backup, and lock file/i)
+      screen.getByText(
+        /keep the source, main sidecar, backup, lock file, and every \.corrupt-\* copy/i
+      )
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Attempt PDF recovery" })).toBeInTheDocument();
   });
