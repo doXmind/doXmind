@@ -39,8 +39,7 @@
     "electron": "electron .",
     "electron:smoke": "node scripts/electron-smoke.mjs",
     "build:sidecar:electron": "node scripts/build-sidecar.mjs --electron",
-    "dist:electron": "npm run build:sidecar:electron && npm run build && electron-builder --publish never",
-    "release:electron": "npm run build:sidecar:electron && npm run build && electron-builder --publish always"
+    "dist:electron": "npm run build:sidecar:electron && npm run build && electron-builder --publish never"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

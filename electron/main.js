@@ -27,6 +27,7 @@ const { WindowRegistry, normalizeOpenPath } = require("./window-registry");
 const { saveWindowPdf } = require("./pdf-save");
 const menus = require("./menus");
 const { createWindowLifecycle } = require("./window-lifecycle");
+const { createWorkspaceWatchers } = require("./workspace-watchers");
 
 const REPO_ROOT = path.join(__dirname, "..");
 const OUT_DIR = path.join(REPO_ROOT, "out");
@@ -49,6 +50,16 @@ const assetScope = createAssetScope();
 const eventListeners = [];
 let nextEventId = 1;
 let windowLifecycle = null;
+const workspaceWatchers = createWorkspaceWatchers({
+  onChanged: (webContentsId, payload) =>
+    deliver("workspace://changed", payload, new Set([webContentsId])),
+  onError: (error, webContentsId, root) => {
+    console.error(
+      `[doxmind] workspace watcher failed for webContents ${webContentsId} (${root}):`,
+      error
+    );
+  },
+});
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -126,6 +137,7 @@ function createWindow(target) {
   const wcId = win.webContents.id;
   win.webContents.on("destroyed", () => {
     registry.clear(wcId);
+    workspaceWatchers.remove(wcId);
     for (let i = eventListeners.length - 1; i >= 0; i--) {
       if (eventListeners[i].webContentsId === wcId) eventListeners.splice(i, 1);
     }
@@ -337,6 +349,12 @@ async function dispatch(event, cmd, args) {
     }
     case "resolve_dropped_path":
       return resolveDroppedPath(args.path);
+    case "workspace_watch":
+      workspaceWatchers.watch(sender.id, args.root);
+      return null;
+    case "workspace_unwatch":
+      workspaceWatchers.unwatch(sender.id, args.root);
+      return null;
     case "save_window_pdf":
       return saveWindowPdf(args);
     case "shell_close_window":

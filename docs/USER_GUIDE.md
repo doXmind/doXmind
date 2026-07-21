@@ -235,10 +235,13 @@ After a fallback build is verified and published:
 2. Duplicate the attachment's containing folder into an isolated recovery
    location. Confirm the copy contains the source, main sidecar, every `.bak`,
    `.lock`, and `.corrupt-*` file before proceeding.
-3. Install only the exact build and artifact whose checksum appears in the
-   release notes. Do not point it at the original workspace.
-4. Open the isolated copy and export recovery output to a new file. Do not allow
-   the older build to migrate or repair the only copy of any evidence.
+3. Download only the exact build and artifact whose checksum appears in the
+   release notes, verify the checksum, and extract it to a temporary location.
+   Do not install it over the current doXmind app or point it at the original
+   workspace.
+4. Run that extracted build against the isolated copy and export recovery
+   output to a new file. Do not allow the older build to migrate or repair the
+   only copy of any evidence.
 5. Compare the exported copy with the original attachment. Keep the untouched
    evidence set until the result has been independently verified and archived.
 

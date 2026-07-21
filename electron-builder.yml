@@ -6,10 +6,10 @@
 # Local unsigned test pack:
 #         CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --publish never
 #
-# Auto-update: the zip target is the Squirrel.Mac update payload. Publishing a
-# release (with the dmg + zip assets) to the PUBLIC repo below is all the
-# server-side that update.electronjs.org needs. Keep `repo` in sync with
-# UPDATE_REPO in electron/updater.js.
+# Auto-update: the zip target is the Squirrel.Mac update payload. Publishing the
+# verified assets to the public `doXmind/releases` repo is all the server-side
+# that update.electronjs.org needs. Keep that destination in sync with
+# UPDATE_REPO in electron/updater.js and `.github/workflows/release.yml`.
 
 appId: com.doxmind.desktop
 productName: doXmind
@@ -103,15 +103,3 @@ nsis:
   allowElevation: true
   artifactName: doXmind-${version}-${arch}-setup.${ext}
   shortcutName: doXmind
-
-# Where `electron-builder --publish always` uploads release assets. This repo
-# must be PUBLIC for update.electronjs.org to serve updates from it.
-publish:
-  provider: github
-  owner: doXmind
-  repo: releases
-  # Must stay 'draft': the releases repo has no pre-existing git tag, and
-  # GitHub rejects creating a *published* release without one (422). The draft
-  # holds the assets; a follow-up `gh release edit --draft=false` (CI step /
-  # manual) creates the tag against main and makes the auto-update feed see it.
-  releaseType: draft
