@@ -9,13 +9,13 @@
 </p>
 
 <p align="center">
-  <img src="docs/readme/doxmind-overview.png" width="1200" alt="doXmind workspace with local Markdown, PDF, and spreadsheet documents" />
+  <img src="docs/readme/doxmind-overview.png" width="1200" alt="doXmind local Markdown knowledge workspace" />
 </p>
 
-<h3 align="center">A local-first desktop workspace for Markdown, PDF, and spreadsheets.</h3>
+<h3 align="center">A fully local, Markdown-native knowledge workspace.</h3>
 
 <p align="center">
-  Open a folder and work directly with the files already on your disk. There is no account, cloud sync, telemetry, hosted parser, or built-in AI runtime. Document editing and parsing stay local; update checks and user-requested web bookmark previews may use the internet.
+  Write and organize Markdown Pages with rich blocks, then connect them through local files and a rebuildable knowledge layer. Supported PDF, spreadsheet, and HTML files remain ordinary attachments on disk; images inserted into Pages remain local Markdown assets. There is no account, cloud sync, telemetry, hosted parser, or built-in AI runtime.
 </p>
 
 <p align="center">
@@ -31,34 +31,44 @@
 - **Your filesystem is the source of truth.** Documents stay in the folder you choose and remain usable in Finder, Git, VS Code, Obsidian, Acrobat, Excel, and other desktop tools.
 - **Rich editing remains recoverable.** A hidden `.doxmind` sidecar preserves editor-only state without replacing the portable source file.
 - **External edits are expected.** When Markdown changes outside doXmind, the `.md` file wins and the rich editor state is refreshed on the next save.
-- **PDF and workbook sources stay untouched.** Save records edits in the sidecar; Export creates a new PDF or XLSX with those edits applied.
-- **Desktop workflows are first-class.** Open one file, mount an entire folder, drag files into a workspace, use multiple tabs, search, and reveal documents in the system file manager.
+- **Knowledge remains portable.** Page properties and links belong in Markdown/frontmatter; search, backlinks, and collection indexes must be rebuildable.
+- **Supported attachments stay ordinary files.** doXmind may preview, reference, reveal, open, or explicitly convert them, but never silently rewrites them.
+- **Desktop workflows are first-class.** Mount a folder, drag supported files into a workspace, use multiple tabs, search, and reveal files in the system file manager.
 
-## Work across document types
+## Write and connect Pages
 
-### Markdown
-
-Write in a TipTap editor while keeping a normal `.md` file on disk. The editor supports headings, lists, tasks, quotes, callouts, toggles, tables, images, page links, bookmarks, code blocks, KaTeX math, Mermaid diagrams, columns, a table of contents, document search, an outline, focus mode, and Markdown/PDF export.
+Write in a TipTap editor while keeping a normal `.md` file on disk. The editor supports headings, lists, tasks, quotes, callouts, toggles, tables, images, templates, code blocks, KaTeX math, Mermaid diagrams, columns, a table of contents, search, an outline, focus mode, and Markdown/PDF export.
 
 <p align="center">
   <img src="docs/readme/doxmind-editor.png" width="1200" alt="doXmind Markdown editor with tabs, file tree, tasks, a table, and a code block" />
 </p>
 
-### PDF
+The active roadmap adds frontmatter-backed properties, `[[Wiki Links]]`,
+backlinks, Daily Notes, and Page-based Table/Board/Calendar collections. See
+[Product Direction](docs/PRODUCT_DIRECTION.md) for the boundary and dependency
+order.
 
-Read PDFs with thumbnails, single-page, continuous, or two-page views. Edit extracted text blocks, add free text, create highlights, adjust text styling, and export a new PDF. Opening or saving never silently rewrites the original PDF.
+## Keep attachments local
 
-<p align="center">
-  <img src="docs/readme/doxmind-pdf.png" width="1200" alt="doXmind PDF editor with thumbnails, view controls, and an editable local PDF" />
-</p>
+Supported PDF, spreadsheet, and HTML files remain visible in the workspace as
+Attachments. The target experience is read-only preview where practical plus
+**Open Externally** and **Reveal**. They are not separate doXmind editing
+products, and the New menu does not create blank PDFs or workbooks. An unknown
+format may use the shared `other` read-only fallback if it reaches this surface,
+but that fallback does not add the format to workspace scanning or native file
+opening. Images inserted into Pages remain Markdown assets; standalone image
+files are not promised as workspace documents. While legacy recovery evidence
+is still gated, Attachment sidebar actions are limited to **Open Externally**
+and **Reveal**; move, rename, delete, and same-name replacement remain disabled.
 
-### Spreadsheets
-
-Edit `.xlsx` workbooks with multiple sheets, formulas, number and cell formatting, filters, sorting, autofill, freeze controls, conditional formatting, data validation, comments, and structural row/column operations. Save keeps the edit model in the sidecar; Export writes a new `.xlsx` file.
-
-<p align="center">
-  <img src="docs/readme/doxmind-excel.png" width="1200" alt="doXmind spreadsheet editor with formatting tools, formula bar, workbook grid, and sheet tabs" />
-</p>
+When a supported legacy PDF/Excel sidecar contains edits, the Attachment
+surface can make an explicit, unverified recovery attempt through an isolated,
+zero-write bridge. Older builds could refresh `parsedCache.sourceHash` without
+rebinding the saved editor state, so that hash is only an early mismatch guard,
+not proof that edits belong to one exact file version. Recovery always creates
+a new copy for comparison; it does not open the old editor or call its readers,
+writers, migration, or caches. Unsupported or uncertain state remains preserved
+for manual recovery.
 
 ## Get started
 
@@ -107,16 +117,20 @@ npm run build:desktop   # local Tauri compatibility build
 
 ## Stable document formats
 
-| Format             | Current behavior                                                                         |
-| ------------------ | ---------------------------------------------------------------------------------------- |
-| `.md`, `.markdown` | Open, edit, auto-save, and export as Markdown or PDF                                     |
-| `.pdf`             | Read, edit extracted text, add text/highlights, save sidecar state, and export a new PDF |
-| `.xlsx`            | Edit workbook content and formatting, save sidecar state, and export a new XLSX          |
-| `.xlsm`            | Opens through the workbook path; VBA preservation is not guaranteed on export            |
+| Format                   | Product role             | Current contract                                                                 |
+| ------------------------ | ------------------------ | -------------------------------------------------------------------------------- |
+| `.md`, `.markdown`       | Page                     | Open, edit, auto-save, and export as Markdown or PDF                             |
+| `.pdf`                   | Attachment               | Keep as source; preview/open/reveal target; legacy edit recovery is transitional |
+| `.xlsx`, `.xlsm`, `.csv` | Attachment               | Keep as source; open/reveal target; legacy edit recovery is transitional         |
+| `.html`, `.htm`          | Attachment/import source | Keep as source; not a first-class editable Page format                           |
 
-CSV entry points exist in the current development branch, but CSV is not yet in the stable format list: opening it from a mounted folder can still reach the XLSX parser and fail. Convert CSV files to `.xlsx` until that end-to-end path is fixed.
+Images inserted into Pages remain ordinary local assets referenced by Markdown.
+Standalone image files, DOCX, PPTX, and other extensions are not supported
+workspace documents merely because the shared Attachment view has an `other`
+fallback.
 
-There is no OCR pipeline. Image-only/scanned PDFs can be viewed, but doXmind cannot turn their pixels into editable text. DOCX and PPTX are not supported document types in the current desktop edition.
+DOCX and PPTX are not Page types. Explicit one-way conversion into Markdown may
+be provided by local import tooling; the source file remains unchanged.
 
 ## Storage model
 
@@ -126,23 +140,22 @@ doXmind keeps each portable file beside a hidden companion file:
 ~/Documents/doXmind/
 ├── Project Plan.md
 ├── .Project Plan.doxmind
-├── Quarterly Plan.xlsx
-├── .Quarterly Plan.xlsx.doxmind
-├── Research Report.pdf
-├── .Research Report.pdf.doxmind
+├── attachments/
+│   ├── Quarterly Plan.xlsx
+│   └── Research Report.pdf
 └── assets/
     └── diagram.png
 ```
 
-| Document    | Portable source  | What Save writes                                    | What Export writes              |
-| ----------- | ---------------- | --------------------------------------------------- | ------------------------------- |
-| Markdown    | `.md`            | Markdown plus rich editor HTML/extras in `.doxmind` | A selected `.md` or `.pdf` copy |
-| PDF         | Original `.pdf`  | PDF edit state in `.pdf.doxmind`                    | A new edited `.pdf`             |
-| Spreadsheet | Original `.xlsx` | Workbook edit state in `.xlsx.doxmind`              | A new edited `.xlsx`            |
+Page freshness is tracked with a hash of the current Markdown. Page sidecars
+hold lossless editor HTML and replaceable state; user-authored knowledge must
+remain recoverable from Markdown/frontmatter alone.
 
-Markdown freshness is tracked with a hash of the current `.md`. PDF and spreadsheet parser caches track the corresponding source binary. A small `<sidecar>.lock` file can persist after a legacy sidecar migration and must not be deleted manually. Migration also keeps the original sidecar as `<sidecar>.bak` before rewriting it.
-
-The practical rule is simple: keep a source file and its sidecar together. Restoring only a PDF/XLSX source loses the edits held in its sidecar; restoring only Markdown text can lose rich editor-only state.
+Older versions may have created sidecars next to PDF/XLSX sources. Recovery
+inspects the main sidecar and `<sidecar>.bak` independently and downloads a new
+`recovered.pdf` or `recovered.xlsx` without changing either candidate or the
+source. Keep the source, main sidecar, `<sidecar>.bak`, and `<sidecar>.lock`
+together; do not delete any of them as cleanup or after an export.
 
 The full wire-format contract is documented in [docs/sidecar-format.md](docs/sidecar-format.md), and migration/recovery semantics are in [ADR-0003](docs/adr/0003-explicit-sidecar-migration.md).
 
@@ -150,11 +163,12 @@ The full wire-format contract is documented in [docs/sidecar-format.md](docs/sid
 
 Included:
 
-- Local Markdown, PDF, and XLSX editing
+- Local Markdown Page editing and real-folder workspaces
+- Rich blocks, templates, search, outline, tabs, and local export
 - Hidden `.doxmind` sidecars with atomic local writes
 - Multi-window and multi-tab desktop workflows
-- Local image storage for Markdown documents
-- PDF and workbook parse/export through a localhost FastAPI sidecar
+- Local assets and supported Attachments
+- A rebuildable path toward properties, Wiki Links, backlinks, and Page-based collections
 - Electron packaging and update channel; Tauri remains available as a development/compatibility shell
 
 Intentionally not included:
@@ -163,7 +177,7 @@ Intentionally not included:
 - Cloud sync, S3, Postgres, Redis, or hosted document storage
 - Billing, quotas, or telemetry
 - Built-in chat, model providers, autocomplete, document review, or knowledge retrieval
-- OCR, DOCX/PPTX editing, or Word export
+- PDF/Excel/HTML editing stacks, blank Office/PDF creation, DOCX/PPTX editing, or Word export
 
 ## Development
 
@@ -197,7 +211,7 @@ All are optional:
 - `DATA_DIR` — override `~/.doxmind`
 - `DOXMIND_PYTHON` — Python executable used by `npm run dev:all`
 - `DEBUG`, `HOST`, `PORT` — backend configuration
-- `DOXMIND_SIDECAR_MIGRATE` — enable or disable one-shot legacy PDF/Excel sidecar migration; see [ADR-0003](docs/adr/0003-explicit-sidecar-migration.md)
+- `DOXMIND_SIDECAR_MIGRATE` — controls the frozen legacy PDF/Excel migration stack documented in [ADR-0003](docs/adr/0003-explicit-sidecar-migration.md); the current Attachment recovery bridge does not invoke it
 - `DOXMIND_PERF` — opt-in backend performance instrumentation
 - `DOXMIND_DISABLE_DOC_CACHE`, `DOXMIND_DISABLE_PDF_CACHE`, `DOXMIND_DISABLE_XLSX_CACHE` — backend cache kill switches for debugging
 
@@ -260,9 +274,15 @@ Yes. If the `.md` hash no longer matches its sidecar, doXmind treats the Markdow
 </details>
 
 <details>
-<summary>Does Save overwrite my PDF or workbook?</summary>
+<summary>What happens to PDF and spreadsheet files?</summary>
 
-No. Save updates the hidden sidecar. Use Export when you want a new PDF or XLSX with the current edits applied.
+They remain ordinary local Attachments. doXmind does not silently rewrite them.
+If supported legacy evidence is found, doXmind can attempt a new, unverified
+recovery copy without mounting the old editor or changing the source, sidecar,
+backup, or lock file. When the main sidecar and backup contain different saved
+states, you choose which one to try. A missing or mismatched cache hash blocks
+the attempt, and strict exporters reject any field they cannot apply completely.
+Compare the new copy with the original before using it.
 
 </details>
 

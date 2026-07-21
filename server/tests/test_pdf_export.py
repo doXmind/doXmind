@@ -30,6 +30,16 @@ def _build_pdf(pages: list[list[tuple[str, tuple[float, float]]]]) -> bytes:
     return buffer.getvalue()
 
 
+def _build_rotated_pdf() -> bytes:
+    doc = pymupdf.open()
+    page = doc.new_page(width=200, height=100)
+    page.set_rotation(90)
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    doc.close()
+    return buffer.getvalue()
+
+
 def _all_text(pdf_bytes: bytes) -> str:
     parsed = parse_pdf_blocks(pdf_bytes)
     out: list[str] = []
@@ -56,7 +66,7 @@ def test_export_redacts_and_replaces_paragraph_text() -> None:
                         "rect": [
                             bbox[0],
                             bbox[1],
-                            bbox[2] - bbox[0],
+                            max(bbox[2] - bbox[0], 200.0),
                             bbox[3] - bbox[1],
                         ],
                         "text": "Replaced fresh content",
@@ -103,6 +113,38 @@ def test_export_deleted_edit_erases_without_replacement() -> None:
     text = _all_text(edited)
     assert "Sensitive" not in text
     assert "secret" not in text
+
+
+def test_strict_empty_text_with_explicit_deletion_does_not_insert_a_space() -> None:
+    pdf = _build_pdf([[("Delete me", (72, 120))]])
+    bbox = parse_pdf_blocks(pdf)["pages"][0]["blocks"][0]["bbox"]
+
+    edited = export_edited_pdf(
+        pdf,
+        {
+            "pages": [
+                {
+                    "pageIndex": 0,
+                    "textEdits": [
+                        {
+                            "rect": [
+                                bbox[0],
+                                bbox[1],
+                                bbox[2] - bbox[0],
+                                bbox[3] - bbox[1],
+                            ],
+                            "text": "",
+                            "deleted": True,
+                        }
+                    ],
+                }
+            ]
+        },
+        strict_recovery=True,
+    )
+
+    with pymupdf.open(stream=io.BytesIO(edited), filetype="pdf") as doc:
+        assert doc[0].get_text() == ""
 
 
 def test_export_inserts_free_text() -> None:
@@ -258,7 +300,7 @@ def test_export_endpoint_returns_pdf_binary(sync_client: Any) -> None:
                         "rect": [
                             bbox[0],
                             bbox[1],
-                            bbox[2] - bbox[0],
+                            max(bbox[2] - bbox[0], 200.0),
                             bbox[3] - bbox[1],
                         ],
                         "text": "via api",
@@ -271,7 +313,7 @@ def test_export_endpoint_returns_pdf_binary(sync_client: Any) -> None:
     response = sync_client.post(
         "/api/pdf/export-edited",
         files={"file": ("smoke.pdf", pdf, "application/pdf")},
-        data={"edits": json.dumps(edits)},
+        data={"edits": json.dumps(edits), "strict_recovery": "true"},
     )
     assert response.status_code == 200, response.text
     assert response.headers["content-type"] == "application/pdf"
@@ -349,4 +391,302 @@ def test_export_endpoint_rejects_non_object_edits(sync_client: Any) -> None:
         files={"file": ("smoke.pdf", pdf, "application/pdf")},
         data={"edits": "[]"},
     )
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "edits",
+    [
+        {"pages": [{"pageIndex": 9}]},
+        {
+            "pages": [
+                {
+                    "pageIndex": 0,
+                    "freeText": [{"rect": [600, 780, 20, 20], "text": "outside"}],
+                }
+            ]
+        },
+        {
+            "pages": [
+                {
+                    "pageIndex": 0,
+                    "freeText": [
+                        {"rect": [72, 200, 200, 30], "text": "future", "underline": True}
+                    ],
+                }
+            ]
+        },
+        {
+            "pages": [
+                {
+                    "pageIndex": 0,
+                    "highlights": [{"rect": [72, 200, 30, 10], "color": "not-a-color"}],
+                }
+            ]
+        },
+        {
+            "pages": [
+                {
+                    "pageIndex": 0,
+                    "highlights": [{"rect": [72, 200, 30, 10], "opacity": 1.5}],
+                }
+            ]
+        },
+        {
+            "pages": [
+                {
+                    "pageIndex": 0,
+                    "freeText": [{"rect": [72, 200, 200, 30], "text": "emoji 😀"}],
+                }
+            ]
+        },
+        {
+            "pages": [
+                {
+                    "pageIndex": 0,
+                    "freeText": [
+                        {"rect": [72, 200, 200, 30], "text": "deleted", "deleted": True}
+                    ],
+                }
+            ]
+        },
+        {"pages": [{"pageIndex": 0}, {"pageIndex": 0}]},
+    ],
+)
+def test_strict_recovery_endpoint_rejects_skipped_or_lossy_payloads(
+    sync_client: Any,
+    edits: dict[str, Any],
+) -> None:
+    pdf = _build_pdf([[("source", (72, 72))]])
+    response = sync_client.post(
+        "/api/pdf/export-edited",
+        files={"file": ("strict.pdf", pdf, "application/pdf")},
+        data={"edits": json.dumps(edits), "strict_recovery": "true"},
+    )
+    assert response.status_code == 400, response.text
+
+
+def test_strict_recovery_rejects_empty_replacement_without_deletion(sync_client: Any) -> None:
+    pdf = _build_pdf([[("source", (72, 72))]])
+    response = sync_client.post(
+        "/api/pdf/export-edited",
+        files={"file": ("strict.pdf", pdf, "application/pdf")},
+        data={
+            "edits": json.dumps(
+                {
+                    "pages": [
+                        {
+                            "pageIndex": 0,
+                            "textEdits": [
+                                {"rect": [72, 50, 80, 30], "text": "", "fontSize": 12}
+                            ],
+                        }
+                    ]
+                }
+            ),
+            "strict_recovery": "true",
+        },
+    )
+
+    assert response.status_code == 400, response.text
+
+
+def test_strict_recovery_rejects_empty_free_text(sync_client: Any) -> None:
+    pdf = _build_pdf([[("source", (72, 72))]])
+    response = sync_client.post(
+        "/api/pdf/export-edited",
+        files={"file": ("strict.pdf", pdf, "application/pdf")},
+        data={
+            "edits": json.dumps(
+                {
+                    "pages": [
+                        {
+                            "pageIndex": 0,
+                            "freeText": [
+                                {"rect": [72, 200, 80, 30], "text": "", "fontSize": 12}
+                            ],
+                        }
+                    ]
+                }
+            ),
+            "strict_recovery": "true",
+        },
+    )
+
+    assert response.status_code == 400, response.text
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        {"rect": [72, 200, 200, 30], "text": "control\x01text", "fontSize": 12},
+        {"rect": [72, 200, 200, 30], "text": "tab\ttext", "fontSize": 12},
+        {"rect": [72, 200, 200, 30], "text": "carriage\rreturn", "fontSize": 12},
+        {
+            "rect": [72, 200, 200, 30],
+            "text": "recovered",
+            "fontSize": 12,
+            "fontFamily": "\ud800",
+        },
+        {
+            "rect": [72, 200, 200, 30],
+            "text": "recovered",
+            "fontSize": 12,
+            "fontFamily": "Arial;font-size:1px",
+        },
+        {"rect": [72, 200, 200, 30], "text": "recovered", "fontSize": 10**400},
+        {"rect": [72, 200, 10**400, 30], "text": "recovered", "fontSize": 12},
+    ],
+)
+def test_strict_recovery_rejects_unsafe_text_and_numbers(
+    sync_client: Any,
+    edit: dict[str, Any],
+) -> None:
+    pdf = _build_pdf([[("source", (72, 72))]])
+    response = sync_client.post(
+        "/api/pdf/export-edited",
+        files={"file": ("strict.pdf", pdf, "application/pdf")},
+        data={
+            "edits": json.dumps({"pages": [{"pageIndex": 0, "freeText": [edit]}]}),
+            "strict_recovery": "true",
+        },
+    )
+
+    assert response.status_code == 400, response.text
+
+
+@pytest.mark.parametrize("text", ["A  B", " A B ", "A\n  B"])
+def test_strict_recovery_preserves_spaces_and_lf_newlines(text: str) -> None:
+    edited = export_edited_pdf(
+        _build_pdf([[("source", (72, 72))]]),
+        {
+            "pages": [
+                {
+                    "pageIndex": 0,
+                    "freeText": [
+                        {
+                            "rect": [72, 200, 300, 80],
+                            "text": text,
+                            "fontSize": 12,
+                        }
+                    ],
+                }
+            ]
+        },
+        strict_recovery=True,
+    )
+
+    with pymupdf.open(stream=io.BytesIO(edited), filetype="pdf") as doc:
+        assert text in doc[0].get_text("text")
+
+
+def test_legacy_pdf_export_keeps_permissive_out_of_range_behavior(sync_client: Any) -> None:
+    pdf = _build_pdf([[("source", (72, 72))]])
+    response = sync_client.post(
+        "/api/pdf/export-edited",
+        files={"file": ("legacy.pdf", pdf, "application/pdf")},
+        data={"edits": json.dumps({"pages": [{"pageIndex": 9}]})},
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_strict_recovery_rejects_text_that_does_not_fit(monkeypatch: pytest.MonkeyPatch) -> None:
+    pdf = _build_pdf([[("source", (72, 72))]])
+    monkeypatch.setattr("services.pdf_export._insert_text_html", lambda *_args, **_kwargs: False)
+
+    with pytest.raises(ValueError, match="did not fit"):
+        export_edited_pdf(
+            pdf,
+            {
+                "pages": [
+                    {
+                        "pageIndex": 0,
+                        "freeText": [{"rect": [72, 200, 200, 30], "text": "recovered"}],
+                    }
+                ]
+            },
+            strict_recovery=True,
+        )
+
+
+def test_strict_recovery_rejects_text_that_only_fits_when_shrunk() -> None:
+    pdf = _build_pdf([[("source", (72, 72))]])
+
+    with pytest.raises(ValueError, match="did not fit"):
+        export_edited_pdf(
+            pdf,
+            {
+                "pages": [
+                    {
+                        "pageIndex": 0,
+                        "freeText": [
+                            {
+                                "rect": [72, 200, 20, 10],
+                                "text": "This cannot fit at the requested size",
+                                "fontSize": 20,
+                            }
+                        ],
+                    }
+                ]
+            },
+            strict_recovery=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "page_edits",
+    [
+        {"freeText": [{"rect": [10, 20, 40, 20], "text": "recovered", "fontSize": 10}]},
+        {"highlights": [{"rect": [10, 20, 40, 20]}]},
+    ],
+)
+def test_strict_recovery_rejects_edits_on_rotated_pages(page_edits: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="rotation"):
+        export_edited_pdf(
+            _build_rotated_pdf(),
+            {"pages": [{"pageIndex": 0, **page_edits}]},
+            strict_recovery=True,
+        )
+
+
+def test_strict_recovery_preserves_explicit_zero_highlight_opacity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pdf = _build_pdf([[("source", (72, 72))]])
+    seen_opacities: list[float] = []
+    seen_fills: list[tuple[float, float, float]] = []
+    original_draw_rect = pymupdf.Page.draw_rect
+
+    def capture_opacity(page, *args, **kwargs):
+        seen_opacities.append(kwargs["fill_opacity"])
+        seen_fills.append(kwargs["fill"])
+        return original_draw_rect(page, *args, **kwargs)
+
+    monkeypatch.setattr(pymupdf.Page, "draw_rect", capture_opacity)
+    export_edited_pdf(
+        pdf,
+        {
+            "pages": [
+                {
+                    "pageIndex": 0,
+                    "highlights": [{"rect": [72, 80, 20, 10], "opacity": 0}],
+                }
+            ]
+        },
+        strict_recovery=True,
+    )
+
+    assert seen_opacities == [0.0]
+    assert seen_fills == [(1.0, 230 / 255, 109 / 255)]
+
+
+@pytest.mark.parametrize("number", ["NaN", "Infinity", "-Infinity", "1e400", "-1e400"])
+def test_pdf_export_endpoint_rejects_non_finite_json_numbers(sync_client: Any, number: str) -> None:
+    pdf = _build_pdf([[("source", (72, 72))]])
+    response = sync_client.post(
+        "/api/pdf/export-edited",
+        files={"file": ("strict.pdf", pdf, "application/pdf")},
+        data={"edits": f'{{"pages":[],"unused":{number}}}', "strict_recovery": "true"},
+    )
+
     assert response.status_code == 400

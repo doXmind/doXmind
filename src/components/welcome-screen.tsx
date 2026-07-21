@@ -117,10 +117,10 @@ export function WelcomeScreen() {
       return;
     }
     try {
-      const newId = await createFile(name, "", null, { documentType: "markdown" });
+      const newId = await createFile(name, "", null);
       navigateToEditorFile(newId);
     } catch (error) {
-      log.error("Failed to create new document", error);
+      log.error("Failed to create new Page", error);
       const { title, description } = getErrorMessage(error);
       notify.error(title, { description });
     }

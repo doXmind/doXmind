@@ -1,5 +1,9 @@
 # Markdown 是唯一的 first-class document type
 
+Status: amended by [ADR-0012](0012-local-markdown-knowledge-workspace.md). The
+Markdown-only core remains active; PDF/Excel are now Attachments rather than
+editable Second-class files. Synthetic Documents are legacy-recovery machinery.
+
 doXmind 的产品核心是富文本编辑。PDF 和 Excel 在用户视角下是两种**可以被打开和编辑的文件**，但在架构语义上它们是 **Second-class file**——等价于一个只包含一个对应 Custom Block（PDF 块 / Excel 块）的合成 Document。
 
 之所以记录这条决定，是因为代码现状（独立的 PDF/Excel 编辑器、独立的 sidecar shape、独立的 workspace endpoints）会持续诱导维护者把它们当作和 Markdown 平起平坐的三种 first-class document type 来扩展。每次加一条横切功能（外部编辑检测、版本迁移、recents、search）都会被复制三遍。

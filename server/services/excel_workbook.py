@@ -15,11 +15,13 @@ import csv
 import hashlib
 import io
 import logging
+import math
 import os
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import PurePosixPath
 from threading import Lock
 from typing import Any
@@ -45,9 +47,11 @@ except ImportError:  # pragma: no cover — orjson is in requirements.txt
     def _cache_decode(data: bytes) -> Any:
         return _stdlib_json.loads(data)
 
+
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
 from openpyxl.comments import Comment
+from openpyxl.compat.strings import safe_string
 from openpyxl.formatting.rule import (
     CellIsRule,
     ColorScaleRule,
@@ -346,9 +350,7 @@ def _parse_workbook_uncached(xlsx_bytes: bytes, parse_limits: ParseLimits) -> di
             # cached values. Plain data tables avoid a full second workbook
             # load on cold open.
             with perf_timed("excel.load_data_only_false"):
-                wb_formulas = load_workbook(
-                    io.BytesIO(xlsx_bytes), data_only=False, read_only=True
-                )
+                wb_formulas = load_workbook(io.BytesIO(xlsx_bytes), data_only=False, read_only=True)
         except Exception as exc:
             # openpyxl raises a grab-bag of exception types on malformed files.
             raise ValueError(f"failed to parse xlsx: {exc}") from exc
@@ -423,13 +425,16 @@ def _parse_sheet(
     raw_cols_hint = formula_sheet.max_column or 0
     raw_rows = raw_rows_hint
     raw_cols = raw_cols_hint
-    layout: tuple[
-        dict[str, float],
-        dict[str, float],
-        list[dict[str, int]],
-        dict[str, int],
-        dict[tuple[int, int], str],
-    ] | None = None
+    layout: (
+        tuple[
+            dict[str, float],
+            dict[str, float],
+            list[dict[str, int]],
+            dict[str, int],
+            dict[tuple[int, int], str],
+        ]
+        | None
+    ) = None
 
     if hasattr(formula_sheet, "_cells"):
         row_count = min(raw_rows, limits.max_rows)
@@ -926,7 +931,9 @@ def _formula_cached_value_for_cell(cell: Any, cached_value: Any) -> Any:
     workbook = getattr(getattr(cell, "parent", None), "parent", None)
     try:
         epoch = getattr(workbook, "epoch", None)
-        return from_excel(cached_value, epoch=epoch) if epoch is not None else from_excel(cached_value)
+        return (
+            from_excel(cached_value, epoch=epoch) if epoch is not None else from_excel(cached_value)
+        )
     except Exception:
         return cached_value
 
@@ -1107,6 +1114,8 @@ def _coerce_jsonable(value: Any) -> Any:
 def export_edited_workbook(
     xlsx_bytes: bytes,
     edits: dict[str, Any],
+    *,
+    strict_recovery: bool = False,
 ) -> bytes:
     """Apply sidecar edits onto the original .xlsx and return new bytes.
 
@@ -1162,9 +1171,9 @@ def export_edited_workbook(
     # workbook mutates. Subsequent phases resolve sheet ids through this
     # map so they target post-mutation tabs.
     # ------------------------------------------------------------------
-    sheet_lookup: dict[str, str] = {
-        f"sheet-{i}": name for i, name in enumerate(wb.sheetnames)
-    }
+    sheet_lookup: dict[str, str] = {f"sheet-{i}": name for i, name in enumerate(wb.sheetnames)}
+    if strict_recovery:
+        _validate_recovery_targets(edits, wb, sheet_lookup)
     for op in workbook_ops:
         if not isinstance(op, dict):
             continue
@@ -1209,6 +1218,10 @@ def export_edited_workbook(
                 continue
             del wb[target_name]
             sheet_lookup.pop(sheet_id, None)
+
+    if strict_recovery and edits.get("activeSheetId") is not None:
+        active_name = sheet_lookup[edits["activeSheetId"]]
+        wb.active = wb[active_name]
 
     # ------------------------------------------------------------------
     # Phase 1: replay structural ops in order. After this point row/col
@@ -1316,6 +1329,8 @@ def export_edited_workbook(
         elif "value" in payload:
             value = payload["value"]
             sheet[cell_ref] = value
+            if strict_recovery and isinstance(value, str) and value.startswith("="):
+                sheet[cell_ref].data_type = "s"
         if "numberFormat" in payload and payload["numberFormat"]:
             sheet[cell_ref].number_format = str(payload["numberFormat"])
         style_patch = payload.get("style")
@@ -1400,6 +1415,8 @@ def export_edited_workbook(
             sheet_name, row_idx, col_idx = _split_cell_key(str(key), sheet_lookup)
             if sheet_name is None:
                 continue
+            # updatedAt is legacy UI metadata. Strict recovery validates it,
+            # but XLSX comments have no timestamp field to preserve.
             wb[sheet_name].cell(row=row_idx + 1, column=col_idx + 1).comment = Comment(
                 str(text), str(author)
             )
@@ -1418,43 +1435,919 @@ def export_edited_workbook(
             if not isinstance(rules, list):
                 continue
             sheet = wb[sheet_name]
-            for entry in rules:
-                _apply_cf_rule(sheet, entry)
+            for index, entry in enumerate(rules):
+                applied = _apply_cf_rule(sheet, entry, exact=strict_recovery)
+                if strict_recovery and not applied:
+                    raise ValueError(
+                        f"recovery conditional format {sheet_id!r}[{index}] was not applied"
+                    )
 
     buffer = io.BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
 
 
-def _apply_cf_rule(sheet: Worksheet, entry: Any) -> None:
+def _validate_recovery_targets(
+    edits: dict[str, Any],
+    wb: Workbook,
+    sheet_lookup: dict[str, str],
+) -> None:
+    """Reject recovery entries the permissive legacy exporter would omit."""
+    _validate_recovery_top_level(edits)
+    merge_ranges = {
+        sheet_id: [
+            (rng.min_row - 1, rng.min_col - 1, rng.max_row - 1, rng.max_col - 1)
+            for rng in wb[sheet_name].merged_cells.ranges
+        ]
+        for sheet_id, sheet_name in sheet_lookup.items()
+    }
+    final_lookup = _validate_recovery_workbook_ops(
+        edits.get("workbookOps") or [],
+        sheet_lookup,
+        merge_ranges,
+    )
+    _validate_recovery_structural_ops(
+        edits.get("ops") or [],
+        final_lookup,
+        merge_ranges,
+    )
+
+    for key, payload in (edits.get("cells") or {}).items():
+        sheet_id, row, col = _parse_recovery_cell_key(key, final_lookup, "cells")
+        _require_recovery_merged_anchor(sheet_id, row, col, merge_ranges, f"cell {key!r}")
+        sheet_name = final_lookup[sheet_id]
+        source_value = (
+            wb[sheet_name].cell(row=row + 1, column=col + 1).value
+            if sheet_name in wb.sheetnames
+            else None
+        )
+        _validate_recovery_cell_payload(key, payload, source_value=source_value)
+
+    _validate_recovery_validations(
+        edits.get("validations") or {},
+        final_lookup,
+        merge_ranges,
+        wb,
+    )
+    _validate_recovery_comments(
+        edits.get("comments") or {},
+        final_lookup,
+        merge_ranges,
+    )
+
+    for field, max_index in (
+        ("rowHeights", _EXCEL_MAX_ROW_INDEX),
+        ("colWidths", _EXCEL_MAX_COL_INDEX),
+    ):
+        for key, value in (edits.get(field) or {}).items():
+            _parse_recovery_dimension_key(key, final_lookup, field, max_index)
+            number = _require_recovery_number(value, f"{field}[{key!r}]", positive=True)
+            maximum = 409.5 if field == "rowHeights" else 255
+            if number > maximum:
+                raise ValueError(f"recovery {field}[{key!r}] exceeds Excel's {maximum} limit")
+
+    _validate_recovery_frozen(edits.get("frozen") or {}, final_lookup)
+    _validate_recovery_conditional_formats(
+        edits.get("conditionalFormats") or {},
+        final_lookup,
+    )
+
+    active_sheet_id = edits.get("activeSheetId")
+    if active_sheet_id is not None:
+        _require_recovery_sheet(active_sheet_id, final_lookup, "active sheet")
+
+
+_RECOVERY_WORKBOOK_OP_FIELDS = {
+    "addSheet": ({"type", "sheetId", "name"}, {"afterSheetId"}),
+}
+
+
+def _validate_recovery_workbook_ops(
+    ops: list[Any],
+    sheet_lookup: dict[str, str],
+    merge_ranges: dict[str, list[tuple[int, int, int, int]]],
+) -> dict[str, str]:
+    final_lookup = dict(sheet_lookup)
+    for index, op in enumerate(ops):
+        field = f"workbookOps[{index}]"
+        if not isinstance(op, dict):
+            raise ValueError(f"recovery {field} must be an object")
+        op_type = op.get("type")
+        schema = _RECOVERY_WORKBOOK_OP_FIELDS.get(op_type)
+        if schema is None:
+            raise ValueError(f"recovery {field} has an unsupported type {op_type!r}")
+        required, optional = schema
+        missing = required - set(op)
+        unknown = set(op) - required - optional
+        if missing or unknown:
+            detail = sorted(missing or unknown)[0]
+            raise ValueError(f"recovery {field} has an invalid field {detail!r}")
+
+        new_id = _require_recovery_sheet_id(op["sheetId"], field)
+        if new_id in final_lookup:
+            raise ValueError(f"recovery {field} reuses sheet id {new_id!r}")
+        after_id = op.get("afterSheetId")
+        if after_id is not None:
+            _require_recovery_sheet(after_id, final_lookup, field)
+        name = _validate_recovery_sheet_name(op["name"], final_lookup.values(), field)
+        final_lookup[new_id] = name
+        merge_ranges[new_id] = []
+    return final_lookup
+
+
+def _validate_recovery_sheet_name(
+    value: Any,
+    existing_names: Any,
+    field: str,
+) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"recovery {field} has an invalid sheet name")
+    _require_recovery_excel_text(value, f"{field} sheet name", max_length=31)
+    if value != value.strip():
+        raise ValueError(f"recovery {field} has an invalid sheet name")
+    if any(char in value for char in "[]:*?/\\"):
+        raise ValueError(f"recovery {field} has an invalid sheet name")
+    if value.casefold() in {str(name).casefold() for name in existing_names}:
+        raise ValueError(f"recovery {field} duplicates sheet name {value!r}")
+    return value
+
+
+def _require_recovery_sheet_id(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"recovery {field} has an invalid sheet id")
+    return value
+
+
+def _validate_recovery_structural_ops(
+    ops: list[Any],
+    _sheet_lookup: dict[str, str],
+    _merge_ranges: dict[str, list[tuple[int, int, int, int]]],
+) -> None:
+    if ops:
+        raise ValueError(
+            "strict recovery cannot preserve every dependency of structural workbook operations"
+        )
+
+
+def _require_recovery_int(
+    value: Any,
+    field: str,
+    *,
+    minimum: int,
+    maximum: int,
+) -> int:
+    if type(value) is not int or value < minimum or value > maximum:
+        raise ValueError(f"recovery {field} must be an integer in {minimum}..{maximum}")
+    return value
+
+
+_RECOVERY_TOP_LEVEL_FIELDS = {
+    "version",
+    "activeSheetId",
+    "cells",
+    "rowHeights",
+    "colWidths",
+    "ops",
+    "workbookOps",
+    "frozen",
+    "validations",
+    "comments",
+    "conditionalFormats",
+}
+
+
+def _validate_recovery_top_level(edits: dict[str, Any]) -> None:
+    unknown = set(edits) - _RECOVERY_TOP_LEVEL_FIELDS
+    if unknown:
+        raise ValueError(f"unsupported recovery state field: {sorted(unknown)[0]}")
+
+    if "version" in edits and (type(edits["version"]) is not int or edits["version"] != 1):
+        raise ValueError("recovery state version must be 1")
+
+    if "activeSheetId" in edits and (
+        not isinstance(edits["activeSheetId"], str) or not edits["activeSheetId"]
+    ):
+        raise ValueError("'edits.activeSheetId' must be a non-empty string")
+
+    for field in (
+        "cells",
+        "rowHeights",
+        "colWidths",
+        "frozen",
+        "validations",
+        "comments",
+        "conditionalFormats",
+    ):
+        if field in edits and not isinstance(edits[field], dict):
+            raise ValueError(f"'edits.{field}' must be an object")
+
+    for field in ("ops", "workbookOps"):
+        if field in edits and not isinstance(edits[field], list):
+            raise ValueError(f"'edits.{field}' must be an array")
+
+
+_EXCEL_MAX_ROW_INDEX = 1_048_575
+_EXCEL_MAX_COL_INDEX = 16_383
+_RECOVERY_CELL_FIELDS = {"value", "formula", "numberFormat", "style"}
+_EXCEL_MAX_CELL_TEXT = 32_767
+_EXCEL_MAX_FORMULA_TEXT = 8_192
+_EXCEL_MAX_NUMBER = 9.99999999999999e307
+_EXCEL_MIN_NONZERO_NUMBER = 2.2250738585072014e-308
+_RECOVERY_STYLE_FIELDS = {
+    "bold",
+    "italic",
+    "underline",
+    "strikethrough",
+    "color",
+    "background",
+    "textAlign",
+    "verticalAlign",
+    "wrapText",
+    "textOverflow",
+    "fontSize",
+    "fontFamily",
+    "rotation",
+    "hyperlink",
+    "border",
+}
+
+
+def _parse_recovery_cell_key(
+    key: Any,
+    sheet_lookup: dict[str, str],
+    field: str,
+) -> tuple[str, int, int]:
+    if not isinstance(key, str) or key.count("!") != 1:
+        raise ValueError(f"invalid recovery {field} key: {key!r}")
+    sheet_id, coords = key.split("!", 1)
+    if coords.count(",") != 1:
+        raise ValueError(f"invalid recovery {field} key: {key!r}")
+    row_text, col_text = coords.split(",", 1)
+    if not row_text.isascii() or not row_text.isdigit():
+        raise ValueError(f"invalid recovery {field} row in key: {key!r}")
+    if not col_text.isascii() or not col_text.isdigit():
+        raise ValueError(f"invalid recovery {field} column in key: {key!r}")
+    row = int(row_text)
+    col = int(col_text)
+    if row > _EXCEL_MAX_ROW_INDEX or col > _EXCEL_MAX_COL_INDEX:
+        raise ValueError(f"recovery {field} coordinate is outside Excel limits: {key!r}")
+    _require_recovery_sheet(sheet_id, sheet_lookup, field)
+    return sheet_id, row, col
+
+
+def _parse_recovery_dimension_key(
+    key: Any,
+    sheet_lookup: dict[str, str],
+    field: str,
+    max_index: int,
+) -> tuple[str, int]:
+    if not isinstance(key, str) or key.count("!") != 1:
+        raise ValueError(f"invalid recovery {field} key: {key!r}")
+    sheet_id, index_text = key.split("!", 1)
+    if not index_text.isascii() or not index_text.isdigit():
+        raise ValueError(f"invalid recovery {field} index in key: {key!r}")
+    index = int(index_text)
+    if index > max_index:
+        raise ValueError(f"recovery {field} index is outside Excel limits: {key!r}")
+    _require_recovery_sheet(sheet_id, sheet_lookup, field)
+    return sheet_id, index
+
+
+def _require_recovery_merged_anchor(
+    sheet_id: str,
+    row: int,
+    col: int,
+    merge_ranges: dict[str, list[tuple[int, int, int, int]]],
+    field: str,
+) -> None:
+    for top, left, bottom, right in merge_ranges.get(sheet_id, []):
+        if top <= row <= bottom and left <= col <= right and (row, col) != (top, left):
+            raise ValueError(f"recovery {field} targets a non-anchor merged cell")
+
+
+def _require_recovery_excel_text(
+    value: str,
+    field: str,
+    *,
+    max_length: int,
+) -> str:
+    if any(
+        not (
+            codepoint in {0x09, 0x0A, 0x0D}
+            or 0x20 <= codepoint <= 0xD7FF
+            or 0xE000 <= codepoint <= 0xFFFD
+            or 0x10000 <= codepoint <= 0x10FFFF
+        )
+        for codepoint in map(ord, value)
+    ):
+        raise ValueError(f"recovery {field} contains a character invalid in XML 1.0")
+    if "\r" in value:
+        raise ValueError(f"recovery {field} contains a carriage return XLSX cannot preserve")
+    length = len(value.encode("utf-16-le")) // 2
+    if length > max_length:
+        raise ValueError(f"recovery {field} exceeds Excel's {max_length}-character limit")
+    return value
+
+
+def _validate_recovery_cell_payload(key: str, payload: Any, *, source_value: Any) -> None:
+    if not isinstance(payload, dict) or not payload:
+        raise ValueError(f"recovery cell {key!r} must contain an edit object")
+    unknown = set(payload) - _RECOVERY_CELL_FIELDS
+    if unknown:
+        raise ValueError(f"unsupported recovery cell field: {sorted(unknown)[0]}")
+
+    if "value" in payload:
+        value = payload["value"]
+        if value is not None and not isinstance(value, (str, int, float, bool)):
+            raise ValueError(f"recovery cell {key!r} has an invalid value")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            _require_recovery_number(value, f"cell {key!r} value")
+        if isinstance(value, str):
+            _require_recovery_excel_text(
+                value,
+                f"cell {key!r} value",
+                max_length=_EXCEL_MAX_CELL_TEXT,
+            )
+
+    if (
+        "formula" in payload
+        and payload["formula"] is not None
+        and not isinstance(payload["formula"], str)
+    ):
+        raise ValueError(f"recovery cell {key!r} has an invalid formula")
+    if "formula" in payload and not payload["formula"] and "value" not in payload:
+        raise ValueError(f"recovery cell {key!r} cannot clear a formula without a value")
+    if isinstance(payload.get("formula"), str) and payload["formula"]:
+        if payload.get("value") is not None:
+            raise ValueError(
+                f"recovery cell {key!r} cannot combine a formula with a non-null value"
+            )
+        formula = payload["formula"]
+        normalized_formula = formula if formula.startswith("=") else f"={formula}"
+        _require_recovery_excel_text(
+            normalized_formula,
+            f"cell {key!r} formula",
+            max_length=_EXCEL_MAX_FORMULA_TEXT,
+        )
+
+    if "numberFormat" in payload and (
+        not isinstance(payload["numberFormat"], str) or not payload["numberFormat"]
+    ):
+        raise ValueError(f"recovery cell {key!r} has an invalid number format")
+    if isinstance(payload.get("numberFormat"), str):
+        _require_recovery_excel_text(
+            payload["numberFormat"],
+            f"cell {key!r} number format",
+            max_length=255,
+        )
+
+    if "style" in payload:
+        _validate_recovery_style(payload["style"], f"cell {key!r}")
+        hyperlink = payload["style"].get("hyperlink")
+        if isinstance(hyperlink, str) and hyperlink:
+            final_value = source_value
+            if isinstance(payload.get("formula"), str) and payload["formula"]:
+                final_value = payload["formula"]
+            elif "value" in payload:
+                final_value = payload["value"]
+            if final_value is None or final_value == "":
+                raise ValueError(
+                    f"recovery cell {key!r} cannot attach a hyperlink to an empty cell"
+                )
+
+
+def _validate_recovery_style(style: Any, field: str) -> None:
+    if not isinstance(style, dict) or not style:
+        raise ValueError(f"recovery {field} style must be a non-empty object")
+    unknown = set(style) - _RECOVERY_STYLE_FIELDS
+    if unknown:
+        raise ValueError(f"unsupported recovery style field: {sorted(unknown)[0]}")
+
+    for key in ("bold", "italic", "underline", "strikethrough", "wrapText"):
+        if key in style and not isinstance(style[key], bool):
+            raise ValueError(f"recovery {field} style.{key} must be boolean")
+
+    for key in ("color", "background"):
+        if key in style:
+            value = style[key]
+            if not isinstance(value, str) or (value and _normalise_hex(value) is None):
+                raise ValueError(f"recovery {field} style.{key} has an invalid color")
+
+    if "textAlign" in style and style["textAlign"] not in _HORIZONTAL_ALIGN_MAP:
+        raise ValueError(f"recovery {field} style.textAlign is invalid")
+    if "verticalAlign" in style and style["verticalAlign"] not in _VERTICAL_ALIGN_MAP:
+        raise ValueError(f"recovery {field} style.verticalAlign is invalid")
+    if "textOverflow" in style and style["textOverflow"] != "wrap":
+        raise ValueError(
+            f"recovery {field} style.textOverflow cannot be represented exactly in XLSX"
+        )
+    if "wrapText" in style and "textOverflow" in style and not (
+        style["wrapText"] is True and style["textOverflow"] == "wrap"
+    ):
+        raise ValueError(
+            f"recovery {field} style.wrapText conflicts with style.textOverflow"
+        )
+
+    if "fontSize" in style:
+        font_size = _require_recovery_number(
+            style["fontSize"], f"{field} style.fontSize", positive=True
+        )
+        if font_size > 409:
+            raise ValueError(f"recovery {field} style.fontSize exceeds Excel's 409-point limit")
+    if "fontFamily" in style and (
+        not isinstance(style["fontFamily"], str) or not style["fontFamily"]
+    ):
+        raise ValueError(f"recovery {field} style.fontFamily must be a non-empty string")
+    if isinstance(style.get("fontFamily"), str):
+        _require_recovery_excel_text(
+            style["fontFamily"],
+            f"{field} style.fontFamily",
+            max_length=255,
+        )
+    if "rotation" in style:
+        rotation = _require_recovery_number(style["rotation"], f"{field} style.rotation")
+        if not rotation.is_integer() or rotation < -90 or rotation > 90:
+            raise ValueError(f"recovery {field} style.rotation must be an integer in -90..90")
+    if "hyperlink" in style and not isinstance(style["hyperlink"], str):
+        raise ValueError(f"recovery {field} style.hyperlink must be a string")
+    if isinstance(style.get("hyperlink"), str):
+        _require_recovery_excel_text(
+            style["hyperlink"],
+            f"{field} style.hyperlink",
+            max_length=2_083,
+        )
+
+    if "border" in style:
+        border = style["border"]
+        if border is None:
+            return
+        if not isinstance(border, dict):
+            raise ValueError(f"recovery {field} style.border must be an object or null")
+        unknown_sides = set(border) - {"top", "right", "bottom", "left"}
+        if unknown_sides:
+            raise ValueError(f"unsupported recovery border side: {sorted(unknown_sides)[0]}")
+        for side_name, side in border.items():
+            if not isinstance(side, dict) or set(side) - {"style", "color"}:
+                raise ValueError(f"recovery {field} border.{side_name} is malformed")
+            if side.get("style") not in _FRONTEND_BORDER_STYLES:
+                raise ValueError(f"recovery {field} border.{side_name}.style is invalid")
+            if "color" in side:
+                color = side["color"]
+                if not isinstance(color, str) or (color and _normalise_hex(color) is None):
+                    raise ValueError(f"recovery {field} border.{side_name}.color is invalid")
+
+
+def _require_recovery_number(value: Any, field: str, *, positive: bool = False) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"recovery {field} must be a number")
+    try:
+        number = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError(f"recovery {field} must be finite") from exc
+    if not math.isfinite(number):
+        raise ValueError(f"recovery {field} must be finite")
+    magnitude = abs(number)
+    if magnitude > _EXCEL_MAX_NUMBER:
+        raise ValueError(f"recovery {field} exceeds Excel's numeric range")
+    if 0 < magnitude < _EXCEL_MIN_NONZERO_NUMBER:
+        raise ValueError(f"recovery {field} is below Excel's numeric range")
+    try:
+        serialized_number = float(safe_string(value))
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise ValueError(f"recovery {field} cannot be preserved exactly in XLSX") from exc
+    if serialized_number != value:
+        raise ValueError(f"recovery {field} cannot be preserved exactly in XLSX")
+    if positive and number <= 0:
+        raise ValueError(f"recovery {field} must be positive")
+    return number
+
+
+def _validate_recovery_frozen(
+    frozen: dict[str, Any],
+    sheet_lookup: dict[str, str],
+) -> None:
+    for sheet_id, payload in frozen.items():
+        _require_recovery_sheet(sheet_id, sheet_lookup, "frozen")
+        if not isinstance(payload, dict) or set(payload) != {"row", "col"}:
+            raise ValueError(f"recovery frozen[{sheet_id!r}] is malformed")
+        _require_recovery_int(
+            payload["row"],
+            f"frozen[{sheet_id!r}].row",
+            minimum=0,
+            maximum=_EXCEL_MAX_ROW_INDEX,
+        )
+        _require_recovery_int(
+            payload["col"],
+            f"frozen[{sheet_id!r}].col",
+            minimum=0,
+            maximum=_EXCEL_MAX_COL_INDEX,
+        )
+
+
+def _validate_recovery_validations(
+    validations: dict[str, Any],
+    sheet_lookup: dict[str, str],
+    merge_ranges: dict[str, list[tuple[int, int, int, int]]],
+    wb: Workbook,
+) -> None:
+    for key, payload in validations.items():
+        sheet_id, row, col = _parse_recovery_cell_key(key, sheet_lookup, "validations")
+        _require_recovery_merged_anchor(sheet_id, row, col, merge_ranges, f"validation {key!r}")
+        sheet_name = sheet_lookup[sheet_id]
+        if sheet_name in wb.sheetnames:
+            cell_ref = f"{get_column_letter(col + 1)}{row + 1}"
+            if any(
+                validation.sqref and cell_ref in validation.sqref
+                for validation in wb[sheet_name].data_validations.dataValidation
+            ):
+                raise ValueError(
+                    f"recovery validation {key!r} overlaps an existing source validation"
+                )
+        if not isinstance(payload, dict) or set(payload) != {"type", "values"}:
+            raise ValueError(f"recovery validation {key!r} is malformed")
+        values = payload["values"]
+        if payload["type"] != "list" or not isinstance(values, list) or not values:
+            raise ValueError(f"recovery validation {key!r} is unsupported or empty")
+        if any(not isinstance(value, str) for value in values):
+            raise ValueError(f"recovery validation {key!r} values must be strings")
+        for index, value in enumerate(values):
+            _require_recovery_excel_text(
+                value,
+                f"validation {key!r} value {index}",
+                max_length=_EXCEL_MAX_CELL_TEXT,
+            )
+            if "," in value or "\n" in value or "\r" in value:
+                raise ValueError(
+                    f"recovery validation {key!r} contains an inline-list delimiter"
+                )
+        escaped = ",".join(value.replace('"', '""') for value in values)
+        if len(escaped) + 2 > 255:
+            raise ValueError(f"recovery validation {key!r} exceeds Excel's inline-list limit")
+
+
+def _validate_recovery_comments(
+    comments: dict[str, Any],
+    sheet_lookup: dict[str, str],
+    merge_ranges: dict[str, list[tuple[int, int, int, int]]],
+) -> None:
+    allowed = {"text", "author", "updatedAt"}
+    for key, payload in comments.items():
+        sheet_id, row, col = _parse_recovery_cell_key(key, sheet_lookup, "comments")
+        _require_recovery_merged_anchor(sheet_id, row, col, merge_ranges, f"comment {key!r}")
+        if (
+            not isinstance(payload, dict)
+            or "text" not in payload
+            or set(payload) - allowed
+            or not isinstance(payload["text"], str)
+            or not payload["text"]
+        ):
+            raise ValueError(f"recovery comment {key!r} is malformed")
+        _require_recovery_excel_text(
+            payload["text"],
+            f"comment {key!r}.text",
+            max_length=_EXCEL_MAX_CELL_TEXT,
+        )
+        if "author" in payload:
+            if not isinstance(payload["author"], str) or not payload["author"]:
+                raise ValueError(f"recovery comment {key!r}.author is malformed")
+            _require_recovery_excel_text(
+                payload["author"],
+                f"comment {key!r}.author",
+                max_length=255,
+            )
+        if "updatedAt" in payload:
+            _validate_recovery_timestamp(payload["updatedAt"], f"comment {key!r}.updatedAt")
+
+
+def _validate_recovery_timestamp(value: Any, field: str) -> None:
+    """Validate legacy UI metadata that XLSX cannot and need not persist."""
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"recovery {field} must be an ISO timestamp")
+    normalized = f"{value[:-1]}+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(f"recovery {field} must be an ISO timestamp") from exc
+    if parsed.tzinfo is None:
+        raise ValueError(f"recovery {field} must include a timezone")
+
+
+_RECOVERY_CF_KINDS = {
+    "cellValue",
+    "between",
+    "containsText",
+    "duplicate",
+    "unique",
+    "blank",
+    "notBlank",
+    "colorScale",
+}
+
+
+def _validate_recovery_conditional_formats(
+    conditional_formats: dict[str, Any],
+    sheet_lookup: dict[str, str],
+) -> None:
+    for sheet_id, rules in conditional_formats.items():
+        _require_recovery_sheet(sheet_id, sheet_lookup, "conditionalFormats")
+        if not isinstance(rules, list):
+            raise ValueError(f"recovery conditionalFormats[{sheet_id!r}] must be an array")
+        for index, rule in enumerate(rules):
+            field = f"conditionalFormats[{sheet_id!r}][{index}]"
+            if (
+                not isinstance(rule, dict)
+                or not {"id", "range", "condition"}.issubset(rule)
+                or set(rule) - {"id", "range", "condition", "style"}
+                or not isinstance(rule["id"], str)
+                or not rule["id"]
+            ):
+                raise ValueError(f"recovery {field} is malformed")
+            _validate_recovery_cf_range(rule["range"], field)
+            _validate_recovery_cf_condition(rule["condition"], field)
+            _validate_recovery_cf_formulas(rule["range"], rule["condition"], field)
+            if "style" in rule:
+                if rule["condition"].get("kind") == "colorScale":
+                    raise ValueError(f"recovery {field} color scale cannot carry a style")
+                _validate_recovery_cf_style(rule["style"], field)
+        for index, rule in enumerate(rules):
+            if rule["condition"].get("kind") != "colorScale":
+                continue
+            cell_range = rule["range"]
+            for later_index, later_rule in enumerate(rules[index + 1 :], start=index + 1):
+                later_range = later_rule["range"]
+                disjoint = (
+                    cell_range["bottom"] < later_range["top"]
+                    or later_range["bottom"] < cell_range["top"]
+                    or cell_range["right"] < later_range["left"]
+                    or later_range["right"] < cell_range["left"]
+                )
+                if not disjoint:
+                    raise ValueError(
+                        "recovery conditionalFormats"
+                        f"[{sheet_id!r}][{index}] color scale overlaps "
+                        f"lower-priority rule [{later_index}]"
+                    )
+
+
+def _validate_recovery_cf_range(value: Any, field: str) -> None:
+    if not isinstance(value, dict) or set(value) != {"top", "left", "bottom", "right"}:
+        raise ValueError(f"recovery {field}.range is malformed")
+    top = _require_recovery_int(
+        value["top"], f"{field}.range.top", minimum=0, maximum=_EXCEL_MAX_ROW_INDEX
+    )
+    left = _require_recovery_int(
+        value["left"], f"{field}.range.left", minimum=0, maximum=_EXCEL_MAX_COL_INDEX
+    )
+    bottom = _require_recovery_int(
+        value["bottom"], f"{field}.range.bottom", minimum=0, maximum=_EXCEL_MAX_ROW_INDEX
+    )
+    right = _require_recovery_int(
+        value["right"], f"{field}.range.right", minimum=0, maximum=_EXCEL_MAX_COL_INDEX
+    )
+    if bottom < top or right < left:
+        raise ValueError(f"recovery {field}.range is reversed")
+
+
+def _validate_recovery_cf_condition(value: Any, field: str) -> None:
+    if not isinstance(value, dict):
+        raise ValueError(f"recovery {field}.condition must be an object")
+    kind = value.get("kind")
+    if kind not in _RECOVERY_CF_KINDS:
+        raise ValueError(f"recovery {field}.condition kind is unsupported")
+
+    if kind == "cellValue":
+        if set(value) != {"kind", "op", "value"} or value["op"] not in {
+            "gt",
+            "lt",
+            "gte",
+            "lte",
+            "eq",
+            "neq",
+        }:
+            raise ValueError(f"recovery {field}.condition is malformed")
+        operand = value["value"]
+        if isinstance(operand, bool) or not isinstance(operand, (str, int, float)):
+            raise ValueError(f"recovery {field}.condition value is malformed")
+        if isinstance(operand, str):
+            _require_recovery_excel_text(
+                operand,
+                f"{field}.condition value",
+                max_length=_EXCEL_MAX_CELL_TEXT,
+            )
+        else:
+            _require_recovery_number(operand, f"{field}.condition value")
+        return
+
+    if kind == "between":
+        if set(value) - {"kind", "min", "max", "inclusive"} or not {
+            "kind",
+            "min",
+            "max",
+        }.issubset(value):
+            raise ValueError(f"recovery {field}.condition is malformed")
+        minimum = _require_recovery_number(value["min"], f"{field}.condition.min")
+        maximum = _require_recovery_number(value["max"], f"{field}.condition.max")
+        if minimum > maximum:
+            raise ValueError(f"recovery {field}.condition range is reversed")
+        if "inclusive" in value and not isinstance(value["inclusive"], bool):
+            raise ValueError(f"recovery {field}.condition.inclusive must be boolean")
+        return
+
+    if kind == "containsText":
+        if set(value) - {"kind", "text", "mode", "caseSensitive"} or not {
+            "kind",
+            "text",
+            "mode",
+        }.issubset(value):
+            raise ValueError(f"recovery {field}.condition is malformed")
+        if not isinstance(value["text"], str) or not value["text"]:
+            raise ValueError(f"recovery {field}.condition.text must be non-empty")
+        _require_recovery_excel_text(
+            value["text"],
+            f"{field}.condition.text",
+            max_length=_EXCEL_MAX_CELL_TEXT,
+        )
+        if value["mode"] not in {"contains", "notContains", "startsWith", "endsWith"}:
+            raise ValueError(f"recovery {field}.condition.mode is invalid")
+        if "caseSensitive" in value and not isinstance(value["caseSensitive"], bool):
+            raise ValueError(f"recovery {field}.condition.caseSensitive must be boolean")
+        return
+
+    if kind == "colorScale":
+        if set(value) - {"kind", "min", "mid", "max"} or not {
+            "kind",
+            "min",
+            "max",
+        }.issubset(value):
+            raise ValueError(f"recovery {field}.condition is malformed")
+        for endpoint in ("min", "max"):
+            _validate_recovery_cf_scale_point(value[endpoint], f"{field}.condition.{endpoint}")
+        if "mid" in value:
+            _validate_recovery_cf_scale_point(value["mid"], f"{field}.condition.mid")
+        return
+
+    if set(value) != {"kind"}:
+        raise ValueError(f"recovery {field}.condition has unsupported fields")
+
+
+def _validate_recovery_cf_scale_point(value: Any, field: str) -> None:
+    if (
+        not isinstance(value, dict)
+        or "color" not in value
+        or set(value) - {"color", "value"}
+        or not isinstance(value["color"], str)
+        or not value["color"]
+        or _normalise_hex(value["color"]) is None
+    ):
+        raise ValueError(f"recovery {field} is malformed")
+    if "value" in value:
+        _require_recovery_number(value["value"], f"{field}.value")
+
+
+def _validate_recovery_cf_style(value: Any, field: str) -> None:
+    allowed = {"bold", "italic", "underline", "strikethrough", "color", "background"}
+    if not isinstance(value, dict) or set(value) - allowed:
+        raise ValueError(f"recovery {field}.style is malformed")
+    for key in ("bold", "italic", "underline", "strikethrough"):
+        if key in value:
+            if not isinstance(value[key], bool):
+                raise ValueError(f"recovery {field}.style.{key} must be boolean")
+            if value[key] is False:
+                raise ValueError(
+                    f"recovery {field}.style.{key}=false cannot be represented exactly"
+                )
+    for key in ("color", "background"):
+        if key in value and (
+            not isinstance(value[key], str) or not value[key] or _normalise_hex(value[key]) is None
+        ):
+            raise ValueError(f"recovery {field}.style.{key} has an invalid color")
+
+
+def _require_recovery_sheet(
+    sheet_id: Any,
+    sheet_lookup: dict[str, str],
+    field: str,
+) -> None:
+    if not isinstance(sheet_id, str) or sheet_id not in sheet_lookup:
+        raise ValueError(f"recovery {field} targets missing sheet {sheet_id!r}")
+
+
+def _validate_recovery_cf_formulas(
+    cell_range: dict[str, int],
+    condition: dict[str, Any],
+    field: str,
+) -> None:
+    formulas = _build_cf_formulas(
+        cell_range["top"],
+        cell_range["left"],
+        condition,
+        exact=True,
+    )
+    if formulas is None:
+        raise ValueError(f"recovery {field}.condition cannot be represented exactly")
+    for index, formula in enumerate(formulas):
+        _require_recovery_excel_text(
+            formula,
+            f"{field}.generated formula {index}",
+            max_length=_EXCEL_MAX_FORMULA_TEXT,
+        )
+
+
+def _build_cf_formulas(
+    top: int,
+    left: int,
+    condition: dict[str, Any],
+    *,
+    exact: bool,
+) -> list[str] | None:
+    kind = condition.get("kind")
+    anchor = f"{get_column_letter(left + 1)}{top + 1}"
+
+    if kind == "cellValue":
+        value = condition.get("value")
+        if value is None:
+            return None
+        return [_format_cf_operand(value, preserve_string=exact)]
+
+    if kind == "between":
+        try:
+            minimum = float(condition.get("min"))
+            maximum = float(condition.get("max"))
+        except (OverflowError, TypeError, ValueError):
+            return None
+        if exact and condition.get("inclusive") is False:
+            return [f"AND({anchor}>{minimum},{anchor}<{maximum})"]
+        return [str(minimum), str(maximum)]
+
+    if kind == "containsText":
+        text = condition.get("text")
+        if not isinstance(text, str) or not text:
+            return None
+        mode = str(condition.get("mode") or "contains")
+        case_sensitive = exact and condition.get("caseSensitive") is True
+        search_text = text
+        if mode in {"contains", "notContains"} and not case_sensitive:
+            search_text = search_text.replace("~", "~~").replace("*", "~*").replace("?", "~?")
+        escaped = search_text.replace('"', '""')
+        if mode == "contains":
+            find_fn = "FIND" if case_sensitive else "SEARCH"
+            return [f'NOT(ISERROR({find_fn}("{escaped}",{anchor})))']
+        if mode == "notContains":
+            find_fn = "FIND" if case_sensitive else "SEARCH"
+            return [f'ISERROR({find_fn}("{escaped}",{anchor}))']
+        if mode == "startsWith" and case_sensitive:
+            return [f'EXACT(LEFT({anchor},{len(text)}),"{escaped}")']
+        if mode == "endsWith" and case_sensitive:
+            return [f'EXACT(RIGHT({anchor},{len(text)}),"{escaped}")']
+        if mode == "startsWith":
+            return [f'LEFT({anchor},{len(text)})="{escaped}"']
+        if mode == "endsWith":
+            return [f'RIGHT({anchor},{len(text)})="{escaped}"']
+        return None
+
+    if kind == "blank":
+        return [f"LEN(TRIM({anchor}))=0"]
+    if kind == "notBlank":
+        return [f"LEN(TRIM({anchor}))>0"]
+    if kind in {"duplicate", "unique", "colorScale"}:
+        return []
+    return None
+
+
+def _apply_cf_rule(sheet: Worksheet, entry: Any, *, exact: bool = False) -> bool:
     """Translate a single sidecar CF entry into an openpyxl conditional-
     formatting rule and attach it to ``sheet``. Silent no-op for malformed
     payloads — keeping export resilient to old/partial sidecars."""
     if not isinstance(entry, dict):
-        return
+        return False
     rng = entry.get("range")
     if not isinstance(rng, dict):
-        return
+        return False
     try:
         top = int(rng["top"])
         left = int(rng["left"])
         bottom = int(rng["bottom"])
         right = int(rng["right"])
     except (KeyError, TypeError, ValueError):
-        return
+        return False
     if top > bottom or left > right:
-        return
-    range_ref = (
-        f"{get_column_letter(left + 1)}{top + 1}"
-        f":{get_column_letter(right + 1)}{bottom + 1}"
-    )
+        return False
+    range_ref = f"{get_column_letter(left + 1)}{top + 1}:{get_column_letter(right + 1)}{bottom + 1}"
 
     cond = entry.get("condition") or {}
     if not isinstance(cond, dict):
-        return
+        return False
     kind = cond.get("kind")
     style = entry.get("style") or {}
     fill, font = _build_dxf(style if isinstance(style, dict) else {})
+
+    def add_rule(rule: Rule) -> None:
+        if exact:
+            # Strict recovery follows the sidecar's first-match-wins order.
+            # openpyxl assigns increasing priorities as rules are added;
+            # stopIfTrue prevents lower-priority matches from layering styles.
+            rule.stopIfTrue = True
+        sheet.conditional_formatting.add(range_ref, rule)
 
     if kind == "colorScale":
         try:
@@ -1462,29 +2355,39 @@ def _apply_cf_rule(sheet: Worksheet, entry: Any) -> None:
             max_color = _normalise_hex(cond.get("max", {}).get("color"))
             mid_payload = cond.get("mid")
             if not min_color or not max_color:
-                return
+                return False
+            start_type = "num" if exact and "value" in cond["min"] else "min"
+            start_value = cond["min"].get("value") if start_type == "num" else None
+            end_type = "num" if exact and "value" in cond["max"] else "max"
+            end_value = cond["max"].get("value") if end_type == "num" else None
             if isinstance(mid_payload, dict):
                 mid_color = _normalise_hex(mid_payload.get("color"))
+                mid_type = "num" if exact and "value" in mid_payload else "percent"
+                mid_value = mid_payload.get("value") if mid_type == "num" else 50
                 rule = ColorScaleRule(
-                    start_type="min",
+                    start_type=start_type,
+                    start_value=start_value,
                     start_color=min_color,
-                    mid_type="percentile",
-                    mid_value=50,
+                    mid_type=mid_type,
+                    mid_value=mid_value,
                     mid_color=mid_color or "FFFFEB84",
-                    end_type="max",
+                    end_type=end_type,
+                    end_value=end_value,
                     end_color=max_color,
                 )
             else:
                 rule = ColorScaleRule(
-                    start_type="min",
+                    start_type=start_type,
+                    start_value=start_value,
                     start_color=min_color,
-                    end_type="max",
+                    end_type=end_type,
+                    end_value=end_value,
                     end_color=max_color,
                 )
-            sheet.conditional_formatting.add(range_ref, rule)
+            add_rule(rule)
         except Exception:
-            return
-        return
+            return False
+        return True
 
     if kind == "cellValue":
         op_map = {
@@ -1498,64 +2401,60 @@ def _apply_cf_rule(sheet: Worksheet, entry: Any) -> None:
         operator = op_map.get(str(cond.get("op")))
         value = cond.get("value")
         if operator is None or value is None:
-            return
-        formula = [_format_cf_operand(value)]
-        rule = CellIsRule(operator=operator, formula=formula, fill=fill, font=font)
-        sheet.conditional_formatting.add(range_ref, rule)
-        return
+            return False
+        formulas = _build_cf_formulas(top, left, cond, exact=exact)
+        if formulas is None:
+            return False
+        rule = CellIsRule(operator=operator, formula=formulas, fill=fill, font=font)
+        add_rule(rule)
+        return True
 
     if kind == "between":
-        try:
-            min_v = float(cond.get("min"))
-            max_v = float(cond.get("max"))
-        except (TypeError, ValueError):
-            return
-        rule = CellIsRule(
-            operator="between",
-            formula=[str(min_v), str(max_v)],
-            fill=fill,
-            font=font,
-        )
-        sheet.conditional_formatting.add(range_ref, rule)
-        return
+        formulas = _build_cf_formulas(top, left, cond, exact=exact)
+        if formulas is None:
+            return False
+        if exact and cond.get("inclusive") is False:
+            rule = FormulaRule(
+                formula=formulas,
+                fill=fill,
+                font=font,
+            )
+        else:
+            rule = CellIsRule(
+                operator="between",
+                formula=formulas,
+                fill=fill,
+                font=font,
+            )
+        add_rule(rule)
+        return True
 
     if kind == "containsText":
-        text = cond.get("text")
-        if not isinstance(text, str) or text == "":
-            return
-        mode = str(cond.get("mode") or "contains")
-        anchor = f"{get_column_letter(left + 1)}{top + 1}"
-        escaped = text.replace('"', '""')
-        if mode == "contains":
-            formula = f'NOT(ISERROR(SEARCH("{escaped}",{anchor})))'
-        elif mode == "notContains":
-            formula = f'ISERROR(SEARCH("{escaped}",{anchor}))'
-        elif mode == "startsWith":
-            formula = f'LEFT({anchor},{len(text)})="{escaped}"'
-        elif mode == "endsWith":
-            formula = f'RIGHT({anchor},{len(text)})="{escaped}"'
-        else:
-            return
-        rule = FormulaRule(formula=[formula], fill=fill, font=font)
-        sheet.conditional_formatting.add(range_ref, rule)
-        return
+        formulas = _build_cf_formulas(top, left, cond, exact=exact)
+        if formulas is None:
+            return False
+        rule = FormulaRule(formula=formulas, fill=fill, font=font)
+        add_rule(rule)
+        return True
 
     if kind in ("duplicate", "unique"):
         rule_type = "duplicateValues" if kind == "duplicate" else "uniqueValues"
         dxf = DifferentialStyle(fill=fill, font=font)
         rule = Rule(type=rule_type, dxf=dxf)
-        sheet.conditional_formatting.add(range_ref, rule)
-        return
+        add_rule(rule)
+        return True
 
     if kind in ("blank", "notBlank"):
-        anchor = f"{get_column_letter(left + 1)}{top + 1}"
-        formula = f'LEN(TRIM({anchor}))=0' if kind == "blank" else f'LEN(TRIM({anchor}))>0'
-        rule = FormulaRule(formula=[formula], fill=fill, font=font)
-        sheet.conditional_formatting.add(range_ref, rule)
-        return
+        formulas = _build_cf_formulas(top, left, cond, exact=exact)
+        if formulas is None:
+            return False
+        rule = FormulaRule(formula=formulas, fill=fill, font=font)
+        add_rule(rule)
+        return True
+    return False
 
 
-def _format_cf_operand(value: Any) -> str:
+def _format_cf_operand(value: Any, *, preserve_string: bool = False) -> str:
     """Format a CF operand for openpyxl's `formula` array. Numbers go in
     bare; strings are double-quoted (with embedded quotes doubled)."""
     if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -1563,11 +2462,12 @@ def _format_cf_operand(value: Any) -> str:
     s = str(value)
     if s == "":
         return '""'
-    try:
-        f = float(s)
-        return str(f)
-    except ValueError:
-        pass
+    if not preserve_string:
+        try:
+            f = float(s)
+            return str(f)
+        except ValueError:
+            pass
     escaped = s.replace('"', '""')
     return f'"{escaped}"'
 
@@ -1653,10 +2553,16 @@ def _normalise_hex(color: str) -> str | None:
     if len(raw) == 3:
         raw = "".join(ch * 2 for ch in raw)
     if len(raw) == 6:
-        return f"FF{raw.upper()}"
-    if len(raw) == 8:
-        return raw.upper()
-    return None
+        normalized = f"FF{raw.upper()}"
+    elif len(raw) == 8:
+        normalized = raw.upper()
+    else:
+        return None
+    try:
+        int(normalized, 16)
+    except ValueError:
+        return None
+    return normalized
 
 
 def _apply_style_patch(cell: Cell, patch: dict[str, Any]) -> None:
@@ -1740,9 +2646,7 @@ def _apply_style_patch(cell: Cell, patch: dict[str, Any]) -> None:
             cell.border = Border()
 
 
-def _split_cell_key(
-    key: str, sheet_lookup: dict[str, str]
-) -> tuple[str | None, int, int]:
+def _split_cell_key(key: str, sheet_lookup: dict[str, str]) -> tuple[str | None, int, int]:
     try:
         sheet_id, coords = key.split("!", 1)
         row_str, col_str = coords.split(",", 1)
@@ -1751,9 +2655,7 @@ def _split_cell_key(
         return None, 0, 0
 
 
-def _split_row_key(
-    key: str, sheet_lookup: dict[str, str]
-) -> tuple[str | None, int]:
+def _split_row_key(key: str, sheet_lookup: dict[str, str]) -> tuple[str | None, int]:
     try:
         sheet_id, row_str = key.split("!", 1)
         return sheet_lookup.get(sheet_id), int(row_str)
@@ -1761,9 +2663,7 @@ def _split_row_key(
         return None, 0
 
 
-def _split_col_key(
-    key: str, sheet_lookup: dict[str, str]
-) -> tuple[str | None, int]:
+def _split_col_key(key: str, sheet_lookup: dict[str, str]) -> tuple[str | None, int]:
     try:
         sheet_id, col_str = key.split("!", 1)
         return sheet_lookup.get(sheet_id), int(col_str)

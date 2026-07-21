@@ -4,13 +4,15 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-doXmind is a **fully-local desktop IDE** for documents. It is a Tauri shell wrapping a Next.js frontend and a localhost FastAPI sidecar. There is no auth, no cloud sync, no AI runtime, no telemetry, no billing/sharing — the user's files on disk are the source of truth.
+doXmind is a **fully-local, Markdown-native knowledge workspace**. It is a desktop shell wrapping a Next.js frontend and a localhost FastAPI sidecar. There is no auth, no cloud sync, no AI runtime, no telemetry, no billing/sharing — the user's files on disk are the source of truth.
 
-Three document types are first-class citizens:
+There is one first-class content type:
 
-- **Markdown** — rich TipTap editor with custom blocks (math, mermaid, callouts, databases, …). Persisted as a portable `.md` file plus a hidden same-name `.doxmind` sidecar that stores the lossless editor HTML and doXmind-only extras.
-- **PDF** — block-based annotation/edit surface. Editor state lives in a hidden sidecar next to the original PDF.
-- **Excel** — workbook editor with formulas, filters, autofill, formatting, and structural row/col ops. Editor state lives in a hidden sidecar next to the original `.xlsx`.
+- **Page** — a rich TipTap editor backed by a portable `.md` or `.markdown` file. A hidden same-name `.doxmind` sidecar stores lossless editor HTML, caches, and replaceable UI state; it must not be the only copy of user-authored knowledge.
+
+Workspace scanning and native opening currently recognize PDF, spreadsheet (`.xlsx`, `.xlsm`, `.csv`), and HTML files as **Attachments**. They may be previewed, referenced, searched, revealed, or opened externally, but they do not get independent create/edit/save product stacks. The `other` discriminator is only a safe read-only fallback if an unknown format reaches the shared surface; it does not promise that arbitrary files are scanned, listed, or registered for native opening. Images inserted into Pages remain local Markdown assets rather than standalone workspace documents. Existing PDF/Excel editor code is frozen legacy machinery; sidecars and recovery artifacts remain user evidence after every unverified recovery attempt. Until the recovery gate passes, Attachment sidebar actions are limited to Open Externally and Reveal; do not add move, rename, delete, or replace flows that could strand evidence. Do not expand the editors or delete the evidence.
+
+The active product boundary and roadmap live in [docs/PRODUCT_DIRECTION.md](docs/PRODUCT_DIRECTION.md) and [ADR-0012](docs/adr/0012-local-markdown-knowledge-workspace.md).
 
 ## 1. Think Before Coding
 
@@ -75,17 +77,16 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## Storage Model
 
-The user's filesystem is the source of truth. Each document is represented by the original portable file plus a hidden sidecar holding doXmind-only state.
+The user's filesystem is the source of truth. Each Markdown Page is represented by the portable file plus a hidden sidecar holding doXmind-only state. Attachments remain ordinary source files; new attachment editor state must not be created.
 A `<sidecar>.lock` file appears next to each sidecar during migration; these files are tiny, persist after use, and must not be deleted manually.
 
 ```text
 ~/Documents/notes/
 ├── Project Plan.md
 ├── .Project Plan.doxmind          # markdown sidecar (HTML + extras)
-├── Q3 Forecast.xlsx
-├── .Q3 Forecast.doxmind            # excel editor state
-├── Spec.pdf
-├── .Spec.doxmind                   # pdf editor state
+├── attachments/
+│   ├── Q3 Forecast.xlsx
+│   └── Spec.pdf
 └── assets/
     └── diagram.png
 ```
@@ -119,7 +120,7 @@ Markdown save algorithm:
 2. Hash the just-written Markdown.
 3. Write `.doxmind = { html, markdown_hash, id, extras }`.
 
-PDF and Excel follow the same hidden-sidecar pattern; their state schemas are owned by `services/pdf_blocks.py` and `services/excel_workbook.py` respectively.
+Legacy PDF/Excel sidecars may still exist. Do not delete, overwrite, or strand them; their schemas remain readable only for compatibility and recovery until the ADR-0012 removal gate is complete.
 
 ## Environment Variables
 
@@ -128,7 +129,7 @@ All optional:
 - `DATA_DIR` — override `~/.doxmind`
 - `DOXMIND_PYTHON` — Python path for `npm run dev:all`
 - `DEBUG`, `HOST`, `PORT` — backend config
-- `DOXMIND_SIDECAR_MIGRATE` — controls one-shot migration of legacy PDF/Excel sidecars (`{pdf_editor, excel_editor, …}` shape) to the markdown sidecar shape on first open. Default on. Accepted enabled values: `1`/`true`/`yes`/`on`. Accepted disabled values: `0`/`false`/`no`/`off`; disabled mode opens legacy sidecars read-only and any save raises `ReadOnlyDocumentError`. Migration writes the original sidecar to `<sidecar>.bak` before rewriting; recovery is `mv .foo.doxmind.bak .foo.doxmind`. See [docs/adr/0003-explicit-sidecar-migration.md](docs/adr/0003-explicit-sidecar-migration.md).
+- `DOXMIND_SIDECAR_MIGRATE` — controls only the frozen Synthetic Document migration stack if a deprecated PDF/Excel reader is called directly. Normal Attachment open and the current recovery bridge never invoke it and never write the source, sidecar, `.bak`, or `.lock`. Default on inside that frozen stack; accepted values are `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`. See [docs/adr/0003-explicit-sidecar-migration.md](docs/adr/0003-explicit-sidecar-migration.md).
 - `DOXMIND_PERF` — opt-in performance instrumentation. Enabled values (`1`/`true`/`yes`/`on`) make the backend write a JSON line per span to `~/.doxmind/perf.log` (override path with `DOXMIND_PERF_LOG`); the frontend has a parallel flag (`localStorage.DOXMIND_PERF=1` or URL `?perf=1`) that turns on a fixed-position dev overlay. Default off. Caveat: the log file is unbounded and grows by hundreds of bytes per HTTP request — leaving perf on for a multi-hour session can produce many MB. Truncate manually (`> ~/.doxmind/perf.log`) between bench runs; rotation is intentionally not implemented since this is a debug-only path. Aggregate with `node scripts/perf-summary.mjs`.
 - `DOXMIND_DISABLE_DOC_CACHE` / `DOXMIND_DISABLE_PDF_CACHE` / `DOXMIND_DISABLE_XLSX_CACHE` — kill switches for the three backend process-local LRUs in `services/markdown_document_state.py`, `services/pdf_blocks.py`, and `services/excel_workbook.py`. Use during benchmarking or when isolating a stale-cache hypothesis. Default all enabled.
 
@@ -139,6 +140,8 @@ There are no API keys or external service credentials.
 This product intentionally excludes JWT auth, OAuth user login, password reset, email verification, Stripe billing, credits, quotas, sharing links, community publishing, comments, follows, bookmarks, notifications, telemetry, RLHF reporting, S3, Postgres, Redis, Docker deployment, hosted cloud sync, chat, agents, providers, OpenRouter, autocomplete, quick edit, document review, prompts, knowledge-base retrieval, and `markitdown`.
 
 Do not rebuild these by accident. If a feature needs to return, make the product decision explicit and design it around the local desktop IDE model.
+
+Do not add blank PDF/Excel creation, PDF/Excel/HTML editing features, or new attachment sidecar writers. Reading and exporting existing legacy state is permitted only as a recovery path.
 
 ## Commit hygiene
 

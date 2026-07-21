@@ -1,5 +1,9 @@
 # Custom Block 注册表拆分 + Block correlation 自动处理 + 报告
 
+Status: self-contained block rules remain active. PDF/Excel external-reference
+rules are legacy-recovery only after
+[ADR-0012](0012-local-markdown-knowledge-workspace.md).
+
 doXmind 有两类 **Custom Block**：**Self-contained**（mermaid、callout、math、toggle、page-link——全部状态在 markdown 文本里）和 **External-reference**（PDF 块、Excel 块——markdown 里只有占位符 + 引用外部文件 + 编辑状态住在 Extras）。两类块的复杂度差距巨大，统一注册表会让简单的块支付外部引用块的成本。
 
 External-reference 块在 markdown 占位符、TipTap node、Extras slot 三处由一个 `id` 串联，称为 **Block correlation**。这条对应关系在用户从 doXmind 之外编辑 markdown 时容易破裂（删占位符 → 孤儿 slot；复制粘贴占位符 → 重复 id；外部添加 → 新 id 找不到 slot）。今天没有任何代码守护这条不变量，bug 表现为静默数据丢失或两个块互相覆盖。

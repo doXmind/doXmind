@@ -64,7 +64,7 @@ function buildAppMenu(deps) {
     {
       label: "File",
       submenu: [
-        { label: "New Document", accelerator: "CmdOrCtrl+N", click: () => focusThenEmitAll("menu://new-file") },
+        { label: "New Page", accelerator: "CmdOrCtrl+N", click: () => focusThenEmitAll("menu://new-file") },
         { label: "New Window", accelerator: "CmdOrCtrl+Shift+N", click: () => emitToAll("menu://new-window", null) },
         { type: "separator" },
         { label: "Open File…", accelerator: "CmdOrCtrl+O", click: () => focusThenEmitAll("menu://open-file") },
@@ -157,7 +157,7 @@ function buildTrayMenu(deps) {
       }))
     : [{ label: "No Recent Items", enabled: false }];
   return Menu.buildFromTemplate([
-    { label: "New Document", accelerator: "CmdOrCtrl+N", click: () => { focusMainWindow(); emitToAll("tray://new-file", null); } },
+    { label: "New Page", accelerator: "CmdOrCtrl+N", click: () => { focusMainWindow(); emitToAll("tray://new-file", null); } },
     { type: "separator" },
     { label: "Open File…", click: () => { focusMainWindow(); emitToAll("tray://open-file", null); } },
     { label: "Open Folder…", click: () => { focusMainWindow(); emitToAll("tray://open-folder", null); } },

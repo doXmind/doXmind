@@ -6,25 +6,32 @@ storage layer, and the desktop shell fit together.
 
 For the migration log that traces how we got here, see
 [`MARKDOWN_FIRST_MIGRATION.md`](./MARKDOWN_FIRST_MIGRATION.md). For the product
-boundary (what is intentionally excluded), see `README.md` and
-`AGENTS.md`.
+boundary and roadmap, see [`PRODUCT_DIRECTION.md`](./PRODUCT_DIRECTION.md) and
+[ADR-0012](./adr/0012-local-markdown-knowledge-workspace.md).
 
 ## Product shape
 
-doXmind Mini is a local-first, single-user desktop document editor. There is
+doXmind Mini is a local-first, single-user Markdown knowledge workspace. There is
 no auth, sync, sharing, billing, telemetry, or AI runtime in this branch.
-Documents live on the user's filesystem; the app reads and writes them in
-place.
+Pages and attachments live on the user's filesystem.
 
 The product surface is intentionally narrow:
 
 - A user opens a folder ("workspace") of Markdown files.
 - The editor renders each `.md` as rich content via TipTap.
-- Editor-only state (block colors, cached HTML) is
-  stored in a hidden `.doxmind` sidecar next to each `.md`.
-- PDF and Excel are Second-class files opened as Synthetic Documents with one
-  External-reference Custom Block whose state lives in the same markdown-shaped
-  sidecar contract next to the source binary.
+- Editor-only state and cached HTML are stored in a hidden `.doxmind` sidecar
+  next to each `.md`; user-authored knowledge never lives only there.
+- Supported PDF, spreadsheet, and HTML files are Attachments. They remain
+  visible and locally accessible without becoming separate editing products.
+  The `other` type is only a safe read-only fallback for an unknown format that
+  reaches the shared surface; it does not extend workspace scanning or native
+  opening. Images inserted into Pages remain local assets rather than standalone
+  workspace documents.
+- Existing PDF/Excel Synthetic Documents are frozen legacy-recovery formats,
+  not foundations for new features. Recovery uses an independent zero-write
+  inspector and exporter rather than mounting the legacy editors. Retired
+  `extras.databases` data is preserved as pass-through bytes only and is never
+  rendered.
 - Import, OCR, and export run locally with no network calls.
 
 ## Source of truth: the dual-file model
@@ -56,14 +63,14 @@ The `.doxmind` sidecar is JSON and stores:
 }
 ```
 
-`extras.blocks` is the target home for External-reference Custom Block state.
-PDF and Excel Synthetic Documents store their single block under
+`extras.blocks` remains the compatibility home for legacy External-reference
+Custom Block state. PDF and Excel Synthetic Documents store their single block under
 `extras.blocks.<block_id>.editor` and
 `extras.blocks.<block_id>.parsedCache`. `extras.databases` is a retired key:
 the database block was removed in July 2026, but sidecars written before the
-removal may still carry it and saves must pass it through untouched. Anything
-that does not round-trip through Markdown belongs in `extras`, not in
-top-level PDF/Excel fields.
+removal may still carry it and saves must pass it through untouched. New Page
+content, properties, links, and Collection rows must round-trip through
+Markdown/frontmatter rather than being added to either legacy tree.
 
 ### Open
 
@@ -84,10 +91,57 @@ The hash is the synchronization primitive. If a third party edits the `.md`
 out from under us, the next open detects the divergence and the user's
 view follows the file, not a stale sidecar.
 
-For Synthetic PDF/Excel Documents, `markdown_hash` hashes the generated
+For legacy Synthetic PDF/Excel Documents, `markdown_hash` hashes the generated
 frontmatter plus the single placeholder comment; source binary freshness belongs
-to `parsedCache.sourceHash`. Open, edit, save, migration, and cache refresh do
-not mutate the source `.pdf` or `.xlsx`.
+to `parsedCache.sourceHash`. That cache hash is not editor-state provenance:
+historical builds could refresh it while preserving older edits. The Attachment
+recovery path does not use that legacy document lifecycle: it strictly parses
+the main sidecar and `.bak`
+independently, reads only the selected `editor` state, and combines it with the
+source bytes in an isolated exporter. It does not invoke legacy readers, writers,
+migration, or caches, and it must not mutate the source, main sidecar, `.bak`, or
+`.lock`. New Attachments do not get editor sidecars.
+
+### Attachment inspection and legacy recovery
+
+Opening a supported PDF, spreadsheet (`.xlsx`, `.xlsm`, or `.csv`), or HTML file
+dispatches to the read-only Attachment surface. Ordinary inspection reads
+metadata and existing files only; it creates no attachment sidecar and never
+mounts a PDF or Excel editor. Unknown formats are not part of the scan/native-open
+whitelist; `other` only prevents an unexpected file from falling through to the
+Markdown editor. Until the legacy recovery gate passes, the sidebar exposes only
+Open Externally and Reveal for Attachments; move, rename, delete, and same-name
+replacement are rejected so recovery evidence cannot be stranded.
+
+For PDF and Excel recovery, the desktop and browser-dev adapters implement the
+same strict contract:
+
+1. Inspect the main sidecar and `<sidecar>.bak` independently without writing.
+2. Classify each candidate conservatively. Corrupt, future-version, mixed-shape,
+   invalid-version, or otherwise unsupported state is `unknown`, not empty.
+3. Require a valid `parsedCache.sourceHash` as an early mismatch guard.
+   Immediately before an attempt, hash the exact source bytes that will be sent
+   to the exporter and refuse a mismatch. A match does not prove that the editor
+   state originated from that exact historical file version.
+4. If both candidates are recoverable and differ, require the user to choose.
+   If they contain the same recovery state, recommend the main sidecar.
+5. Read only the selected editor state, its cache hash, and the original source
+   bytes. Label every historical recovery as an explicit, unverified attempt.
+   A byte-based PDF/XLSX exporter creates a new downloaded `recovered.pdf` or
+   `recovered.xlsx`; it never calls the legacy editor/export lifecycle or changes
+   an existing file.
+6. Refuse the whole export when strict validation or application accounting
+   fails. Excel `filters` or `filterMode` state is not silently dropped, and
+   `.xlsm` recovery produces an
+   `.xlsx` with an explicit warning that macros are not included.
+
+Tests snapshot the source, main sidecar, backup, lock file, mtimes, and directory
+membership around inspection and recovery. This protects both the local-first
+boundary in [ADR-0012](./adr/0012-local-markdown-knowledge-workspace.md) and the
+untrusted-document boundary in
+[ADR-0011](./adr/0011-documents-are-untrusted-input.md). Unknown or unsupported
+state—including edits with a missing or mismatched cache hash—remains evidence
+for a manual recovery path; it must not be deleted during legacy-code removal.
 
 ## Three-layer architecture
 
@@ -146,6 +200,10 @@ boundary should expose explicit `editorHtml` and `browsingHtml` fields instead
 of overloading one generic `html` field. Sidecar `html` remains the on-disk
 editor HTML cache; `browsingHtml` is a versioned, sanitized read view generated
 from the current Markdown body.
+
+[ADR-0011](./adr/0011-documents-are-untrusted-input.md) defines the security
+boundary: document-derived HTML and SVG are untrusted and sanitized when they
+become DOM, while pristine source bytes remain untouched at rest.
 
 ### `src-tauri` — the desktop shell
 
@@ -245,9 +303,11 @@ self-contained block or behavior:
   `inline-comment`, `block-color`, `link-paste`, `page-link`,
   `search`, `trailing-node`, `atom-block-lift`.
 
-Extensions that need to round-trip through Markdown emit / parse fenced
-blocks. Extensions that store doXmind-only state write to `extras` in the
-sidecar.
+Extensions that carry user semantics must round-trip through Markdown or
+frontmatter. The independent Attachment recovery path may parse legacy
+PDF/Excel `extras` to export existing user state; TipTap does not mount those
+external-reference blocks for Attachment recovery, and no new attachment editor
+state is written. Retired `extras.databases` data remains pass-through only.
 
 ## Import pipeline
 
@@ -312,14 +372,19 @@ local-desk/
 
 ## Storage ownership at a glance
 
-| Concern                         | Owner                                   |
-| ------------------------------- | --------------------------------------- |
-| Document Markdown body          | `~/.../Foo.md` (user filesystem)        |
-| Editor HTML, sidecar id, extras | `~/.../.Foo.doxmind` (sidecar)          |
-| Workspace pointer + settings    | `~/.doxmind/config.json`                |
-| Marker model install state      | `~/.doxmind/marker-models.json`         |
-| App-level metadata              | `~/.doxmind/doxmind.db` (`AppMetadata`) |
-| Imported images                 | Workspace `assets/` folder              |
+| Concern                                 | Owner                                    |
+| --------------------------------------- | ---------------------------------------- |
+| Page body, properties, aliases, links   | `~/.../Foo.md` (user filesystem)         |
+| Editor HTML and replaceable UI/cache    | `~/.../.Foo.doxmind` (sidecar)           |
+| Supported Attachments                   | Workspace user files                     |
+| Search/link/property/collection indexes | Workspace `.doxmind/` (rebuildable)      |
+| Retired DatabaseBlock bytes             | Legacy `extras.databases` (pass-through) |
+| Legacy PDF/Excel edit recovery state    | Existing main sidecars and `.bak` files  |
+| Legacy migration/recovery evidence      | Existing `.lock` and `.corrupt-*` files  |
+| Workspace pointer + settings            | `~/.doxmind/config.json`                 |
+| Marker model install state              | `~/.doxmind/marker-models.json`          |
+| App-level metadata                      | `~/.doxmind/doxmind.db` (`AppMetadata`)  |
+| Imported images                         | Workspace `assets/` folder               |
 
 Anything not in this table should be treated as either a bug or a new
 ownership decision that needs to be added here.

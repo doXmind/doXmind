@@ -24,6 +24,8 @@ const WORKSPACE_COMMANDS = new Set([
   "doc_read",
   "workspace_read_binary",
   "workspace_stat_binary",
+  "workspace_inspect_attachment",
+  "workspace_read_attachment_recovery",
   "workspace_read_pdf_editor_state",
   "workspace_write_pdf_editor_state",
   "workspace_read_excel_editor_state",

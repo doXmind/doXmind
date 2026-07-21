@@ -643,11 +643,6 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
             blocks = await perfAsync("doxmind.pdf.fetchBlocks", () => fetchPdfBlocks(blocksBytes), {
               bytes: blocksBytes.byteLength,
             });
-            if (blocks && adapter.writePdfParsedCache) {
-              void adapter
-                .writePdfParsedCache(file.storageHandle, sourceHash, blocks)
-                .catch(() => {});
-            }
           }
         }
 

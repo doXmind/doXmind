@@ -64,14 +64,14 @@
         "ext": ["pdf"],
         "name": "PDF Document",
         "description": "PDF document",
-        "role": "Editor",
+        "role": "Viewer",
         "rank": "Alternate"
       },
       {
         "ext": ["xlsx", "xlsm", "csv"],
         "name": "Spreadsheet",
         "description": "Spreadsheet",
-        "role": "Editor",
+        "role": "Viewer",
         "rank": "Alternate"
       }
     ]

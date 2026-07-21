@@ -1,6 +1,9 @@
 # doXmind User Guide
 
-This guide covers the current doXmind desktop workflow for Markdown, PDF, and Excel workbooks. doXmind is local-first: your documents stay in folders you control, and editor-only state is stored beside them in hidden `.doxmind` sidecars.
+This guide covers doXmind's Markdown Page workflow and the transition of
+supported PDF, spreadsheet, and HTML files into ordinary Attachments. doXmind is
+local-first: Pages and attachments stay in folders you control, and replaceable
+editor state is stored beside Pages in hidden `.doxmind` sidecars.
 
 For source installation and developer commands, see the [project README](../README.md).
 
@@ -39,55 +42,71 @@ Use **File → Open File…** (`Cmd/Ctrl+O`), double-click a registered document
 - Its parent folder is used only for source-file and sidecar access.
 - Closing the standalone document returns to the welcome screen.
 
-### Start a new document
+### Start a new Page
 
-Choose **Start writing** on the welcome screen to create an untitled Markdown buffer. The document stays in memory until its first save, when doXmind asks where to put it.
+Choose **Start writing** on the welcome screen to create an untitled Markdown buffer. The Page stays in memory until its first save, when doXmind asks where to put it.
 
-When a folder is already open, **File → New Document** (`Cmd/Ctrl+N`) creates a real Markdown file inside that workspace instead.
+When a folder is already open, **File → New Page** (`Cmd/Ctrl+N`) creates a real Markdown file inside that workspace instead.
 
 ### Recent items and drag-and-drop
 
 - The welcome screen lists recent standalone files and workspace folders.
 - Drag a folder onto the welcome screen to mount it as a workspace.
-- Drag a stable document (`.md`, `.markdown`, `.pdf`, `.xlsx`, or `.xlsm`) onto the welcome screen to open it.
+- Drag a supported document (`.md`, `.markdown`, `.pdf`, `.xlsx`, `.xlsm`, `.csv`, `.html`, or `.htm`) onto the welcome screen to open it.
 - Drag an external `.md`, `.pdf`, or `.xlsx` file into an open workspace to copy it there; the original stays where it was.
-- If a copied file has the same name as an existing workspace file, choose whether to replace it, keep both, or skip it.
+- If a copied Markdown Page has the same name as an existing Page, choose whether to replace it, keep both, or skip it. For an Attachment collision, use **Keep both** or **Skip**; replace is disabled so legacy recovery evidence cannot be stranded.
 
 ## 3. Manage a workspace
 
-The sidebar is a direct view of the selected folder.
+The sidebar shows supported documents in the selected folder's real hierarchy;
+it is not a general-purpose file browser.
 
 ### Create items
 
 Use the **+** menu in the workspace header, or right-click a folder/empty area, to create:
 
-- A blank Markdown document
-- A blank PDF
-- A blank Excel workbook
+- A blank Markdown Page
 - A folder
-- A Markdown document from a built-in template such as Meeting Notes, Blog Post, Study Notes, or Journal
+- A Page from a built-in template such as Meeting Notes, Blog Post, Study Notes, or Journal
+
+Supported PDF, spreadsheet, and HTML files already present in the folder appear
+as Attachments. The current in-workspace external drop/import accepts `.pdf` and
+`.xlsx`; doXmind does not create blank PDF or spreadsheet files.
 
 ### Work with files
 
-- Click a document to open it in a tab.
+- Click a supported document to open it in a tab.
 - Use `Cmd/Ctrl+Tab` for the quick file switcher.
-- Drag files and folders within the sidebar to move them inside the workspace.
-- Rename from the sidebar context menu; doXmind preserves the original document extension.
+- Drag Pages and folders within the sidebar to move them inside the workspace.
+- Rename Pages and folders from the sidebar context menu; a Page keeps its Markdown extension.
+- Attachments expose **Open Externally** and **Reveal** rather than direct move,
+  rename, or delete. Moving or renaming their parent folder keeps the complete
+  subtree together, including sidecar, `.bak`, and `.lock`; deleting a folder
+  that contains an Attachment or recovery evidence is blocked. Manage that set
+  outside doXmind only after preserving a complete copy.
 - Use **File → Reveal in Finder** (`Cmd/Ctrl+Alt+R`) to locate the active source file.
 - Use `Cmd/Ctrl+B` to show or hide the sidebar.
 - Use `F11` for focus mode; press `Esc` or `F11` again to leave it.
 
 ### Delete and recover
 
-Deleting a document sends both the source file and its sidecar to the operating system Trash/Recycle Bin. They appear as separate entries.
+Deleting a Page sends both its Markdown source and sidecar to the operating
+system Trash/Recycle Bin. They appear as separate entries. Attachment deletion
+is not offered in doXmind while legacy recovery evidence may still exist.
 
-To recover the complete document state:
+To recover the complete Page state:
 
 1. Open the system Trash/Recycle Bin.
 2. Restore the source file.
 3. Restore its hidden `.doxmind` companion to the same original folder.
 
-On macOS, press `Cmd+Shift+.` in Finder or Trash if hidden files are not visible. Restoring only a PDF/XLSX source loses edits stored in its sidecar; restoring only Markdown text can lose rich editor-only state. doXmind does not maintain a separate in-app Trash.
+On macOS, press `Cmd+Shift+.` in Finder or Trash if hidden files are not visible.
+Restore legacy PDF/XLSX sidecars and every recovery artifact together with their
+source. A successful recovery attempt is not a deletion signal: keep the
+evidence until you have independently verified and archived what you need. A
+Markdown Page can be rebuilt from its text if its sidecar is missing, although
+editor-only presentation state may be lost. doXmind does not maintain a separate
+in-app Trash.
 
 ## 4. Edit Markdown
 
@@ -110,7 +129,9 @@ Type `/` on an empty line to open the block menu. Available blocks include:
 - KaTeX math and Mermaid diagrams
 - A table of contents
 
-Database blocks can still render in older documents, but the insertion entry is currently hidden while that feature remains in internal beta.
+The retired DatabaseBlock is not rendered or offered for insertion. Older
+`extras.databases` payloads are preserved unchanged in sidecars for manual
+recovery; they are not an active collection format.
 
 ### Navigate and inspect
 
@@ -144,74 +165,64 @@ You can edit the same `.md` file in another application. When the Markdown hash 
 
 Avoid editing the same document simultaneously in doXmind and another writer: the last save can overwrite the other process's changes.
 
-## 5. Read and edit PDFs
+## 5. Recover legacy PDF edits
 
-Open a PDF from the sidebar or as a standalone file.
+> PDF editing is no longer a product surface. This recovery flow only exports
+> edits already stored by an older doXmind build.
 
-<p align="center">
-  <img src="readme/doxmind-pdf.png" width="1200" alt="The doXmind PDF editor with thumbnails, page controls, and a document canvas" />
-</p>
+Open the PDF from the sidebar or as a standalone file. It opens as a read-only
+Attachment; the old PDF editor is not mounted. doXmind inspects the main legacy
+sidecar and its `.bak` independently without migrating or rewriting either one.
 
-### Read and navigate
+Historical recovery is always manual and unverified. Older doXmind versions
+could refresh a parsed-cache hash while preserving editor state from an earlier
+file version. Immediately before an attempt, doXmind still hashes the exact PDF
+bytes it will use and refuses a missing or mismatched cache hash, but a match is
+not proof that the edits belong to that exact version.
 
-- Use the thumbnail panel to jump between pages.
-- Switch between single-page, continuous, and two-page views.
-- Zoom manually or use fit-width/fit-page controls.
-- Use the page field and previous/next controls for direct navigation.
+If supported recovery evidence is found:
 
-### Edit and annotate
+- When one recovery source is available, select **Attempt PDF recovery**.
+- When the main sidecar and backup both contain different saved states,
+  choose **Attempt main sidecar** or **Attempt backup**. If their recovery state is
+  the same, doXmind recommends the main sidecar automatically.
+- doXmind checks the cache hash, strictly applies the selected editor state to
+  captured source bytes, then downloads `<name> recovered.pdf` as a new,
+  unverified copy. Compare it with the original before using it.
 
-- Choose **Select & edit**, then select an extracted text block to change its text or formatting.
-- Choose **Add text**, then click a page to place a free-text box.
-- Hold `Shift` and drag on a page to create a highlight region.
-- Selected text or objects expose controls for font, size, alignment, color, highlight, and opacity where applicable.
-- Use Delete/Backspace to remove the selected editable object; use undo to recover recent changes.
+Recovery is all-or-nothing. If the selected state cannot be matched safely to
+the source PDF, no partial file is downloaded. The source PDF, main sidecar,
+`.bak`, `.lock`, mtimes, and surrounding directory contents remain unchanged.
+Keep all of those files when the recovery status says it needs attention; that
+state still requires a manual recovery path.
 
-Text editing depends on text that can be extracted from the PDF. Scanned/image-only pages do not become editable because doXmind does not include OCR.
+## 6. Recover legacy workbook edits
 
-### Save versus Export
+> Spreadsheet editing is no longer a product surface. This recovery flow only
+> exports edits already stored by an older doXmind build.
 
-- **Save** stores text edits, free text, and highlights in the hidden `.pdf.doxmind` sidecar.
-- **Export PDF** from **More actions (⋯)** creates a new PDF with the current edits applied. Choose a destination if prompted; otherwise check the configured Downloads folder.
-- The original PDF is not silently rewritten by open, edit, save, sidecar migration, or cache refresh.
+Open an `.xlsx`, `.xlsm`, or `.csv` workbook from a workspace or as a standalone file.
+It opens as a read-only Attachment; the old workbook editor is not mounted.
+Source selection follows the same main-sidecar/backup rules as PDF recovery.
 
-## 6. Edit Excel workbooks
+Select **Attempt spreadsheet recovery** to create `<name> recovered.xlsx`.
+This is also an unverified, manual attempt: the cache hash catches an obvious
+mismatch but cannot prove historical editor provenance. The isolated exporter
+does not invoke the legacy workbook reader, writer, migration, or cache path.
 
-Open an `.xlsx` workbook from a workspace or as a standalone file.
+Recovery stops rather than silently dropping unsupported or unapplied state.
+Missing sheets, malformed targets, a missing or mismatched cache hash, and any
+mutation the exporter cannot account for fail the whole operation. In
+particular, saved `filters`, `filterMode`, structural row/column/merge operations,
+lossy sheet operations, or UI-only metadata may require a compatible older build
+instead. Keep the source, sidecar, `.bak`, and `.lock` for manual recovery.
+CSV recovery also produces `.xlsx`. For an `.xlsm` source, the recovered output
+is `.xlsx` and does not include macros; doXmind shows this warning before export.
 
-<p align="center">
-  <img src="readme/doxmind-excel.png" width="1200" alt="The doXmind spreadsheet editor with toolbar, formula bar, grid, and sheet tabs" />
-</p>
-
-### Cells and formulas
-
-- Select a cell to inspect or edit its value in the grid or formula bar.
-- Press `F2` to edit the active cell.
-- Enter formulas with `=`; the local formula engine recalculates many Excel-style formulas, but it is not a complete Excel compatibility layer. Review error cells and formula results after opening or exporting a complex workbook.
-- Copy, cut, paste, undo, redo, and use the fill handle for repeated values or formulas.
-- Use `Cmd/Ctrl+F` for workbook find/replace.
-
-### Format and organize
-
-The workbook toolbar supports:
-
-- Number, currency, percent, and decimal formatting
-- Font emphasis, text/fill colors, borders, alignment, rotation, and overflow
-- Merge cells, comments, links, and format painter
-- Sorting, filters, conditional formatting, and data-validation lists
-- Freeze controls and adjustable row heights/column widths
-- Inserting and deleting rows or columns
-- Adding, renaming, duplicating, deleting, and switching worksheets
-
-Structural row/column operations do not automatically rewrite existing formula references. Review formulas after inserting or deleting rows or columns.
-
-### Save versus Export
-
-- **Save** stores the workbook edit model in the hidden `.xlsx.doxmind` sidecar.
-- **Export XLSX** from **More actions (⋯)** applies the current edits to a new workbook file. Choose a destination if prompted; otherwise check the configured Downloads folder.
-- The original workbook is not silently overwritten.
-
-Macro-enabled `.xlsm` files can open through the workbook path, but VBA preservation is not guaranteed on export. Keep a backup and do not use doXmind as the only editor for a macro-critical workbook.
+If an attempt is unavailable or fails, preserve the original folder unchanged.
+Make copies of the attachment, main sidecar, `.bak`, and `.lock` in an isolated
+folder before trying a compatible older doXmind build. Never let an older build
+migrate or repair the only copy of this evidence.
 
 ## 7. Settings
 
@@ -229,9 +240,10 @@ The current settings surface contains:
 
 Settings are stored locally on the device.
 
-## 8. Understand source files and sidecars
+## 8. Understand Pages, Attachments, and sidecars
 
-The companion filename depends on the document type:
+New Markdown Pages use a companion sidecar. Older builds may also have created
+legacy sidecars for PDF and spreadsheet attachments:
 
 | Source document       | Sidecar                        |
 | --------------------- | ------------------------------ |
@@ -239,25 +251,32 @@ The companion filename depends on the document type:
 | `Research Report.pdf` | `.Research Report.pdf.doxmind` |
 | `Quarterly Plan.xlsx` | `.Quarterly Plan.xlsx.doxmind` |
 
-Keep the source and sidecar together when moving, backing up, or restoring a document. Save on PDF/XLSX changes the sidecar, not the original binary; Export creates the portable edited copy.
+Keep a source and any existing sidecar together when moving, backing up, or
+restoring it. New Attachments do not need editor sidecars; the PDF/XLSX rows
+above document legacy recovery data only.
 
 ### What each file means
 
-- **Markdown:** the `.md` text is the portable source. The sidecar preserves richer editor HTML and extras.
-- **PDF:** the original binary is the source. The sidecar stores your text edits, free text, and highlights.
-- **Excel:** the original workbook is the source. The sidecar stores your workbook edits.
+- **Markdown Page:** the `.md` text and frontmatter are the portable source. The sidecar preserves lossless editor HTML and replaceable state.
+- **Attachment:** the original file is the source. Normal attachments do not receive new editor state.
+- **Legacy PDF/Excel sidecar:** preserves historical editor state and remains recovery evidence even after an export attempt.
 
-Do not manually delete a sidecar if you want to keep PDF annotations, spreadsheet edits, or rich Markdown-only state.
+Do not manually delete a legacy sidecar if you still need its PDF annotations or
+spreadsheet edits. Never delete `.bak` or `.lock` files as part of cleanup.
 
-### Advanced: legacy migration files
+### Advanced: legacy recovery files
 
-When doXmind migrates an older PDF/Excel sidecar:
+An older doXmind build may have left several recovery artifacts:
 
 - `<sidecar>.bak` is the backup of the original sidecar.
 - `<sidecar>.lock` coordinates the migration and can remain afterward.
-- `<sidecar>.corrupt-*` is a recovery copy created when corrupt data cannot be migrated safely.
+- `<sidecar>.corrupt-*` is a recovery copy created when corrupt data could not be migrated safely.
 
-Do not delete `.lock` or `.bak` files merely because they are small or hidden. If a migration error asks for recovery, move/rename the `.bak` file back over the sidecar only after closing doXmind and confirming the target document.
+The current Attachment recovery flow only reads these files. It does not create,
+rename, overwrite, or delete them. Do not delete `.lock`, `.bak`, or the main
+sidecar merely because they are small or hidden, and do not move a backup over
+the main sidecar before exporting: the UI can inspect both candidates and asks
+you to choose when their saved states differ.
 
 ## 9. Keyboard shortcuts
 
@@ -265,12 +284,12 @@ The current public desktop release is for macOS, where shortcuts use `Cmd`. Brow
 
 | Action                                   | Shortcut           |
 | ---------------------------------------- | ------------------ |
-| New document in an open workspace        | `Cmd/Ctrl+N`       |
+| New Page in an open workspace            | `Cmd/Ctrl+N`       |
 | New window                               | `Cmd/Ctrl+Shift+N` |
 | Open file                                | `Cmd/Ctrl+O`       |
 | Open folder                              | `Cmd/Ctrl+Shift+O` |
 | Save                                     | `Cmd/Ctrl+S`       |
-| Find in document/workbook                | `Cmd/Ctrl+F`       |
+| Find in Page                             | `Cmd/Ctrl+F`       |
 | Command palette                          | `Cmd/Ctrl+K`       |
 | Quick switcher                           | `Cmd/Ctrl+Tab`     |
 | Quick switcher from the native Edit menu | `Cmd/Ctrl+P`       |
@@ -286,36 +305,40 @@ Standard editing shortcuts for undo, redo, cut, copy, paste, and select all also
 
 ### A file does not appear in a workspace
 
-- Confirm it is a stable document type: Markdown, PDF, or XLSX/XLSM.
+- Confirm it is a Markdown Page or a supported local Attachment.
 - Refresh or reopen the folder after changing files outside doXmind.
 - DOCX and PPTX are not supported workspace documents.
 
-CSV support is still under development and is not part of the stable list. Although current development builds expose CSV entry points, opening a CSV from a mounted folder is not yet reliable; convert it to `.xlsx` first.
+PDF, Excel, CSV, and HTML files intentionally open as read-only Attachments.
+Use **Open Externally** for ordinary editing in the file's system application.
+Standalone images, DOCX, PPTX, and arbitrary other extensions are not promised
+to appear as workspace documents. Add images through a Markdown Page so they
+remain local assets referenced by that Page. The internal `other` Attachment
+type is only a safe read-only fallback if an unknown format reaches the shared
+surface; it does not expand workspace scanning or native opening.
 
-### A scanned PDF has no editable text
+### Recovery status needs attention
 
-doXmind does not include OCR. It can display image-only pages, but text editing requires extractable PDF text.
+Corrupt JSON, future or invalid versions, mixed legacy/current shapes, and
+unsupported recovery state are reported conservatively instead of being treated
+as empty. doXmind does not rewrite or migrate the evidence. Keep the source,
+main sidecar, `.bak`, and `.lock` together for manual recovery.
 
-### A PDF or workbook is very large
+### Changes are missing from a recovered workbook
 
-The local import/parse request limit is 10 MiB. Workbook parsing is also capped at 64 worksheets, 5,000 rows per sheet, and 200 columns per sheet. Split very large inputs before opening them when possible.
+- If both the main sidecar and `.bak` are offered, export the other candidate
+  and compare the recovered copies.
+- Recovery refuses saved `filters` or `filterMode` rather than silently losing
+  them.
+- `.xlsm` recovery produces `.xlsx`; macros are not included.
 
-### A document is read-only after an upgrade
+### Changes are missing from a recovered PDF
 
-Legacy PDF/Excel sidecars are read-only when migration is disabled. Remove the override or set `DOXMIND_SIDECAR_MIGRATE=1`, then reopen the document. If a `.bak` conflict or corrupt-sidecar message appears, follow the exact recovery path shown by the app instead of deleting files.
-
-### Changes are missing from an exported workbook
-
-- Save before exporting and wait for the header to show **Saved**.
-- Export to a new `.xlsx` file and open that file, not the original source workbook.
-- Recheck formulas after structural row/column changes.
-- Do not assume VBA macros survive an `.xlsm` export.
-
-### Changes are missing from an exported PDF
-
-- Save and wait for the header to show **Saved**.
-- Use the PDF-specific Export action.
-- Open the newly exported copy; the original PDF is intentionally unchanged.
+- If both the main sidecar and `.bak` are offered, export the other candidate
+  and compare the recovered copies.
+- Recovery refuses source-text mismatches, unsupported page rotations, or text
+  that would need silent resizing. Keep every recovery file and use the manual
+  compatibility path instead of accepting a partial copy.
 
 ## 11. Privacy and optional automation
 

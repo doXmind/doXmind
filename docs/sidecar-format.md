@@ -6,23 +6,31 @@ and External-reference Custom Block placeholders. Frontend
 workspace routes, and desktop/Tauri commands must derive equivalent parsers and
 serializers from this document.
 
-Markdown is the only first-class Document type. PDF and Excel files are
-Second-class files represented as Synthetic Documents with exactly one
-External-reference Custom Block (`pdf-block` or `excel-block`). Those Synthetic
-Documents use this same Sidecar shape; they do not own a separate PDF or Excel
-Sidecar contract.
+Markdown Page is the only first-class content type. Under ADR-0012, PDF and
+Excel are Attachments and must not receive new editor state. The Synthetic
+Document and External-reference contracts below remain normative only for
+strictly reading, correlating, and exporting sidecars created by older versions,
+and for documenting historical migration artifacts. They are a legacy recovery
+format, not a new-write product model. Recovery parsing also follows the
+untrusted-document rules in
+[ADR-0011](adr/0011-documents-are-untrusted-input.md).
+
+This wire contract does not expand workspace discovery. Current scanning and
+native opening support PDF, spreadsheet, and HTML Attachments; `other` is only a
+safe read-only fallback if an unknown format reaches the shared surface. Images
+inserted into Pages remain Markdown assets, not standalone workspace documents.
 
 ## Markdown Sidecar JSON Shape
 
 A Sidecar is a hidden `.doxmind` JSON file next to a Document's `.md` file. For
-a Synthetic Document opened from a Second-class file such as `.pdf` or `.xlsx`,
-the Sidecar uses the same markdown shape and lives next to the original binary.
+a legacy Synthetic Document opened for recovery from `.pdf` or `.xlsx`, the
+Sidecar uses the same markdown shape and lives next to the original binary.
 
-The canonical reader/writer lives in the backend Sidecar I/O path:
+The canonical Markdown Page reader/writer lives in the backend Sidecar I/O path:
 
 - `MarkdownDocumentState.write_full` writes Sidecars for markdown Documents.
-- `SyntheticDocumentFactory._write_sidecar` writes the same shape for Synthetic
-  Documents.
+- `SyntheticDocumentFactory._write_sidecar` is the frozen historical writer for
+  Synthetic Documents; the Attachment recovery bridge does not call it.
 - `read_sidecar` accepts only JSON objects; corrupt JSON is handled as a corrupt
   Sidecar, not as an empty one.
 
@@ -126,7 +134,7 @@ Reader contract for partial Sidecars:
 partial shape is exclusive to `MarkdownDocumentState.write_slot` against a
 previously-absent Sidecar.
 
-### Synthetic Document Shape for PDF and Excel
+### Legacy Synthetic Document Shape for PDF and Excel
 
 A Synthetic Document Sidecar lives next to its source binary and keeps the
 binary filename in the sidecar name:
@@ -156,7 +164,7 @@ for the matching block type:
           "edits": {}
         },
         "parsedCache": {
-          "sourceHash": "sha256-of-source-binary-or-parser-input",
+          "sourceHash": "0000000000000000000000000000000000000000000000000000000000000000",
           "parsed": {}
         }
       }
@@ -165,20 +173,26 @@ for the matching block type:
 }
 ```
 
-Synthetic Document reader/writer contract:
+Legacy Synthetic Document recovery contract:
 
-- The only supported PDF/Excel state location is
+- A recovery candidate may be the main sidecar or `<sidecar>.bak`. Both are
+  parsed independently and strictly; neither is copied, migrated, or rewritten.
+- In the markdown-shaped form, the only supported PDF/Excel state location is
   `extras.blocks.<block_id>`, where `<block_id>` matches the single placeholder
   in `html`.
 - `editor` stores user-facing editor state for that block. PDF editors use the
   PDF editor payload; Excel editors use the workbook editor payload. The slot
   may omit `editor` before the user has edited that file.
-- `parsedCache` stores parser output for the referenced source binary. It is an
-  object with `sourceHash` and `parsed`; writers that update parser output must
-  replace this slot field atomically and preserve `editor`.
-- Unknown sibling fields inside the block slot are pass-through state and must
-  be preserved, but release-facing compatibility only guarantees `editor` and
-  `parsedCache`.
+- `parsedCache` stores historical parser output and the SHA-256 hash of the
+  referenced source binary. Recovery reads only the hash; it does not hydrate or
+  refresh the cached parser output.
+- Unknown non-empty editor fields, corrupt JSON, future or invalid versions,
+  mixed legacy/current shapes, and structurally ambiguous blocks are
+  conservatively `unknown`; they are never treated as an empty edit state.
+- A legacy PDF `edits` key is eligible for an isolated recovery attempt only when it uses the
+  production PDF.js item grammar `p<zero-based-page>-t<item-index>`. Historical
+  storage fixtures such as `1:0` have no deterministic source mapping and stay
+  `unknown` for manual recovery.
 - The source `.pdf` / `.xlsx` file is authoritative input and is never mutated
   by open, edit, save, migration, or cache refresh. Export flows may create a
   new user-selected output file, but they do not silently rewrite the source
@@ -186,17 +200,23 @@ Synthetic Document reader/writer contract:
 - `markdown_hash` hashes the generated Synthetic Document markdown
   (frontmatter plus the one placeholder), not the source PDF/XLSX bytes. Source
   binary freshness belongs to `parsedCache.sourceHash`.
+- New Attachments MUST NOT create this shape. The recovery bridge reads the
+  user-selected `editor` state and its cache hash, checks that hash against the
+  exact source bytes used for the attempt, then downloads a new output only if
+  strict application succeeds. Historical builds could update `parsedCache`
+  without rebinding `editor`, so a matching hash is a mismatch guard—not proof
+  of editor provenance. Every attempt is labeled unverified. The bridge MUST
+  NOT write the source, main sidecar, `.bak`, or `.lock`.
 
 Legacy top-level `pdf_editor`, `pdf_parsed_cache`, `excel_editor`, and
-`excel_parsed_cache` fields are accepted only as migration input. On first open
-with migration enabled, they are moved into the matching block slot and removed
-from the rewritten Sidecar.
+`excel_parsed_cache` fields are accepted by the strict recovery inspector as the
+older shape. They were historically migration input; current Attachment
+recovery reads them in place and never moves or removes them.
 
-### Legacy Migration and Recovery
+### Historical Migration and Current Recovery
 
-Legacy PDF/Excel Sidecars migrate one way into the markdown-shaped Synthetic
-Document contract. The migration path is intentionally explicit on open, not a
-side effect of save:
+Older builds migrated PDF/Excel Sidecars one way into the markdown-shaped
+Synthetic Document contract:
 
 1. Acquire the sidecar lock.
 2. Read the legacy Sidecar.
@@ -205,20 +225,42 @@ side effect of save:
    migrated `editor` / `parsedCache` values under
    `extras.blocks.<block_id>`.
 
-Recovery and failure rules:
+Those historical migration artifacts remain recovery evidence:
 
 - If rewrite fails after `.bak` is written, restore by renaming
   `<sidecar>.bak` back to `<sidecar>`.
 - If `<sidecar>.bak` already exists, migration is blocked so a maintainer can
   inspect the previous backup instead of overwriting recovery evidence.
-- If the Sidecar is corrupt JSON, has non-UTF-8 bytes, or has a non-object JSON
-  top level, do not rewrite it. Write a timestamped forensic copy named
-  `<sidecar>.corrupt-*`, leave the original Sidecar bytes in place, and surface
-  the error.
-- `DOXMIND_SIDECAR_MIGRATE=0` disables the rewrite path for legacy Sidecars;
-  the app may synthesize a read-only in-memory document from legacy state, but
-  writes must be rejected until migration is enabled or the Sidecar is manually
-  restored.
+- `<sidecar>.lock` may remain after migration and must not be removed as cleanup.
+- A timestamped `<sidecar>.corrupt-*` may contain bytes preserved by an older
+  build when migration could not proceed.
+
+The current Attachment recovery flow does not run those migration steps. It:
+
+1. Reads the main sidecar and `.bak` independently with the strict parser.
+2. Reports each candidate as `available`, `none`, or `unknown`.
+3. Requires an explicit source choice when both candidates have different
+   recoverable editor state; equivalent candidates recommend the main sidecar.
+4. Returns the selected editor state plus its normalized cache hash. The
+   frontend hashes the exact source bytes it will use and refuses a mismatch
+   before calling the isolated PDF/XLSX exporter. It clearly labels the result
+   an unverified recovery copy and downloads `<name> recovered.pdf` or
+   `<name> recovered.xlsx` only after complete application succeeds.
+
+The recovery path does not mount the legacy PDF/Excel editor and does not call
+legacy readers, writers, migration, or process caches. PDF export fails as a
+whole if stored edits cannot be matched strictly to the source. The Excel
+recovery path validates and accounts for every requested mutation; missing
+sheets, malformed targets, or silently skipped operations fail the whole export.
+Non-empty Excel `filters` or `filterMode` are `unknown` rather than silently
+omitted. An `.xlsm` source exports as `.xlsx`, and the UI warns that macros are
+not included.
+
+Tests assert byte-for-byte content, mtimes, and directory membership for the
+source, main sidecar, `.bak`, and `.lock` around inspection and export. These
+files must remain in place even after a successful export. `Unknown` or
+unsupported candidates still require a manual recovery path and block the
+ADR-0012 legacy-code removal gate.
 
 ### Release Validation Fixtures
 
@@ -230,18 +272,22 @@ The release compatibility fixtures live in
 - `pdf_markdown_shape.doxmind.json`
 - `excel_markdown_shape.doxmind.json`
 
-Release validation MUST exercise both runtime paths against these fixtures:
+The frozen legacy stack still validates its historical read/write/migration
+contract against these fixtures. The current recovery bridge has a separate,
+zero-write release gate:
 
-- Browser-dev/FastAPI path: `server/tests/test_sidecar_cross_runtime_compat.py`
-  verifies that workspace invoke reads, editor writes, parsed-cache writes, and
-  legacy migrations preserve the shared contract.
-- Desktop/Tauri path: `src-tauri/src/lib.rs` includes the same fixture files in
-  Rust tests so desktop commands and browser-dev routes cannot drift.
+- `server/tests/test_workspace.py` and
+  `src-tauri/src/attachment_inspection.rs` exercise equivalent strict inspection
+  and selected-source reads for the browser-dev and desktop paths.
+- Frontend attachment and PDF/XLSX recovery tests verify source selection,
+  strict exporter refusal, recovered-copy downloads, and the `.xlsm` warning.
+- Recovery tests snapshot bytes, mtimes, and directory membership so the source,
+  main sidecar, `.bak`, and `.lock` cannot be changed accidentally.
 
-Any Sidecar change that touches Synthetic Documents must update all four
-fixtures and both runtime validations together. A change that adds a separate
-PDF-only or Excel-only top-level Sidecar field is a contract regression unless a
-new ADR explicitly replaces the Markdown-first model.
+Any compatibility change that touches Synthetic Documents must update all four
+fixtures and both runtime validations together. A change that creates this
+shape for a new Attachment, or adds a separate PDF-only or Excel-only top-level
+field, is a contract regression unless a new ADR replaces ADR-0012.
 
 ## Block Placeholder Grammar
 

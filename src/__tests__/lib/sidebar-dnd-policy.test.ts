@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  evaluateSidebarDrop,
-  type DnDNode,
-} from "@/lib/sidebar-dnd-policy";
+import { evaluateSidebarDrop, type DnDNode } from "@/lib/sidebar-dnd-policy";
 
 /**
  * Test tree (mirrors the file-store shape — only the four fields the policy
@@ -37,6 +34,34 @@ describe("evaluateSidebarDrop", () => {
     });
     expect(result.verdict).toBe("ok");
     expect(result.destinationParentId).toBe("F1");
+  });
+
+  it.each([
+    ["PDF", "spec.pdf"],
+    ["Excel", "forecast.xlsx"],
+    ["HTML", "guide.html"],
+  ])("rejects a %s attachment source", (_label, name) => {
+    const tree: DnDNode[] = [
+      ...TREE,
+      {
+        id: "ATTACHMENT",
+        name,
+        isFolder: false,
+        isAttachment: true,
+        parentId: "F1",
+      },
+    ];
+
+    const result = evaluateSidebarDrop({
+      sourceId: "ATTACHMENT",
+      targetId: "F3",
+      tree,
+    });
+
+    expect(result).toEqual({
+      verdict: "attachment-source",
+      destinationParentId: "F1",
+    });
   });
 
   it("drop file on file → resolves to that file's parent (ok when different parent)", () => {

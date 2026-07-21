@@ -26,6 +26,11 @@ export const SUPPORTED_EXTENSIONS = [".md", ".pdf", ".xlsx", ".csv"] as const;
 
 export type SupportedExtension = (typeof SUPPORTED_EXTENSIONS)[number];
 
+/** Replacing an existing file is safe only for first-class Markdown Pages. */
+export function canReplaceExternalImport(extension: SupportedExtension): boolean {
+  return extension === ".md";
+}
+
 /** A single dropped item — either a real OS path (Tauri) or in-memory bytes (browser). */
 export interface ExternalImportItem {
   /** Filename including extension; the resolver only inspects this for the whitelist. */
@@ -66,9 +71,9 @@ export interface CollisionItem {
 /**
  * Per-collision user decision from the conflict modal (#69).
  *
- * - `replace`   — overwrite the user file at the destination. The pre-existing
- *                 sidecar is left intact at the FS level; the next open trips
- *                 the Stale-sidecar / Salvage path. See ADR 0002.
+ * - `replace`   — overwrite an existing Markdown Page. Attachments cannot be
+ *                 replaced because doing so could strand recovery state in a
+ *                 same-name legacy sidecar.
  * - `keep-both` — copy under a renamed name (`Foo.md` → `Foo (2).md`).
  * - `skip`      — drop this item from the final plan entirely.
  */
@@ -274,6 +279,11 @@ export function resolveImportPlan(input: ResolveImportPlanInput): ResolvedImport
     }
     if (decision === "skip") continue;
     if (decision === "replace") {
+      if (!canReplaceExternalImport(collision.extension)) {
+        throw new Error(
+          `resolveImportPlan: replace is only available for Markdown pages, not "${collision.item.name}"`
+        );
+      }
       actions.push({
         item: collision.item,
         extension: collision.extension,

@@ -47,6 +47,7 @@ const MIGRATE_DISABLED_VALUES: &[&str] = &["0", "false", "no", "off"];
 /// `_MIGRATE_ENABLED_VALUES` in Python.
 const MIGRATE_ENABLED_VALUES: &[&str] = &["1", "true", "yes", "on"];
 
+mod attachment_inspection;
 #[cfg(target_os = "macos")]
 mod dock_menu;
 #[cfg(target_os = "macos")]
@@ -832,6 +833,7 @@ async fn doc_read(path: String) -> Result<ReadResultDto, String> {
 
 #[tauri::command]
 async fn doc_write(path: String, payload: DocWritePayloadDto) -> Result<(), String> {
+    ensure_markdown_path(&path)?;
     doxmind_sidecar::write_doc(PathBuf::from(path), &DocPayload::from(payload))
         .await
         .map_err(|err| err.to_string())
@@ -976,6 +978,27 @@ fn workspace_stat_binary(root: String, path: String) -> Result<serde_json::Value
 }
 
 #[tauri::command]
+fn workspace_inspect_attachment(
+    root: String,
+    path: String,
+) -> Result<attachment_inspection::AttachmentInspection, String> {
+    let root = canonical_workspace_root(&root)?;
+    let path = resolve_existing_workspace_path(&root, &path)?;
+    attachment_inspection::inspect_attachment(&path)
+}
+
+#[tauri::command]
+fn workspace_read_attachment_recovery(
+    root: String,
+    path: String,
+    source: String,
+) -> Result<attachment_inspection::AttachmentRecovery, String> {
+    let root = canonical_workspace_root(&root)?;
+    let path = resolve_existing_workspace_path(&root, &path)?;
+    attachment_inspection::read_attachment_recovery(&path, &source)
+}
+
+#[tauri::command]
 fn workspace_read_binary(root: String, path: String) -> Result<tauri::ipc::Response, String> {
     // Returning `tauri::ipc::Response` instead of `Vec<u8>` opts into Tauri's
     // raw-binary IPC channel: the bytes go over the bridge as an ArrayBuffer
@@ -1023,6 +1046,7 @@ fn workspace_write_pdf_editor_state(
     }
     update_pdf_block_slot(&root, &path, |slot| {
         slot.insert("editor".to_string(), payload);
+        Ok(())
     })
 }
 
@@ -1059,11 +1083,19 @@ fn workspace_write_pdf_parsed_cache(
     if source_hash.trim().is_empty() {
         return Err("sourceHash is required".to_string());
     }
+    reject_parsed_cache_rebind(
+        &path,
+        PDF_LEGACY_EDITOR_KEY,
+        PDF_LEGACY_PARSED_CACHE_KEY,
+        pdf_block_id_from_sidecar,
+    )?;
     update_pdf_block_slot(&root, &path, |slot| {
+        reject_non_empty_editor_state(slot)?;
         slot.insert(
             "parsedCache".to_string(),
             serde_json::json!({ "sourceHash": source_hash, "parsed": parsed }),
         );
+        Ok(())
     })
 }
 
@@ -1117,17 +1149,97 @@ fn load_pdf_synthetic_sidecar(root: &Path, path: &Path) -> Result<PdfSyntheticSi
 
 fn update_pdf_block_slot<F>(root: &Path, path: &Path, mutate: F) -> Result<(), String>
 where
-    F: FnOnce(&mut serde_json::Map<String, serde_json::Value>),
+    F: FnOnce(&mut serde_json::Map<String, serde_json::Value>) -> Result<(), String>,
 {
     let mut state = load_pdf_synthetic_sidecar(root, path)?;
     if state.read_only {
         return Err(read_only_document_error(path));
     }
     let slot = pdf_block_slot_mut(&mut state.sidecar, &state.block_id)?;
-    mutate(slot);
+    mutate(slot)?;
     remove_pdf_legacy_top_level(&mut state.sidecar);
     refresh_pdf_synthetic_sidecar(root, path, &mut state.sidecar)?;
     write_json_sidecar(&state.sidecar_path, &state.sidecar)
+}
+
+const PARSED_CACHE_REBIND_ERROR: &str =
+    "parsed-cache refresh is disabled when the target slot has non-empty editor state";
+
+fn reject_parsed_cache_rebind(
+    path: &Path,
+    legacy_editor_key: &str,
+    legacy_parsed_cache_key: &str,
+    block_id_from_sidecar: fn(&serde_json::Value) -> Result<Option<String>, String>,
+) -> Result<(), String> {
+    let sidecar_path = doxmind_sidecar::sidecar_path_for(path);
+    let raw = match fs::read(sidecar_path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
+        // Preserve the existing loader's format-specific I/O error.
+        Err(_) => return Ok(()),
+    };
+    let sidecar: serde_json::Value = match serde_json::from_slice::<serde_json::Value>(&raw) {
+        Ok(sidecar) if sidecar.is_object() => sidecar,
+        // Preserve the existing loader's forensic-copy behavior and error.
+        _ => return Ok(()),
+    };
+
+    let has_legacy_state =
+        sidecar.get(legacy_editor_key).is_some() || sidecar.get(legacy_parsed_cache_key).is_some();
+    if has_legacy_state && migration_disabled()? {
+        // The loader owns the documented read-only error in migration-off
+        // mode. Skipping this preflight keeps that behavior unchanged.
+        return Ok(());
+    }
+    if sidecar
+        .get(legacy_editor_key)
+        .is_some_and(editor_state_is_non_empty)
+    {
+        return Err(PARSED_CACHE_REBIND_ERROR.to_string());
+    }
+
+    if let Some(blocks) = sidecar
+        .get("extras")
+        .and_then(|extras| extras.get("blocks"))
+        .and_then(serde_json::Value::as_object)
+    {
+        for slot in blocks.values().filter_map(serde_json::Value::as_object) {
+            reject_non_empty_editor_state(slot)?;
+        }
+    }
+
+    let Some(block_id) = block_id_from_sidecar(&sidecar)? else {
+        return Ok(());
+    };
+    let Some(slot) = sidecar
+        .get("extras")
+        .and_then(|extras| extras.get("blocks"))
+        .and_then(|blocks| blocks.get(&block_id))
+        .and_then(|slot| slot.as_object())
+    else {
+        return Ok(());
+    };
+    reject_non_empty_editor_state(slot)
+}
+
+fn reject_non_empty_editor_state(
+    slot: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), String> {
+    if slot.get("editor").is_some_and(editor_state_is_non_empty) {
+        return Err(PARSED_CACHE_REBIND_ERROR.to_string());
+    }
+    Ok(())
+}
+
+fn editor_state_is_non_empty(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null => false,
+        serde_json::Value::Bool(value) => *value,
+        serde_json::Value::Number(_) => true,
+        serde_json::Value::String(value) => !value.is_empty(),
+        serde_json::Value::Array(value) => !value.is_empty(),
+        serde_json::Value::Object(value) => !value.is_empty(),
+    }
 }
 
 fn parse_pdf_sidecar_json(sidecar_path: &Path, raw: &[u8]) -> Result<serde_json::Value, String> {
@@ -1739,6 +1851,7 @@ fn workspace_write_excel_editor_state(
     }
     write_excel_slot(&path, |slot| {
         slot.insert("editor".to_string(), payload);
+        Ok(())
     })
 }
 
@@ -1774,11 +1887,19 @@ fn workspace_write_excel_parsed_cache(
     if source_hash.trim().is_empty() {
         return Err("sourceHash is required".to_string());
     }
+    reject_parsed_cache_rebind(
+        &path,
+        EXCEL_LEGACY_EDITOR_KEY,
+        EXCEL_LEGACY_PARSED_CACHE_KEY,
+        excel_block_id_from_sidecar,
+    )?;
     write_excel_slot(&path, |slot| {
+        reject_non_empty_editor_state(slot)?;
         slot.insert(
             "parsedCache".to_string(),
             serde_json::json!({ "sourceHash": source_hash, "parsed": parsed }),
         );
+        Ok(())
     })
 }
 
@@ -2029,7 +2150,7 @@ fn synthesize_excel_read_only_from_legacy(
 
 fn write_excel_slot<F>(path: &Path, update: F) -> Result<(), String>
 where
-    F: FnOnce(&mut serde_json::Map<String, serde_json::Value>),
+    F: FnOnce(&mut serde_json::Map<String, serde_json::Value>) -> Result<(), String>,
 {
     let loaded = load_excel_sidecar(path)?;
     if loaded.read_only {
@@ -2042,7 +2163,7 @@ where
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_default();
 
-    update(&mut slot);
+    update(&mut slot)?;
 
     // Mirror Python's OrphanPolicy.DISCARD: drop any extras.blocks key that
     // doesn't match the canonical placeholder id; otherwise orphan slots
@@ -2456,11 +2577,9 @@ fn doc_import_external(
 ) -> Result<WorkspaceDocumentDto, String> {
     // `mode`:
     //  - "create"  — refuse to overwrite (collision returns "already exists").
-    //  - "replace" — overwrite the user file. The pre-existing `.doxmind`
-    //                sidecar is **deliberately left untouched** so the next
-    //                open trips the Stale-sidecar / Salvage path. At the FS
-    //                level a Replace is indistinguishable from an external
-    //                edit (CONTEXT.md "Stale sidecar" + ADR 0002).
+    //  - "replace" — overwrite an existing Markdown Page. Attachments must
+    //                use Keep both or Skip so their source file cannot be
+    //                replaced underneath same-name legacy recovery evidence.
     if mode != "create" && mode != "replace" {
         return Err(format!("unsupported import mode: {mode}"));
     }
@@ -2468,6 +2587,15 @@ fn doc_import_external(
         return Err("import name is required".into());
     }
     ensure_import_extension(&name)?;
+    let is_markdown_page = Path::new(&name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("md"));
+    if mode == "replace" && !is_markdown_page {
+        return Err(format!(
+            "replace is only available for Markdown pages: {name}"
+        ));
+    }
 
     let root = canonical_workspace_root(&root)?;
     let dest_folder = dest_folder.unwrap_or_default();
@@ -2501,9 +2629,8 @@ fn doc_import_external(
 
     if let Some(byte_payload) = bytes {
         // Browser dev fallback path: HTML5 DataTransfer.files reaches us as
-        // a byte buffer rather than a real OS path. atomic_write_bytes only
-        // touches the destination file; the hidden sidecar next to it is
-        // left untouched in replace mode.
+        // a byte buffer rather than a real OS path. Attachment replacement is
+        // rejected above before destination resolution.
         atomic_write_bytes(&destination, &byte_payload)
             .map_err(|err| format!("failed to write imported file: {err}"))?;
     } else if let Some(src) = src_path {
@@ -2512,9 +2639,8 @@ fn doc_import_external(
             return Err(format!("source file does not exist: {src}"));
         }
         // `fs::copy` is the always-copy primitive: source on disk is left
-        // byte-for-byte intact. In replace mode it overwrites only the user
-        // file at `destination`; the hidden sidecar living next to it is
-        // intentionally NOT touched.
+        // byte-for-byte intact. Replace reaches this branch only for Markdown
+        // Pages; attachment recovery evidence is never put at risk.
         fs::copy(&source, &destination)
             .map_err(|err| format!("failed to copy imported file: {err}"))?;
     } else {
@@ -2583,6 +2709,7 @@ fn doc_delete(root: String, path: String) -> Result<DeleteResultDto, String> {
             "document path must end in .md, .markdown, .pdf, .xlsx, .xlsm, or .csv: {path}"
         ));
     }
+    reject_attachment_mutation(&source)?;
 
     let source_sidecar = doxmind_sidecar::sidecar_path_for(&source);
     let sidecar_existed = source_sidecar.exists();
@@ -2646,11 +2773,46 @@ fn workspace_delete_folder(root: String, path: String) -> Result<DeleteResultDto
     if !source.is_dir() {
         return Err(format!("folder is not a directory: {path}"));
     }
+    if let Some(protected_path) = find_protected_attachment_entry(&source)? {
+        return Err(format!(
+            "{ATTACHMENT_MUTATION_ERROR}: folder contains {}",
+            relative_path_string(&root, &protected_path)?
+        ));
+    }
     move_to_os_trash(&source).map_err(|err| format!("failed to move folder to Trash: {err}"))?;
     Ok(DeleteResultDto {
         path,
         sidecar_path: None,
     })
+}
+
+fn find_protected_attachment_entry(directory: &Path) -> Result<Option<PathBuf>, String> {
+    for entry in fs::read_dir(directory)
+        .map_err(|err| format!("failed to inspect folder before delete: {err}"))?
+    {
+        let entry =
+            entry.map_err(|err| format!("failed to inspect folder entry before delete: {err}"))?;
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|err| format!("failed to inspect folder entry type before delete: {err}"))?;
+
+        if file_type.is_dir() {
+            if let Some(protected_path) = find_protected_attachment_entry(&path)? {
+                return Ok(Some(protected_path));
+            }
+            continue;
+        }
+
+        let file_name = entry.file_name();
+        if file_type.is_file()
+            && (is_attachment_file(&path)
+                || is_attachment_recovery_evidence_name(&file_name.to_string_lossy()))
+        {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
 }
 
 #[tauri::command]
@@ -2747,19 +2909,10 @@ fn ensure_markdown_path(path: &str) -> Result<(), String> {
     }
 }
 
-/// Markdown and HTML are the text document types that share the read/write
-/// workspace path (#139); HTML routes to the html branch inside `write_doc`.
+/// Wire-compatible helper name retained for callers. Only Markdown Pages are
+/// writable through the normal workspace surface; HTML is an Attachment.
 fn ensure_text_document_path(path: &str) -> Result<(), String> {
-    let extension = Path::new(path)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| ext.to_ascii_lowercase());
-    match extension.as_deref() {
-        Some("md") | Some("markdown") | Some("html") | Some("htm") => Ok(()),
-        _ => Err(format!(
-            "document path must end in .md, .markdown, .html, or .htm: {path}"
-        )),
-    }
+    ensure_markdown_path(path)
 }
 
 fn ensure_pdf_path(path: &str) -> Result<(), String> {
@@ -2786,9 +2939,10 @@ fn ensure_excel_path(path: &str) -> Result<(), String> {
     }
 }
 
-/// The lowercased extension of a workspace document, or an error if the path
-/// isn't a supported document type. Unlike `ensure_markdown_path`, this accepts
-/// every first-class type so PDF/Excel can be renamed and moved too.
+/// The lowercased extension of a workspace item that can reach the document
+/// move command. Attachments are included here so they reach the explicit
+/// read-only guard before destination resolution; only Markdown Pages proceed
+/// to a filesystem mutation.
 fn workspace_document_extension(path: &str) -> Result<String, String> {
     let extension = Path::new(path)
         .extension()
@@ -2796,9 +2950,11 @@ fn workspace_document_extension(path: &str) -> Result<String, String> {
         .map(|ext| ext.to_ascii_lowercase())
         .unwrap_or_default();
     match extension.as_str() {
-        "md" | "markdown" | "pdf" | "xlsx" | "xlsm" | "csv" => Ok(extension),
+        "md" | "markdown" | "pdf" | "xlsx" | "xlsm" | "csv" | "html" | "htm" => {
+            Ok(extension)
+        }
         _ => Err(format!(
-            "document path must end in .md, .markdown, .pdf, .xlsx, .xlsm, or .csv: {path}"
+            "document path must end in .md, .markdown, .pdf, .xlsx, .xlsm, .csv, .html, or .htm: {path}"
         )),
     }
 }
@@ -2973,8 +3129,37 @@ fn is_html_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+const ATTACHMENT_MUTATION_ERROR: &str =
+    "attachments are read-only; rename, move, and delete are disabled to preserve recovery evidence";
+
+fn is_attachment_file(path: &Path) -> bool {
+    is_pdf_file(path) || is_excel_file(path) || is_html_file(path)
+}
+
+fn is_attachment_recovery_evidence_name(name: &str) -> bool {
+    let Some(hidden_name) = name.strip_prefix('.') else {
+        return false;
+    };
+    if let Some((source_name, _)) = hidden_name.split_once(".doxmind.corrupt-") {
+        if is_attachment_file(Path::new(source_name)) {
+            return true;
+        }
+    }
+    [".doxmind.bak", ".doxmind.lock", ".doxmind"]
+        .iter()
+        .find_map(|suffix| hidden_name.strip_suffix(suffix))
+        .is_some_and(|source_name| is_attachment_file(Path::new(source_name)))
+}
+
+fn reject_attachment_mutation(path: &Path) -> Result<(), String> {
+    if is_attachment_file(path) {
+        return Err(format!("{ATTACHMENT_MUTATION_ERROR}: {}", path.display()));
+    }
+    Ok(())
+}
+
 fn is_workspace_document_file(path: &Path) -> bool {
-    is_markdown_file(path) || is_pdf_file(path) || is_excel_file(path) || is_html_file(path)
+    is_markdown_file(path) || is_attachment_file(path)
 }
 
 fn document_dto_for_path(
@@ -3284,6 +3469,7 @@ fn move_document_pair(
     if !source.is_file() {
         return Err(format!("document is not a file: {old_path}"));
     }
+    reject_attachment_mutation(&source)?;
 
     let destination = resolve_workspace_path_for_write(&root, new_path)?;
     if destination.exists() {
@@ -3770,6 +3956,8 @@ window.__TAURI_PLATFORM__ = "{platform}";
             doc_write_workspace,
             workspace_read_binary,
             workspace_stat_binary,
+            workspace_inspect_attachment,
+            workspace_read_attachment_recovery,
             workspace_read_pdf_editor_state,
             workspace_write_pdf_editor_state,
             workspace_read_pdf_doc_state,
@@ -4070,7 +4258,7 @@ fn build_tray_menu(
 ) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
     use tauri::menu::SubmenuBuilder;
 
-    let new_file = MenuItemBuilder::with_id("tray-new-file", "New Document")
+    let new_file = MenuItemBuilder::with_id("tray-new-file", "New Page")
         .accelerator("CmdOrCtrl+N")
         .build(app)?;
     let open_file = MenuItemBuilder::with_id("tray-open-file", "Open File…").build(app)?;
@@ -4278,6 +4466,60 @@ mod tests {
         ))
     }
 
+    fn sidecar_lock_path(sidecar_path: &Path) -> PathBuf {
+        sidecar_path.with_file_name(format!(
+            "{}.lock",
+            sidecar_path
+                .file_name()
+                .map(|name| name.to_string_lossy())
+                .unwrap_or_default()
+        ))
+    }
+
+    #[derive(Debug)]
+    struct FileSnapshot {
+        bytes: Vec<u8>,
+        modified: SystemTime,
+    }
+
+    fn snapshot_file(path: &Path) -> FileSnapshot {
+        FileSnapshot {
+            bytes: fs::read(path).expect("snapshot file bytes"),
+            modified: fs::metadata(path)
+                .and_then(|metadata| metadata.modified())
+                .expect("snapshot file mtime"),
+        }
+    }
+
+    fn assert_file_matches_snapshot(path: &Path, snapshot: &FileSnapshot) {
+        assert_eq!(
+            fs::read(path).expect("read file after operation"),
+            snapshot.bytes
+        );
+        assert_eq!(
+            fs::metadata(path)
+                .and_then(|metadata| metadata.modified())
+                .expect("read file mtime after operation"),
+            snapshot.modified
+        );
+    }
+
+    fn seed_attachment_recovery_family(
+        workspace: &TempWorkspace,
+        filename: &str,
+        source_bytes: &[u8],
+    ) -> Vec<PathBuf> {
+        let source = workspace.path.join(filename);
+        fs::write(&source, source_bytes).expect("write attachment source");
+        let sidecar = doxmind_sidecar::sidecar_path_for(&source);
+        let bak = sidecar_bak_path(&sidecar);
+        let lock = sidecar_lock_path(&sidecar);
+        fs::write(&sidecar, br#"{"editor":"legacy"}"#).expect("write attachment sidecar");
+        fs::write(&bak, br#"{"editor":"backup"}"#).expect("write attachment backup");
+        fs::write(&lock, b"legacy-lock").expect("write attachment lock");
+        vec![source, sidecar, bak, lock]
+    }
+
     fn only_excel_slot(sidecar: &serde_json::Value) -> (&String, &serde_json::Value) {
         let blocks = sidecar["extras"]["blocks"]
             .as_object()
@@ -4300,38 +4542,54 @@ mod tests {
     }
 
     #[test]
-    fn move_document_pair_renames_pdf_and_keeps_extension() {
+    fn doc_rename_rejects_pdf_and_preserves_recovery_family() {
         let workspace = TempWorkspace::new("rename-pdf");
-        let pdf_path = workspace.path.join("Spec.pdf");
-        fs::write(&pdf_path, b"%PDF-1.4\n% rename test\n%%EOF\n").expect("write pdf");
-        let sidecar_path = doxmind_sidecar::sidecar_path_for(&pdf_path);
-        fs::write(&sidecar_path, br#"{"id":"pdf"}"#).expect("write sidecar");
+        let family = seed_attachment_recovery_family(
+            &workspace,
+            "Spec.pdf",
+            b"%PDF-1.4\n% rename test\n%%EOF\n",
+        );
+        let snapshots = family
+            .iter()
+            .map(|path| snapshot_file(path))
+            .collect::<Vec<_>>();
 
-        let dto =
-            move_document_pair(&workspace.root(), "Spec.pdf", "Report.pdf").expect("rename pdf");
+        let err = doc_rename(workspace.root(), "Spec.pdf".into(), "Report.pdf".into())
+            .expect_err("PDF attachment rename must be rejected");
 
-        assert_eq!(dto.path, "Report.pdf");
-        assert_eq!(dto.document_type, "pdf");
-        assert!(!pdf_path.exists());
-        assert!(workspace.path.join("Report.pdf").exists());
-        // The hidden sidecar travels with the document (pair atomicity).
-        assert!(!sidecar_path.exists());
-        assert!(doxmind_sidecar::sidecar_path_for(&workspace.path.join("Report.pdf")).exists());
+        assert!(
+            err.contains("attachments are read-only"),
+            "unexpected error: {err}"
+        );
+        for (path, snapshot) in family.iter().zip(&snapshots) {
+            assert_file_matches_snapshot(path, snapshot);
+        }
+        assert!(!workspace.path.join("Report.pdf").exists());
+        assert!(!workspace.path.join(".Report.pdf.doxmind").exists());
     }
 
     #[test]
-    fn move_document_pair_renames_xlsx_and_keeps_extension() {
+    fn doc_move_rejects_xlsx_and_preserves_recovery_family() {
         let workspace = TempWorkspace::new("rename-xlsx");
-        let xlsx_path = workspace.path.join("Budget.xlsx");
-        fs::write(&xlsx_path, b"PK\x03\x04 workbook").expect("write xlsx");
+        let family =
+            seed_attachment_recovery_family(&workspace, "Budget.xlsx", b"PK\x03\x04 workbook");
+        let snapshots = family
+            .iter()
+            .map(|path| snapshot_file(path))
+            .collect::<Vec<_>>();
 
-        let dto =
-            move_document_pair(&workspace.root(), "Budget.xlsx", "Q1.xlsx").expect("rename xlsx");
+        let err = doc_move(workspace.root(), "Budget.xlsx".into(), "Q1.xlsx".into())
+            .expect_err("XLSX attachment move must be rejected");
 
-        assert_eq!(dto.path, "Q1.xlsx");
-        assert_eq!(dto.document_type, "excel");
-        assert!(!xlsx_path.exists());
-        assert!(workspace.path.join("Q1.xlsx").exists());
+        assert!(
+            err.contains("attachments are read-only"),
+            "unexpected error: {err}"
+        );
+        for (path, snapshot) in family.iter().zip(&snapshots) {
+            assert_file_matches_snapshot(path, snapshot);
+        }
+        assert!(!workspace.path.join("Q1.xlsx").exists());
+        assert!(!workspace.path.join(".Q1.xlsx.doxmind").exists());
     }
 
     #[test]
@@ -4688,11 +4946,13 @@ mod tests {
     }
 
     #[test]
-    fn pdf_sidecar_parsed_cache_write_preserves_editor_and_unrelated_extras() {
+    fn pdf_parsed_cache_write_rejects_non_empty_editor_without_mutating_files() {
         let workspace = TempWorkspace::new("pdf-sidecar-cache-merge");
-        fs::write(workspace.path.join("Spec.pdf"), b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        let pdf_path = workspace.path.join("Spec.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
         write_file(
-            &workspace.path.join(".Spec.pdf.doxmind"),
+            &sidecar_path,
             r#"{
   "version": 1,
   "id": "doc-1",
@@ -4710,6 +4970,120 @@ mod tests {
   }
 }"#,
         );
+        let source_before = fs::read(&pdf_path).expect("read source before");
+        let sidecar_before = fs::read(&sidecar_path).expect("read sidecar before");
+
+        let err = workspace_write_pdf_parsed_cache(
+            workspace.root(),
+            "Spec.pdf".into(),
+            "new-hash".into(),
+            serde_json::json!({"pages": [2]}),
+        )
+        .expect_err("cache rebind must fail when editor state is non-empty");
+
+        assert!(err.contains("non-empty editor state"), "{err}");
+        assert_eq!(
+            fs::read(&pdf_path).expect("read source after"),
+            source_before
+        );
+        assert_eq!(
+            fs::read(&sidecar_path).expect("read sidecar after"),
+            sidecar_before
+        );
+    }
+
+    #[test]
+    fn pdf_parsed_cache_write_rejects_orphan_editor_without_mutating_files() {
+        let workspace = TempWorkspace::new("pdf-orphan-editor-cache-guard");
+        let pdf_path = workspace.path.join("Spec.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&pdf_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "version": 1,
+                "id": "doc-1",
+                "html": "<!-- pdf-block id=\"block-1\" src=\"Spec.pdf\" -->",
+                "markdown_hash": "old",
+                "updated_at": "2026-05-12T00:00:00Z",
+                "extras": {
+                    "blocks": {
+                        "block-1": { "editor": {} },
+                        "orphan-recovery": {
+                            "editor": { "highlightBoxes": [{ "id": "h1" }] }
+                        }
+                    }
+                }
+            }))
+            .expect("sidecar bytes"),
+        )
+        .expect("write sidecar");
+        let source_before = fs::read(&pdf_path).expect("read source before");
+        let source_mtime_before = fs::metadata(&pdf_path)
+            .and_then(|metadata| metadata.modified())
+            .expect("source mtime before");
+        let sidecar_before = fs::read(&sidecar_path).expect("read sidecar before");
+        let sidecar_mtime_before = fs::metadata(&sidecar_path)
+            .and_then(|metadata| metadata.modified())
+            .expect("sidecar mtime before");
+
+        let err = workspace_write_pdf_parsed_cache(
+            workspace.root(),
+            "Spec.pdf".into(),
+            "new-hash".into(),
+            serde_json::json!({"pages": [2]}),
+        )
+        .expect_err("cache refresh must fail when an orphan editor is non-empty");
+
+        assert!(err.contains("non-empty editor state"), "{err}");
+        assert_eq!(
+            fs::read(&pdf_path).expect("read source after"),
+            source_before
+        );
+        assert_eq!(
+            fs::metadata(&pdf_path)
+                .and_then(|metadata| metadata.modified())
+                .expect("source mtime after"),
+            source_mtime_before
+        );
+        assert_eq!(
+            fs::read(&sidecar_path).expect("read sidecar after"),
+            sidecar_before
+        );
+        assert_eq!(
+            fs::metadata(&sidecar_path)
+                .and_then(|metadata| metadata.modified())
+                .expect("sidecar mtime after"),
+            sidecar_mtime_before
+        );
+    }
+
+    #[test]
+    fn pdf_parsed_cache_write_allows_empty_editor_state() {
+        let workspace = TempWorkspace::new("pdf-sidecar-empty-editor-cache");
+        let pdf_path = workspace.path.join("Spec.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4\n%%EOF\n").expect("write pdf");
+        let sidecar_path = workspace.path.join(".Spec.pdf.doxmind");
+        write_file(
+            &sidecar_path,
+            r#"{
+  "version": 1,
+  "id": "doc-1",
+  "html": "<!-- pdf-block id=\"block-1\" src=\"Spec.pdf\" -->",
+  "markdown_hash": "old",
+  "updated_at": "old",
+  "extras": {
+    "theme": {"dark": true},
+    "blocks": {
+      "block-1": {
+        "editor": {},
+        "parsedCache": {"sourceHash": "old", "parsed": {"pages": []}}
+      }
+    }
+  }
+}"#,
+        );
+        let source_before = fs::read(&pdf_path).expect("read source before");
 
         workspace_write_pdf_parsed_cache(
             workspace.root(),
@@ -4717,20 +5091,22 @@ mod tests {
             "new-hash".into(),
             serde_json::json!({"pages": [2]}),
         )
-        .expect("write cache");
+        .expect("write cache with empty editor state");
 
-        let sidecar = read_json(&workspace.path.join(".Spec.pdf.doxmind"));
+        assert_eq!(
+            fs::read(&pdf_path).expect("read source after"),
+            source_before
+        );
+        let sidecar = read_json(&sidecar_path);
         let (_block_id, slot) = only_pdf_block(&sidecar);
-        assert_eq!(slot["editor"]["highlightBoxes"][0]["id"], "h1");
+        assert_eq!(slot["editor"], serde_json::json!({}));
         assert_eq!(slot["parsedCache"]["sourceHash"], "new-hash");
         assert_eq!(slot["parsedCache"]["parsed"]["pages"][0], 2);
         assert_eq!(sidecar["extras"]["theme"]["dark"], true);
-        assert!(sidecar.get(PDF_LEGACY_EDITOR_KEY).is_none());
-        assert!(sidecar.get(PDF_LEGACY_PARSED_CACHE_KEY).is_none());
     }
 
     #[test]
-    fn pdf_cross_runtime_fixture_editor_and_cache_writes_match_contract() {
+    fn pdf_cross_runtime_fixture_rejects_cache_rebind_after_editor_write() {
         let workspace = TempWorkspace::new("pdf-cross-runtime-shape");
         let sidecar_path =
             install_compat_fixture(&workspace, "Spec.pdf", PDF_MARKDOWN_SHAPE_FIXTURE);
@@ -4749,14 +5125,19 @@ mod tests {
         assert_eq!(after_editor["editor"], editor);
         assert_eq!(after_editor["parsedCache"], initial["parsedCache"]);
 
-        let parsed = serde_json::json!({"pages": [{"index": 1, "text": "updated"}]});
-        workspace_write_pdf_parsed_cache(
+        let sidecar_before = fs::read(&sidecar_path).expect("read sidecar before cache write");
+        let err = workspace_write_pdf_parsed_cache(
             workspace.root(),
             "Spec.pdf".into(),
             "valid-pdf-hash-2".into(),
-            parsed.clone(),
+            serde_json::json!({"pages": [{"index": 1, "text": "updated"}]}),
         )
-        .expect("write cache");
+        .expect_err("cache rebind must fail after editor write");
+        assert!(err.contains("non-empty editor state"), "{err}");
+        assert_eq!(
+            fs::read(&sidecar_path).expect("read sidecar after cache write"),
+            sidecar_before
+        );
 
         let sidecar = read_json_file(&sidecar_path);
         assert_no_legacy_fields(
@@ -4772,8 +5153,7 @@ mod tests {
             .as_object()
             .expect("slot");
         assert_eq!(slot["editor"], editor);
-        assert_eq!(slot["parsedCache"]["sourceHash"], "valid-pdf-hash-2");
-        assert_eq!(slot["parsedCache"]["parsed"], parsed);
+        assert_eq!(slot["parsedCache"]["sourceHash"], "valid-pdf-hash");
         assert_eq!(slot["slotExtra"]["keep"], "pdf");
     }
 
@@ -4896,6 +5276,69 @@ mod tests {
             "workspace writes must return explicit null until Rust correlation exists"
         );
         assert_eq!(value["correlation"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn normal_doc_writers_reject_attachments_without_touching_recovery_evidence() {
+        let workspace = TempWorkspace::new("doc-writer-attachment-guard");
+
+        for name in ["Spec.pdf", "Budget.xlsx", "Reference.html"] {
+            let source = workspace.path.join(name);
+            fs::write(&source, format!("original {name}").as_bytes()).expect("seed source");
+            let sidecar = doxmind_sidecar::sidecar_path_for(&source);
+            fs::write(&sidecar, br#"{"version":2,"evidence":true}"#).expect("seed sidecar");
+            let before_source = fs::read(&source).expect("source bytes");
+            let before_source_mtime = fs::metadata(&source)
+                .expect("source metadata")
+                .modified()
+                .expect("source mtime");
+            let before_sidecar = fs::read(&sidecar).expect("sidecar bytes");
+            let before_sidecar_mtime = fs::metadata(&sidecar)
+                .expect("sidecar metadata")
+                .modified()
+                .expect("sidecar mtime");
+
+            let direct_error = tauri::async_runtime::block_on(doc_write(
+                source.to_string_lossy().into_owned(),
+                DocWritePayloadDto {
+                    html: "<p>replacement</p>".into(),
+                    markdown: "replacement".into(),
+                    meta: DocMeta::new("replacement"),
+                    extras: None,
+                },
+            ))
+            .expect_err("direct attachment write must fail");
+            assert!(direct_error.contains(".md or .markdown"));
+
+            let workspace_error = tauri::async_runtime::block_on(doc_write_workspace(
+                workspace.root(),
+                name.into(),
+                DocWriteInputDto {
+                    html: Some("<p>replacement</p>".into()),
+                    markdown: Some("replacement".into()),
+                    ..Default::default()
+                },
+            ))
+            .expect_err("workspace attachment write must fail");
+            assert!(workspace_error.contains(".md or .markdown"));
+
+            assert_eq!(fs::read(&source).expect("source after"), before_source);
+            assert_eq!(
+                fs::metadata(&source)
+                    .expect("source metadata after")
+                    .modified()
+                    .expect("source mtime after"),
+                before_source_mtime
+            );
+            assert_eq!(fs::read(&sidecar).expect("sidecar after"), before_sidecar);
+            assert_eq!(
+                fs::metadata(&sidecar)
+                    .expect("sidecar metadata after")
+                    .modified()
+                    .expect("sidecar mtime after"),
+                before_sidecar_mtime
+            );
+        }
     }
 
     #[test]
@@ -5237,12 +5680,8 @@ mod tests {
 
     #[test]
     fn doc_import_external_replace_overwrites_user_file_and_leaves_sidecar_untouched() {
-        // Sidecar-untouched invariant: `mode: "replace"` rewrites the user
-        // file (.md/.pdf/.xlsx/.csv) but the pre-existing `.doxmind` sidecar must
-        // be byte-identical afterwards. The next open will trip the
-        // Stale-sidecar / Salvage path because the markdown_hash no longer
-        // matches — that's the right behavior since at the FS level a
-        // Replace is indistinguishable from an external edit.
+        // Markdown replace rewrites the Page while its pre-existing `.doxmind`
+        // sidecar remains byte-identical. Attachments are rejected earlier.
         let workspace = TempWorkspace::new("import-replace-md");
         // Pre-existing destination pair.
         let dest_md = workspace.path.join("Plan.md");
@@ -5282,33 +5721,79 @@ mod tests {
     }
 
     #[test]
-    fn doc_import_external_replace_via_bytes_leaves_sidecar_untouched() {
-        // Same invariant via the browser-dev `bytes` payload path.
-        let workspace = TempWorkspace::new("import-replace-bytes");
-        let dest = workspace.path.join("Q3.xlsx");
-        write_file(&dest, "old");
-        let sidecar_path = workspace.path.join(".Q3.doxmind");
-        let sidecar_payload = br#"{"version":1,"id":"x","html":""}"#;
-        fs::write(&sidecar_path, sidecar_payload).expect("write sidecar");
+    fn doc_import_external_rejects_attachment_replace_without_touching_recovery_evidence() {
+        for (name, destination_payload, incoming_payload) in [
+            (
+                "Spec.pdf",
+                b"%PDF-1.4\nold\n".as_slice(),
+                b"%PDF-1.4\nincoming\n".as_slice(),
+            ),
+            (
+                "Q3.xlsx",
+                b"PK\x03\x04old".as_slice(),
+                b"PK\x03\x04incoming".as_slice(),
+            ),
+        ] {
+            let workspace = TempWorkspace::new("import-reject-attachment-replace");
+            let destination = workspace.path.join(name);
+            fs::write(&destination, destination_payload).expect("write destination");
+            let sidecar_path = doxmind_sidecar::sidecar_path_for(&destination);
+            let sidecar_payload = br#"{"version":1,"pdf_editor":{"version":1,"edits":{}}}"#;
+            fs::write(&sidecar_path, sidecar_payload).expect("write sidecar");
 
-        let new_payload = b"PK\x03\x04new bytes";
-        let doc = doc_import_external(
-            workspace.root(),
-            None,
-            Some(new_payload.to_vec()),
-            Some(String::new()),
-            "Q3.xlsx".into(),
-            "replace".into(),
-        )
-        .expect("replace via bytes");
+            let downloads = TempWorkspace::new("import-reject-attachment-replace-src");
+            let source = downloads.path.join(name);
+            fs::write(&source, incoming_payload).expect("write source");
 
-        assert_eq!(doc.path, "Q3.xlsx");
-        assert_eq!(fs::read(&dest).expect("dest"), new_payload);
-        assert_eq!(
-            fs::read(&sidecar_path).expect("sidecar"),
-            sidecar_payload,
-            "sidecar must survive byte-identical across a bytes-mode replace"
-        );
+            let destination_mtime = fs::metadata(&destination)
+                .and_then(|metadata| metadata.modified())
+                .expect("destination mtime");
+            let sidecar_mtime = fs::metadata(&sidecar_path)
+                .and_then(|metadata| metadata.modified())
+                .expect("sidecar mtime");
+            let source_mtime = fs::metadata(&source)
+                .and_then(|metadata| metadata.modified())
+                .expect("source mtime");
+
+            let err = doc_import_external(
+                workspace.root(),
+                Some(source.to_string_lossy().into_owned()),
+                None,
+                Some(String::new()),
+                name.into(),
+                "replace".into(),
+            )
+            .expect_err("attachment replace must be rejected");
+
+            assert!(
+                err.contains("replace is only available for Markdown pages"),
+                "unexpected error: {err}"
+            );
+            assert_eq!(
+                fs::read(&destination).expect("destination"),
+                destination_payload
+            );
+            assert_eq!(
+                fs::metadata(&destination)
+                    .and_then(|metadata| metadata.modified())
+                    .expect("destination mtime after"),
+                destination_mtime
+            );
+            assert_eq!(fs::read(&sidecar_path).expect("sidecar"), sidecar_payload);
+            assert_eq!(
+                fs::metadata(&sidecar_path)
+                    .and_then(|metadata| metadata.modified())
+                    .expect("sidecar mtime after"),
+                sidecar_mtime
+            );
+            assert_eq!(fs::read(&source).expect("source"), incoming_payload);
+            assert_eq!(
+                fs::metadata(&source)
+                    .and_then(|metadata| metadata.modified())
+                    .expect("source mtime after"),
+                source_mtime
+            );
+        }
     }
 
     #[test]
@@ -5364,6 +5849,15 @@ mod tests {
             &workspace.path.join("notes/inbox/.b.doxmind"),
             r#"{"id":"b"}"#,
         );
+        let attachment_family = seed_attachment_recovery_family(
+            &workspace,
+            "notes/inbox/Spec.pdf",
+            b"%PDF-1.4\n% folder move\n%%EOF\n",
+        );
+        let attachment_snapshots = attachment_family
+            .iter()
+            .map(|path| snapshot_file(path))
+            .collect::<Vec<_>>();
 
         let result = doc_move(workspace.root(), "notes".into(), "archive/notes".into())
             .expect("move folder");
@@ -5384,6 +5878,19 @@ mod tests {
             .path
             .join("archive/notes/inbox/.b.doxmind")
             .exists());
+        for (old_path, snapshot) in attachment_family.iter().zip(&attachment_snapshots) {
+            let relative = old_path
+                .strip_prefix(workspace.path.join("notes"))
+                .expect("attachment path under moved folder");
+            assert!(
+                !old_path.exists(),
+                "old attachment evidence path must be gone"
+            );
+            assert_file_matches_snapshot(
+                &workspace.path.join("archive/notes").join(relative),
+                snapshot,
+            );
+        }
     }
 
     #[test]
@@ -5453,38 +5960,112 @@ mod tests {
     }
 
     #[test]
-    fn doc_delete_pdf_removes_pair_from_workspace() {
+    fn workspace_delete_folder_rejects_nested_supported_attachments() {
+        for extension in ["pdf", "xlsx", "xlsm", "csv", "html", "htm"] {
+            let workspace = TempWorkspace::new(&format!("delete-folder-attachment-{extension}"));
+            let attachment = workspace
+                .path
+                .join(format!("notes/nested/Attachment.{extension}"));
+            write_file(&attachment, "attachment source");
+            let snapshot = snapshot_file(&attachment);
+
+            let err = workspace_delete_folder(workspace.root(), "notes".into())
+                .expect_err("folder containing attachment must be rejected");
+
+            assert!(
+                err.contains("attachments are read-only"),
+                "unexpected error for {extension}: {err}"
+            );
+            assert_file_matches_snapshot(&attachment, &snapshot);
+            assert!(workspace.path.join("notes").is_dir());
+        }
+    }
+
+    #[test]
+    fn workspace_delete_folder_rejects_orphan_attachment_recovery_evidence() {
+        for extension in ["pdf", "xlsx", "xlsm", "csv", "html", "htm"] {
+            for suffix in [
+                ".doxmind",
+                ".doxmind.bak",
+                ".doxmind.lock",
+                ".doxmind.corrupt-20260721",
+            ] {
+                let workspace = TempWorkspace::new(&format!(
+                    "delete-folder-orphan-evidence-{extension}-{}",
+                    suffix.replace('.', "-")
+                ));
+                let evidence = workspace
+                    .path
+                    .join(format!("notes/nested/.Missing.{extension}{suffix}"));
+                write_file(&evidence, "legacy recovery evidence");
+                let snapshot = snapshot_file(&evidence);
+
+                let err = workspace_delete_folder(workspace.root(), "notes".into())
+                    .expect_err("folder containing orphan recovery evidence must be rejected");
+
+                assert!(
+                    err.contains("attachments are read-only"),
+                    "unexpected error for {extension}{suffix}: {err}"
+                );
+                assert_file_matches_snapshot(&evidence, &snapshot);
+                assert!(workspace.path.join("notes").is_dir());
+                assert!(
+                    !workspace
+                        .path
+                        .join(format!("notes/nested/Missing.{extension}"))
+                        .exists(),
+                    "test fixture must remain orphan evidence"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn doc_delete_rejects_pdf_and_preserves_recovery_family() {
         let workspace = TempWorkspace::new("delete-pdf");
-        write_file(&workspace.path.join("Spec.pdf"), "%PDF-1.4\n%%EOF\n");
-        write_file(&workspace.path.join(".Spec.pdf.doxmind"), r#"{"id":"pdf"}"#);
+        let family = seed_attachment_recovery_family(
+            &workspace,
+            "Spec.pdf",
+            b"%PDF-1.4\n% delete test\n%%EOF\n",
+        );
+        let snapshots = family
+            .iter()
+            .map(|path| snapshot_file(path))
+            .collect::<Vec<_>>();
 
-        let deleted = doc_delete(workspace.root(), "Spec.pdf".into()).expect("delete pdf");
+        let err = doc_delete(workspace.root(), "Spec.pdf".into())
+            .expect_err("PDF attachment delete must be rejected");
 
-        assert_eq!(deleted.path, "Spec.pdf");
-        assert_eq!(deleted.sidecar_path.as_deref(), Some(".Spec.pdf.doxmind"));
-        assert!(!workspace.path.join("Spec.pdf").exists());
-        assert!(!workspace.path.join(".Spec.pdf.doxmind").exists());
+        assert!(
+            err.contains("attachments are read-only"),
+            "unexpected error: {err}"
+        );
+        for (path, snapshot) in family.iter().zip(&snapshots) {
+            assert_file_matches_snapshot(path, snapshot);
+        }
         assert!(!workspace.path.join(".trash").exists());
     }
 
     #[test]
-    fn doc_delete_xlsx_removes_pair_from_workspace() {
+    fn doc_delete_rejects_xlsx_and_preserves_recovery_family() {
         let workspace = TempWorkspace::new("delete-xlsx");
-        write_file(&workspace.path.join("Budget.xlsx"), "PK\x03\x04");
-        write_file(
-            &workspace.path.join(".Budget.xlsx.doxmind"),
-            r#"{"id":"xlsx"}"#,
-        );
+        let family =
+            seed_attachment_recovery_family(&workspace, "Budget.xlsx", b"PK\x03\x04 workbook");
+        let snapshots = family
+            .iter()
+            .map(|path| snapshot_file(path))
+            .collect::<Vec<_>>();
 
-        let deleted = doc_delete(workspace.root(), "Budget.xlsx".into()).expect("delete xlsx");
+        let err = doc_delete(workspace.root(), "Budget.xlsx".into())
+            .expect_err("XLSX attachment delete must be rejected");
 
-        assert_eq!(deleted.path, "Budget.xlsx");
-        assert_eq!(
-            deleted.sidecar_path.as_deref(),
-            Some(".Budget.xlsx.doxmind")
+        assert!(
+            err.contains("attachments are read-only"),
+            "unexpected error: {err}"
         );
-        assert!(!workspace.path.join("Budget.xlsx").exists());
-        assert!(!workspace.path.join(".Budget.xlsx.doxmind").exists());
+        for (path, snapshot) in family.iter().zip(&snapshots) {
+            assert_file_matches_snapshot(path, snapshot);
+        }
         assert!(!workspace.path.join(".trash").exists());
     }
 
@@ -5906,7 +6487,7 @@ mod tests {
     }
 
     #[test]
-    fn excel_parsed_cache_write_preserves_editor_and_unrelated_extras() {
+    fn excel_parsed_cache_write_rejects_non_empty_editor_without_mutating_files() {
         let workspace = TempWorkspace::new("excel-write-cache");
         let workbook_path = workspace.path.join("Budget.xlsx");
         write_file(&workbook_path, "PK\x03\x04");
@@ -5931,6 +6512,125 @@ mod tests {
             .expect("sidecar bytes"),
         )
         .expect("write sidecar");
+        let source_before = fs::read(&workbook_path).expect("read source before");
+        let sidecar_before = fs::read(&sidecar_path).expect("read sidecar before");
+
+        let err = workspace_write_excel_parsed_cache(
+            workspace.root(),
+            "Budget.xlsx".into(),
+            "def".into(),
+            serde_json::json!({ "sheets": [{ "id": "Sheet1" }] }),
+        )
+        .expect_err("cache rebind must fail when editor state is non-empty");
+
+        assert!(err.contains("non-empty editor state"), "{err}");
+        assert_eq!(
+            fs::read(&workbook_path).expect("read source after"),
+            source_before
+        );
+        assert_eq!(
+            fs::read(&sidecar_path).expect("read sidecar after"),
+            sidecar_before
+        );
+    }
+
+    #[test]
+    fn excel_parsed_cache_write_rejects_orphan_editor_without_mutating_files() {
+        let workspace = TempWorkspace::new("excel-orphan-editor-cache-guard");
+        let workbook_path = workspace.path.join("Budget.xlsx");
+        write_file(&workbook_path, "PK\x03\x04");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "version": 1,
+                "id": "doc-1",
+                "html": excel_placeholder("excel-1", "Budget.xlsx"),
+                "markdown_hash": "old",
+                "updated_at": "2026-05-12T00:00:00Z",
+                "extras": {
+                    "blocks": {
+                        "excel-1": { "editor": {} },
+                        "orphan-recovery": {
+                            "editor": {
+                                "version": 1,
+                                "cells": { "Sheet1!0,0": { "value": "saved" } }
+                            }
+                        }
+                    }
+                }
+            }))
+            .expect("sidecar bytes"),
+        )
+        .expect("write sidecar");
+        let source_before = fs::read(&workbook_path).expect("read source before");
+        let source_mtime_before = fs::metadata(&workbook_path)
+            .and_then(|metadata| metadata.modified())
+            .expect("source mtime before");
+        let sidecar_before = fs::read(&sidecar_path).expect("read sidecar before");
+        let sidecar_mtime_before = fs::metadata(&sidecar_path)
+            .and_then(|metadata| metadata.modified())
+            .expect("sidecar mtime before");
+
+        let err = workspace_write_excel_parsed_cache(
+            workspace.root(),
+            "Budget.xlsx".into(),
+            "def".into(),
+            serde_json::json!({ "sheets": [{ "id": "Sheet1" }] }),
+        )
+        .expect_err("cache refresh must fail when an orphan editor is non-empty");
+
+        assert!(err.contains("non-empty editor state"), "{err}");
+        assert_eq!(
+            fs::read(&workbook_path).expect("read source after"),
+            source_before
+        );
+        assert_eq!(
+            fs::metadata(&workbook_path)
+                .and_then(|metadata| metadata.modified())
+                .expect("source mtime after"),
+            source_mtime_before
+        );
+        assert_eq!(
+            fs::read(&sidecar_path).expect("read sidecar after"),
+            sidecar_before
+        );
+        assert_eq!(
+            fs::metadata(&sidecar_path)
+                .and_then(|metadata| metadata.modified())
+                .expect("sidecar mtime after"),
+            sidecar_mtime_before
+        );
+    }
+
+    #[test]
+    fn excel_parsed_cache_write_allows_empty_editor_state() {
+        let workspace = TempWorkspace::new("excel-empty-editor-cache");
+        let workbook_path = workspace.path.join("Budget.xlsx");
+        write_file(&workbook_path, "PK\x03\x04");
+        let sidecar_path = doxmind_sidecar::sidecar_path_for(&workbook_path);
+        fs::write(
+            &sidecar_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "version": 1,
+                "id": "doc-1",
+                "html": excel_placeholder("excel-1", "Budget.xlsx"),
+                "markdown_hash": "old",
+                "updated_at": "2026-05-12T00:00:00Z",
+                "extras": {
+                    "view": { "zoom": 0.9 },
+                    "blocks": {
+                        "excel-1": {
+                            "editor": {},
+                            "parsedCache": { "sourceHash": "abc", "parsed": {} }
+                        }
+                    }
+                }
+            }))
+            .expect("sidecar bytes"),
+        )
+        .expect("write sidecar");
+        let source_before = fs::read(&workbook_path).expect("read source before");
 
         workspace_write_excel_parsed_cache(
             workspace.root(),
@@ -5938,20 +6638,22 @@ mod tests {
             "def".into(),
             serde_json::json!({ "sheets": [{ "id": "Sheet1" }] }),
         )
-        .expect("write parsed cache");
+        .expect("write parsed cache with empty editor state");
 
+        assert_eq!(
+            fs::read(&workbook_path).expect("read source after"),
+            source_before
+        );
         let sidecar = read_json_file(&sidecar_path);
-        assert!(sidecar.get(EXCEL_LEGACY_EDITOR_KEY).is_none());
-        assert!(sidecar.get(EXCEL_LEGACY_PARSED_CACHE_KEY).is_none());
         assert_eq!(sidecar["extras"]["view"]["zoom"], 0.9);
         let (_block_id, slot) = only_excel_slot(&sidecar);
-        assert_eq!(slot["editor"]["activeSheetId"], "Sheet1");
+        assert_eq!(slot["editor"], serde_json::json!({}));
         assert_eq!(slot["parsedCache"]["sourceHash"], "def");
         assert_eq!(slot["parsedCache"]["parsed"]["sheets"][0]["id"], "Sheet1");
     }
 
     #[test]
-    fn excel_cross_runtime_fixture_editor_and_cache_writes_match_contract() {
+    fn excel_cross_runtime_fixture_rejects_cache_rebind_after_editor_write() {
         let workspace = TempWorkspace::new("excel-cross-runtime-shape");
         let sidecar_path =
             install_compat_fixture(&workspace, "Budget.xlsx", EXCEL_MARKDOWN_SHAPE_FIXTURE);
@@ -5974,14 +6676,19 @@ mod tests {
         assert_eq!(after_editor["editor"], editor);
         assert_eq!(after_editor["parsedCache"], initial["parsedCache"]);
 
-        let parsed = serde_json::json!({"sheets": [{"id": "Sheet2", "rows": 4}]});
-        workspace_write_excel_parsed_cache(
+        let sidecar_before = fs::read(&sidecar_path).expect("read sidecar before cache write");
+        let err = workspace_write_excel_parsed_cache(
             workspace.root(),
             "Budget.xlsx".into(),
             "valid-excel-hash-2".into(),
-            parsed.clone(),
+            serde_json::json!({"sheets": [{"id": "Sheet2", "rows": 4}]}),
         )
-        .expect("write cache");
+        .expect_err("cache rebind must fail after editor write");
+        assert!(err.contains("non-empty editor state"), "{err}");
+        assert_eq!(
+            fs::read(&sidecar_path).expect("read sidecar after cache write"),
+            sidecar_before
+        );
 
         let sidecar = read_json_file(&sidecar_path);
         assert_no_legacy_fields(
@@ -5997,8 +6704,7 @@ mod tests {
             .as_object()
             .expect("slot");
         assert_eq!(slot["editor"], editor);
-        assert_eq!(slot["parsedCache"]["sourceHash"], "valid-excel-hash-2");
-        assert_eq!(slot["parsedCache"]["parsed"], parsed);
+        assert_eq!(slot["parsedCache"]["sourceHash"], "valid-excel-hash");
         assert_eq!(slot["slotExtra"]["keep"], "excel");
     }
 

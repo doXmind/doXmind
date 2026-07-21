@@ -50,99 +50,26 @@ vi.mock("@/components/workspace/markdown-runtime", () => ({
   ),
 }));
 
-vi.mock("@/components/excel-editor/excel-editor-workspace", () => ({
-  ExcelEditorWorkspace: ({ file }: { file: FileItem }) => {
-    const [currencyFormatted, setCurrencyFormatted] = React.useState(false);
-    const [filterOn, setFilterOn] = React.useState(false);
-    const [comment, setComment] = React.useState(false);
-    const [frozen, setFrozen] = React.useState(false);
+vi.mock("@/components/workspace/attachment-workspace", () => ({
+  AttachmentWorkspace: ({ file }: { file: FileItem }) => {
+    const [lastAction, setLastAction] = React.useState("");
 
     return (
-      <div data-testid="document-workspace" data-document-type="excel">
+      <div
+        data-testid="document-workspace"
+        data-document-type="attachment"
+        data-attachment-type={file.documentType}
+        data-attachment-name={file.name}
+      >
         <h2>{file.name}</h2>
-        <div data-testid="excel-scenario">Finance budget review</div>
-        <div role="grid" aria-label="Q1 Summary workbook">
-          <div role="row">
-            <span role="columnheader">Region</span>
-            <span role="columnheader">Revenue</span>
-            <span role="columnheader">Status</span>
-          </div>
-          <div role="row">
-            <span role="gridcell">East</span>
-            <span role="gridcell">$5,200</span>
-            <span role="gridcell">Pending</span>
-          </div>
-        </div>
-        <button
-          type="button"
-          aria-label="Format as currency"
-          onClick={() => setCurrencyFormatted(true)}
-        >
-          Format currency
+        <div>Read-only attachment</div>
+        <button type="button" onClick={() => setLastAction("opened externally")}>
+          Open externally
         </button>
-        <button
-          type="button"
-          aria-label="Toggle filter"
-          onClick={() => setFilterOn((value) => !value)}
-        >
-          Filter
+        <button type="button" onClick={() => setLastAction("revealed in folder")}>
+          Reveal
         </button>
-        <button type="button" aria-label="Comment" onClick={() => setComment(true)}>
-          Comment
-        </button>
-        <button type="button" aria-label="Freeze top row" onClick={() => setFrozen(true)}>
-          Freeze
-        </button>
-        <button type="button" aria-label="Export edited workbook">
-          Export
-        </button>
-        <output aria-label="Excel review state">
-          {[
-            currencyFormatted && "currency formatted",
-            filterOn && "filter enabled",
-            comment && "finance comment added",
-            frozen && "top row frozen",
-          ]
-            .filter(Boolean)
-            .join(", ")}
-        </output>
-      </div>
-    );
-  },
-}));
-
-vi.mock("@/components/pdf-editor/pdf-editor-workspace", () => ({
-  PdfEditorWorkspace: ({ file }: { file: FileItem }) => {
-    const [page, setPage] = React.useState(1);
-    const [note, setNote] = React.useState(false);
-    const [highlight, setHighlight] = React.useState(false);
-
-    return (
-      <div data-testid="document-workspace" data-document-type="pdf">
-        <h2>{file.name}</h2>
-        <div data-testid="pdf-scenario">Contract review markup</div>
-        <div aria-label="PDF page status">{page} / 3</div>
-        <button
-          type="button"
-          aria-label="Next page"
-          onClick={() => setPage((value) => Math.min(3, value + 1))}
-        >
-          Next
-        </button>
-        <button type="button" aria-label="Add text" onClick={() => setNote(true)}>
-          Add text
-        </button>
-        <button type="button" aria-label="Add highlight" onClick={() => setHighlight(true)}>
-          Highlight
-        </button>
-        <button type="button" aria-label="Export edited PDF">
-          Export
-        </button>
-        <output aria-label="PDF review state">
-          {[note && "approval note added", highlight && "clause highlighted"]
-            .filter(Boolean)
-            .join(", ")}
-        </output>
+        <output aria-label="Attachment action">{lastAction}</output>
       </div>
     );
   },
@@ -392,12 +319,13 @@ describe("GUI preflight", () => {
   });
 
   it.each([
-    ["markdown", "Project.md"],
-    ["pdf", "Quarterly Review.pdf"],
-    ["excel", "Budget.xlsx"],
+    ["markdown", "Project.md", "markdown"],
+    ["pdf", "Quarterly Review.pdf", "attachment"],
+    ["excel", "Budget.xlsx", "attachment"],
+    ["html", "Archive.html", "attachment"],
   ] as const)(
     "routes a hydrated %s file into the document workspace",
-    async (documentType, name) => {
+    async (documentType, name, workspaceType) => {
       useFileStore.setState({
         openTarget: "folder",
         rootPath: "/tmp/notes",
@@ -410,8 +338,12 @@ describe("GUI preflight", () => {
       render(<DesktopEditor />);
 
       const workspace = await screen.findByTestId("document-workspace");
-      expect(workspace).toHaveAttribute("data-document-type", documentType);
+      expect(workspace).toHaveAttribute("data-document-type", workspaceType);
       expect(workspace).toHaveTextContent(name);
+      if (workspaceType === "attachment") {
+        expect(workspace).toHaveAttribute("data-attachment-type", documentType);
+        expect(workspace).toHaveAttribute("data-attachment-name", name);
+      }
       expect(screen.queryByTestId("markdown-skeleton")).not.toBeInTheDocument();
     }
   );
@@ -473,7 +405,7 @@ describe("GUI preflight", () => {
     }
   });
 
-  it("runs a realistic Excel finance review scenario", async () => {
+  it("opens and reveals an Excel attachment without exposing editing controls", async () => {
     const user = userEvent.setup();
     useFileStore.setState({
       openTarget: "folder",
@@ -498,23 +430,23 @@ describe("GUI preflight", () => {
 
     render(<DesktopEditor />);
 
-    expect(screen.getByTestId("excel-scenario")).toHaveTextContent("Finance budget review");
-    expect(screen.getByRole("grid", { name: /q1 summary workbook/i })).toBeInTheDocument();
-    expect(screen.getByRole("gridcell", { name: "East" })).toBeInTheDocument();
+    const workspace = screen.getByTestId("document-workspace");
+    expect(workspace).toHaveAttribute("data-document-type", "attachment");
+    expect(workspace).toHaveAttribute("data-attachment-type", "excel");
+    expect(workspace).toHaveTextContent("Read-only attachment");
 
-    await user.click(screen.getByRole("button", { name: /format as currency/i }));
-    await user.click(screen.getByRole("button", { name: /toggle filter/i }));
-    await user.click(screen.getByRole("button", { name: /comment/i }));
-    await user.click(screen.getByRole("button", { name: /freeze top row/i }));
+    await user.click(screen.getByRole("button", { name: /open externally/i }));
+    expect(screen.getByLabelText("Attachment action")).toHaveTextContent("opened externally");
 
-    expect(screen.getByLabelText("Excel review state")).toHaveTextContent("currency formatted");
-    expect(screen.getByLabelText("Excel review state")).toHaveTextContent("filter enabled");
-    expect(screen.getByLabelText("Excel review state")).toHaveTextContent("finance comment added");
-    expect(screen.getByLabelText("Excel review state")).toHaveTextContent("top row frozen");
-    expect(screen.getByRole("button", { name: /export edited workbook/i })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: /reveal/i }));
+    expect(screen.getByLabelText("Attachment action")).toHaveTextContent("revealed in folder");
+    expect(screen.queryByRole("grid")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /format|comment|freeze|export/i })
+    ).not.toBeInTheDocument();
   });
 
-  it("runs a realistic PDF contract review scenario", async () => {
+  it("opens and reveals a PDF attachment without exposing editing controls", async () => {
     const user = userEvent.setup();
     useFileStore.setState({
       openTarget: "folder",
@@ -539,17 +471,19 @@ describe("GUI preflight", () => {
 
     render(<DesktopEditor />);
 
-    expect(screen.getByTestId("pdf-scenario")).toHaveTextContent("Contract review markup");
-    expect(screen.getByLabelText("PDF page status")).toHaveTextContent("1 / 3");
+    const workspace = screen.getByTestId("document-workspace");
+    expect(workspace).toHaveAttribute("data-document-type", "attachment");
+    expect(workspace).toHaveAttribute("data-attachment-type", "pdf");
+    expect(workspace).toHaveTextContent("Read-only attachment");
 
-    await user.click(screen.getByRole("button", { name: /next page/i }));
-    await user.click(screen.getByRole("button", { name: /add text/i }));
-    await user.click(screen.getByRole("button", { name: /add highlight/i }));
+    await user.click(screen.getByRole("button", { name: /open externally/i }));
+    expect(screen.getByLabelText("Attachment action")).toHaveTextContent("opened externally");
 
-    expect(screen.getByLabelText("PDF page status")).toHaveTextContent("2 / 3");
-    expect(screen.getByLabelText("PDF review state")).toHaveTextContent("approval note added");
-    expect(screen.getByLabelText("PDF review state")).toHaveTextContent("clause highlighted");
-    expect(screen.getByRole("button", { name: /export edited pdf/i })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: /reveal/i }));
+    expect(screen.getByLabelText("Attachment action")).toHaveTextContent("revealed in folder");
+    expect(
+      screen.queryByRole("button", { name: /next page|add text|highlight|export/i })
+    ).not.toBeInTheDocument();
   });
 
   it("hides chrome in focus mode and lets the user exit focus mode", async () => {

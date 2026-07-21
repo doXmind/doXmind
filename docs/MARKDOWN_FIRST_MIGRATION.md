@@ -1,5 +1,9 @@
 # Markdown Workspace Implementation Plan
 
+> Historical migration record. The active product boundary and forward roadmap
+> now live in [`PRODUCT_DIRECTION.md`](PRODUCT_DIRECTION.md). Do not add new
+> product phases to this file.
+
 ## 目标
 
 doXmind 的文档库不再是 `~/.doxmind/doxmind.db`，而是用户选择的一个本地 markdown 文件夹。

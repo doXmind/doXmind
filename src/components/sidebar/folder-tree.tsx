@@ -21,7 +21,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { PdfGlyph, SpreadsheetGlyph } from "@/components/icons/document-glyphs";
 import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import { FileItem } from "./file-item";
@@ -44,19 +43,12 @@ import {
 import { ImportError } from "@/lib/storage";
 import { ImportConflictModal } from "./import-conflict-modal";
 import { getSidebarTreePaddingLeft } from "./tree-layout";
+import { isMarkdownFile } from "@/lib/document-types";
 
 const log = storeLogger.child("FolderTree");
 
 type FolderMenuItem = {
-  id:
-    | "new-file"
-    | "new-pdf"
-    | "new-excel"
-    | "new-folder"
-    | "refresh"
-    | "rename"
-    | "reveal"
-    | "delete";
+  id: "new-file" | "new-folder" | "refresh" | "rename" | "reveal" | "delete";
   label: string;
   icon: React.ReactNode;
   onClick: () => void;
@@ -64,7 +56,7 @@ type FolderMenuItem = {
 };
 
 type EmptyMenuItem = {
-  id: "new-file" | "new-pdf" | "new-excel" | "new-folder" | "refresh";
+  id: "new-file" | "new-folder" | "refresh";
   label: string;
   icon: React.ReactNode;
   onClick: () => void;
@@ -72,8 +64,6 @@ type EmptyMenuItem = {
 
 interface FolderTreeProps {
   onCreateFile: (parentId?: string | null) => void;
-  onCreatePdf: (parentId?: string | null) => void;
-  onCreateExcel: (parentId?: string | null) => void;
   onCreateFolder: (parentId?: string | null) => void;
 }
 
@@ -83,7 +73,7 @@ export interface FolderTreeHandle {
 }
 
 export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function FolderTree(
-  { onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder },
+  { onCreateFile, onCreateFolder },
   ref
 ) {
   const t = useTranslations("sidebar");
@@ -161,7 +151,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   );
 
   // Build a D1-shaped tree snapshot from the file store. The policy module
-  // only needs the four fields it asks for, so we strip out everything else
+  // only needs identity, hierarchy, and attachment status, so we strip out everything else
   // — keeps the verdict path independent of FileItem evolution.
   const dndTree: DnDNode[] = useMemo(
     () =>
@@ -169,6 +159,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         id: f.id,
         name: f.name,
         isFolder: f.isFolder,
+        isAttachment: !f.isFolder && !isMarkdownFile(f),
         parentId: f.parentId,
       })),
     [files]
@@ -426,6 +417,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     switch (decision.verdict) {
       case "cycle":
       case "would-be-self":
+      case "attachment-source":
         // Cursor already showed not-allowed during the drag; nothing to do
         // on drop beyond eating the event so the parent doesn't pick it up.
         return;
@@ -606,18 +598,6 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         onClick: () => onCreateFile(folder.id),
       },
       {
-        id: "new-pdf",
-        label: t("newPdfDocument"),
-        icon: <PdfGlyph className="mr-2 h-4 w-4" />,
-        onClick: () => onCreatePdf(folder.id),
-      },
-      {
-        id: "new-excel",
-        label: t("newExcelDocument"),
-        icon: <SpreadsheetGlyph className="mr-2 h-4 w-4" />,
-        onClick: () => onCreateExcel(folder.id),
-      },
-      {
         id: "new-folder",
         label: t("newFolder"),
         icon: <FolderPlus className="mr-2 h-4 w-4" />,
@@ -654,7 +634,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         destructive: true,
       },
     ],
-    [t, handleRefresh, onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder]
+    [t, handleRefresh, onCreateFile, onCreateFolder]
   );
 
   const buildEmptyMenu = useCallback((): EmptyMenuItem[] => {
@@ -678,25 +658,13 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         onClick: () => onCreateFile(null),
       },
       {
-        id: "new-pdf",
-        label: t("newPdfDocument"),
-        icon: <PdfGlyph className="mr-2 h-4 w-4" />,
-        onClick: () => onCreatePdf(null),
-      },
-      {
-        id: "new-excel",
-        label: t("newExcelDocument"),
-        icon: <SpreadsheetGlyph className="mr-2 h-4 w-4" />,
-        onClick: () => onCreateExcel(null),
-      },
-      {
         id: "new-folder",
         label: t("newFolder"),
         icon: <FolderPlus className="mr-2 h-4 w-4" />,
         onClick: () => onCreateFolder(null),
       },
     ];
-  }, [t, openTarget, handleRefresh, onCreateFile, onCreatePdf, onCreateExcel, onCreateFolder]);
+  }, [t, openTarget, handleRefresh, onCreateFile, onCreateFolder]);
 
   // Position helpers — clamp to viewport so menus don't overflow.
   const positionForMouse = (clientX: number, clientY: number, w: number, h: number) => {

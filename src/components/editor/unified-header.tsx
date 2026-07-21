@@ -13,6 +13,7 @@ import {
   Loader2,
   Save,
   X,
+  File as FileIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -36,7 +37,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { useIsTauri } from "@/hooks/use-is-tauri";
-import { getDisplayName, isExcelFile, isPdfFile } from "@/lib/document-types";
+import { getDisplayName, isExcelFile, isMarkdownFile, isPdfFile } from "@/lib/document-types";
 import { exportMarkdownAsPdf } from "@/lib/markdown-pdf-export";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { shouldStartWindowDrag } from "@/lib/window-drag-region";
@@ -52,6 +53,7 @@ function TabDocumentIcon({ file }: { file: FileItem }) {
   if (isPdfFile(file)) return <PdfGlyph className="h-4 w-4" />;
   if (isExcelFile(file)) return <SpreadsheetGlyph className="h-4 w-4" />;
   if (/\.csv$/i.test(file.name)) return <CsvGlyph className="h-4 w-4" />;
+  if (!isMarkdownFile(file)) return <FileIcon className="h-4 w-4" />;
   return <MarkdownGlyph className="h-4 w-4 text-[var(--sidebar-icon)]" />;
 }
 
@@ -83,7 +85,7 @@ export function UnifiedHeader() {
   // Only show a title when an actual document is loaded — on the
   // welcome screen there's no file to title, so showing "Untitled"
   // would just be noise.
-  const isExcel = currentFile ? isExcelFile(currentFile) : false;
+  const isCurrentPage = currentFile ? isMarkdownFile(currentFile) : false;
   const title = currentFileName ? getDisplayName(currentFileName) : "";
   const closeRequestFile = closeRequestId
     ? files.find((file) => file.id === closeRequestId)
@@ -116,26 +118,10 @@ export function UnifiedHeader() {
     [isMacTauri]
   );
 
-  const handleExport = async (format: "markdown" | "pdf" | "xlsx") => {
+  const handleExport = async (format: "markdown" | "pdf") => {
     const { currentFileId, files } = useFileStore.getState();
     const currentFile = currentFileId ? files.find((file) => file.id === currentFileId) : undefined;
     if (!currentFile) return;
-
-    // PDF export when the active document is a PDF: hand off to the PDF
-    // editor (PyMuPDF redact + insert_htmlbox pipeline). The editor owns
-    // the raw bytes + edits, so it does the actual download.
-    if (format === "pdf" && isPdfFile(currentFile)) {
-      window.dispatchEvent(new CustomEvent("doxmind:export-pdf"));
-      return;
-    }
-
-    // Excel export — same pattern. The Excel editor holds the original
-    // bytes plus the sidecar edit payload and round-trips them through
-    // /api/excel/export-edited.
-    if (format === "xlsx" && isExcelFile(currentFile)) {
-      window.dispatchEvent(new CustomEvent("doxmind:export-xlsx"));
-      return;
-    }
 
     // Markdown -> PDF: render with the local Python/PyMuPDF sidecar, then let
     // the desktop shell write the returned PDF bytes to the selected file.
@@ -168,10 +154,6 @@ export function UnifiedHeader() {
   };
 
   const handleFind = () => {
-    if (currentFile && isExcelFile(currentFile)) {
-      window.dispatchEvent(new CustomEvent("doxmind:excel-find"));
-      return;
-    }
     toggleSearchBar();
   };
 
@@ -203,7 +185,13 @@ export function UnifiedHeader() {
   };
 
   const handleCloseTab = (fileId: string) => {
-    if (fileId === currentFileId && useEditorStore.getState().isDirty) {
+    const file = useFileStore.getState().files.find((candidate) => candidate.id === fileId);
+    if (
+      fileId === currentFileId &&
+      file &&
+      isMarkdownFile(file) &&
+      useEditorStore.getState().isDirty
+    ) {
       setCloseRequestId(fileId);
       return;
     }
@@ -211,9 +199,11 @@ export function UnifiedHeader() {
   };
 
   const handleCloseDocument = () => {
-    const activeId = useFileStore.getState().currentFileId;
+    const store = useFileStore.getState();
+    const activeId = store.currentFileId;
     if (!activeId) return;
-    if (useEditorStore.getState().isDirty) {
+    const activeFile = store.files.find((file) => file.id === activeId);
+    if (activeFile && isMarkdownFile(activeFile) && useEditorStore.getState().isDirty) {
       setCloseRequestId(activeId);
       return;
     }
@@ -353,6 +343,7 @@ export function UnifiedHeader() {
               >
                 {tabFiles.map((file) => {
                   const isActive = file.id === currentFileId;
+                  const isPage = isMarkdownFile(file);
                   const displayName = getDisplayName(file.name);
                   return (
                     <div
@@ -380,9 +371,9 @@ export function UnifiedHeader() {
                       <span className="text-ui-sm min-w-0 flex-1 truncate font-medium">
                         {displayName}
                       </span>
-                      {isActive && isSaving ? (
+                      {isActive && isPage && isSaving ? (
                         <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
-                      ) : isActive && isDirty ? (
+                      ) : isActive && isPage && isDirty ? (
                         <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
                       ) : null}
                       <span
@@ -448,7 +439,7 @@ export function UnifiedHeader() {
 
           {/* Options menu — pinned to the header's far-right corner. */}
           <div className="absolute right-4 top-0 flex h-full items-center md:right-6">
-            {currentFileName && (
+            {currentFileName && isCurrentPage && (
               <DropdownMenu>
                 <Tooltip content={t("moreTooltip")} side="bottom">
                   <DropdownMenuTrigger asChild>
@@ -463,8 +454,8 @@ export function UnifiedHeader() {
                   </DropdownMenuTrigger>
                 </Tooltip>
                 <DropdownMenuContent align="end" className="w-56">
-                  {/* Save state lives in the bottom status bar for Markdown;
-                        mirrored here because PDF/Excel have no status bar. */}
+                  {/* Save state lives in the Page status bar and is mirrored
+                      here so the compact menu remains self-contained. */}
                   <div className="text-ui-xs flex items-center gap-1.5 px-2 py-1.5 text-muted-foreground">
                     {isSaving ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -496,25 +487,18 @@ export function UnifiedHeader() {
 
                   <DropdownMenuSeparator />
 
-                  {isExcel ? (
-                    <DropdownMenuItem onClick={() => handleExport("xlsx")}>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
                       <Download className="mr-2 h-4 w-4" />
-                      Export as Excel
-                    </DropdownMenuItem>
-                  ) : (
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <Download className="mr-2 h-4 w-4" />
-                        {t("export")}
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent>
-                        <DropdownMenuItem onClick={() => handleExport("markdown")}>
-                          Markdown
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleExport("pdf")}>PDF</DropdownMenuItem>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                  )}
+                      {t("export")}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuItem onClick={() => handleExport("markdown")}>
+                        Markdown
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleExport("pdf")}>PDF</DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
 
                   <DropdownMenuItem onClick={handleFind}>
                     <Search className="mr-2 h-4 w-4" />

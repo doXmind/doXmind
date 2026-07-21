@@ -6,9 +6,10 @@ import { AlertTriangle, FileText } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type {
-  CollisionItem,
-  CollisionResolution,
+import {
+  canReplaceExternalImport,
+  type CollisionItem,
+  type CollisionResolution,
 } from "@/lib/external-import-resolver";
 
 /**
@@ -18,15 +19,14 @@ import type {
  * surfaced HERE in one place, and everything in `rejected` shows the
  * bad-extension toast(s) (already wired in #67).
  *
- * The user picks Replace / Keep both / Skip per row, then presses Apply
- * (commits the batch) or Cancel all (drops the entire batch — accepted
- * items dropped earlier in the same drop are unaffected; this dialog only
- * controls the collision sub-batch).
+ * Markdown Page collisions offer Replace / Keep both / Skip. Attachment
+ * collisions offer only Keep both / Skip so their source file cannot be
+ * replaced underneath same-name legacy recovery evidence. The user then
+ * presses Apply (commits the batch) or Cancel all (drops the entire batch —
+ * accepted items dropped earlier in the same drop are unaffected; this dialog
+ * only controls the collision sub-batch).
  *
- * Replace is load-bearing: at the FS level it overwrites the user file but
- * leaves the hidden `.doxmind` sidecar intact (CONTEXT.md "Stale sidecar"
- * + ADR 0002). The next open trips the Salvage path. The Replace hint
- * copy alludes to that contract without dragging the user into the weeds.
+ * Replace is available only for first-class Markdown Pages.
  */
 export interface ImportConflictModalProps {
   open: boolean;
@@ -37,7 +37,8 @@ export interface ImportConflictModalProps {
   onCancelAll: () => void;
 }
 
-const RESOLUTIONS: CollisionResolution[] = ["replace", "keep-both", "skip"];
+const PAGE_RESOLUTIONS: CollisionResolution[] = ["replace", "keep-both", "skip"];
+const ATTACHMENT_RESOLUTIONS: CollisionResolution[] = ["keep-both", "skip"];
 
 export function ImportConflictModal({
   open,
@@ -86,6 +87,9 @@ export function ImportConflictModal({
       <div className="mt-4 max-h-[50vh] space-y-2 overflow-y-auto pr-1">
         {collisions.map((collision) => {
           const current = decisions[collision.existingName];
+          const resolutions = canReplaceExternalImport(collision.extension)
+            ? PAGE_RESOLUTIONS
+            : ATTACHMENT_RESOLUTIONS;
           return (
             <div
               key={collision.existingName}
@@ -102,9 +106,12 @@ export function ImportConflictModal({
               <div
                 role="radiogroup"
                 aria-label={collision.existingName}
-                className="mt-2 grid grid-cols-3 gap-1.5"
+                className={cn(
+                  "mt-2 grid gap-1.5",
+                  resolutions.length === 3 ? "grid-cols-3" : "grid-cols-2"
+                )}
               >
-                {RESOLUTIONS.map((resolution) => (
+                {resolutions.map((resolution) => (
                   <ResolutionButton
                     key={resolution}
                     resolution={resolution}

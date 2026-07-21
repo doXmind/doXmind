@@ -77,7 +77,7 @@ import { handleReadOnlyAutosaveError } from "@/lib/storage/read-only-error";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
-import { exportEditedWorkbook } from "@/lib/excel/export-edited";
+import { exportEditedWorkbookLegacy } from "@/lib/excel/export-edited";
 import {
   fetchExcelWorkbook,
   type ExcelCellDto,
@@ -2674,7 +2674,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     }
     setIsExporting(true);
     try {
-      const blob = await exportEditedWorkbook(bytes, state, file.name);
+      const blob = await exportEditedWorkbookLegacy(bytes, state, file.name);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;

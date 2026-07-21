@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 import { storeLogger } from "@/lib/logger";
 import { eventBus } from "@/lib/events";
 import type { FileItem } from "@/types";
-import { documentTypeFromName } from "@/lib/document-types";
+import { documentTypeFromName, isMarkdownFile } from "@/lib/document-types";
 import {
   createStorageAdapter,
   type DocumentHandle,
@@ -16,6 +16,10 @@ import { perfAsync, perfSync } from "@/lib/perf";
 
 const log = storeLogger.child("File");
 const SELF_SAVE_REFRESH_SUPPRESSION_MS = 2500;
+
+function isSidebarMutableEntry(file: FileItem | undefined): file is FileItem {
+  return !!file && (file.isFolder || isMarkdownFile(file));
+}
 
 let suppressWorkspaceRefreshUntil = 0;
 
@@ -140,12 +144,7 @@ interface FileState {
   openFolder: (root: string) => Promise<void>;
   openFile: (absolutePath: string) => Promise<void>;
   closeOpened: () => void;
-  createFile: (
-    name: string,
-    content?: string,
-    parentId?: string | null,
-    options?: { documentType?: "markdown" | "pdf" | "excel" }
-  ) => Promise<string>;
+  createFile: (name: string, content?: string, parentId?: string | null) => Promise<string>;
   updateFile: (
     id: string,
     updates: Partial<Pick<FileItem, "name" | "content" | "contentMarkdown">>
@@ -179,11 +178,9 @@ interface FileState {
    * External-import entry point used by sidebar DnD (#67). Always copies; the
    * source file (e.g. from Downloads) is left untouched.
    *
-   * `mode` defaults to `"create"`. `"replace"` (added in #69) overwrites the
-   * user file at the destination but leaves the hidden `.doxmind` sidecar
-   * untouched — the next open trips the Stale-sidecar / Salvage path
-   * (ADR 0002), which is the right behavior because at the FS level a
-   * Replace is indistinguishable from an external edit.
+   * `mode` defaults to `"create"`. `"replace"` is available only for Markdown
+   * Pages. Attachment collisions must use Keep both or Skip so legacy recovery
+   * evidence remains correlated with its source file.
    *
    * Throws `ImportError` with `code: "destination-exists"` if `mode === "create"`
    * and a name clash is detected on the backend (race window between the D2
@@ -550,11 +547,15 @@ export const useFileStore = create<FileState>()(
                 ? state.currentFolderId
                 : null;
 
-            // Clear selection of files that no longer exist
+            // Keep selection only for existing Pages. Attachments are
+            // intentionally excluded from sidebar bulk mutations.
+            const selectableFileIds = new Set(
+              files.filter((file) => !file.isFolder && isMarkdownFile(file)).map((file) => file.id)
+            );
             const validSelectedFileIds = new Set(
               Array.from(state.selectedFileIds)
                 .map((id) => idMigrationByOldId.get(id) ?? id)
-                .filter((id) => newFileIds.has(id))
+                .filter((id) => selectableFileIds.has(id))
             );
             const validOpenTabIds = state.openTabIds
               .map((id) => idMigrationByOldId.get(id) ?? id)
@@ -629,7 +630,7 @@ export const useFileStore = create<FileState>()(
             async () => {
               const file = get().files.find((f) => f.id === fileId);
               if (!file) return;
-              if (file.documentType === "pdf" || file.documentType === "excel") {
+              if (!isMarkdownFile(file)) {
                 set((state) => ({
                   loadedContentIds: new Set([...state.loadedContentIds, fileId]),
                 }));
@@ -764,9 +765,9 @@ export const useFileStore = create<FileState>()(
         const now = new Date().toISOString();
         let looseFile: FileItem;
 
-        if (documentType === "pdf" || documentType === "excel") {
-          // Binary documents are loaded on demand by their workspaces; we just
-          // need a stable FileItem so the editor can resolve the current file.
+        if (documentType !== "markdown") {
+          // Attachments are represented by a stable FileItem only. Their
+          // read-only workspace must not load source content or sidecar state.
           looseFile = {
             id: handle.id,
             name: fileBase,
@@ -849,69 +850,27 @@ export const useFileStore = create<FileState>()(
         void unregisterWindowTarget();
       },
 
-      createFile: async (
-        name: string,
-        content: string = "",
-        parentId: string | null = null,
-        options?: { documentType?: "markdown" | "pdf" | "excel" }
-      ) => {
+      createFile: async (name: string, content: string = "", parentId: string | null = null) => {
         try {
           // Validate parentId (a folder) exists; fall back to root if stale
           const validParentId =
             parentId && get().files.some((f) => f.id === parentId) ? parentId : null;
 
-          const documentType =
-            options?.documentType ??
-            (/\.pdf$/i.test(name)
-              ? "pdf"
-              : /\.(xlsx|xlsm|csv)$/i.test(name)
-                ? "excel"
-                : "markdown");
-
-          let entry;
-          let storedContent = content;
-          if (documentType === "pdf") {
-            const { createBlankPdfBytes } = await import("@/lib/pdf/blank-pdf");
-            const bytes = await createBlankPdfBytes();
-            entry = await getAdapter(get()).create({
-              name,
-              kind: "document",
-              parent: parentHandleForId(get().files, validParentId),
-              documentType: "pdf",
-              binary: bytes,
-            });
-            // PDFs aren't displayed via `content` — the editor reads the
-            // binary on demand. Keep the in-memory content empty so we don't
-            // accidentally feed PDF bytes into a markdown viewer.
-            storedContent = "";
-          } else if (documentType === "excel") {
-            const { createBlankExcelBytes } = await import("@/lib/excel/blank-excel");
-            const bytes = createBlankExcelBytes();
-            entry = await getAdapter(get()).create({
-              name,
-              kind: "document",
-              parent: parentHandleForId(get().files, validParentId),
-              documentType: "excel",
-              binary: bytes,
-            });
-            storedContent = "";
-          } else {
-            entry = await getAdapter(get()).create({
-              name,
-              kind: "document",
-              parent: parentHandleForId(get().files, validParentId),
-              content: { html: content, markdown: "" },
-            });
-          }
+          const entry = await getAdapter(get()).create({
+            name,
+            kind: "document",
+            parent: parentHandleForId(get().files, validParentId),
+            content: { html: content, markdown: "" },
+          });
           const newFile = {
             ...fileFromEntry(entry, {
-              content: storedContent,
-              editorHtml: storedContent,
-              browsingHtml: storedContent,
+              content,
+              editorHtml: content,
+              browsingHtml: content,
               contentMarkdown: "",
               outline: [],
             }),
-            content: storedContent,
+            content,
           };
 
           set((state) => ({
@@ -1405,7 +1364,7 @@ export const useFileStore = create<FileState>()(
           bytes,
           mode,
         });
-        // Replace mode overwrites a file that already exists in the workspace.
+        // Replace mode overwrites a Markdown Page that already exists in the workspace.
         // Surface that as a refreshed entry rather than a fresh insertion so
         // the sidebar doesn't end up with two rows for the same path.
         if (mode === "replace") {
@@ -1413,8 +1372,9 @@ export const useFileStore = create<FileState>()(
             (f) => !f.isFolder && f.parentId === validParentId && f.name === name
           );
           if (existing) {
-            // Touch updatedAt by replacing the entry in place; the sidecar is
-            // intentionally left alone on disk so the next open trips Salvage.
+            // Touch updatedAt by replacing the entry in place; the Markdown
+            // sidecar is intentionally left alone on disk so the next open
+            // imports the externally changed portable source.
             // Name doesn't change here, but re-sort to be defensive — under
             // modified-newest the touched entry should move to the top.
             set((state) => ({
@@ -1501,6 +1461,11 @@ export const useFileStore = create<FileState>()(
       toggleFileSelection: (fileId) =>
         set((state) => {
           const next = new Set(state.selectedFileIds);
+          const file = state.files.find((item) => item.id === fileId);
+          if (!file || file.isFolder || !isMarkdownFile(file)) {
+            next.delete(fileId);
+            return { selectedFileIds: next };
+          }
           if (next.has(fileId)) {
             next.delete(fileId);
           } else {
@@ -1511,7 +1476,9 @@ export const useFileStore = create<FileState>()(
 
       selectFileRange: (fromId, toId) => {
         const { files, currentFolderId } = get();
-        const visibleFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+        const visibleFiles = files.filter(
+          (file) => !file.isFolder && file.parentId === currentFolderId && isMarkdownFile(file)
+        );
         const fromIndex = visibleFiles.findIndex((f) => f.id === fromId);
         const toIndex = visibleFiles.findIndex((f) => f.id === toId);
 
@@ -1532,17 +1499,27 @@ export const useFileStore = create<FileState>()(
 
       selectAll: () => {
         const { files, currentFolderId } = get();
-        const visibleFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+        const visibleFiles = files.filter(
+          (file) => !file.isFolder && file.parentId === currentFolderId && isMarkdownFile(file)
+        );
         set({ selectedFileIds: new Set(visibleFiles.map((f) => f.id)) });
       },
 
       bulkMoveFiles: async (fileIds, folderId) => {
+        const mutableFileIds = fileIds.filter((fileId) =>
+          isSidebarMutableEntry(get().files.find((file) => file.id === fileId))
+        );
+        if (mutableFileIds.length === 0) {
+          set({ selectedFileIds: new Set() });
+          return;
+        }
+
         // Optimistic update — re-sort because parentId changes shuffle the
         // moved files into a different bucket (see moveFileToFolder).
         set((state) => ({
           files: sortFilesByOption(
             state.files.map((file) =>
-              fileIds.includes(file.id)
+              mutableFileIds.includes(file.id)
                 ? { ...file, parentId: folderId, updatedAt: new Date().toISOString() }
                 : file
             ),
@@ -1554,7 +1531,7 @@ export const useFileStore = create<FileState>()(
         try {
           const adapter = getAdapter(get());
           await Promise.all(
-            fileIds.map((fileId) => {
+            mutableFileIds.map((fileId) => {
               const file = get().files.find((item) => item.id === fileId);
               return file
                 ? adapter.move(handleForFile(file), parentHandleForId(get().files, folderId))
@@ -1571,9 +1548,17 @@ export const useFileStore = create<FileState>()(
 
       bulkDeleteFiles: async (fileIds) => {
         const state = get();
-        const newFiles = state.files.filter((f) => !fileIds.includes(f.id));
-        const newOpenTabIds = state.openTabIds.filter((tabId) => !fileIds.includes(tabId));
-        const newCurrentId = fileIds.includes(state.currentFileId || "")
+        const mutableFileIds = fileIds.filter((fileId) =>
+          isSidebarMutableEntry(state.files.find((file) => file.id === fileId))
+        );
+        if (mutableFileIds.length === 0) {
+          set({ selectedFileIds: new Set() });
+          return;
+        }
+
+        const newFiles = state.files.filter((f) => !mutableFileIds.includes(f.id));
+        const newOpenTabIds = state.openTabIds.filter((tabId) => !mutableFileIds.includes(tabId));
+        const newCurrentId = mutableFileIds.includes(state.currentFileId || "")
           ? (newOpenTabIds[0] ?? null)
           : state.currentFileId;
 
@@ -1588,7 +1573,7 @@ export const useFileStore = create<FileState>()(
         try {
           const adapter = getAdapter(state);
           await Promise.all(
-            fileIds.map((fileId) => {
+            mutableFileIds.map((fileId) => {
               const file = state.files.find((item) => item.id === fileId);
               return file ? adapter.delete(handleForFile(file)) : Promise.resolve();
             })

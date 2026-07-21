@@ -46,60 +46,10 @@ export function FilesSidebar() {
 
     const name = `Untitled-${maxNum + 1}.md`;
     try {
-      const newId = await createFile(name, "", parentId, { documentType: "markdown" });
+      const newId = await createFile(name, "", parentId);
       navigateToEditorFile(newId);
     } catch (error) {
       log.error("Failed to create file", error);
-      const { title, description } = getErrorMessage(error);
-      notify.error(title, { description });
-    }
-  };
-
-  const handleCreatePdf = async (parentId: string | null = null) => {
-    const currentFiles = useFileStore
-      .getState()
-      .files.filter((f) => !f.isFolder && f.parentId === parentId);
-
-    let maxNum = 0;
-    currentFiles.forEach((file) => {
-      const match = file.name.match(/^Untitled-(\d+)\.pdf$/i);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxNum) maxNum = num;
-      }
-    });
-
-    const name = `Untitled-${maxNum + 1}.pdf`;
-    try {
-      const newId = await createFile(name, "", parentId, { documentType: "pdf" });
-      navigateToEditorFile(newId);
-    } catch (error) {
-      log.error("Failed to create PDF", error);
-      const { title, description } = getErrorMessage(error);
-      notify.error(title, { description });
-    }
-  };
-
-  const handleCreateExcel = async (parentId: string | null = null) => {
-    const currentFiles = useFileStore
-      .getState()
-      .files.filter((f) => !f.isFolder && f.parentId === parentId);
-
-    let maxNum = 0;
-    currentFiles.forEach((file) => {
-      const match = file.name.match(/^Untitled-(\d+)\.xlsx$/i);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxNum) maxNum = num;
-      }
-    });
-
-    const name = `Untitled-${maxNum + 1}.xlsx`;
-    try {
-      const newId = await createFile(name, "", parentId, { documentType: "excel" });
-      navigateToEditorFile(newId);
-    } catch (error) {
-      log.error("Failed to create Excel", error);
       const { title, description } = getErrorMessage(error);
       notify.error(title, { description });
     }
@@ -147,8 +97,6 @@ export function FilesSidebar() {
     <div className="sidebar-glass flex h-full flex-col pt-11 text-[var(--sidebar-text)]">
       <WorkspaceHeader
         onCreateFile={() => handleCreateFile(null)}
-        onCreatePdf={() => handleCreatePdf(null)}
-        onCreateExcel={() => handleCreateExcel(null)}
         onCreateFolder={() => handleCreateFolder(null)}
         onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
         onCollapseAll={() => folderTreeRef.current?.collapseAll()}
@@ -166,8 +114,6 @@ export function FilesSidebar() {
             <FolderTree
               ref={folderTreeRef}
               onCreateFile={handleCreateFile}
-              onCreatePdf={handleCreatePdf}
-              onCreateExcel={handleCreateExcel}
               onCreateFolder={handleCreateFolder}
             />
           )}

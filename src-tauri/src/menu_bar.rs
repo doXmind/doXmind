@@ -110,7 +110,7 @@ fn build_menu(app: &AppHandle, recents: &[OpenTarget]) -> tauri::Result<Menu<Wry
 
         SubmenuBuilder::new(app, "File")
             .item(
-                &MenuItemBuilder::with_id("menu-new-file", "New Document")
+                &MenuItemBuilder::with_id("menu-new-file", "New Page")
                     .accelerator("CmdOrCtrl+N")
                     .build(app)?,
             )

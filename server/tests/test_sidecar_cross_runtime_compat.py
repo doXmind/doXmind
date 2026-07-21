@@ -86,7 +86,7 @@ def _assert_no_legacy_fields(sidecar: dict[str, Any], legacy_keys: tuple[str, st
         },
     ],
 )
-def test_browser_dev_editor_and_cache_writes_match_sidecar_contract(
+def test_browser_dev_rejects_cache_refresh_when_editor_state_is_nonempty(
     sync_client, tmp_path: Path, case: dict[str, Any]
 ) -> None:
     source_path = tmp_path / case["filename"]
@@ -113,26 +113,36 @@ def test_browser_dev_editor_and_cache_writes_match_sidecar_contract(
     assert after_editor["editor"] == case["editor"]
     assert after_editor["parsedCache"] == initial["parsedCache"]
 
-    invoke(
-        sync_client,
-        case["write_cache"],
-        {
-            "root": str(tmp_path),
-            "path": source_path.name,
-            "sourceHash": case["cache_hash"],
-            "parsed": case["cache_parsed"],
+    source_before_cache_write = source_path.read_bytes()
+    sidecar_before_cache_write = sidecar_path.read_bytes()
+    state_before_cache_write = after_editor
+    response = sync_client.post(
+        "/api/workspace/invoke",
+        json={
+            "command": case["write_cache"],
+            "payload": {
+                "root": str(tmp_path),
+                "path": source_path.name,
+                "sourceHash": case["cache_hash"],
+                "parsed": case["cache_parsed"],
+            },
         },
     )
-    after_cache = invoke(
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "parsed-cache refresh is disabled when the target slot has non-empty editor state"
+    }
+    assert source_path.read_bytes() == source_before_cache_write
+    assert sidecar_path.read_bytes() == sidecar_before_cache_write
+
+    after_rejected_cache = invoke(
         sync_client,
         case["read_doc"],
         {"root": str(tmp_path), "path": source_path.name},
     )
-    assert after_cache["editor"] == case["editor"]
-    assert after_cache["parsedCache"] == {
-        "sourceHash": case["cache_hash"],
-        "parsed": case["cache_parsed"],
-    }
+    assert after_rejected_cache == state_before_cache_write
+    assert source_path.read_bytes() == source_before_cache_write
+    assert sidecar_path.read_bytes() == sidecar_before_cache_write
 
     sidecar = _read_sidecar(sidecar_path)
     _assert_no_legacy_fields(sidecar, case["legacy_keys"])
@@ -140,7 +150,7 @@ def test_browser_dev_editor_and_cache_writes_match_sidecar_contract(
     assert sidecar["extras"]["unrelated"]["keep"] is True
     slot = _slot(sidecar, case["block_id"])
     assert slot["editor"] == case["editor"]
-    assert slot["parsedCache"] == after_cache["parsedCache"]
+    assert slot["parsedCache"] == initial["parsedCache"]
     assert slot["slotExtra"] == case["slot_extra"]
 
 
