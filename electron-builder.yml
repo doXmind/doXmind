@@ -61,11 +61,11 @@ mac:
       rank: Owner
     - ext: [pdf]
       name: PDF Document
-      role: Editor
+      role: Viewer
       rank: Alternate
     - ext: [xlsx, xlsm, csv]
       name: Spreadsheet
-      role: Editor
+      role: Viewer
       rank: Alternate
 
 dmg:
@@ -85,16 +85,16 @@ win:
       role: Editor
     - ext: pdf
       name: PDF Document
-      role: Editor
+      role: Viewer
     - ext: xlsx
       name: Spreadsheet
-      role: Editor
+      role: Viewer
     - ext: xlsm
       name: Spreadsheet
-      role: Editor
+      role: Viewer
     - ext: csv
       name: Spreadsheet
-      role: Editor
+      role: Viewer
 
 nsis:
   oneClick: false

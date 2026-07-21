@@ -21,6 +21,12 @@ name: Release (macOS arm64)
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the verified draft as latest after all release gates pass
+        required: true
+        default: false
+        type: boolean
 
 jobs:
   release:
@@ -61,10 +67,21 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx electron-builder --publish always
 
+      - name: Validate publication gate
+        if: ${{ inputs.publish }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          CHECKLIST="docs/releases/${VERSION}-checklist.md"
+          NOTES="docs/releases/${VERSION}.md"
+          grep -qx 'Status: READY TO PUBLISH' "${CHECKLIST}"
+          ! grep -Eq 'Pending release validation|^- \[ \]' "${CHECKLIST}"
+          ! grep -Eq 'Pending release validation|Not yet (designated|recorded)' "${NOTES}"
+
       # The versioned DMG remains the canonical release artifact. Upload a
       # fixed-name copy as well so doxmind.com can link to the latest release
       # without hard-coding a version number.
       - name: Upload stable website download
+        if: ${{ inputs.publish }}
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
@@ -78,8 +95,14 @@ jobs:
       # pre-existing tag). Publish it so update.electronjs.org serves it: this
       # creates the tag against main and marks it latest.
       - name: Publish the release
+        if: ${{ inputs.publish }}
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
           VERSION="$(node -p "require('./package.json').version")"
-          gh release edit "v${VERSION}" --repo doXmind/releases --draft=false --latest --target main
+          gh release edit "v${VERSION}" \
+            --repo doXmind/releases \
+            --notes-file "docs/releases/${VERSION}.md" \
+            --draft=false \
+            --latest \
+            --target main

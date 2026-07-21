@@ -384,7 +384,7 @@
     "recoveryExported": "Unverified recovery copy downloaded. Compare it with the original before using it.",
     "sourceChanged": "The attachment does not match the recovery cache. Nothing was exported; keep all recovery files.",
     "unknownTitle": "Recovery status needs attention",
-    "unknownDescription": "doXmind could not safely inspect all legacy recovery evidence. Nothing was changed. Keep the source, main sidecar, backup, and lock file together for manual recovery."
+    "unknownDescription": "doXmind could not safely inspect all legacy recovery evidence. Nothing was changed. Keep the source, main sidecar, backup, lock file, and every .corrupt-* copy together for manual recovery."
   },
   "sidebar": {
     "settings": "Settings",

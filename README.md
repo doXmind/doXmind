@@ -32,7 +32,7 @@
 - **Rich editing remains recoverable.** A hidden `.doxmind` sidecar preserves editor-only state without replacing the portable source file.
 - **External edits are expected.** When Markdown changes outside doXmind, the `.md` file wins and the rich editor state is refreshed on the next save.
 - **Knowledge remains portable.** Page properties and links belong in Markdown/frontmatter; search, backlinks, and collection indexes must be rebuildable.
-- **Supported attachments stay ordinary files.** doXmind may preview, reference, reveal, open, or explicitly convert them, but never silently rewrites them.
+- **Supported attachments stay ordinary files.** doXmind shows them in a read-only surface and may reference, reveal, open, or explicitly convert them, but never silently rewrites them.
 - **Desktop workflows are first-class.** Mount a folder, drag supported files into a workspace, use multiple tabs, search, and reveal files in the system file manager.
 
 ## Write and connect Pages
@@ -51,8 +51,9 @@ order.
 ## Keep attachments local
 
 Supported PDF, spreadsheet, and HTML files remain visible in the workspace as
-Attachments. The target experience is read-only preview where practical plus
-**Open Externally** and **Reveal**. They are not separate doXmind editing
+Attachments. They open in a shared read-only surface with **Open Externally**
+and **Reveal**. An embedded preview may be added later where practical, but
+Attachments are not separate doXmind editing
 products, and the New menu does not create blank PDFs or workbooks. An unknown
 format may use the shared `other` read-only fallback if it reaches this surface,
 but that fallback does not add the format to workspace scanning or native file
@@ -78,7 +79,7 @@ The public release channel currently provides a macOS package for Apple silicon:
 
 1. Download the `.dmg` from [doXmind Releases](https://github.com/doXmind/releases/releases/latest).
 2. Drag doXmind to Applications and open it.
-3. Choose **Open Folder** to mount an existing workspace, **Open File** to work with one standalone document, or start a new Markdown document.
+3. Choose **Open Folder** to mount an existing workspace, **Open File** to work with one standalone file, or start a new Markdown Page.
 
 See the [User Guide](docs/USER_GUIDE.md) for the complete workflow, storage behavior, shortcuts, and recovery notes.
 
@@ -117,12 +118,12 @@ npm run build:desktop   # local Tauri compatibility build
 
 ## Stable document formats
 
-| Format                   | Product role             | Current contract                                                                 |
-| ------------------------ | ------------------------ | -------------------------------------------------------------------------------- |
-| `.md`, `.markdown`       | Page                     | Open, edit, auto-save, and export as Markdown or PDF                             |
-| `.pdf`                   | Attachment               | Keep as source; preview/open/reveal target; legacy edit recovery is transitional |
-| `.xlsx`, `.xlsm`, `.csv` | Attachment               | Keep as source; open/reveal target; legacy edit recovery is transitional         |
-| `.html`, `.htm`          | Attachment/import source | Keep as source; not a first-class editable Page format                           |
+| Format                   | Product role             | Current contract                                                              |
+| ------------------------ | ------------------------ | ----------------------------------------------------------------------------- |
+| `.md`, `.markdown`       | Page                     | Open, edit, auto-save, and export as Markdown or PDF                          |
+| `.pdf`                   | Attachment               | Read-only surface; open externally or reveal; legacy recovery is transitional |
+| `.xlsx`, `.xlsm`, `.csv` | Attachment               | Read-only surface; open externally or reveal; legacy recovery is transitional |
+| `.html`, `.htm`          | Attachment/import source | Read-only surface; not a first-class editable Page format                     |
 
 Images inserted into Pages remain ordinary local assets referenced by Markdown.
 Standalone image files, DOCX, PPTX, and other extensions are not supported
@@ -134,7 +135,7 @@ be provided by local import tooling; the source file remains unchanged.
 
 ## Storage model
 
-doXmind keeps each portable file beside a hidden companion file:
+doXmind keeps each Markdown Page beside a hidden companion file:
 
 ```text
 ~/Documents/doXmind/
@@ -154,8 +155,10 @@ remain recoverable from Markdown/frontmatter alone.
 Older versions may have created sidecars next to PDF/XLSX sources. Recovery
 inspects the main sidecar and `<sidecar>.bak` independently and downloads a new
 `recovered.pdf` or `recovered.xlsx` without changing either candidate or the
-source. Keep the source, main sidecar, `<sidecar>.bak`, and `<sidecar>.lock`
-together; do not delete any of them as cleanup or after an export.
+source. The bridge does not read `<sidecar>.lock` or `<sidecar>.corrupt-*`; those
+files remain recovery evidence. Keep the source, main sidecar, every
+`<sidecar>.bak`, `<sidecar>.lock`, and `<sidecar>.corrupt-*` together; do not
+delete any of them as cleanup or after an export.
 
 The full wire-format contract is documented in [docs/sidecar-format.md](docs/sidecar-format.md), and migration/recovery semantics are in [ADR-0003](docs/adr/0003-explicit-sidecar-migration.md).
 
@@ -262,7 +265,10 @@ No. It is a single-user local desktop editor with no login, provider selection, 
 <details>
 <summary>Where are my documents stored?</summary>
 
-Wherever you put them. Opening a folder mounts that folder as the workspace; opening a standalone file does not scan its siblings. Rich editor state stays next to each document in its hidden sidecar.
+Wherever you put them. Opening a folder mounts that folder as the workspace;
+opening a standalone file does not scan its siblings. Rich editor state for a
+Markdown Page stays next to that Page in its hidden sidecar. New Attachments do
+not receive editor sidecars.
 
 </details>
 
@@ -279,17 +285,20 @@ Yes. If the `.md` hash no longer matches its sidecar, doXmind treats the Markdow
 They remain ordinary local Attachments. doXmind does not silently rewrite them.
 If supported legacy evidence is found, doXmind can attempt a new, unverified
 recovery copy without mounting the old editor or changing the source, sidecar,
-backup, or lock file. When the main sidecar and backup contain different saved
-states, you choose which one to try. A missing or mismatched cache hash blocks
-the attempt, and strict exporters reject any field they cannot apply completely.
-Compare the new copy with the original before using it.
+backup, lock file, or any `.corrupt-*` evidence. When the main sidecar and backup
+contain different saved states, you choose which one to try. A missing or
+mismatched cache hash blocks the attempt, and strict exporters reject any field
+they cannot apply completely. Compare the new copy with the original before
+using it.
 
 </details>
 
 <details>
-<summary>How do I recover a deleted document?</summary>
+<summary>How do I recover a deleted Page?</summary>
 
-doXmind sends the source file and its sidecar to the operating system Trash/Recycle Bin as separate entries. Restore both to their original folder.
+doXmind sends a deleted Markdown Page and its sidecar to the operating system
+Trash/Recycle Bin as separate entries. Restore both to their original folder.
+Attachment deletion is not currently offered inside doXmind.
 
 </details>
 
