@@ -20,4 +20,24 @@ describe("release configuration", () => {
     expect(workflow).toContain("npx electron-builder --publish never");
     expect(workflow).not.toContain("electron-builder --publish always");
   });
+
+  it("verifies candidate metadata before mutating a GitHub draft", () => {
+    const verifyIndex = workflow.indexOf("node scripts/verify-release-artifacts.mjs");
+    const firstDraftMutationIndex = workflow.indexOf('gh release create "v${VERSION}"');
+
+    expect(verifyIndex).toBeGreaterThan(-1);
+    expect(firstDraftMutationIndex).toBeGreaterThan(-1);
+    expect(verifyIndex).toBeLessThan(firstDraftMutationIndex);
+  });
+
+  it("publishes only by verifying and editing the existing draft", () => {
+    const publishJob = workflow.slice(workflow.indexOf("  publish-existing:"));
+
+    expect(publishJob).toContain('test "${GITHUB_REF}" = "refs/heads/main"');
+    expect(publishJob).toContain("node scripts/verify-release-artifacts.mjs");
+    expect(publishJob).toContain("gh release edit");
+    expect(publishJob).not.toContain("electron-builder");
+    expect(publishJob).not.toContain("gh release create");
+    expect(publishJob).not.toContain("gh release upload");
+  });
 });

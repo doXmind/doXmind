@@ -34,14 +34,36 @@ npm ci
 npm run dist:electron
 ```
 
-The build above creates local artifacts only. Before uploading a candidate,
-make the fixed-name website DMG from the exact versioned DMG, then create the
-machine-readable SHA-256 manifest:
+The build above creates local artifacts only. The normal candidate path is the
+manual release workflow with `publish=false`. It refuses an existing version,
+builds and notarizes once, copies the versioned DMG byte-for-byte to the fixed
+website name, and creates one draft containing exactly these six assets:
+
+- `doXmind-<version>-arm64-mac.zip`
+- `doXmind-<version>-arm64-mac.zip.blockmap`
+- `doXmind-<version>-arm64.dmg`
+- `doXmind-<version>-arm64.dmg.blockmap`
+- `doXmind-mac-arm64.dmg`
+- `latest-mac.yml`
+
+If a local signing machine must create the draft instead, first prove that the
+version does not already exist. Never use `--clobber` or delete individual
+assets to reuse a version:
 
 ```bash
+set -euo pipefail
+export GH_TOKEN="<token with access to doXmind/releases>"
 VERSION="$(node -p "require('./package.json').version")"
+TAG="v${VERSION}"
+if gh release view "${TAG}" --repo doXmind/releases >/dev/null 2>&1; then
+  echo "${TAG} already exists; choose a new version" >&2
+  exit 1
+fi
 cp "dist-electron/doXmind-${VERSION}-arm64.dmg" \
   "dist-electron/doXmind-mac-arm64.dmg"
+cmp "dist-electron/doXmind-${VERSION}-arm64.dmg" \
+  "dist-electron/doXmind-mac-arm64.dmg"
+LOCAL_MANIFEST="$(mktemp)"
 (
   cd dist-electron
   shasum -a 256 \
@@ -51,64 +73,61 @@ cp "dist-electron/doXmind-${VERSION}-arm64.dmg" \
     "doXmind-${VERSION}-arm64.dmg.blockmap" \
     "doXmind-mac-arm64.dmg" \
     "latest-mac.yml"
-) > "docs/releases/${VERSION}-artifacts.sha256"
+) > "${LOCAL_MANIFEST}"
 node scripts/verify-release-artifacts.mjs \
-  dist-electron "docs/releases/${VERSION}-artifacts.sha256" "${VERSION}"
+  dist-electron "${LOCAL_MANIFEST}" "${VERSION}"
+gh release create "${TAG}" \
+  "dist-electron/doXmind-${VERSION}-arm64-mac.zip" \
+  "dist-electron/doXmind-${VERSION}-arm64-mac.zip.blockmap" \
+  "dist-electron/doXmind-${VERSION}-arm64.dmg" \
+  "dist-electron/doXmind-${VERSION}-arm64.dmg.blockmap" \
+  "dist-electron/doXmind-mac-arm64.dmg" \
+  "dist-electron/latest-mac.yml" \
+  --repo doXmind/releases \
+  --draft \
+  --title "doXmind ${VERSION}" \
+  --notes-file "docs/releases/${VERSION}.md" \
+  --target main
 ```
 
-Upload those same six files—not a rebuilt package—to a draft release. The
-manual `publish=false` workflow performs the same build-and-upload candidate
-path with CI signing credentials. A candidate upload may replace an older draft
-candidate, so every upload invalidates all earlier hashes, quarantine results,
-and approval.
+Download the draft's exact six assets into a clean directory. Generate the
+checksum manifest from those downloaded bytes, then run the repository's
+zero-dependency verifier. It requires an exact six-file manifest, verifies every
+SHA-256, requires the two DMGs to be byte-identical, and checks that
+`latest-mac.yml` has the expected version, URLs, sizes, and SHA-512 values for
+both the ZIP and versioned DMG.
 
 ```bash
-set -euo pipefail
-export GH_TOKEN="<token with access to doXmind/releases>"
-TAG="v${VERSION}"
-gh release view "${TAG}" --repo doXmind/releases >/dev/null 2>&1 || \
-  gh release create "${TAG}" \
-    --repo doXmind/releases \
-    --draft \
-    --title "doXmind ${VERSION}"
-test "$(gh release view "${TAG}" --repo doXmind/releases \
-  --json isDraft --jq '.isDraft')" = "true"
-EXPECTED=(
-  "doXmind-${VERSION}-arm64-mac.zip"
-  "doXmind-${VERSION}-arm64-mac.zip.blockmap"
-  "doXmind-${VERSION}-arm64.dmg"
-  "doXmind-${VERSION}-arm64.dmg.blockmap"
-  "doXmind-mac-arm64.dmg"
-  "latest-mac.yml"
-)
-while IFS= read -r asset; do
-  keep=false
-  for expected in "${EXPECTED[@]}"; do
-    if test "${asset}" = "${expected}"; then keep=true; break; fi
-  done
-  if test "${keep}" = "false"; then
-    gh release delete-asset "${TAG}" "${asset}" \
-      --repo doXmind/releases --yes
-  fi
-done < <(gh release view "${TAG}" --repo doXmind/releases \
-  --json assets --jq '.assets[].name')
-ARTIFACTS=()
-for expected in "${EXPECTED[@]}"; do
-  ARTIFACTS+=("dist-electron/${expected}")
-done
-gh release upload "${TAG}" "${ARTIFACTS[@]}" \
-  --repo doXmind/releases --clobber
+CANDIDATE_DIR="$(mktemp -d)"
+gh release download "v${VERSION}" \
+  --repo doXmind/releases \
+  --dir "${CANDIDATE_DIR}"
+(
+  cd "${CANDIDATE_DIR}"
+  shasum -a 256 \
+    "doXmind-${VERSION}-arm64-mac.zip" \
+    "doXmind-${VERSION}-arm64-mac.zip.blockmap" \
+    "doXmind-${VERSION}-arm64.dmg" \
+    "doXmind-${VERSION}-arm64.dmg.blockmap" \
+    "doXmind-mac-arm64.dmg" \
+    "latest-mac.yml"
+) > "docs/releases/${VERSION}-artifacts.sha256"
+node scripts/verify-release-artifacts.mjs \
+  "${CANDIDATE_DIR}" \
+  "docs/releases/${VERSION}-artifacts.sha256" \
+  "${VERSION}"
 ```
 
-Download the draft into a clean directory and rerun the verifier against the
-committed manifest. Confirm the GitHub asset digest for every file matches its
-SHA-256, then perform the packaged-app, legacy recovery, automatic-update ZIP,
-and quarantined Finder-install gates. The draft must contain exactly the six
-files above; no stale asset may remain.
+Then perform the packaged-app, legacy recovery, automatic-update ZIP, and
+quarantined Finder-install gates against that download. Commit the checksum
+manifest with the exact `doXmind-app` source commit, signed artifact names, and
+validation evidence in the provenance PR.
 
-Record the exact `doXmind-app` source commit, manifest, signed artifact names,
-and validation evidence in a follow-up provenance PR. Do not set the checklist
-to `READY TO PUBLISH` until that PR and the matching website update are ready.
+Any candidate re-upload, even under the same version and even when only one
+asset changed, invalidates the manifest, quarantine results, recovery results,
+and approval. Start validation again from the newly downloaded six files. Do
+not set the checklist to `READY TO PUBLISH` until the provenance PR and matching
+website update are ready.
 
 Only after every publication blocker in
 `docs/releases/<version>-checklist.md` is cleared and the provenance PR is on
