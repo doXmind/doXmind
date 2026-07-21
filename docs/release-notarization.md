@@ -4,6 +4,11 @@ The public macOS package uses the Electron release shell. `electron-builder`
 signs the app, then `electron/notarize.js` submits the signed bundle with
 `notarytool` before the DMG and Squirrel update ZIP are created.
 
+The generic provider in `electron-builder.yml` is metadata-only: it makes the
+builder emit a fresh `latest-mac.yml` but does not upload artifacts. Candidate
+builds always pass `--publish never`; the verified draft upload is a separate
+workflow step.
+
 ## Local release machine
 
 Keep the Developer ID Application certificate in the login keychain. Store the

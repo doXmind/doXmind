@@ -10,6 +10,9 @@
 # verified assets to the public `doXmind/releases` repo is all the server-side
 # that update.electronjs.org needs. Keep that destination in sync with
 # UPDATE_REPO in electron/updater.js and `.github/workflows/release.yml`.
+# The generic provider below exists only so electron-builder emits fresh update
+# metadata. Generic publishing never uploads for us; the release workflow owns
+# the explicit draft upload after verification.
 
 appId: com.doxmind.desktop
 productName: doXmind
@@ -103,3 +106,7 @@ nsis:
   allowElevation: true
   artifactName: doXmind-${version}-${arch}-setup.${ext}
   shortcutName: doXmind
+
+publish:
+  provider: generic
+  url: https://github.com/doXmind/releases/releases/latest/download
