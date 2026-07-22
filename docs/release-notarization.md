@@ -24,12 +24,11 @@ xcrun notarytool store-credentials "doxmind-notary" \
 The hook uses the `doxmind-notary` profile by default. Set
 `DOXMIND_NOTARY_PROFILE` only when using a different profile name.
 
-Build a signed, notarized package without publishing it:
+Build a signed, notarized package without publishing it. The packaged desktop
+contains only Electron and the static renderer; Python remains development and
+standalone tooling and is not part of this build:
 
 ```bash
-python3.12 -m venv server/.venv
-server/.venv/bin/python -m pip install --upgrade pip
-server/.venv/bin/python -m pip install -r server/requirements.txt pyinstaller
 npm ci
 npm run dist:electron
 ```

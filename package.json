@@ -1,6 +1,6 @@
 {
   "name": "doxmind",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "A fully local, Markdown-native knowledge workspace.",
   "author": "doXmind",
   "private": true,
