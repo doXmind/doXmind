@@ -1,14 +1,6 @@
 "use client";
 
-import { invoke } from "@tauri-apps/api/core";
-
-declare global {
-  interface Window {
-    __DOXMIND_DESKTOP__?: {
-      getPathForFile: (file: File) => string | null;
-    };
-  }
-}
+import { getDesktopBridge, hasDesktopBridge, invokeDesktop } from "@/lib/native-shell";
 
 export interface NativeFileFilter {
   name: string;
@@ -26,27 +18,27 @@ export interface DroppedPath {
 // the preload bridge (webUtils); the file/dir distinction is stat'd in main.
 export async function resolveDroppedFiles(files: File[]): Promise<DroppedPath[]> {
   if (!isNativeDialogAvailable()) return [];
-  const getPathForFile = window.__DOXMIND_DESKTOP__?.getPathForFile;
-  if (!getPathForFile) return [];
+  const bridge = getDesktopBridge();
+  if (!bridge) return [];
   const resolved = await Promise.all(
     files.map(async (file) => {
-      const raw = getPathForFile(file);
+      const raw = bridge.getPathForFile(file);
       if (!raw) return null;
-      return invoke<DroppedPath | null>("resolve_dropped_path", { path: raw });
+      return invokeDesktop<DroppedPath | null>("resolve_dropped_path", { path: raw });
     })
   );
   return resolved.filter((entry): entry is DroppedPath => entry !== null);
 }
 
 export function isNativeDialogAvailable(): boolean {
-  return typeof window !== "undefined" && !!window.__TAURI_BACKEND_URL__;
+  return hasDesktopBridge();
 }
 
 export async function pickNativeFolder(title: string): Promise<string | null> {
   if (!isNativeDialogAvailable()) {
     throw new Error("Native folder dialogs require the desktop app.");
   }
-  return await invoke<string | null>("pick_workspace_folder", { title });
+  return await invokeDesktop<string | null>("pick_workspace_folder", { title });
 }
 
 export async function pickNativeFile(
@@ -56,7 +48,7 @@ export async function pickNativeFile(
   if (!isNativeDialogAvailable()) {
     throw new Error("Native file dialogs require the desktop app.");
   }
-  return await invoke<string | null>("pick_workspace_file", { title, filters });
+  return await invokeDesktop<string | null>("pick_workspace_file", { title, filters });
 }
 
 export async function pickNativeSaveLocation(
@@ -67,7 +59,7 @@ export async function pickNativeSaveLocation(
   if (!isNativeDialogAvailable()) {
     throw new Error("Native save dialogs require the desktop app.");
   }
-  return await invoke<string | null>("pick_save_location", {
+  return await invokeDesktop<string | null>("pick_save_location", {
     title,
     defaultName,
     filters,

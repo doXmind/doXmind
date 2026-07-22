@@ -4,7 +4,6 @@ name: Release (Windows x64)
 # workflow artifact. Mirrors the local flow:
 #   nvm use 22
 #   npm ci
-#   npm run build:sidecar:electron   (PyInstaller one-dir, doxmind-server.exe)
 #   npm run build                    (Next static export -> out/)
 #   electron-builder --win           (NSIS installer -> dist-electron/)
 #
@@ -31,22 +30,11 @@ jobs:
           node-version: 22
           cache: npm
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Build the PyInstaller sidecar (one-dir)
-        run: |
-          python -m venv server/.venv
-          server\.venv\Scripts\python -m pip install --upgrade pip
-          server\.venv\Scripts\pip install -r server/requirements.txt pyinstaller
-          npm run build:sidecar:electron
-
       - name: Install JS deps
         run: npm ci
 
       - name: Build the renderer (static export)
-        run: npm run build
+        run: node scripts/build-frontend.mjs
 
       - name: Build the Windows installer (unsigned)
         env:

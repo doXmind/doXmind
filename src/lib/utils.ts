@@ -91,7 +91,7 @@ const ERROR_MESSAGES: Record<string, { title: string; description: string }> = {
   },
   "Unsupported file type": {
     title: "Unsupported File",
-    description: "This file type is not supported. Please use PDF, DOCX, XLSX, or Markdown files.",
+    description: "This file type is not supported. Use Markdown, PDF, spreadsheet, or HTML files.",
   },
 };
 

@@ -1,5 +1,4 @@
 export type ThemeBaseMode = "light" | "dark";
-export type ThemeTier = "free" | "pro";
 
 export interface ThemeTokens {
   background: string;
@@ -25,28 +24,6 @@ export interface ThemeTokens {
   sidebar: string;
 }
 
-export interface ThemeDiffTokens {
-  deletedBg: string;
-  deletedBgHover: string;
-  deletedBorder: string;
-  deletedText: string;
-  insertedBg: string;
-  insertedBgHover: string;
-  insertedBorder: string;
-  insertedAccent: string;
-  focusRing: string;
-  focusBorder: string;
-  toolbarBg: string;
-  toolbarBorder: string;
-  toolbarShadow: string;
-  btnAcceptBg: string;
-  btnAcceptFg: string;
-  btnAcceptHover: string;
-  btnRejectBg: string;
-  btnRejectFg: string;
-  btnRejectHover: string;
-}
-
 export interface ThemeStatusTokens {
   successBg: string;
   successBorder: string;
@@ -54,8 +31,6 @@ export interface ThemeStatusTokens {
   errorBorder: string;
   infoBg: string;
   infoBorder: string;
-  thinkingBg: string;
-  thinkingBorder: string;
   warningBg: string;
   warningBorder: string;
 }
@@ -71,10 +46,8 @@ export interface ThemeDefinition {
   name: string;
   description: string;
   baseMode: ThemeBaseMode;
-  tier: ThemeTier;
   preview: ThemePreview;
   tokens: ThemeTokens;
-  diff: ThemeDiffTokens;
   status: ThemeStatusTokens;
 }
 

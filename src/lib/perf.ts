@@ -31,10 +31,8 @@ declare global {
     /**
      * Cross-component handshake for the user-visible switch.firstPaint
      * measure. editor-client sets these on currentFileId change; whichever
-     * workspace finishes mounting first reads them, closes the measure,
-     * and clears them so subsequent re-renders don't double-stamp. See the
-     * effect blocks in editor.tsx / pdf-editor-workspace.tsx /
-     * excel-editor-workspace.tsx that consume these.
+     * native Markdown workspace reads them, closes the measure, and clears
+     * them so subsequent re-renders don't double-stamp.
      */
     __doxmindSwitchStartMark?: string;
     __doxmindSwitchFileId?: string;

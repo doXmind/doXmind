@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import {
   Search,
@@ -12,8 +12,8 @@ import {
   Check,
   Loader2,
   Save,
+  Copy,
   X,
-  File as FileIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -21,11 +21,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { ThemePickerPanel } from "@/components/shared/shared-theme-toggle";
 import { cn, formatShortcut } from "@/lib/utils";
@@ -36,11 +36,11 @@ import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
-import { useIsTauri } from "@/hooks/use-is-tauri";
+import { useDesktopShell } from "@/hooks/use-desktop-shell";
 import { getDisplayName, isExcelFile, isMarkdownFile, isPdfFile } from "@/lib/document-types";
 import { exportMarkdownAsPdf } from "@/lib/markdown-pdf-export";
+import { copyPageMarkdownSource } from "@/lib/markdown-source-copy";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
-import { shouldStartWindowDrag } from "@/lib/window-drag-region";
 import {
   CsvGlyph,
   MarkdownGlyph,
@@ -53,7 +53,6 @@ function TabDocumentIcon({ file }: { file: FileItem }) {
   if (isPdfFile(file)) return <PdfGlyph className="h-4 w-4" />;
   if (isExcelFile(file)) return <SpreadsheetGlyph className="h-4 w-4" />;
   if (/\.csv$/i.test(file.name)) return <CsvGlyph className="h-4 w-4" />;
-  if (!isMarkdownFile(file)) return <FileIcon className="h-4 w-4" />;
   return <MarkdownGlyph className="h-4 w-4 text-[var(--sidebar-icon)]" />;
 }
 
@@ -100,61 +99,50 @@ export function UnifiedHeader() {
     });
   }, [files, openTabIds]);
 
-  // In the Tauri macOS build the native title bar is hidden via
-  // `titleBarStyle: Overlay`, so the real traffic-light buttons float over
+  // In the Electron macOS build the native title bar uses hiddenInset, so the
+  // real traffic-light buttons float over
   // the top-left of the WebView. Reserve ~78px of left padding for them and
   // make the header itself a drag region so the window can still be moved.
-  const { isTauri, platform } = useIsTauri();
-  const isMacTauri = isTauri && platform === "macos";
+  const { isDesktop, platform } = useDesktopShell();
+  const isMacElectron = isDesktop && platform === "macos";
 
-  const handleHeaderPointerDownCapture = useCallback(
-    (event: React.PointerEvent<HTMLElement>) => {
-      if (!isMacTauri || !shouldStartWindowDrag(event)) return;
-      event.preventDefault();
-      void import("@tauri-apps/api/window")
-        .then(({ getCurrentWindow }) => getCurrentWindow().startDragging())
-        .catch(() => {});
-    },
-    [isMacTauri]
-  );
-
-  const handleExport = async (format: "markdown" | "pdf") => {
+  const handleExportPdf = async () => {
     const { currentFileId, files } = useFileStore.getState();
     const currentFile = currentFileId ? files.find((file) => file.id === currentFileId) : undefined;
     if (!currentFile) return;
 
-    // Markdown -> PDF: render with the local Python/PyMuPDF sidecar, then let
-    // the desktop shell write the returned PDF bytes to the selected file.
-    if (format === "pdf") {
-      const result = await exportMarkdownAsPdf({ fileName: currentFile.name });
-      if (result.ok) {
-        return;
-      }
-      if (result.error && result.error !== "cancelled") {
-        notify.error(result.error);
-      }
+    // Electron renders the Page's live semantic block DOM to PDF locally and
+    // writes it only after the user chooses a destination. No printer or server.
+    const result = await exportMarkdownAsPdf({
+      fileId: currentFile.id,
+      fileName: currentFile.name,
+    });
+    if (result.ok) {
       return;
     }
+    if (result.error && result.error !== "cancelled") notify.error(result.error);
+  };
 
-    if (format !== "markdown") {
-      notify.error(t("diskExportOnlyMarkdown"));
-      return;
+  const handleCopyMarkdownSource = async () => {
+    const fileId = useFileStore.getState().currentFileId;
+    if (!fileId) return;
+    try {
+      await copyPageMarkdownSource(fileId, t("copyMarkdownSource"));
+    } catch (error) {
+      notify.error(t("failedToCopyMarkdownSource"), {
+        description: error instanceof Error ? error.message : undefined,
+      });
     }
-    const markdown = currentFile.contentMarkdown ?? currentFile.content ?? "";
-    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-    const baseName = currentFile.name.replace(/\.md$/, "");
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${baseName}.md`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   const handleFind = () => {
     toggleSearchBar();
+  };
+
+  const handleSaveNow = () => {
+    const requestSave = useEditorRefStore.getState().requestSave;
+    if (!requestSave) return;
+    void requestSave().catch(() => notify.error("Could not save Page"));
   };
 
   // Perform the actual close. A never-saved buffer or a loose single file has
@@ -211,17 +199,32 @@ export function UnifiedHeader() {
   };
 
   const handleSaveAndClose = async () => {
+    const targetId = closeRequestId;
+    if (!targetId) return;
     const requestSave = useEditorRefStore.getState().requestSave;
-    const saved = requestSave ? await requestSave() : true;
+    if (!requestSave) return;
+    let saved = false;
+    try {
+      saved = await requestSave();
+    } catch {
+      notify.error("Could not save Page");
+      return;
+    }
     // Save cancelled (e.g. the location picker was dismissed) — keep the
     // document open so nothing is lost.
     if (!saved) return;
     setCloseRequestId(null);
-    performClose();
+    performClose(targetId);
   };
 
   const handleDiscardAndClose = () => {
+    const discardPendingChanges = useEditorRefStore.getState().discardPendingChanges;
+    if (!discardPendingChanges) {
+      notify.error("Could not discard Page safely");
+      return;
+    }
     const targetId = closeRequestId;
+    discardPendingChanges();
     setCloseRequestId(null);
     performClose(targetId);
   };
@@ -229,9 +232,8 @@ export function UnifiedHeader() {
   return (
     <>
       <header
-        data-tauri-drag-region
+        data-window-drag-region
         data-sidebar-open={hasOpenTarget && isFilesSidebarOpen ? "" : undefined}
-        onPointerDownCapture={handleHeaderPointerDownCapture}
         className="desktop-chrome-header relative z-20 grid h-11 shrink-0 items-center text-foreground"
         style={{
           // Column 1 tracks the sidebar width exactly (0 when collapsed) so
@@ -247,24 +249,22 @@ export function UnifiedHeader() {
         <div
           className={cn(
             "desktop-chrome-left-controls absolute left-0 top-0 z-10 flex h-full min-w-0 items-center gap-0.5",
-            !isMacTauri && "pl-3"
+            !isMacElectron && "pl-3"
           )}
         >
-          {isMacTauri && (
+          {isMacElectron && (
             <>
               {/* Two drag strips that physically avoid the macOS traffic-light
-                  cluster (centered at y=30, ~14px tall). Tauri's drag.js only
-                  checks e.target, so the bare container above must NOT carry
-                  data-tauri-drag-region — these siblings restore window-drag
+                  cluster (centered at y=30, ~14px tall). These siblings restore window-drag
                   for the empty space around the buttons without ever sitting
                   on top of the close/min/max controls. */}
               <span
-                data-tauri-drag-region
+                data-window-drag-region
                 aria-hidden
                 className="pointer-events-auto absolute inset-x-0 top-0 h-5"
               />
               <span
-                data-tauri-drag-region
+                data-window-drag-region
                 aria-hidden
                 className="pointer-events-auto absolute inset-x-0 bottom-0 top-10"
               />
@@ -281,7 +281,7 @@ export function UnifiedHeader() {
                     // Push the buttons down to sit level with the macOS traffic
                     // lights, whose visual center lands a few px below the
                     // header's natural flex center (see trafficLightPosition).
-                    isMacTauri && "top-[5px]"
+                    isMacElectron && "top-[5px]"
                   )}
                   onClick={toggleFilesSidebar}
                   aria-label={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")}
@@ -301,7 +301,7 @@ export function UnifiedHeader() {
                   size="icon"
                   className={cn(
                     "desktop-header-button relative z-10 h-7 w-7 rounded-md",
-                    isMacTauri && "top-[5px]"
+                    isMacElectron && "top-[5px]"
                   )}
                   onClick={openCommandPalette}
                   aria-label={t("searchTooltip", { shortcut: formatShortcut("Ctrl+K") })}
@@ -316,11 +316,8 @@ export function UnifiedHeader() {
         <div
           // Intentionally NOT a drag region: when the sidebar is collapsed
           // this column's left edge sits at x=124px, just past the floating
-          // sidebar toggle (which ends at ~120px). Tauri's drag.js only
-          // inspects e.target, so a drag-region on this wrapper could swallow
-          // clicks near that boundary. The inner children below still carry
-          // data-tauri-drag-region, so the body of the header remains
-          // draggable everywhere they cover.
+          // sidebar toggle (which ends at ~120px). Interactive descendants
+          // explicitly opt out of Electron's CSS drag region.
           className={cn(
             "relative col-start-2 h-full min-w-0",
             hasOpenTarget && isFilesSidebarOpen && "desktop-chrome-content-panel"
@@ -330,13 +327,13 @@ export function UnifiedHeader() {
             <div
               className={cn(
                 "absolute right-14 top-0 flex h-full min-w-0 items-end md:right-16",
-                isMacTauri && !isFilesSidebarOpen ? "left-[148px]" : "left-2"
+                isMacElectron && !isFilesSidebarOpen ? "left-[148px]" : "left-2"
               )}
             >
               <div
                 className={cn(
                   "flex h-10 min-w-0 items-end gap-1 overflow-x-auto overflow-y-hidden pr-2",
-                  isMacTauri && "relative top-[5px]"
+                  isMacElectron && "relative top-[5px]"
                 )}
                 role="tablist"
                 data-no-drag
@@ -409,13 +406,13 @@ export function UnifiedHeader() {
             <div
               className={cn(
                 "absolute top-0 flex h-full items-center",
-                isMacTauri && !isFilesSidebarOpen ? "left-[148px]" : "left-4"
+                isMacElectron && !isFilesSidebarOpen ? "left-[148px]" : "left-4"
               )}
             >
               <div
                 className={cn(
                   "flex h-8 min-w-0 max-w-[min(420px,100%)] cursor-default items-center gap-1.5 rounded-md bg-background/70 pl-2.5 pr-1.5 backdrop-blur-md transition-colors hover:bg-[var(--sidebar-hover)]",
-                  isMacTauri && "relative top-[5px]"
+                  isMacElectron && "relative top-[5px]"
                 )}
                 aria-label={title}
               >
@@ -454,8 +451,8 @@ export function UnifiedHeader() {
                   </DropdownMenuTrigger>
                 </Tooltip>
                 <DropdownMenuContent align="end" className="w-56">
-                  {/* Save state lives in the Page status bar and is mirrored
-                      here so the compact menu remains self-contained. */}
+                  {/* Save state lives in the bottom status bar for Markdown;
+                        mirrored here because PDF/Excel have no status bar. */}
                   <div className="text-ui-xs flex items-center gap-1.5 px-2 py-1.5 text-muted-foreground">
                     {isSaving ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -469,9 +466,7 @@ export function UnifiedHeader() {
 
                   <DropdownMenuSeparator />
 
-                  <DropdownMenuItem
-                    onClick={() => window.dispatchEvent(new Event("doxmind:save-now"))}
-                  >
+                  <DropdownMenuItem onClick={handleSaveNow}>
                     <Save className="mr-2 h-4 w-4" />
                     {t("save")}
                     <span className="ml-auto text-xs text-muted-foreground">
@@ -487,18 +482,17 @@ export function UnifiedHeader() {
 
                   <DropdownMenuSeparator />
 
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>
-                      <Download className="mr-2 h-4 w-4" />
-                      {t("export")}
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent>
-                      <DropdownMenuItem onClick={() => handleExport("markdown")}>
-                        Markdown
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleExport("pdf")}>PDF</DropdownMenuItem>
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
+                  {isDesktop && (
+                    <DropdownMenuItem onClick={() => void handleCopyMarkdownSource()}>
+                      <Copy className="mr-2 h-4 w-4" />
+                      {t("copyMarkdownSource")}
+                    </DropdownMenuItem>
+                  )}
+
+                  <DropdownMenuItem onClick={() => void handleExportPdf()}>
+                    <Download className="mr-2 h-4 w-4" />
+                    {t("exportAsPDF")}
+                  </DropdownMenuItem>
 
                   <DropdownMenuItem onClick={handleFind}>
                     <Search className="mr-2 h-4 w-4" />

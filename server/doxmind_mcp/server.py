@@ -3,7 +3,7 @@
 The server operates on a single configured workspace root
 ($DOXMIND_WORKSPACE_ROOT, else ~/Documents/doXmind) and confines every
 agent-supplied path to it (S5). It imports the `core` facade directly, so it
-runs as a standalone process with no desktop app or HTTP sidecar (ADR 0010).
+runs as a standalone process with no desktop app or HTTP service (ADR 0010).
 
 The surface covers reads (list / search / read / read_pdf / read_excel),
 writes (create / edit), structure (rename / move / delete / create_folder /
@@ -40,10 +40,10 @@ def search_documents(query: str, limit: int = 50) -> list[dict[str, Any]]:
 
 @mcp.tool()
 def read_document(path: str) -> dict[str, Any]:
-    """Read a workspace document. `path` is relative to the workspace root.
+    """Read a Markdown Page. `path` is relative to the workspace root.
 
-    Returns the editor read model: markdown, html, meta, outline, and source
-    state.
+    Returns the source-backed Page read model: markdown, meta, revision, and
+    outline.
     """
     return documents.read_document_in_root(None, path)
 
@@ -86,44 +86,55 @@ def edit_document(path: str, markdown: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def export_document(path: str, format: str = "pdf", out_path: str = "") -> dict[str, Any]:
-    """Export a workspace document to pdf/html/md, writing it into the workspace.
+def export_document(path: str, format: str = "html", out_path: str = "") -> dict[str, Any]:
+    """Export a workspace document to html/md, writing it into the workspace.
 
     `path` and `out_path` are relative to the workspace root. When `out_path` is
     omitted the output goes next to the source with the format's extension.
     Returns the output path and byte size.
     """
-    data = exporting.export_document_in_root(None, path, format)
+    source = resolve_in_root(None, path)
     out_rel = out_path or str(Path(path).with_suffix(exporting.suffix_for(format)))
     target = resolve_in_root(None, out_rel)
+    if target.resolve(strict=False) == source.resolve(strict=True):
+        raise ValueError("export would overwrite the source; pass a distinct out_path")
+    if target.exists() or target.is_symlink():
+        raise FileExistsError(f"export target already exists: {out_rel}")
+    data = exporting.export_document_in_root(None, path, format)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(data)
+    with target.open("xb") as output:
+        output.write(data)
     return {"outPath": out_rel, "bytes": len(data)}
 
 
 @mcp.tool()
 def rename_document(path: str, new_path: str) -> dict[str, Any]:
-    """Rename a document in place (its sidecar travels with it).
+    """Rename an Attachment in place.
 
-    Both paths are relative to the workspace root.
+    Both paths are relative to the workspace root. Preserved legacy recovery
+    artifacts travel byte-for-byte with their source when present. Markdown
+    Page and Folder targets fail closed because they require desktop link-impact
+    preview and transactional repair.
     """
     return structure.rename_document(None, path, new_path)
 
 
 @mcp.tool()
 def move_document(path: str, new_path: str) -> dict[str, Any]:
-    """Move a document or folder to a new workspace location.
+    """Move an Attachment to a new workspace location.
 
-    Both paths are relative to the workspace root.
+    Both paths are relative to the workspace root. Markdown Page and Folder
+    targets fail closed until this surface can present the same relocation plan.
     """
     return structure.move_document(None, path, new_path)
 
 
 @mcp.tool()
 def delete_document(path: str) -> dict[str, Any]:
-    """Move a document (and its sidecar) to the system Trash. Not a hard delete.
+    """Move a document to the system Trash. Not a hard delete.
 
-    `path` is relative to the workspace root.
+    `path` is relative to the workspace root. Any existing legacy recovery
+    artifact family is moved with the source; no artifact is created.
     """
     return structure.delete_document(None, path)
 
@@ -162,17 +173,20 @@ def docs_index() -> str:
 # parsed as a port, which rejects the URI.
 @mcp.resource("doc:///{doc_id}")
 def doc_resource(doc_id: str) -> str:
-    """The markdown content of a workspace document addressed by its stable id.
+    """The Markdown source of a Page addressed by its stable id.
 
-    For PDF/Excel documents, points at the read_pdf / read_excel tools instead.
+    For Attachments, returns read-only guidance instead of invoking the Page
+    reader.
     """
     dto = workspace.find_document(None, doc_id)
     if dto is None:
         raise ValueError(f"no document with id {doc_id}")
-    if dto["documentType"] in ("markdown", "html"):
+    if dto["documentType"] == "markdown":
         return documents.read_document_in_root(None, dto["path"])["markdown"]
+    if dto["documentType"] == "html":
+        return f"html Attachment at {dto['path']} — read-only in doXmind; open it externally."
     return (
-        f"{dto['documentType']} document at {dto['path']} — "
+        f"{dto['documentType']} Attachment at {dto['path']} — "
         f"use the read_{dto['documentType']} tool to parse it."
     )
 

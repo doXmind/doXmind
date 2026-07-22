@@ -1,0 +1,774 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ComponentProps } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { mermaidTheme, renderMermaidSvg, renderMermaidSvgLight, renderToString } = vi.hoisted(
+  () => ({
+    mermaidTheme: { value: "test-light" },
+    renderMermaidSvg: vi.fn(async () => "<svg><text>Rendered diagram</text></svg>"),
+    renderMermaidSvgLight: vi.fn(async () => "<svg><text>Printable diagram</text></svg>"),
+    renderToString: vi.fn(() => '<span data-testid="rendered-math">Rendered equation</span>'),
+  })
+);
+
+vi.mock("@/lib/mermaid-renderer", () => ({
+  getMermaidThemeKey: () => mermaidTheme.value,
+  subscribeMermaidTheme: () => () => undefined,
+  renderMermaidSvg,
+  renderMermaidSvgLight,
+}));
+
+vi.mock("katex", () => ({
+  default: { renderToString },
+}));
+
+import { MarkdownBlockDocument } from "@/editor/markdown-block/markdown-block-document";
+import { MarkdownBlockRow } from "@/editor/markdown-block/markdown-block-row";
+import { wikiEmbedIdentity } from "@/editor/markdown-block/wiki-embed";
+import type { KnowledgeSourceIndex } from "@/lib/knowledge-index";
+
+describe("MarkdownBlockRow semantic previews", () => {
+  beforeEach(() => {
+    mermaidTheme.value = "test-light";
+    renderMermaidSvg.mockClear();
+    renderMermaidSvgLight.mockClear();
+  });
+
+  it("exposes an inactive Block as one keyboard entry point before its hidden controls", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("Editable\n").getSnapshot().blocks;
+    const onActivate = vi.fn();
+    const props: ComponentProps<typeof MarkdownBlockRow> = {
+      block,
+      index: 0,
+      count: 2,
+      active: false,
+      onActivate,
+      onChange: vi.fn(),
+      onPaste: vi.fn(),
+      onCompositionStart: vi.fn(),
+      onCompositionEnd: vi.fn(),
+      onSplit: vi.fn(),
+      onMergeBackward: vi.fn(),
+      onInsertAfter: vi.fn(),
+      onDuplicate: vi.fn(),
+      onDelete: vi.fn(),
+      onSetTaskChecked: vi.fn(),
+      onMove: vi.fn(),
+      onSetKind: vi.fn(),
+      onUndo: vi.fn(),
+      onRedo: vi.fn(),
+      onDragStart: vi.fn(),
+      onDragEnd: vi.fn(),
+      onCanDrop: () => false,
+      onDropBefore: vi.fn(),
+    };
+
+    render(<MarkdownBlockRow {...props} />);
+
+    const row = screen.getByRole("group", { name: "Block 1 of 2" });
+    expect(row).toHaveAttribute("tabindex", "0");
+    expect(row).toHaveAttribute("data-active", "false");
+    expect(screen.getByRole("button", { name: "Drag block" })).toHaveAttribute("tabindex", "-1");
+    expect(screen.getByRole("combobox", { name: "Block type" })).toHaveAttribute("tabindex", "-1");
+
+    fireEvent.keyDown(row, { key: "Enter" });
+    expect(onActivate).toHaveBeenCalledWith(block.id);
+  });
+
+  it("announces the active Block and follows handle-editor-toolbar focus order", async () => {
+    const user = userEvent.setup();
+    const [block] = MarkdownBlockDocument.fromMarkdown("Editable\n").getSnapshot().blocks;
+
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={2}
+        active
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onCanDrop={() => false}
+        onDropBefore={vi.fn()}
+      />
+    );
+
+    const row = screen.getByRole("group", { name: "Block 1 of 2" });
+    const handle = screen.getByRole("button", { name: "Drag block" });
+    const textarea = screen.getByRole("textbox", { name: "Markdown block" });
+    const typeMenu = screen.getByRole("combobox", { name: "Block type" });
+    expect(row).toHaveAttribute("aria-current", "true");
+    expect(row).toHaveAttribute("data-active", "true");
+    expect(textarea).toHaveFocus();
+    expect(textarea).toHaveAttribute(
+      "aria-keyshortcuts",
+      "Alt+ArrowUp Alt+ArrowDown Meta+Shift+D Control+Shift+D Meta+Shift+Backspace Control+Shift+Backspace"
+    );
+    expect(screen.getByRole("toolbar", { name: "Block actions" })).toContainElement(typeMenu);
+    expect(screen.getByRole("button", { name: "Move block down" })).toHaveAttribute(
+      "title",
+      "Move block down (Alt+ArrowDown)"
+    );
+    expect(screen.getByRole("button", { name: "Duplicate block" })).toHaveAttribute(
+      "title",
+      "Duplicate block (Mod+Shift+D)"
+    );
+    expect(screen.getByRole("button", { name: "Delete block" })).toHaveAttribute(
+      "title",
+      "Delete block (Mod+Shift+Backspace)"
+    );
+
+    await user.tab({ shift: true });
+    expect(handle).toHaveFocus();
+    await user.tab();
+    expect(textarea).toHaveFocus();
+    await user.tab();
+    expect(typeMenu).toHaveFocus();
+  });
+
+  it("projects a Markdown Collection as a read-only navigable table", () => {
+    const source =
+      '```doxmind-collection\n{"version":1,"view":"table","filters":[{"property":"type","operator":"equals","value":"task"}],"columns":["status","due"],"sort":[{"property":"due","direction":"asc"}]}\n```\n';
+    const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
+    const onOpenPage = vi.fn();
+
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active={false}
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onCanDrop={() => false}
+        onDropBefore={vi.fn()}
+        collectionContext={{
+          status: "ready",
+          pages: [
+            {
+              id: "task-b",
+              path: "Tasks/B.md",
+              title: "Later task",
+              aliases: [],
+              properties: { type: "task", status: "todo", due: "2026-08-01" },
+              markdown: "",
+              revision: null,
+            },
+            {
+              id: "task-a",
+              path: "Tasks/A.md",
+              title: "First task",
+              aliases: [],
+              properties: { type: "task", status: "doing", due: "2026-07-30" },
+              markdown: "",
+              revision: null,
+            },
+            {
+              id: "note",
+              path: "Notes/Idea.md",
+              title: "Idea",
+              aliases: [],
+              properties: { type: "note" },
+              markdown: "",
+              revision: null,
+            },
+          ],
+          onOpenPage,
+        }}
+      />
+    );
+
+    const table = screen.getByRole("table", { name: "Page collection table" });
+    expect(table).toHaveTextContent("Page");
+    expect(table).toHaveTextContent("First task");
+    expect(table).toHaveTextContent("Later task");
+    expect(table).not.toHaveTextContent("Idea");
+    const rows = screen.getAllByRole("row");
+    expect(rows[1]).toHaveTextContent("First taskdoing2026-07-30");
+    fireEvent.click(screen.getByRole("button", { name: "First task" }));
+    expect(onOpenPage).toHaveBeenCalledWith("task-a");
+    expect(screen.getByTestId("collection-block")).toHaveAttribute(
+      "data-native-print-ready",
+      "true"
+    );
+  });
+
+  it("loads a standalone local image through a revocable Blob URL", async () => {
+    const createObjectURL = vi.fn(() => "blob:doxmind-image");
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectURL });
+    const source = '![Pixel](../assets/pixel.png "Local pixel")\n';
+    const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
+    const readAsset = vi.fn(async () => ({
+      path: "assets/pixel.png",
+      mime: "image/png",
+      base64: "iVBORw0KGgoAAAAA",
+    }));
+
+    const { unmount } = render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active={false}
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onCanDrop={() => false}
+        onDropBefore={vi.fn()}
+        imageContext={{ pagePath: "Notes/Page.md", readAsset }}
+      />
+    );
+
+    const image = await screen.findByRole("img", { name: "Pixel" });
+    expect(readAsset).toHaveBeenCalledWith("assets/pixel.png");
+    expect(image).toHaveAttribute("src", "blob:doxmind-image");
+    expect(image).toHaveAttribute("title", "Local pixel");
+    expect(screen.getByTestId("local-image-block")).toHaveAttribute(
+      "data-native-print-ready",
+      "false"
+    );
+    fireEvent.load(image);
+    expect(screen.getByTestId("local-image-block")).toHaveAttribute(
+      "data-native-print-ready",
+      "true"
+    );
+    unmount();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:doxmind-image");
+  });
+
+  it("previews a portable toggle and keeps its canonical source editable", () => {
+    const source =
+      "<details open>\n<summary>Project details</summary>\n\nNested **Markdown**.\n\n</details>\n";
+    const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
+    const { rerender } = render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active={false}
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onCanDrop={() => false}
+        onDropBefore={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId("toggle-block")).toHaveTextContent("Project details");
+    expect(screen.getByTestId("toggle-block")).toHaveTextContent("Nested Markdown.");
+
+    rerender(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onCanDrop={() => false}
+        onDropBefore={vi.fn()}
+      />
+    );
+    expect(screen.getByRole("textbox", { name: "Markdown block" })).toHaveValue(source.trimEnd());
+  });
+
+  it("opens and executes the native slash menu without editor-framework state", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("/tog").getSnapshot().blocks;
+    const onRunSlashCommand = vi.fn();
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onCanDrop={() => false}
+        onDropBefore={vi.fn()}
+        onRunSlashCommand={onRunSlashCommand}
+      />
+    );
+
+    expect(screen.getByRole("listbox", { name: "Block commands" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Markdown block" }), { key: "Enter" });
+    expect(onRunSlashCommand).toHaveBeenCalledWith(block.id, "toggle");
+  });
+
+  it("keeps a semantic print preview beside the active source control", () => {
+    const [block] =
+      MarkdownBlockDocument.fromMarkdown("# Printable heading\n").getSnapshot().blocks;
+
+    const { container } = render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onCanDrop={() => false}
+        onDropBefore={vi.fn()}
+      />
+    );
+
+    expect(container.querySelector("[data-native-block-editor]")).toHaveValue(
+      "# Printable heading"
+    );
+    expect(container.querySelector("[data-native-block-print-preview]")).toHaveTextContent(
+      "Printable heading"
+    );
+    expect(container.querySelectorAll("[data-native-block-controls]")).toHaveLength(2);
+  });
+
+  it("opens a wiki-link target without turning the source block into edit mode", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown(
+      "See [[Projects/Roadmap|the roadmap]].\n"
+    ).getSnapshot().blocks;
+    const onActivate = vi.fn();
+    const onOpenWikiLink = vi.fn();
+
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active={false}
+        onActivate={onActivate}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onCanDrop={() => false}
+        onDropBefore={vi.fn()}
+        onOpenWikiLink={onOpenWikiLink}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Page: the roadmap" }));
+
+    expect(onOpenWikiLink).toHaveBeenCalledWith("Projects/Roadmap");
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+
+  it("renders recursive source-backed embeds read-only and opens their source Page", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown(
+      "![[Roadmap#发布 🚀|Release section]]\n"
+    ).getSnapshot().blocks;
+    const onActivate = vi.fn();
+    const onOpenPage = vi.fn();
+    const index: KnowledgeSourceIndex = {
+      pages: [
+        { id: "today", path: "Notes/Today.md", title: "Today", aliases: [] },
+        { id: "roadmap", path: "Notes/Roadmap.md", title: "Roadmap", aliases: [] },
+        { id: "details", path: "Notes/Details.md", title: "Details", aliases: [] },
+      ],
+      sourcePages: [
+        {
+          id: "today",
+          path: "Notes/Today.md",
+          title: "Today",
+          aliases: [],
+          markdown: block.raw,
+        },
+        {
+          id: "roadmap",
+          path: "Notes/Roadmap.md",
+          title: "Roadmap",
+          aliases: [],
+          markdown:
+            "# Roadmap\n## 发布 🚀\nExact source.\n\n- [ ] Read-only task\n\n![[Details]]\n\n## Later\nOutside.\n",
+        },
+        {
+          id: "details",
+          path: "Notes/Details.md",
+          title: "Details",
+          aliases: [],
+          markdown: "Nested detail.\n",
+        },
+      ],
+      links: [],
+      backlinks: [],
+      unlinkedMentions: [],
+    };
+
+    const { container } = render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active={false}
+        onActivate={onActivate}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onCanDrop={() => false}
+        onDropBefore={vi.fn()}
+        wikiEmbedContext={{
+          status: "ready",
+          index,
+          sourcePageId: "today",
+          sourcePath: "Notes/Today.md",
+          ancestry: [wikiEmbedIdentity("today", null)],
+          depth: 1,
+          onOpenPage,
+        }}
+      />
+    );
+
+    const [topEmbed] = screen.getAllByTestId("wiki-embed");
+    expect(topEmbed).toHaveTextContent("Exact source.");
+    expect(topEmbed).toHaveTextContent("Nested detail.");
+    expect(topEmbed).not.toHaveTextContent("Outside.");
+    expect(screen.getByRole("checkbox", { name: "Read-only task" })).toBeDisabled();
+    expect(container.querySelectorAll("[data-wiki-embed]")).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open embedded Page: Release section" }));
+    expect(onOpenPage).toHaveBeenCalledWith("roadmap");
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+
+  it("keeps embed source editable and prints a safe cycle placeholder", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("![[Today]]\n").getSnapshot().blocks;
+    const index: KnowledgeSourceIndex = {
+      pages: [{ id: "today", path: "Today.md", title: "Today", aliases: [] }],
+      sourcePages: [
+        {
+          id: "today",
+          path: "Today.md",
+          title: "Today",
+          aliases: [],
+          markdown: block.raw,
+        },
+      ],
+      links: [],
+      backlinks: [],
+      unlinkedMentions: [],
+    };
+    const { container } = render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onCanDrop={() => false}
+        onDropBefore={vi.fn()}
+        wikiEmbedContext={{
+          status: "ready",
+          index,
+          sourcePageId: "today",
+          sourcePath: "Today.md",
+          ancestry: [wikiEmbedIdentity("today", null)],
+          depth: 1,
+          onOpenPage: vi.fn(),
+        }}
+      />
+    );
+
+    expect(screen.getByRole("textbox", { name: "Markdown block" })).toHaveValue("![[Today]]");
+    expect(container.querySelector("[data-native-block-print-preview]")).toHaveTextContent(
+      "Embed cycle detected"
+    );
+  });
+
+  it("previews source-backed thematic breaks, tables, math, mermaid, and callouts semantically", async () => {
+    const markdown =
+      "***\n\n" +
+      "| Name | Value |\n| --- | ---: |\n| alpha | **one** |\n\n" +
+      "$$\nx^2 + y^2\n$$\n\n" +
+      "```mermaid\ngraph TD\nA --> B\n```\n\n" +
+      "> [!WARNING] Careful\n> Keep the **source**.\n";
+    const blocks = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot().blocks;
+
+    render(
+      <>
+        {blocks.map((block, index) => (
+          <MarkdownBlockRow
+            key={block.id}
+            block={block}
+            index={index}
+            count={blocks.length}
+            active={false}
+            onActivate={vi.fn()}
+            onChange={vi.fn()}
+            onPaste={vi.fn()}
+            onCompositionStart={vi.fn()}
+            onCompositionEnd={vi.fn()}
+            onSplit={vi.fn()}
+            onMergeBackward={vi.fn()}
+            onInsertAfter={vi.fn()}
+            onDuplicate={vi.fn()}
+            onDelete={vi.fn()}
+            onSetTaskChecked={vi.fn()}
+            onMove={vi.fn()}
+            onSetKind={vi.fn()}
+            onUndo={vi.fn()}
+            onRedo={vi.fn()}
+            onDragStart={vi.fn()}
+            onDragEnd={vi.fn()}
+            onCanDrop={() => false}
+            onDropBefore={vi.fn()}
+          />
+        ))}
+      </>
+    );
+
+    expect(screen.getByTestId("thematic-break-block")).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Markdown table" })).toHaveTextContent("alpha");
+    expect(screen.getByTestId("block-math-block")).toHaveTextContent("x^2 + y^2");
+    expect(screen.getByTestId("mermaid-block")).toHaveTextContent("graph TD");
+    expect(screen.getByTestId("callout-block")).toHaveTextContent("Careful");
+    expect(screen.getByTestId("callout-block")).toHaveTextContent("Keep the source.");
+    expect(await screen.findByTestId("rendered-math")).toHaveTextContent("Rendered equation");
+    expect(await screen.findByRole("img", { name: "Mermaid diagram" })).toHaveAttribute(
+      "src",
+      expect.stringContaining("%3Csvg%3E")
+    );
+    expect(renderToString).toHaveBeenCalledWith(
+      "x^2 + y^2",
+      expect.objectContaining({ displayMode: true, throwOnError: false, trust: false })
+    );
+    expect(renderMermaidSvg).toHaveBeenCalledWith("graph TD\nA --> B");
+  });
+
+  it("keeps a rejected Mermaid preview as editable raw source", async () => {
+    renderMermaidSvg.mockRejectedValueOnce(new Error("Mermaid preview cannot load a remote URL"));
+    const markdown =
+      '```mermaid\nflowchart LR\nA@{ img: "https://example.com/private.png" }\n```\n';
+    const [block] = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot().blocks;
+
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onCanDrop={() => false}
+        onDropBefore={vi.fn()}
+      />
+    );
+
+    await waitFor(() =>
+      expect(renderMermaidSvg).toHaveBeenCalledWith(expect.stringContaining("https://"))
+    );
+    expect(screen.getByRole("textbox", { name: "Markdown block" })).toHaveValue(markdown.trimEnd());
+    expect(screen.queryByRole("img", { name: "Mermaid diagram" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("mermaid-block")).toHaveTextContent(
+      "https://example.com/private.png"
+    );
+  });
+
+  it("prepares a separate light Mermaid image for local PDF export in dark mode", async () => {
+    mermaidTheme.value = "test-dark";
+    const [block] = MarkdownBlockDocument.fromMarkdown(
+      "```mermaid\ngraph TD\nDark --> Print\n```\n"
+    ).getSnapshot().blocks;
+
+    const { container } = render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active={false}
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onCanDrop={() => false}
+        onDropBefore={vi.fn()}
+      />
+    );
+
+    await waitFor(() =>
+      expect(container.querySelector("[data-mermaid-print-ready]")).toHaveAttribute(
+        "data-mermaid-print-ready",
+        "true"
+      )
+    );
+    const screenImage = container.querySelector<HTMLImageElement>(
+      "[data-mermaid-screen-preview] img"
+    );
+    const printImage = container.querySelector<HTMLImageElement>(
+      "[data-mermaid-print-preview] img"
+    );
+    expect(screenImage?.src).toContain("Rendered%20diagram");
+    expect(printImage?.src).toContain("Printable%20diagram");
+    expect(renderMermaidSvgLight).toHaveBeenCalledWith("graph TD\nDark --> Print");
+  });
+});

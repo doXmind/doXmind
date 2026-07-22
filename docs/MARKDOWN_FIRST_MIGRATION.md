@@ -2,9 +2,16 @@
 
 > Historical migration record. The active product boundary and forward roadmap
 > now live in [`PRODUCT_DIRECTION.md`](PRODUCT_DIRECTION.md). Do not add new
-> product phases to this file.
+> product phases to this file. Its same-name Page sidecar and TipTap-HTML design
+> is superseded by [ADR-0012](adr/0012-markdown-source-block-editor.md). Current
+> Pages are exactly one portable Markdown file; legacy `.doxmind` files must be
+> preserved for recovery and must not be created, rebuilt, or cleaned as active
+> Page state. Sidecar language below records the old migration, not current
+> implementation guidance. Tauri, Cargo, and Rust Page-core sections are also
+> retired by [ADR-0013](adr/0013-electron-only-desktop-runtime.md); Electron is
+> the sole packaged desktop runtime.
 
-## 目标
+## 目标（2026-04-30 历史方案）
 
 doXmind 的文档库不再是 `~/.doxmind/doxmind.db`，而是用户选择的一个本地 markdown 文件夹。
 
@@ -18,22 +25,23 @@ doXmind 的文档库不再是 `~/.doxmind/doxmind.db`，而是用户选择的一
 └── .meeting.doxmind
 ```
 
-核心原则：
+当时的过渡原则：
 
 - `.md` 是唯一必须存在的文档真相。
-- `.doxmind` 是可选增强层，保存 TipTap HTML 和富特性数据。
+- `.doxmind` 当时被设计为可选增强层，保存 TipTap HTML 和富特性数据；此设计已被
+  ADR-0012 取代。
 - 用户可以直接用 doXmind 打开已有 markdown folder，不需要 import。
-- 删除 `.doxmind` 不会损坏文档。
+- 当时要求删除 `.doxmind` 不损坏文档；这不是当前清理 legacy 文件的建议。
 - SQLite 只能作为 legacy 数据源或可重建 cache，不能再承载文档真相。
 
 > 重点：**Open Folder 是核心入口，不是 import 的新皮肤。**
 
-## 当前状态
+## 当时状态（历史快照）
 
 当前分支已经完成 Phase 1-6 的主体实现，进入稳定化和旧 DB 路径收口阶段：
 
-- [x] 根目录已经是 Cargo workspace，`src-tauri` 已接入 `crates/sidecar`。
-- [x] `src-tauri` 已提供 `doc_*`、`workspace_*` command，支持真实 `.md + .doxmind` 工作区读写、扫描、搜索、重命名、移动、删除和 asset import。
+- [x] 根目录已经是 Cargo workspace，`src-tauri` 已接入 `crates/page-core`。
+- [x] [legacy] `src-tauri` 已提供 `doc_*`、`workspace_*` command，当时支持 `.md + .doxmind` 工作区读写、扫描、搜索、重命名、移动、删除和 asset import。
 - [x] `src/stores/file-store.ts` 已支持 `workspaceMode: "db" | "disk"`，disk workspace 成为主要路径，DB 路径仍作为 legacy/回滚路径保留。
 - [x] Open Folder、recent workspaces、disk-mode create/rename/move/delete/save 已接入 UI。
 - [x] `server/scripts/dump_to_disk.py` 已写好，能把现有 DB dump 成磁盘 markdown 树（Phase 5 用）。
@@ -57,7 +65,7 @@ doXmind 的文档库不再是 `~/.doxmind/doxmind.db`，而是用户选择的一
   - `npm run type-check`
   - `git diff --check`
 
-## 目标模型
+## 目标模型（历史，已被 ADR-0012 取代）
 
 ### Workspace
 
@@ -95,7 +103,9 @@ updated: 2026-04-30T12:10:00Z
 
 如果打开的 `.md` 没有 `id`，doXmind 第一次保存时补齐。
 
-### Sidecar
+### Sidecar（legacy Page 设计）
+
+> 本节仅记录旧 wire format。Active Page 不读取、创建或重建该 sidecar。
 
 同目录隐藏文件：
 
@@ -130,7 +140,7 @@ sidecar 保存：
 
 > 每个 phase 头部用 `Status:` 行追踪进度。状态值：`todo` / `in progress` / `done`。
 
-### Phase 1: 接通 Tauri + sidecar crate
+### Phase 1: 接通 Tauri + sidecar crate（历史）
 
 Status: done
 
@@ -139,7 +149,7 @@ Status: done
 改动：
 
 - 根目录新增 Cargo workspace。
-- `src-tauri` 添加 `doxmind-sidecar` path dependency。
+- `src-tauri` 添加 `doxmind-page-core` 的 Rust path dependency（`crates/page-core`）。
 - 新增 Tauri commands：
   - `doc_read(path) -> { html, markdown, meta, extras, source }`
   - `doc_write(path, payload) -> void`
@@ -152,7 +162,7 @@ Status: done
 
 - 现有 app 行为不变。
 - sidecar crate 不再是孤岛。
-- 可以从 Tauri 成功读写 `.md + .doxmind`。
+- [legacy acceptance] 可以从 Tauri 成功读写 `.md + .doxmind`。
 
 ### Phase 2: 引入 Workspace 和 StorageAdapter
 
@@ -218,7 +228,7 @@ Status: done
 
 Status: done
 
-目标：disk workspace 下的新建、编辑、保存都写回 `.md + .doxmind`。
+历史目标（superseded）：disk workspace 下的新建、编辑、保存都写回 `.md + .doxmind`。
 
 改动：
 
@@ -229,7 +239,7 @@ Status: done
   - Delete 先进入系统 Trash 或 doXmind `.trash` 策略，需明确。
 - Editor 保存：
   - `editor.getMarkdown()` 写入 `.md`
-  - `editor.getHTML()` 写入 sidecar
+  - [legacy] `editor.getHTML()` 当时写入 sidecar
   - 保持当前 debounce，先用现有 1000ms
 - 外部修改检测：
   - 最小版本：窗口 focus 时重新 `doc_read`
@@ -238,8 +248,9 @@ Status: done
 验收标准：
 
 - 在 doXmind 编辑后，VS Code 打开 `.md` 能看到更新。
-- 在 VS Code 修改 `.md` 后，重新 focus/open，doXmind 使用 markdown 内容，旧 sidecar 失效。
-- `.doxmind` 删除后文档仍可打开。
+- [historical acceptance] 在 VS Code 修改 `.md` 后，重新 focus/open，doXmind 使用
+  markdown 内容，旧 sidecar 失效。
+- [historical acceptance; 非当前维护指令] 当时要求 `.doxmind` 删除后文档仍可打开。
 
 ### Phase 5: Existing DB Migration
 
@@ -284,7 +295,7 @@ Status: done
    <!-- database:uuid -->
    ```
 
-   数据迁到 sidecar：
+   [legacy] 数据当时计划迁到 sidecar：
 
    ```json
    {
@@ -305,7 +316,8 @@ Status: done
 
 验收标准：
 
-- 删除 sidecar 后，database block 退化为 markdown comment，不损坏正文。
+- [historical acceptance; 非当前维护指令] 当时要求删除 sidecar 后 database block
+  退化为 markdown comment，不损坏正文。
 - 图片路径脱离 `/api/images`。
 - page link 在 rename/move 后仍能通过 `id` 找到目标。
 
@@ -341,7 +353,7 @@ Status: todo
 我建议第一轮只做到 Phase 1：
 
 1. Cargo workspace。
-2. Tauri 接 `doxmind-sidecar`。
+2. Tauri 接现名为 `doxmind-page-core` 的 source core。
 3. `doc_read/doc_write`。
 4. 测试和 smoke test。
 

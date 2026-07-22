@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Client-side i18n provider for the static-exported Tauri shell.
+ * Client-side i18n provider for the static-exported Electron shell.
  *
  * The original setup used next-intl/server (request.ts + getLocale/getMessages
  * in the layout), which doesn't run for `output: 'export'`. We replace it with

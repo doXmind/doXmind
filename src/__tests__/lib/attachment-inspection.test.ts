@@ -36,13 +36,9 @@ describe("attachment inspection", () => {
     });
   });
 
-  it("reads one explicitly selected recovery candidate without using a legacy editor reader", async () => {
+  it("reads the exact legacy recovery payload without using an attachment editor reader", async () => {
     const recovery = {
-      documentType: "pdf" as const,
-      source: "backup" as const,
-      sidecarStatus: "legacy" as const,
-      sourceHash: "a".repeat(64),
-      editorState: { version: 1 as const, edits: { "p0-t0": { text: "Recovered" } } },
+      editor: { version: 1 as const, edits: { "p0-t0": { text: "Recovered" } } },
     };
     const invoke = vi.fn().mockResolvedValue(recovery);
     const adapter = new DiskStorageAdapter({ root: "/workspace", invoke });
@@ -55,11 +51,10 @@ describe("attachment inspection", () => {
       relPath: "Research/Spec.pdf",
     };
 
-    await expect(adapter.readAttachmentRecovery(handle, "backup")).resolves.toEqual(recovery);
+    await expect(adapter.readAttachmentRecovery(handle)).resolves.toEqual(recovery);
     expect(invoke).toHaveBeenCalledWith("workspace_read_attachment_recovery", {
       root: "/workspace",
       path: "Research/Spec.pdf",
-      source: "backup",
     });
     expect(invoke.mock.calls.flat().join(" ")).not.toMatch(
       /workspace_(?:read|write)_(?:pdf|excel)/
@@ -96,7 +91,7 @@ describe("attachment inspection", () => {
       relPath: "reference.html",
     };
 
-    await expect(adapter.write(handle, { html: "<p>changed</p>" })).rejects.toThrow(
+    await expect(adapter.write(handle, { markdown: "changed" })).rejects.toThrow(
       "Page write supports Markdown only; open attachments externally instead"
     );
     expect(invoke).not.toHaveBeenCalled();

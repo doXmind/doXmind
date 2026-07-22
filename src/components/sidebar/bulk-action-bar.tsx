@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FolderInput, Trash2, Download, X } from "lucide-react";
+import { FolderInput, Trash2, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
@@ -16,30 +16,28 @@ import { notify } from "@/lib/notifications";
 import { getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
-import { isMarkdownFile } from "@/lib/document-types";
+import { usePageRelocationConfirmation } from "./use-page-relocation-confirmation";
 
 const log = storeLogger.child("BulkActionBar");
 
 export function BulkActionBar() {
   const t = useTranslations("sidebar");
   const tc = useTranslations("common");
-  const { selectedFileIds, clearSelection, bulkMoveFiles, bulkDeleteFiles, getFolders, files } =
+  const { selectedFileIds, clearSelection, bulkMoveFiles, bulkDeleteFiles, getFolders } =
     useFileStore();
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const confirmPageRelocation = usePageRelocationConfirmation();
 
   const folders = getFolders();
-  const selectedPageIds = Array.from(selectedFileIds).filter((fileId) => {
-    const file = files.find((item) => item.id === fileId);
-    return file && !file.isFolder && isMarkdownFile(file);
-  });
-  const selectedCount = selectedPageIds.length;
+  const selectedCount = selectedFileIds.size;
 
   if (selectedCount === 0) return null;
 
   const handleMove = async (folderId: string | null) => {
     try {
-      await bulkMoveFiles(selectedPageIds, folderId);
+      const fileIds = Array.from(selectedFileIds);
+      await bulkMoveFiles(fileIds, folderId, { confirm: confirmPageRelocation });
     } catch (error) {
       log.error("Failed to bulk move files", error);
       const { title, description } = getErrorMessage(error);
@@ -51,7 +49,8 @@ export function BulkActionBar() {
     setShowDeleteModal(false);
     setIsDeleting(true);
     try {
-      await bulkDeleteFiles(selectedPageIds);
+      const fileIds = Array.from(selectedFileIds);
+      await bulkDeleteFiles(fileIds);
       // Navigate to the next file or welcome screen
       const nextId = useFileStore.getState().currentFileId;
       navigateToEditorFile(nextId);
@@ -62,25 +61,6 @@ export function BulkActionBar() {
     } finally {
       setIsDeleting(false);
     }
-  };
-
-  const handleExport = () => {
-    const selectedFiles = files.filter((file) => selectedPageIds.includes(file.id));
-
-    // Export as a combined markdown file
-    const content = selectedFiles
-      .map((file) => `# ${file.name}\n\n${file.content}\n\n---\n`)
-      .join("\n");
-
-    const blob = new Blob([content], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `export-${selectedCount}-files.md`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   return (
@@ -118,12 +98,6 @@ export function BulkActionBar() {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-
-            {/* Export */}
-            <Button variant="outline" size="sm" onClick={handleExport} className="h-8 gap-2">
-              <Download className="h-4 w-4" />
-              {t("export")}
-            </Button>
 
             {/* Move to Trash */}
             <Button

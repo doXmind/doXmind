@@ -37,20 +37,20 @@ def test_read_absolute_path_honored(tmp_path):
 def test_export_out_rejects_relative_escape(tmp_path):
     (tmp_path / "n.md").write_text("# N\n\nbody\n", encoding="utf-8")
     res = runner.invoke(
-        app, ["export", "n.md", "--root", str(tmp_path), "--to", "pdf", "--out", "../evil.pdf"]
+        app, ["export", "n.md", "--root", str(tmp_path), "--to", "html", "--out", "../evil.html"]
     )
     assert res.exit_code != 0
-    assert not (tmp_path.parent / "evil.pdf").exists()
+    assert not (tmp_path.parent / "evil.html").exists()
 
 
 def test_export_out_absolute_honored(tmp_path):
     (tmp_path / "n.md").write_text("# N\n\nbody\n", encoding="utf-8")
-    out = tmp_path / "exports" / "n.pdf"  # absolute path with a fresh parent dir
+    out = tmp_path / "exports" / "n.html"  # absolute path with a fresh parent dir
     res = runner.invoke(
-        app, ["export", "n.md", "--root", str(tmp_path), "--to", "pdf", "--out", str(out)]
+        app, ["export", "n.md", "--root", str(tmp_path), "--to", "html", "--out", str(out)]
     )
     assert res.exit_code == 0, res.output
-    assert out.read_bytes().startswith(b"%PDF-")
+    assert b"body" in out.read_bytes()
 
 
 def test_convert_rejects_relative_escape(tmp_path):

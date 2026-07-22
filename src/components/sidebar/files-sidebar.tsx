@@ -12,7 +12,6 @@ import { TemplatePicker, getLocalizedFileName, type FileTemplate } from "./templ
 import { WorkspaceHeader } from "./workspace-header";
 import { useFileStore } from "@/stores/file-store";
 import { getErrorMessage } from "@/lib/utils";
-import { markdownToHtml } from "@/lib/markdown";
 import { storeLogger } from "@/lib/logger";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useTranslations, useLocale } from "next-intl";
@@ -70,8 +69,7 @@ export function FilesSidebar() {
 
     try {
       const markdown = template.getContent(locale);
-      const htmlContent = markdown ? markdownToHtml(markdown) : "";
-      const newId = await createFile(name, htmlContent, null);
+      const newId = await createFile(name, markdown, null);
       navigateToEditorFile(newId);
     } catch (error) {
       log.error("Failed to create file from template", error);

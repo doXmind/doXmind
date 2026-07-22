@@ -1,5 +1,11 @@
 # DocumentStore read model splits Browsing Runtime from Full Editor Runtime
 
+Status: superseded for Pages by
+[ADR-0012](0012-markdown-source-block-editor.md). Retained as historical context
+and for isolated legacy recovery code; Page hydration no longer uses Sidecar
+editor HTML. Its Rust/Tauri implementation is also retired by
+[ADR-0013](0013-electron-only-desktop-runtime.md).
+
 ## Context
 
 Opening a Markdown **Document** currently returns one generic `html` field and

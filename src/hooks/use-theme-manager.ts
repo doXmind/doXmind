@@ -1,15 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { useLayoutStore } from "@/stores/layout-store";
-import {
-  getTheme,
-  getThemesByBaseMode,
-  getFreeThemesByBaseMode,
-  getPremiumThemesByBaseMode,
-  THEME_LIST,
-} from "@/lib/themes/registry";
+import { getTheme, getThemesByBaseMode, THEME_LIST } from "@/lib/themes/registry";
 import { applyTheme } from "@/lib/themes/apply-theme";
 import type { ThemeDefinition } from "@/lib/themes/types";
 
@@ -340,15 +334,6 @@ export function useThemeManager() {
     applyThemeToDOM,
   ]);
 
-  const isPremiumUser = true;
-
-  const canAccessTheme = useCallback((_id: string): boolean => true, []);
-
-  const freeLightThemes = useMemo(() => getFreeThemesByBaseMode("light"), []);
-  const freeDarkThemes = useMemo(() => getFreeThemesByBaseMode("dark"), []);
-  const premiumLightThemes = useMemo(() => getPremiumThemesByBaseMode("light"), []);
-  const premiumDarkThemes = useMemo(() => getPremiumThemesByBaseMode("dark"), []);
-
   return {
     currentThemeId: themeId,
     currentTheme,
@@ -361,11 +346,5 @@ export function useThemeManager() {
     lightThemes: getThemesByBaseMode("light"),
     darkThemes: getThemesByBaseMode("dark"),
     allThemes: THEME_LIST,
-    canAccessTheme,
-    isPremiumUser,
-    freeLightThemes,
-    freeDarkThemes,
-    premiumLightThemes,
-    premiumDarkThemes,
   };
 }

@@ -1,0 +1,112 @@
+[
+  {
+    "name": "bom-crlf-comments",
+    "filename": "BOM.md",
+    "source": "﻿---\r\nid: page-1 # canonical identity\r\ntitle: \"Demo\" # display label\r\n---\r\n\r\n# Body\r\n",
+    "frontmatter": true,
+    "id": "page-1",
+    "title": "Demo",
+    "scanTitle": "Demo",
+    "body": "# Body\r\n"
+  },
+  {
+    "name": "bare-cr",
+    "filename": "CR.md",
+    "source": "---\rid: cr-page\rtitle: CR\r---\r\rBody\r",
+    "frontmatter": true,
+    "id": "cr-page",
+    "title": "CR",
+    "scanTitle": "CR",
+    "body": "Body\r"
+  },
+  {
+    "name": "spaced-opening-delimiter",
+    "filename": "Spaced.md",
+    "source": "---   \nid: spaced\ntitle: Hidden\n---\n\nBody\n",
+    "frontmatter": false,
+    "id": null,
+    "title": null,
+    "scanTitle": "Spaced",
+    "body": "---   \nid: spaced\ntitle: Hidden\n---\n\nBody\n"
+  },
+  {
+    "name": "spaced-closing-delimiter",
+    "filename": "Open.md",
+    "source": "---\nid: unclosed\ntitle: Hidden\n---  \nBody\n",
+    "frontmatter": false,
+    "id": null,
+    "title": null,
+    "scanTitle": "Open",
+    "body": "---\nid: unclosed\ntitle: Hidden\n---  \nBody\n"
+  },
+  {
+    "name": "numeric-title",
+    "filename": "Numeric-title.md",
+    "source": "---\nid: numeric-title\ntitle: 42\n---\n\nBody\n",
+    "frontmatter": true,
+    "id": "numeric-title",
+    "title": null,
+    "scanTitle": "Numeric-title",
+    "body": "Body\n"
+  },
+  {
+    "name": "array-title",
+    "filename": "Array-title.md",
+    "source": "---\nid: array-title\ntitle: [\"Alpha\"]\n---\n\nBody\n",
+    "frontmatter": true,
+    "id": "array-title",
+    "title": null,
+    "scanTitle": "Array-title",
+    "body": "Body\n"
+  },
+  {
+    "name": "numeric-id",
+    "filename": "Numeric-id.md",
+    "source": "---\nid: 42\ntitle: Numeric identity\n---\n\nBody\n",
+    "frontmatter": true,
+    "id": null,
+    "title": "Numeric identity",
+    "scanTitle": "Numeric identity",
+    "body": "Body\n"
+  },
+  {
+    "name": "leading-zero-id",
+    "filename": "Leading-zero.md",
+    "source": "---\nid: 00123\ntitle: Leading zero\n---\n\nBody\n",
+    "frontmatter": true,
+    "id": "00123",
+    "title": "Leading zero",
+    "scanTitle": "Leading zero",
+    "body": "Body\n"
+  },
+  {
+    "name": "quoted-comments",
+    "filename": "Quoted.md",
+    "source": "---\nid: 'quoted-id' # identity\ntitle: 'Quoted # title' # label\n---\n\nBody\n",
+    "frontmatter": true,
+    "id": "quoted-id",
+    "title": "Quoted # title",
+    "scanTitle": "Quoted # title",
+    "body": "Body\n"
+  },
+  {
+    "name": "malformed-unknown-yaml",
+    "filename": "Malformed.md",
+    "source": "---\nid: malformed-page\ntitle: Visible\ncustom: [broken\n---\n\nBody\n",
+    "frontmatter": true,
+    "id": "malformed-page",
+    "title": "Visible",
+    "scanTitle": "Visible",
+    "body": "Body\n"
+  },
+  {
+    "name": "duplicate-known-keys-last-wins",
+    "filename": "Duplicate.md",
+    "source": "---\nid: first\nid: second\ntitle: First title\ntitle: Second title\n---\n\nBody\n",
+    "frontmatter": true,
+    "id": "second",
+    "title": "Second title",
+    "scanTitle": "Second title",
+    "body": "Body\n"
+  }
+]

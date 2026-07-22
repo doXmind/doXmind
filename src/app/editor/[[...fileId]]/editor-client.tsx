@@ -10,6 +10,7 @@ import { useHighContrast } from "@/hooks/use-high-contrast";
 import { useEditorKeyboardShortcuts } from "@/hooks/use-editor-keyboard-shortcuts";
 import { useFileUrlSync } from "@/hooks/use-file-url-sync";
 import { openNewWindow, openWindowForTarget, syncRecentsToDock } from "@/lib/window";
+import { listenDesktop } from "@/lib/native-shell";
 import { perfMark, perfMeasure } from "@/lib/perf";
 
 const DesktopEditor = dynamic(
@@ -60,7 +61,7 @@ export function EditorClient() {
   const isQuickSwitcherOpen = useLayoutStore((s) => s.isQuickSwitcherOpen);
 
   // Boot: per-window state arrives via ?folder=... / ?file=... URL params,
-  // set by Rust at window creation. If neither is present we land on the
+  // set by Electron at window creation. If neither is present we land on the
   // welcome screen — loadFiles short-circuits because openTarget === "none".
   useEffect(() => {
     if (isSynced) return;
@@ -68,7 +69,7 @@ export function EditorClient() {
     const folder = params.get("folder");
     const file = params.get("file");
     const store = useFileStore.getState();
-    // Push persisted recents to Rust + open the requested target in parallel.
+    // Push persisted recents to Electron + open the requested target in parallel.
     // syncRecentsToDock is independent of file load and shouldn't gate the
     // editor first paint.
     const open = folder
@@ -80,25 +81,23 @@ export function EditorClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only run on mount
   }, []);
 
-  // Listen for dock-menu clicks. Rust emits these events when the user picks
-  // an item from the macOS dock right-click menu.
+  // Listen for Electron Dock-menu clicks.
   useEffect(() => {
     let unlistenRecent: (() => void) | undefined;
     let unlistenNew: (() => void) | undefined;
     void (async () => {
       try {
-        const { listen } = await import("@tauri-apps/api/event");
-        unlistenRecent = await listen<{ kind: "file" | "folder"; path: string }>(
+        unlistenRecent = listenDesktop<{ kind: "file" | "folder"; path: string }>(
           "dock://open-recent",
           (event) => {
             void openWindowForTarget(event.payload);
           }
         );
-        unlistenNew = await listen("dock://open-new-window", () => {
+        unlistenNew = listenDesktop("dock://open-new-window", () => {
           void openNewWindow();
         });
       } catch {
-        // Non-Tauri build: nothing to do.
+        // Browser development: nothing to do.
       }
     })();
     return () => {
@@ -136,7 +135,7 @@ export function EditorClient() {
   }, [currentFileId, loadFileContent, isSynced]);
 
   // Files on disk can be edited by external tools. On focus, re-read the
-  // active document so stale sidecars are ignored and markdown wins.
+  // active Page from its authoritative Markdown source.
   // Throttle per-file: alt-tabbing in/out within a few seconds doesn't need
   // another full read — we just looked. External editors taking longer than
   // the throttle window (5s) will still be picked up on the next focus.

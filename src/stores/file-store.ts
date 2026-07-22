@@ -8,31 +8,29 @@ import {
   createStorageAdapter,
   type DocumentHandle,
   type DocumentContent,
+  type FolderRelocationResult,
+  type PageRelocationResult,
   type StorageAdapter,
   type WorkspaceEntry,
 } from "@/lib/storage";
+import {
+  planFolderLinkRelocation,
+  planPageLinkRelocation,
+  type FolderLinkRelocationPlan,
+  type PageLinkRelocationPlan,
+  type PageLinkRelocationWrite,
+} from "@/lib/page-link-relocation";
+import type { PagePropertiesPatch } from "@/lib/page-properties";
 import { registerWindowTarget, syncRecentsToDock, unregisterWindowTarget } from "@/lib/window";
 import { perfAsync, perfSync } from "@/lib/perf";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
+import { useEditorStore } from "@/stores/editor-store";
 
 const log = storeLogger.child("File");
-const SELF_SAVE_REFRESH_SUPPRESSION_MS = 2500;
-
-function isSidebarMutableEntry(file: FileItem | undefined): file is FileItem {
-  return !!file && (file.isFolder || isMarkdownFile(file));
-}
-
-let suppressWorkspaceRefreshUntil = 0;
-
-export function suppressWorkspaceRefreshForSelfSave(): void {
-  suppressWorkspaceRefreshUntil = Date.now() + SELF_SAVE_REFRESH_SUPPRESSION_MS;
-}
-
-export function shouldSuppressWorkspaceRefreshForSelfSave(): boolean {
-  return Date.now() < suppressWorkspaceRefreshUntil;
-}
 
 // Track in-progress content fetches to deduplicate concurrent loadFileContent calls
 const pendingContentLoads = new Set<string>();
+let fileNavigationRequest = 0;
 
 // Re-export for convenience
 export type { FileItem } from "@/types";
@@ -86,8 +84,8 @@ function criterionFor(sortBy: SortOption): (a: FileItem, b: FileItem) => number 
 // VSCode-style: at any moment the editor is in one of three states.
 // `none` shows the welcome screen with no sidebar. `folder` mounts the
 // directory tree. `file` opens exactly one loose file with no sibling
-// scan — its parent directory is still used as the storage root for I/O
-// (sidecar writes, PDF state, image lookups), but the sidebar shows just
+// scan — its parent directory is still used as the storage root for Page and
+// asset I/O, but the sidebar shows just
 // the open file rather than leaking its neighbours.
 export type OpenTarget = "none" | "file" | "folder";
 
@@ -104,13 +102,16 @@ export interface TransientFile {
   id: string;
   name: string;
   content: string;
-  contentMarkdown: string;
   createdAt: string;
 }
 
 export interface RecentEntry {
   kind: "file" | "folder";
   path: string;
+}
+
+export interface WorkspaceRelocationOptions {
+  confirm?: (plan: PageLinkRelocationPlan | FolderLinkRelocationPlan) => boolean | Promise<boolean>;
 }
 
 interface FileState {
@@ -140,25 +141,32 @@ interface FileState {
 
   // File actions
   loadFiles: (options?: { silent?: boolean }) => Promise<void>;
-  loadFileContent: (fileId: string, options?: { force?: boolean }) => Promise<void>;
+  loadFileContent: (
+    fileId: string,
+    options?: { force?: boolean; throwOnError?: boolean }
+  ) => Promise<void>;
   openFolder: (root: string) => Promise<void>;
   openFile: (absolutePath: string) => Promise<void>;
   closeOpened: () => void;
-  createFile: (name: string, content?: string, parentId?: string | null) => Promise<string>;
-  updateFile: (
-    id: string,
-    updates: Partial<Pick<FileItem, "name" | "content" | "contentMarkdown">>
-  ) => Promise<void>;
+  createFile: (
+    name: string,
+    markdown?: string,
+    parentId?: string | null,
+    properties?: PagePropertiesPatch
+  ) => Promise<string>;
+  updateFile: (id: string, updates: Partial<Pick<FileItem, "name" | "content">>) => Promise<void>;
+  updatePageProperties: (id: string, patch: PagePropertiesPatch) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
   setCurrentFile: (id: string | null) => void;
+  requestCurrentFile: (id: string | null) => Promise<boolean>;
   closeTab: (id: string) => void;
-  renameFile: (id: string, name: string) => Promise<void>;
+  renameFile: (id: string, name: string, options?: WorkspaceRelocationOptions) => Promise<void>;
   getFile: (id: string) => FileItem | undefined;
 
   // Transient (untitled) buffer actions. See TransientFile.
   nextUntitledName: () => string;
   createTransientFile: (name: string) => string;
-  setTransientContent: (content: string, contentMarkdown: string) => void;
+  setTransientMarkdown: (markdown: string) => void;
   materializeTransient: (absolutePath: string) => Promise<string>;
   discardTransient: () => void;
 
@@ -173,14 +181,18 @@ interface FileState {
     parentId?: string | null,
     options?: { silent?: boolean }
   ) => Promise<string>;
-  moveFileToFolder: (fileId: string, folderId: string | null) => Promise<void>;
+  moveFileToFolder: (
+    fileId: string,
+    folderId: string | null,
+    options?: WorkspaceRelocationOptions
+  ) => Promise<void>;
   /**
    * External-import entry point used by sidebar DnD (#67). Always copies; the
    * source file (e.g. from Downloads) is left untouched.
    *
-   * `mode` defaults to `"create"`. `"replace"` is available only for Markdown
-   * Pages. Attachment collisions must use Keep both or Skip so legacy recovery
-   * evidence remains correlated with its source file.
+   * `mode` defaults to `"create"`. `"replace"` (added in #69) overwrites the
+   * user file at the destination; the replacement Markdown becomes the next
+   * canonical Page state, just like any other external edit.
    *
    * Throws `ImportError` with `code: "destination-exists"` if `mode === "create"`
    * and a name clash is detected on the backend (race window between the D2
@@ -213,12 +225,375 @@ interface FileState {
   selectFileRange: (fromId: string, toId: string) => void;
   clearSelection: () => void;
   selectAll: () => void;
-  bulkMoveFiles: (fileIds: string[], folderId: string | null) => Promise<void>;
+  bulkMoveFiles: (
+    fileIds: string[],
+    folderId: string | null,
+    options?: WorkspaceRelocationOptions
+  ) => Promise<void>;
   bulkDeleteFiles: (fileIds: string[]) => Promise<void>;
 }
 
 function getAdapter(state: Pick<FileState, "rootPath">): StorageAdapter {
   return createStorageAdapter({ disk: { root: state.rootPath } });
+}
+
+interface AppliedPageRelocation {
+  plan: PageLinkRelocationPlan;
+  result: PageRelocationResult;
+  movedWrite: PageLinkRelocationWrite | undefined;
+}
+
+interface AppliedFolderRelocation {
+  plan: FolderLinkRelocationPlan;
+  result: FolderRelocationResult;
+  entries: WorkspaceEntry[];
+}
+
+async function executePageRelocation(
+  adapter: StorageAdapter,
+  file: FileItem,
+  toPath: string,
+  options?: WorkspaceRelocationOptions
+): Promise<AppliedPageRelocation | null> {
+  const fromPath = storagePathKey(handleForFile(file));
+  if (!fromPath) throw new Error("Page relocation requires a workspace path");
+  const plan = await planPageLinkRelocation(adapter, {
+    pageId: file.id,
+    fromPath,
+    toPath,
+  });
+  if (options?.confirm && !(await options.confirm(plan))) return null;
+
+  const movedWrite = plan.writes.find((write) => write.sourceId === file.id);
+  const result = await adapter.relocatePage(handleForFile(file), {
+    newPath: plan.relocation.toPath,
+    expectedRevision: plan.relocation.expectedRevision,
+    checks: plan.checks,
+    ...(movedWrite && { movedMarkdown: movedWrite.markdown }),
+    writes: plan.writes
+      .filter((write) => write.sourceId !== file.id)
+      .map((write) => ({
+        path: write.sourcePath,
+        expectedRevision: write.expectedRevision,
+        markdown: write.markdown,
+      })),
+  });
+  return { plan, result, movedWrite };
+}
+
+async function executeFolderRelocation(
+  adapter: StorageAdapter,
+  folder: FileItem,
+  toPath: string,
+  options?: WorkspaceRelocationOptions
+): Promise<AppliedFolderRelocation | null> {
+  const fromPath = storagePathKey(handleForFile(folder));
+  if (!fromPath) throw new Error("Folder relocation requires a workspace path");
+  const plan = await planFolderLinkRelocation(adapter, { fromPath, toPath });
+  if (options?.confirm && !(await options.confirm(plan))) return null;
+
+  const result = await adapter.relocateFolder(handleForFile(folder), {
+    newPath: plan.relocation.toPath,
+    checks: plan.checks,
+    writes: plan.writes.map((write) => ({
+      sourcePath: write.sourcePath,
+      destinationPath: write.destinationPath,
+      expectedRevision: write.expectedRevision,
+      markdown: write.markdown,
+    })),
+  });
+  const entries = await adapter.list();
+  return { plan, result, entries };
+}
+
+function relocatedPageState(
+  state: FileState,
+  oldId: string,
+  applied: AppliedPageRelocation
+): Partial<FileState> {
+  const { plan, result, movedWrite } = applied;
+  const newId = result.entry.handle.id;
+  const writeBySourceId = new Map(
+    plan.writes.filter((write) => write.sourceId !== oldId).map((write) => [write.sourceId, write])
+  );
+  const revisionByPath = new Map(result.writes.map((write) => [write.path, write.revision]));
+  const files = state.files.map((file) => {
+    if (file.id === oldId) {
+      return {
+        ...file,
+        ...fileFromEntry(result.entry, {
+          ...readModelFromFile(file),
+          content: movedWrite?.markdown ?? file.content,
+          sourceRevision: result.revision,
+        }),
+      };
+    }
+    const repair = writeBySourceId.get(file.id);
+    if (!repair) return file;
+    return {
+      ...file,
+      ...(state.loadedContentIds.has(file.id) && { content: repair.markdown }),
+      sourceRevision: revisionByPath.get(repair.sourcePath) ?? file.sourceRevision,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  const movedFile = state.files.find((file) => file.id === oldId);
+  const oldAbsolutePath =
+    movedFile && state.rootPath
+      ? joinWorkspacePath(state.rootPath, storagePathKey(handleForFile(movedFile)) ?? "")
+      : null;
+  const newAbsolutePath = state.rootPath
+    ? joinWorkspacePath(state.rootPath, plan.relocation.toPath)
+    : null;
+  const movingLooseFile = state.openTarget === "file" && state.currentFileId === oldId;
+  const recents =
+    movingLooseFile && oldAbsolutePath && newAbsolutePath
+      ? state.recents.map((recent) =>
+          recent.kind === "file" && recent.path === oldAbsolutePath
+            ? { ...recent, path: newAbsolutePath }
+            : recent
+        )
+      : state.recents;
+
+  return {
+    files: sortFilesByOption(files, state.sortBy),
+    currentFileId: state.currentFileId === oldId ? newId : state.currentFileId,
+    openTabIds: migrateIdInList(state.openTabIds, oldId, newId),
+    loadedContentIds: migrateIdInSet(state.loadedContentIds, oldId, newId),
+    selectedFileIds: migrateIdInSet(state.selectedFileIds, oldId, newId),
+    justCreatedFileId: state.justCreatedFileId === oldId ? newId : state.justCreatedFileId,
+    openFilePath: movingLooseFile ? newAbsolutePath : state.openFilePath,
+    recents,
+  };
+}
+
+function relocatedFolderState(
+  state: FileState,
+  applied: AppliedFolderRelocation
+): Partial<FileState> {
+  const { plan, result } = applied;
+  const fromPath = normalizeWorkspacePath(plan.relocation.fromPath);
+  const toPath = normalizeWorkspacePath(plan.relocation.toPath);
+  const previousByPath = new Map<string, FileItem>();
+  for (const file of state.files) {
+    const path = storagePathKey(file.storageHandle);
+    if (path) previousByPath.set(normalizeWorkspacePath(path), file);
+  }
+
+  const writeBySourcePath = new Map(
+    plan.writes.map((write) => [normalizeWorkspacePath(write.sourcePath), write])
+  );
+  const revisionByDestinationPath = new Map(
+    result.writes.map((write) => [normalizeWorkspacePath(write.path), write.revision])
+  );
+  const checkedRevisionBySourcePath = new Map(
+    plan.checks.map((check) => [normalizeWorkspacePath(check.path), check.expectedRevision])
+  );
+
+  const files = applied.entries.map((entry) => {
+    const destinationPath = normalizeWorkspacePath(storagePathKey(entry.handle) ?? "");
+    const sourcePath = sourcePathBeforeFolderRelocation(destinationPath, fromPath, toPath);
+    const previous = previousByPath.get(sourcePath);
+    if (!previous) return fileFromEntry(entry);
+
+    const readModel = readModelFromFile(previous);
+    const repair = writeBySourcePath.get(sourcePath);
+    if (repair && state.loadedContentIds.has(previous.id)) {
+      readModel.content = repair.markdown;
+    }
+    readModel.sourceRevision =
+      revisionByDestinationPath.get(destinationPath) ??
+      checkedRevisionBySourcePath.get(sourcePath) ??
+      readModel.sourceRevision;
+    return fileFromEntry(entry, readModel);
+  });
+
+  // A workspace scan enumerates documents and synthesizes their ancestors, so
+  // it cannot rediscover empty folders. Carry existing empty folders through
+  // the same path mapping without inventing a second persistence model.
+  const nextPaths = new Set(
+    files.flatMap((file) => {
+      const path = storagePathKey(file.storageHandle);
+      return path ? [normalizeWorkspacePath(path)] : [];
+    })
+  );
+  for (const previous of state.files) {
+    if (!previous.isFolder) continue;
+    const previousPathValue = storagePathKey(previous.storageHandle);
+    if (!previousPathValue) continue;
+    const previousPath = normalizeWorkspacePath(previousPathValue);
+    const destinationPath = destinationPathAfterFolderRelocation(previousPath, fromPath, toPath);
+    if (nextPaths.has(destinationPath)) continue;
+    const id = `folder:${destinationPath}`;
+    const parentPath = workspaceDirectoryName(destinationPath);
+    files.push({
+      ...previous,
+      id,
+      name: workspaceBaseName(destinationPath),
+      parentId: parentPath ? `folder:${parentPath}` : null,
+      storageHandle: {
+        ...handleForFile(previous),
+        id,
+        kind: "folder",
+        path: destinationPath,
+        relPath: destinationPath,
+      },
+    });
+    nextPaths.add(destinationPath);
+  }
+  for (const previous of state.files) {
+    if (storagePathKey(previous.storageHandle)) continue;
+    if (!files.some((file) => file.id === previous.id)) files.push(previous);
+  }
+
+  const nextByPath = new Map<string, FileItem>();
+  for (const file of files) {
+    const path = storagePathKey(file.storageHandle);
+    if (path) nextByPath.set(normalizeWorkspacePath(path), file);
+  }
+  const idMigration = new Map<string, string>();
+  for (const previous of state.files) {
+    const previousPathValue = storagePathKey(previous.storageHandle);
+    if (!previousPathValue) {
+      if (files.some((file) => file.id === previous.id)) {
+        idMigration.set(previous.id, previous.id);
+      }
+      continue;
+    }
+    const destinationPath = destinationPathAfterFolderRelocation(
+      normalizeWorkspacePath(previousPathValue),
+      fromPath,
+      toPath
+    );
+    const next = nextByPath.get(destinationPath);
+    if (next) idMigration.set(previous.id, next.id);
+  }
+
+  const nextIdSet = new Set(files.map((file) => file.id));
+  const migrateId = (id: string) => idMigration.get(id) ?? id;
+  const migrateSet = (ids: Set<string>) =>
+    new Set(Array.from(ids, migrateId).filter((id) => nextIdSet.has(id)));
+  const migrateList = (ids: string[]) =>
+    ids.map(migrateId).filter((id, index, all) => nextIdSet.has(id) && all.indexOf(id) === index);
+  const migratedCurrentFileId = state.currentFileId ? migrateId(state.currentFileId) : null;
+  const migratedCurrentFolderId = state.currentFolderId ? migrateId(state.currentFolderId) : null;
+  const migratedJustCreatedFileId = state.justCreatedFileId
+    ? migrateId(state.justCreatedFileId)
+    : null;
+
+  return {
+    files: sortFilesByOption(files, state.sortBy),
+    currentFileId:
+      migratedCurrentFileId && nextIdSet.has(migratedCurrentFileId) ? migratedCurrentFileId : null,
+    openTabIds: migrateList(state.openTabIds),
+    currentFolderId:
+      migratedCurrentFolderId &&
+      files.some((file) => file.id === migratedCurrentFolderId && file.isFolder)
+        ? migratedCurrentFolderId
+        : null,
+    loadedContentIds: migrateSet(state.loadedContentIds),
+    selectedFileIds: migrateSet(state.selectedFileIds),
+    expandedFolderIds: migrateSet(state.expandedFolderIds),
+    justCreatedFileId:
+      migratedJustCreatedFileId && nextIdSet.has(migratedJustCreatedFileId)
+        ? migratedJustCreatedFileId
+        : null,
+  };
+}
+
+function pageRenamePath(file: FileItem, requestedName: string): string {
+  const currentPath = storagePathKey(handleForFile(file));
+  if (!currentPath) throw new Error("Page rename requires a workspace path");
+  const slash = currentPath.replaceAll("\\", "/").lastIndexOf("/");
+  const directory = slash < 0 ? "" : currentPath.slice(0, slash + 1);
+  const currentExtension = currentPath.match(/\.(?:md|markdown)$/i)?.[0] ?? ".md";
+  const filename = /\.(?:md|markdown)$/i.test(requestedName)
+    ? requestedName
+    : `${requestedName}${currentExtension}`;
+  return `${directory}${filename}`;
+}
+
+function pageMovePath(file: FileItem, folder: FileItem | null): string {
+  const currentPath = storagePathKey(handleForFile(file));
+  if (!currentPath) throw new Error("Page move requires a workspace path");
+  const filename = currentPath.replaceAll("\\", "/").split("/").at(-1);
+  if (!filename) throw new Error("Page move requires a filename");
+  const folderPath = folder ? storagePathKey(handleForFile(folder)) : null;
+  return folderPath
+    ? `${folderPath.replaceAll("\\", "/").replace(/\/$/, "")}/${filename}`
+    : filename;
+}
+
+function folderRenamePath(folder: FileItem, requestedName: string): string {
+  const currentPath = storagePathKey(handleForFile(folder));
+  if (!currentPath) throw new Error("Folder rename requires a workspace path");
+  const normalized = normalizeWorkspacePath(currentPath);
+  const directory = workspaceDirectoryName(normalized);
+  return directory ? `${directory}/${requestedName}` : requestedName;
+}
+
+function folderMovePath(folder: FileItem, destinationFolder: FileItem | null): string {
+  const currentPath = storagePathKey(handleForFile(folder));
+  if (!currentPath) throw new Error("Folder move requires a workspace path");
+  const name = workspaceBaseName(normalizeWorkspacePath(currentPath));
+  const destinationPath = destinationFolder
+    ? storagePathKey(handleForFile(destinationFolder))
+    : null;
+  return destinationPath ? `${normalizeWorkspacePath(destinationPath)}/${name}` : name;
+}
+
+function normalizeWorkspacePath(value: string): string {
+  return value.replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/$/, "").normalize("NFC");
+}
+
+function destinationPathAfterFolderRelocation(
+  path: string,
+  fromPath: string,
+  toPath: string
+): string {
+  if (path === fromPath) return toPath;
+  return path.startsWith(`${fromPath}/`) ? `${toPath}${path.slice(fromPath.length)}` : path;
+}
+
+function sourcePathBeforeFolderRelocation(path: string, fromPath: string, toPath: string): string {
+  if (path === toPath) return fromPath;
+  return path.startsWith(`${toPath}/`) ? `${fromPath}${path.slice(toPath.length)}` : path;
+}
+
+function workspaceDirectoryName(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash < 0 ? "" : path.slice(0, slash);
+}
+
+function workspaceBaseName(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash < 0 ? path : path.slice(slash + 1);
+}
+
+function joinWorkspacePath(root: string, relative: string): string {
+  return `${root.replace(/[\\/]+$/, "")}/${relative.replace(/^[\\/]+/, "")}`;
+}
+
+function sameWorkspacePath(left: string, right: string): boolean {
+  return (
+    left.replaceAll("\\", "/").replace(/^\.\//, "").normalize("NFC") ===
+    right.replaceAll("\\", "/").replace(/^\.\//, "").normalize("NFC")
+  );
+}
+
+async function saveDirtyPageBeforeRelocation(state: FileState, action: "renaming" | "moving") {
+  if (!useEditorStore.getState().isDirty) return;
+  const active = state.files.find((file) => file.id === state.currentFileId);
+  if (!active || active.isFolder || !isMarkdownFile(active)) return;
+  const requestSave = useEditorRefStore.getState().requestSave;
+  if (!requestSave || !(await requestSave())) {
+    throw new Error(
+      action === "renaming"
+        ? "Save the active Page before renaming it"
+        : "Save the active Page before moving it"
+    );
+  }
 }
 
 // Cap files and folders independently so frequently-opened documents don't
@@ -283,41 +658,23 @@ function storagePathKey(handle: DocumentHandle | null | undefined): string | nul
   return handle?.relPath ?? handle?.path ?? null;
 }
 
-type LoadedReadModel = Pick<
-  FileItem,
-  | "content"
-  | "editorHtml"
-  | "browsingHtml"
-  | "contentMarkdown"
-  | "sourceState"
-  | "outline"
-  | "browsingRendererVersion"
->;
+type LoadedReadModel = Pick<FileItem, "content" | "sourceRevision" | "outline" | "meta">;
 
 function readModelFromContent(content: DocumentContent): LoadedReadModel {
-  const editorHtml = content.editorHtml ?? content.html ?? "";
-  const browsingHtml = content.browsingHtml ?? editorHtml;
   return {
-    content: editorHtml,
-    editorHtml,
-    browsingHtml,
-    contentMarkdown: content.markdown ?? null,
-    sourceState: content.sourceState,
+    content: content.markdown,
+    sourceRevision: content.revision ?? null,
     outline: content.outline ?? [],
-    browsingRendererVersion: content.browsingRendererVersion,
+    meta: content.meta,
   };
 }
 
 function readModelFromFile(file: FileItem): LoadedReadModel {
-  const editorHtml = file.editorHtml ?? file.content ?? "";
   return {
-    content: file.content ?? editorHtml,
-    editorHtml,
-    browsingHtml: file.browsingHtml ?? editorHtml,
-    contentMarkdown: file.contentMarkdown ?? null,
-    sourceState: file.sourceState,
+    content: file.content,
+    sourceRevision: file.sourceRevision ?? null,
     outline: file.outline,
-    browsingRendererVersion: file.browsingRendererVersion,
+    meta: file.meta,
   };
 }
 
@@ -339,12 +696,8 @@ function fileFromEntry(entry: WorkspaceEntry, existingReadModel?: LoadedReadMode
     id: entry.handle.id,
     name: entry.name,
     content: existingReadModel?.content ?? "",
-    editorHtml: existingReadModel?.editorHtml,
-    browsingHtml: existingReadModel?.browsingHtml,
-    contentMarkdown: existingReadModel?.contentMarkdown,
-    sourceState: existingReadModel?.sourceState,
+    sourceRevision: existingReadModel?.sourceRevision,
     outline: existingReadModel?.outline,
-    browsingRendererVersion: existingReadModel?.browsingRendererVersion,
     isFolder: entry.kind === "folder",
     parentId: entry.parent?.id ?? null,
     position: entry.position || 0,
@@ -353,7 +706,7 @@ function fileFromEntry(entry: WorkspaceEntry, existingReadModel?: LoadedReadMode
     updatedAt: entry.updatedAt,
     wordCount: entry.wordCount || 0,
     preview: entry.preview || "",
-    documentType: entry.documentType ?? documentTypeFromName(entry.name),
+    documentType: entry.documentType ?? documentTypeFromName(entry.name) ?? undefined,
     storageHandle: entry.handle,
   };
 }
@@ -482,9 +835,9 @@ export const useFileStore = create<FileState>()(
               }
             }
 
-            // Preserve loadedContentIds for files that still exist on server,
+            // Preserve loadedContentIds for files that still exist on disk,
             // including same-path files whose document id changed after an
-            // external edit or sidecar/frontmatter reconciliation.
+            // external edit or frontmatter identity change.
             const preservedContentIds = new Set<string>();
             for (const id of state.loadedContentIds) {
               if (newFileIds.has(id)) {
@@ -501,11 +854,11 @@ export const useFileStore = create<FileState>()(
             const prevReadModelMap = new Map<string, LoadedReadModel>();
             if (preservedContentIds.size > 0) {
               for (const f of state.files) {
-                if (preservedContentIds.has(f.id) && f.content) {
+                if (preservedContentIds.has(f.id)) {
                   prevReadModelMap.set(f.id, readModelFromFile(f));
                 }
                 const migratedId = idMigrationByOldId.get(f.id);
-                if (migratedId && preservedContentIds.has(migratedId) && f.content) {
+                if (migratedId && preservedContentIds.has(migratedId)) {
                   prevReadModelMap.set(migratedId, readModelFromFile(f));
                 }
               }
@@ -547,15 +900,11 @@ export const useFileStore = create<FileState>()(
                 ? state.currentFolderId
                 : null;
 
-            // Keep selection only for existing Pages. Attachments are
-            // intentionally excluded from sidebar bulk mutations.
-            const selectableFileIds = new Set(
-              files.filter((file) => !file.isFolder && isMarkdownFile(file)).map((file) => file.id)
-            );
+            // Clear selection of files that no longer exist
             const validSelectedFileIds = new Set(
               Array.from(state.selectedFileIds)
                 .map((id) => idMigrationByOldId.get(id) ?? id)
-                .filter((id) => selectableFileIds.has(id))
+                .filter((id) => newFileIds.has(id))
             );
             const validOpenTabIds = state.openTabIds
               .map((id) => idMigrationByOldId.get(id) ?? id)
@@ -573,7 +922,7 @@ export const useFileStore = create<FileState>()(
             };
           });
         } catch (error) {
-          log.error("Failed to load files from server", error);
+          log.error("Failed to load workspace files", error);
           if (rootBeforeLoad && isMissingWorkspaceRootError(error)) {
             set((state) => ({
               openTarget: "none",
@@ -595,12 +944,15 @@ export const useFileStore = create<FileState>()(
             void syncRecentsToDock(get().recents);
             return;
           }
-          // Keep local files if server is unavailable
+          // Keep the current view if the workspace runtime is unavailable.
           set({ isSynced: false, isLoading: false });
         }
       },
 
-      loadFileContent: async (fileId: string, options?: { force?: boolean }) => {
+      loadFileContent: async (
+        fileId: string,
+        options?: { force?: boolean; throwOnError?: boolean }
+      ) => {
         // Transient ("New file") buffers live only in memory — there is no disk
         // path to read. A forced refresh (e.g. the window refocusing after the
         // native save dialog closes) would otherwise call adapter.read() on a
@@ -629,7 +981,12 @@ export const useFileStore = create<FileState>()(
             "doxmind.loadFileContent.total",
             async () => {
               const file = get().files.find((f) => f.id === fileId);
-              if (!file) return;
+              if (!file) {
+                if (options?.throwOnError) {
+                  throw new Error(`Page is no longer available: ${fileId}`);
+                }
+                return;
+              }
               if (!isMarkdownFile(file)) {
                 set((state) => ({
                   loadedContentIds: new Set([...state.loadedContentIds, fileId]),
@@ -649,36 +1006,21 @@ export const useFileStore = create<FileState>()(
                   const existing = state.files.find((f) => f.id === fileId);
                   if (!existing) return {};
 
-                  // Force-reload on window refocus must be a no-op when nothing
-                  // changed on disk. If we rewrite `content` with an equal-but-new
-                  // string, the editor's [file.content] effect re-runs setContent
-                  // and resets scroll/selection. Compare HTML byte-for-byte and
-                  // skip the slice update when unchanged.
-                  const nextReadModel = readModelFromContent(fullFile);
-                  const isSelfSaveEcho =
-                    !!options?.force &&
-                    existing.contentMarkdown !== null &&
-                    existing.contentMarkdown !== undefined &&
-                    fullFile.markdown === existing.contentMarkdown;
-                  const committedReadModel: LoadedReadModel = isSelfSaveEcho
-                    ? {
-                        ...nextReadModel,
-                        content: existing.content,
-                        editorHtml: existing.editorHtml ?? existing.content,
-                        contentMarkdown: existing.contentMarkdown,
-                      }
-                    : nextReadModel;
-                  const htmlUnchanged = existing.content === committedReadModel.content;
-                  const browsingHtmlUnchanged =
-                    (existing.browsingHtml ?? existing.content) === committedReadModel.browsingHtml;
+                  // A forced re-read must preserve object identity when the
+                  // canonical Markdown and its derived metadata are unchanged.
+                  const committedReadModel = readModelFromContent(fullFile);
+                  const markdownUnchanged = existing.content === committedReadModel.content;
+                  const revisionUnchanged =
+                    (existing.sourceRevision ?? null) ===
+                    (committedReadModel.sourceRevision ?? null);
                   const outlineUnchanged = outlinesEqual(
                     existing.outline,
                     committedReadModel.outline
                   );
                   const handleIdUnchanged = existing.id === fullFile.handle.id;
                   if (
-                    htmlUnchanged &&
-                    browsingHtmlUnchanged &&
+                    markdownUnchanged &&
+                    revisionUnchanged &&
                     outlineUnchanged &&
                     handleIdUnchanged
                   ) {
@@ -710,6 +1052,7 @@ export const useFileStore = create<FileState>()(
           );
         } catch (error) {
           log.error("Failed to load file content", error);
+          if (options?.throwOnError) throw error;
         } finally {
           pendingContentLoads.delete(fileId);
         }
@@ -748,11 +1091,14 @@ export const useFileStore = create<FileState>()(
         const parentDir = trimmed.slice(0, lastSlash);
         const fileBase = normalized.slice(lastSlash + 1);
 
-        // Adapter is scoped to the picked file's parent directory so sidecar
-        // I/O lands next to the file.
+        // Adapter is scoped to the picked file's parent directory so Page I/O
+        // addresses the selected file directly.
         const adapter = createStorageAdapter({ disk: { root: parentDir } });
 
         const documentType = documentTypeFromName(fileBase);
+        if (!documentType) {
+          throw new Error("Unsupported file type; open a Markdown Page or a supported attachment");
+        }
         const handle: DocumentHandle = {
           mode: "disk",
           id: `path:${fileBase}`,
@@ -767,7 +1113,7 @@ export const useFileStore = create<FileState>()(
 
         if (documentType !== "markdown") {
           // Attachments are represented by a stable FileItem only. Their
-          // read-only workspace must not load source content or sidecar state.
+          // read-only workspace must not load source content or recovery state.
           looseFile = {
             id: handle.id,
             name: fileBase,
@@ -850,7 +1196,12 @@ export const useFileStore = create<FileState>()(
         void unregisterWindowTarget();
       },
 
-      createFile: async (name: string, content: string = "", parentId: string | null = null) => {
+      createFile: async (
+        name: string,
+        markdown: string = "",
+        parentId: string | null = null,
+        properties?: PagePropertiesPatch
+      ) => {
         try {
           // Validate parentId (a folder) exists; fall back to root if stale
           const validParentId =
@@ -860,18 +1211,9 @@ export const useFileStore = create<FileState>()(
             name,
             kind: "document",
             parent: parentHandleForId(get().files, validParentId),
-            content: { html: content, markdown: "" },
+            content: { markdown, meta: properties },
           });
-          const newFile = {
-            ...fileFromEntry(entry, {
-              content,
-              editorHtml: content,
-              browsingHtml: content,
-              contentMarkdown: "",
-              outline: [],
-            }),
-            content,
-          };
+          const newFile = fileFromEntry(entry, { content: markdown, outline: [] });
 
           set((state) => ({
             files: sortFilesByOption([newFile, ...state.files], state.sortBy),
@@ -889,12 +1231,10 @@ export const useFileStore = create<FileState>()(
         }
       },
 
-      updateFile: async (
-        id: string,
-        updates: Partial<Pick<FileItem, "name" | "content" | "contentMarkdown">>
-      ) => {
+      updateFile: async (id: string, updates: Partial<Pick<FileItem, "name" | "content">>) => {
         const originalFile = get().files.find((f) => f.id === id);
         if (!originalFile) return;
+        const contentWasLoaded = get().loadedContentIds.has(id);
 
         // Optimistic update. Renames change the sort key, so re-sort to keep
         // the sidebar order deterministic; pure content updates leave the
@@ -915,30 +1255,20 @@ export const useFileStore = create<FileState>()(
         try {
           const adapter = getAdapter(get());
           const originalHandle = handleForFile(originalFile);
-          const hasContentUpdate =
-            updates.content !== undefined || updates.contentMarkdown !== undefined;
+          const hasContentUpdate = updates.content !== undefined;
           let updatedEntry: WorkspaceEntry | null = null;
 
           if (updates.name !== undefined && updates.name !== originalFile.name) {
-            updatedEntry = await adapter.rename(originalHandle, updates.name);
+            updatedEntry = await adapter.renameAttachment(originalHandle, updates.name);
           }
 
           if (hasContentUpdate) {
-            suppressWorkspaceRefreshForSelfSave();
             const content = await adapter.write(updatedEntry?.handle ?? originalHandle, {
-              html: updates.content,
-              markdown: updates.contentMarkdown,
-              name: updates.name ?? originalFile.name,
-              meta: { id: originalFile.id },
+              markdown: updates.content,
+              expectedRevision: originalFile.sourceRevision,
             });
             const contentHandle = { ...content.handle, id: originalFile.id };
             const savedReadModel = readModelFromContent(content);
-            const liveReadModel: LoadedReadModel = {
-              ...savedReadModel,
-              content: updates.content ?? savedReadModel.content,
-              editorHtml: updates.content ?? savedReadModel.editorHtml,
-              contentMarkdown: updates.contentMarkdown ?? savedReadModel.contentMarkdown,
-            };
             set((state) => ({
               files: sortFilesByOption(
                 state.files.map((item) =>
@@ -947,7 +1277,7 @@ export const useFileStore = create<FileState>()(
                         ...item,
                         id: originalFile.id,
                         name: updates.name ?? content.name,
-                        ...liveReadModel,
+                        ...savedReadModel,
                         storageHandle: contentHandle,
                         updatedAt: content.updatedAt,
                       }
@@ -984,9 +1314,66 @@ export const useFileStore = create<FileState>()(
           }
         } catch (error) {
           log.error("Failed to update file", error);
-          // Revert optimistic update on error
-          await get().loadFiles();
+          // Restore the exact pre-write read model. A workspace scan preserves
+          // loaded content by design, so it cannot undo this optimistic update.
+          set((state) => {
+            const loadedContentIds = new Set(state.loadedContentIds);
+            if (contentWasLoaded) loadedContentIds.add(id);
+            else loadedContentIds.delete(id);
+            return {
+              files: sortFilesByOption(
+                state.files.map((file) => (file.id === id ? originalFile : file)),
+                state.sortBy
+              ),
+              loadedContentIds,
+            };
+          });
+          throw error;
         }
+      },
+
+      updatePageProperties: async (id: string, patch: PagePropertiesPatch) => {
+        const file = get().files.find((item) => item.id === id);
+        if (!file || file.isFolder || !isMarkdownFile(file)) {
+          throw new Error("Page properties are available for Markdown Pages only");
+        }
+        const saved = await getAdapter(get()).write(handleForFile(file), {
+          meta: patch,
+          expectedRevision: file.sourceRevision,
+        });
+        const persistedId = saved.meta?.id;
+        // A metadata write to a Page with no frontmatter creates its first
+        // portable UUID. Promote only that path fallback. Duplicate authored
+        // ids also use path handles, but their read model exposes the authored
+        // id in `meta.id`, so they deliberately remain path-resolved.
+        const nextId =
+          file.id.startsWith("path:") &&
+          (!file.meta?.id || file.meta.id === file.id) &&
+          typeof persistedId === "string" &&
+          persistedId.trim() &&
+          persistedId !== file.id
+            ? persistedId
+            : file.id;
+        set((state) => ({
+          files: state.files.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  id: nextId,
+                  meta: saved.meta ?? item.meta,
+                  isFavorite: saved.meta?.favorite ?? item.isFavorite,
+                  sourceRevision: saved.revision ?? item.sourceRevision,
+                  storageHandle: { ...saved.handle, id: nextId },
+                  updatedAt: saved.updatedAt,
+                }
+              : item
+          ),
+          currentFileId: state.currentFileId === id ? nextId : state.currentFileId,
+          openTabIds: migrateIdInList(state.openTabIds, id, nextId),
+          loadedContentIds: migrateIdInSet(state.loadedContentIds, id, nextId),
+          selectedFileIds: migrateIdInSet(state.selectedFileIds, id, nextId),
+          justCreatedFileId: state.justCreatedFileId === id ? nextId : state.justCreatedFileId,
+        }));
       },
 
       deleteFile: async (id: string) => {
@@ -1077,6 +1464,27 @@ export const useFileStore = create<FileState>()(
         // (openFile) and folders are remembered.
       },
 
+      requestCurrentFile: async (id: string | null) => {
+        const request = ++fileNavigationRequest;
+        if (get().currentFileId === id) return true;
+        if (!useEditorStore.getState().isDirty) {
+          get().setCurrentFile(id);
+          return true;
+        }
+
+        const requestSave = useEditorRefStore.getState().requestSave;
+        if (!requestSave) return false;
+        try {
+          const saved = await requestSave();
+          if (!saved || request !== fileNavigationRequest) return false;
+          get().setCurrentFile(id);
+          return true;
+        } catch (error) {
+          log.error("Failed to save Page before switching", error);
+          return false;
+        }
+      },
+
       closeTab: (id: string) => {
         set((state) => {
           const index = state.openTabIds.indexOf(id);
@@ -1090,7 +1498,39 @@ export const useFileStore = create<FileState>()(
         });
       },
 
-      renameFile: async (id: string, name: string) => {
+      renameFile: async (id: string, name: string, options?: WorkspaceRelocationOptions) => {
+        const file = get().files.find((item) => item.id === id);
+        if (file?.isFolder) {
+          const toPath = folderRenamePath(file, name);
+          const fromPath = storagePathKey(handleForFile(file));
+          if (fromPath && sameWorkspacePath(fromPath, toPath)) return;
+          await saveDirtyPageBeforeRelocation(get(), "renaming");
+          const applied = await executeFolderRelocation(getAdapter(get()), file, toPath, options);
+          if (!applied) return;
+          set((state) => relocatedFolderState(state, applied));
+          eventBus.emit("storage:changed");
+          return;
+        }
+        if (file && !file.isFolder && isMarkdownFile(file)) {
+          const toPath = pageRenamePath(file, name);
+          const fromPath = storagePathKey(handleForFile(file));
+          if (fromPath && sameWorkspacePath(fromPath, toPath)) return;
+          await saveDirtyPageBeforeRelocation(get(), "renaming");
+          const applied = await executePageRelocation(getAdapter(get()), file, toPath, options);
+          if (!applied) return;
+          const wasLooseFile = get().openTarget === "file" && get().currentFileId === id;
+          set((state) => relocatedPageState(state, id, applied));
+          if (wasLooseFile) {
+            const nextPath = get().openFilePath;
+            if (nextPath) {
+              replaceWorkspaceLocation({ kind: "file", path: nextPath });
+              void registerWindowTarget({ kind: "file", path: nextPath });
+              void syncRecentsToDock(get().recents);
+            }
+          }
+          eventBus.emit("storage:changed");
+          return;
+        }
         await get().updateFile(id, { name });
       },
 
@@ -1122,16 +1562,12 @@ export const useFileStore = create<FileState>()(
           id,
           name,
           content: "",
-          contentMarkdown: "",
           createdAt: now,
         };
         const synthetic: FileItem = {
           id,
           name,
           content: "",
-          contentMarkdown: "",
-          editorHtml: "",
-          browsingHtml: "",
           outline: [],
           isFolder: false,
           parentId: null,
@@ -1162,20 +1598,17 @@ export const useFileStore = create<FileState>()(
         return id;
       },
 
-      setTransientContent: (content: string, contentMarkdown: string) => {
+      setTransientMarkdown: (markdown: string) => {
         const transient = get().transientFile;
         if (!transient) return;
-        const updated: TransientFile = { ...transient, content, contentMarkdown };
+        const updated: TransientFile = { ...transient, content: markdown };
         set((state) => ({
           transientFile: updated,
           files: state.files.map((f) =>
             f.id === transient.id
               ? {
                   ...f,
-                  content,
-                  editorHtml: content,
-                  browsingHtml: content,
-                  contentMarkdown,
+                  content: markdown,
                   updatedAt: new Date().toISOString(),
                 }
               : f
@@ -1204,7 +1637,7 @@ export const useFileStore = create<FileState>()(
           name: fileBase,
           kind: "document",
           parent: undefined,
-          content: { html: transient.content, markdown: transient.contentMarkdown },
+          content: { markdown: transient.content },
         });
 
         // Drop the synthetic transient FileItem before openFile rebuilds
@@ -1248,9 +1681,22 @@ export const useFileStore = create<FileState>()(
         }));
 
         try {
-          await getAdapter(get()).write(handleForFile(file), {
+          const saved = await getAdapter(get()).write(handleForFile(file), {
             meta: { id: file.id, favorite: newFavorite },
+            expectedRevision: file.sourceRevision,
           });
+          set((state) => ({
+            files: state.files.map((item) =>
+              item.id === fileId
+                ? {
+                    ...item,
+                    isFavorite: newFavorite,
+                    meta: saved.meta ?? item.meta,
+                    sourceRevision: saved.revision ?? item.sourceRevision,
+                  }
+                : item
+            ),
+          }));
         } catch (error) {
           log.error("Failed to toggle favorite", error);
           // Revert on error
@@ -1312,8 +1758,59 @@ export const useFileStore = create<FileState>()(
         }
       },
 
-      moveFileToFolder: async (fileId: string, folderId: string | null) => {
+      moveFileToFolder: async (
+        fileId: string,
+        folderId: string | null,
+        options?: WorkspaceRelocationOptions
+      ) => {
         const originalFile = get().files.find((file) => file.id === fileId);
+        if (originalFile?.isFolder) {
+          await saveDirtyPageBeforeRelocation(get(), "moving");
+          const destinationFolder = folderId
+            ? (get().files.find((file) => file.id === folderId && file.isFolder) ?? null)
+            : null;
+          const toPath = folderMovePath(originalFile, destinationFolder);
+          const fromPath = storagePathKey(handleForFile(originalFile));
+          if (fromPath && sameWorkspacePath(fromPath, toPath)) return;
+          const applied = await executeFolderRelocation(
+            getAdapter(get()),
+            originalFile,
+            toPath,
+            options
+          );
+          if (!applied) return;
+          set((state) => relocatedFolderState(state, applied));
+          eventBus.emit("storage:changed");
+          return;
+        }
+        if (originalFile && !originalFile.isFolder && isMarkdownFile(originalFile)) {
+          await saveDirtyPageBeforeRelocation(get(), "moving");
+          const destinationFolder = folderId
+            ? (get().files.find((file) => file.id === folderId && file.isFolder) ?? null)
+            : null;
+          const toPath = pageMovePath(originalFile, destinationFolder);
+          const fromPath = storagePathKey(handleForFile(originalFile));
+          if (fromPath && sameWorkspacePath(fromPath, toPath)) return;
+          const applied = await executePageRelocation(
+            getAdapter(get()),
+            originalFile,
+            toPath,
+            options
+          );
+          if (!applied) return;
+          const wasLooseFile = get().openTarget === "file" && get().currentFileId === fileId;
+          set((state) => relocatedPageState(state, fileId, applied));
+          if (wasLooseFile) {
+            const nextPath = get().openFilePath;
+            if (nextPath) {
+              replaceWorkspaceLocation({ kind: "file", path: nextPath });
+              void registerWindowTarget({ kind: "file", path: nextPath });
+              void syncRecentsToDock(get().recents);
+            }
+          }
+          eventBus.emit("storage:changed");
+          return;
+        }
         // Optimistic update — re-sort because parentId moves the file into a
         // different bucket, where its position depends on name within that bucket.
         set((state) => ({
@@ -1329,10 +1826,11 @@ export const useFileStore = create<FileState>()(
 
         try {
           if (!originalFile) return;
-          const moved = await getAdapter(get()).move(
+          const moved = await getAdapter(get()).moveAttachment(
             handleForFile(originalFile),
             parentHandleForId(get().files, folderId)
           );
+          const movedId = moved.handle.id;
           set((state) => ({
             files: sortFilesByOption(
               state.files.map((file) =>
@@ -1342,11 +1840,22 @@ export const useFileStore = create<FileState>()(
               ),
               state.sortBy
             ),
+            currentFileId: state.currentFileId === fileId ? movedId : state.currentFileId,
+            openTabIds: migrateIdInList(state.openTabIds, fileId, movedId),
+            loadedContentIds: migrateIdInSet(state.loadedContentIds, fileId, movedId),
+            selectedFileIds: migrateIdInSet(state.selectedFileIds, fileId, movedId),
+            justCreatedFileId:
+              state.justCreatedFileId === fileId ? movedId : state.justCreatedFileId,
           }));
         } catch (error) {
           log.error("Failed to move file", error);
           // Revert optimistic update on error
-          await get().loadFiles();
+          try {
+            await get().loadFiles();
+          } catch (revertError) {
+            log.error("Failed to reload files after move error", revertError);
+          }
+          throw error;
         }
       },
 
@@ -1364,17 +1873,21 @@ export const useFileStore = create<FileState>()(
           bytes,
           mode,
         });
-        // Replace mode overwrites a Markdown Page that already exists in the workspace.
+        // Replace mode overwrites a file that already exists in the workspace.
         // Surface that as a refreshed entry rather than a fresh insertion so
         // the sidebar doesn't end up with two rows for the same path.
         if (mode === "replace") {
           const existing = get().files.find(
-            (f) => !f.isFolder && f.parentId === validParentId && f.name === name
+            (f) =>
+              !f.isFolder &&
+              f.parentId === validParentId &&
+              (f.storageHandle?.relPath?.replaceAll("\\", "/").split("/").pop() ||
+                f.storageHandle?.path?.replaceAll("\\", "/").split("/").pop() ||
+                f.name) === name
           );
           if (existing) {
-            // Touch updatedAt by replacing the entry in place; the Markdown
-            // sidecar is intentionally left alone on disk so the next open
-            // imports the externally changed portable source.
+            // Clear the cached Page body so the next open reads the replacement
+            // source from disk.
             // Name doesn't change here, but re-sort to be defensive — under
             // modified-newest the touched entry should move to the top.
             set((state) => ({
@@ -1461,11 +1974,6 @@ export const useFileStore = create<FileState>()(
       toggleFileSelection: (fileId) =>
         set((state) => {
           const next = new Set(state.selectedFileIds);
-          const file = state.files.find((item) => item.id === fileId);
-          if (!file || file.isFolder || !isMarkdownFile(file)) {
-            next.delete(fileId);
-            return { selectedFileIds: next };
-          }
           if (next.has(fileId)) {
             next.delete(fileId);
           } else {
@@ -1476,9 +1984,7 @@ export const useFileStore = create<FileState>()(
 
       selectFileRange: (fromId, toId) => {
         const { files, currentFolderId } = get();
-        const visibleFiles = files.filter(
-          (file) => !file.isFolder && file.parentId === currentFolderId && isMarkdownFile(file)
-        );
+        const visibleFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
         const fromIndex = visibleFiles.findIndex((f) => f.id === fromId);
         const toIndex = visibleFiles.findIndex((f) => f.id === toId);
 
@@ -1499,66 +2005,26 @@ export const useFileStore = create<FileState>()(
 
       selectAll: () => {
         const { files, currentFolderId } = get();
-        const visibleFiles = files.filter(
-          (file) => !file.isFolder && file.parentId === currentFolderId && isMarkdownFile(file)
-        );
+        const visibleFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
         set({ selectedFileIds: new Set(visibleFiles.map((f) => f.id)) });
       },
 
-      bulkMoveFiles: async (fileIds, folderId) => {
-        const mutableFileIds = fileIds.filter((fileId) =>
-          isSidebarMutableEntry(get().files.find((file) => file.id === fileId))
-        );
-        if (mutableFileIds.length === 0) {
-          set({ selectedFileIds: new Set() });
-          return;
+      bulkMoveFiles: async (fileIds, folderId, options) => {
+        // Each Page owns a revision-checked relocation transaction because a
+        // move can repair both incoming and outgoing links. Running the old
+        // adapter.move calls in parallel discarded returned path identities
+        // and bypassed link repair entirely.
+        for (const fileId of fileIds) {
+          await get().moveFileToFolder(fileId, folderId, options);
         }
-
-        // Optimistic update — re-sort because parentId changes shuffle the
-        // moved files into a different bucket (see moveFileToFolder).
-        set((state) => ({
-          files: sortFilesByOption(
-            state.files.map((file) =>
-              mutableFileIds.includes(file.id)
-                ? { ...file, parentId: folderId, updatedAt: new Date().toISOString() }
-                : file
-            ),
-            state.sortBy
-          ),
-          selectedFileIds: new Set(), // Clear selection after move
-        }));
-
-        try {
-          const adapter = getAdapter(get());
-          await Promise.all(
-            mutableFileIds.map((fileId) => {
-              const file = get().files.find((item) => item.id === fileId);
-              return file
-                ? adapter.move(handleForFile(file), parentHandleForId(get().files, folderId))
-                : Promise.resolve();
-            })
-          );
-        } catch (error) {
-          log.error("Failed to bulk move files", error);
-          // Revert optimistic update on error
-          await get().loadFiles();
-          throw error;
-        }
+        set({ selectedFileIds: new Set() });
       },
 
       bulkDeleteFiles: async (fileIds) => {
         const state = get();
-        const mutableFileIds = fileIds.filter((fileId) =>
-          isSidebarMutableEntry(state.files.find((file) => file.id === fileId))
-        );
-        if (mutableFileIds.length === 0) {
-          set({ selectedFileIds: new Set() });
-          return;
-        }
-
-        const newFiles = state.files.filter((f) => !mutableFileIds.includes(f.id));
-        const newOpenTabIds = state.openTabIds.filter((tabId) => !mutableFileIds.includes(tabId));
-        const newCurrentId = mutableFileIds.includes(state.currentFileId || "")
+        const newFiles = state.files.filter((f) => !fileIds.includes(f.id));
+        const newOpenTabIds = state.openTabIds.filter((tabId) => !fileIds.includes(tabId));
+        const newCurrentId = fileIds.includes(state.currentFileId || "")
           ? (newOpenTabIds[0] ?? null)
           : state.currentFileId;
 
@@ -1573,7 +2039,7 @@ export const useFileStore = create<FileState>()(
         try {
           const adapter = getAdapter(state);
           await Promise.all(
-            mutableFileIds.map((fileId) => {
+            fileIds.map((fileId) => {
               const file = state.files.find((item) => item.id === fileId);
               return file ? adapter.delete(handleForFile(file)) : Promise.resolve();
             })

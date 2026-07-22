@@ -1,4 +1,4 @@
-"""Lightweight perf timing for the local sidecar.
+"""Lightweight perf timing for the localhost tooling service.
 
 Opt-in via DOXMIND_PERF env var (1/true/yes/on). When enabled every span is
 appended as one JSON line to ~/.doxmind/perf.log so a separate aggregator

@@ -2,19 +2,12 @@ export type WorkspaceMode = "disk";
 
 export type WorkspaceEntryKind = "document" | "folder";
 export type WorkspacePageType = "markdown";
-export type WorkspaceAttachmentType = "pdf" | "excel" | "html" | "other";
-/** Supported attachment dispatch plus a safe `other` fallback; this does not expand scan/open whitelists. */
+export type WorkspaceAttachmentType = "pdf" | "excel" | "html";
+/** File-format discriminator retained for attachment scanning and legacy compatibility. */
 export type WorkspaceDocumentType = WorkspacePageType | WorkspaceAttachmentType;
 
 export type AttachmentRecoveryStatus = "none" | "available" | "unknown";
 export type AttachmentSidecarStatus = "missing" | "legacy" | "current" | "unreadable";
-export type AttachmentRecoverySource = "sidecar" | "backup";
-
-export interface AttachmentRecoveryCandidate {
-  source: AttachmentRecoverySource;
-  recoveryStatus: AttachmentRecoveryStatus;
-  sidecarStatus: AttachmentSidecarStatus;
-}
 
 /** Result of a strictly read-only legacy-recovery inspection. */
 export interface AttachmentInspection {
@@ -22,8 +15,46 @@ export interface AttachmentInspection {
   recoveryStatus: AttachmentRecoveryStatus;
   sidecarStatus: AttachmentSidecarStatus;
   sidecarPath: string;
-  recoverySources: AttachmentRecoveryCandidate[];
-  recommendedSource: AttachmentRecoverySource | null;
+}
+
+/** Exact legacy editor payload read through a strictly zero-write path. */
+export interface AttachmentRecoveryRead {
+  editor: PdfEditorState | ExcelEditorState | null;
+}
+
+export type PageRecoveryStatus = "none" | "available";
+
+/** Read-only inventory of legacy artifacts beside one Markdown Page. */
+export interface PageRecoveryInspection {
+  recoveryStatus: PageRecoveryStatus;
+  artifacts: string[];
+}
+
+/** Exact bytes of every inventoried Page recovery artifact. */
+export interface PageRecoveryRead {
+  artifacts: Array<{
+    path: string;
+    bytes: number[];
+  }>;
+}
+
+/** Workspace-confined bytes for a local Markdown image projection. */
+export interface WorkspaceAssetRead {
+  path: string;
+  mime: string;
+  base64: string;
+}
+
+/** Raster bytes to import into a workspace-confined directory. */
+export interface WorkspaceAssetImportInput {
+  name: string;
+  bytes: Uint8Array;
+  destinationDir?: string;
+}
+
+export interface WorkspaceAssetImportResult {
+  path: string;
+  mime: string;
 }
 
 export interface DocumentHandle {
@@ -38,35 +69,15 @@ export interface DocumentHandle {
 export interface DocumentContent {
   handle: DocumentHandle;
   name: string;
-  /** Backward-compatible alias for editorHtml. */
-  html: string;
-  editorHtml: string;
-  browsingHtml: string;
-  markdown: string | null;
+  /** Canonical Page state. All views are derived from this Markdown string. */
+  markdown: string;
+  /** Hash of the complete on-disk Page used for optimistic concurrency. */
+  revision?: string | null;
   meta?: DocumentMeta;
-  extras?: unknown;
-  source?: "sidecar" | "markdown" | "empty";
-  sourceState?: DocumentSourceState;
   outline?: DocumentOutlineItem[];
-  browsingRendererVersion?: string;
   documentType?: WorkspaceDocumentType;
   updatedAt: string;
-  /**
-   * Block-correlation report from the backend. `null` means no correlator
-   * ran (e.g. older clients or non-markdown reads); an empty
-   * `{events: [], blocking: false}` means the correlator ran cleanly.
-   * Frontend callers can ignore this field — future UI work will surface
-   * it. See `docs/adr/0004-custom-block-registry-split-and-correlation.md`.
-   */
-  correlation?: CorrelationReport | null;
 }
-
-export type DocumentSourceState =
-  | "sidecar_fresh"
-  | "sidecar_stale"
-  | "sidecar_missing"
-  | "sidecar_corrupt"
-  | "empty";
 
 export interface DocumentOutlineItem {
   id: string;
@@ -74,26 +85,11 @@ export interface DocumentOutlineItem {
   text: string;
 }
 
-export type CorrelationEventKind = "orphan" | "duplicate" | "new";
-
-export type HowHandled = "errored" | "discarded" | "created_empty" | "kept" | "skipped" | "deduped";
-
-export interface CorrelationEvent {
-  kind: CorrelationEventKind;
-  block_type: string;
-  id: string;
-  how_handled: HowHandled;
-  detail: Record<string, unknown>;
-}
-
-export interface CorrelationReport {
-  events: CorrelationEvent[];
-  blocking: boolean;
-}
-
 export interface DocumentMeta {
   id: string;
   title?: string | null;
+  tags?: string[] | null;
+  aliases?: string[] | null;
   favorite?: boolean | null;
   created?: string | null;
   updated?: string | null;
@@ -115,11 +111,57 @@ export interface WorkspaceEntry {
 }
 
 export interface StorageWriteInput {
-  html?: string;
   markdown?: string | null;
   name?: string;
-  meta?: DocumentMeta;
-  extras?: unknown;
+  /** Partial frontmatter patch; omitted keys remain byte-for-byte untouched. */
+  meta?: Partial<DocumentMeta>;
+  expectedRevision?: string | null;
+}
+
+export interface PageRelocationWrite {
+  path: string;
+  expectedRevision: string;
+  markdown: string;
+}
+
+export interface PageRevisionCheck {
+  path: string;
+  expectedRevision: string;
+}
+
+export interface PageRelocationInput {
+  newPath: string;
+  expectedRevision: string;
+  /** Complete read snapshot used to reject stale link-repair plans before mutation. */
+  checks: PageRevisionCheck[];
+  /** Omit when moving the Page does not change its own relative links. */
+  movedMarkdown?: string;
+  writes: PageRelocationWrite[];
+}
+
+export interface PageRelocationResult {
+  entry: WorkspaceEntry;
+  revision: string;
+  writes: Array<{ path: string; revision: string }>;
+}
+
+export interface FolderRelocationWrite {
+  sourcePath: string;
+  destinationPath: string;
+  expectedRevision: string;
+  markdown: string;
+}
+
+export interface FolderRelocationInput {
+  newPath: string;
+  /** Complete Page topology snapshot used to reject stale plans before mutation. */
+  checks: PageRevisionCheck[];
+  writes: FolderRelocationWrite[];
+}
+
+export interface FolderRelocationResult {
+  path: string;
+  writes: Array<{ path: string; revision: string }>;
 }
 
 export interface PdfEditorState {
@@ -148,8 +190,8 @@ export interface PdfEditorState {
   /**
    * v2 paragraph-level edits keyed by stable paragraph id (e.g. "p0-b3").
    *
-   * Populated by the PyMuPDF-backed parse-blocks endpoint. Preserves the
-   * original block geometry + lines so export can redact-and-rewrite cleanly.
+   * Historical paragraph-level edit schema retained so recovery reports can
+   * serialize old sidecar payloads without losing fields.
    */
   paragraphEdits?: Record<
     string,
@@ -206,24 +248,13 @@ export interface PdfTextStyleRange {
 }
 
 /**
- * Excel editor sidecar state. Stored under the `excel_editor` key in the
- * `.doxmind` sidecar that lives next to the source spreadsheet. The source
- * file remains the portable source of truth — `edits` are applied lazily on top
- * of the parsed workbook and flushed back to an `.xlsx` binary on export.
- *
- * The `cells` map is keyed by `"${sheetId}!${row},${col}"` (zero-based) so the
- * shape matches the JSON cell model returned by `/api/excel/parse-workbook`.
- * Empty diff slots can simply be omitted; the renderer falls back to the
- * parsed value.
- *
- * Cell coordinates are always interpreted in *post-op* space — i.e. the
- * frontend transforms existing cell keys when a structural op is appended,
- * so the renderer and the backend exporter agree on what `(row, col)` means
- * after `ops` have been replayed.
+ * Historical `excel_editor` sidecar payload. The shape remains explicit so a
+ * recovery report can preserve every old field; no mounted spreadsheet editor
+ * consumes or writes it.
  */
 export interface ExcelEditorState {
   version: 1;
-  /** Sheet id of the tab the user had focused last. Restored on reopen. */
+  /** Sheet id of the tab the user had focused last. */
   activeSheetId?: string;
   /**
    * Sparse cell-level edits keyed by `"${sheetId}!${row},${col}"`. `value`
@@ -244,10 +275,8 @@ export interface ExcelEditorState {
   /** Optional column width overrides keyed by `"${sheetId}!${col}"`. */
   colWidths?: Record<string, number>;
   /**
-   * Structural operations applied since the workbook was parsed. Replayed
-   * in order on export so openpyxl's `insert_rows` / `delete_rows` /
-   * `insert_cols` / `delete_cols` can re-create the user's structural
-   * changes against the original spreadsheet.
+   * Structural operations the removed exporter replayed against the original
+   * spreadsheet.
    */
   ops?: ExcelStructuralOp[];
   /**
@@ -278,36 +307,14 @@ export interface ExcelEditorState {
    */
   validations?: Record<string, ExcelDataValidation>;
   /**
-   * Cell-level notes / comments. Keyed by `${sheetId}!${row},${col}`. The
-   * renderer draws a small triangle indicator on the corner of the cell
-   * and shows the text on hover; the backend round-trips them through
-   * `openpyxl.comments.Comment` so they survive an export.
+   * Cell-level notes / comments keyed by `${sheetId}!${row},${col}`.
    */
   comments?: Record<string, ExcelCellComment>;
   /**
-   * Per-sheet conditional-formatting rules. Evaluated by the renderer on
-   * top of the cell's static style; first matching rule wins (rules
-   * earlier in the list take precedence). Round-tripped into openpyxl
-   * `ConditionalFormatting` blocks on export.
+   * Per-sheet conditional-formatting rules in the historical editor schema.
    */
   conditionalFormats?: Record<string, ExcelConditionalFormatRule[]>;
 }
-
-export type AttachmentRecoveryRead =
-  | {
-      documentType: "pdf";
-      source: AttachmentRecoverySource;
-      sidecarStatus: "legacy" | "current";
-      sourceHash: string;
-      editorState: PdfEditorState;
-    }
-  | {
-      documentType: "excel";
-      source: AttachmentRecoverySource;
-      sidecarStatus: "legacy" | "current";
-      sourceHash: string;
-      editorState: ExcelEditorState;
-    };
 
 export interface ExcelCellComment {
   text: string;
@@ -390,10 +397,7 @@ export interface ExcelBorderSide {
 }
 
 /**
- * Sparse per-side border config. A missing side falls back to the renderer's
- * default gridline (or the parsed-cell border underneath); the picker
- * computes the *full desired* config per cell so the wholesale replace done
- * by `applyCellUpdates` matches the user's intent.
+ * Sparse per-side border config in the historical editor schema.
  */
 export interface ExcelBorderConfig {
   top?: ExcelBorderSide;
@@ -411,8 +415,7 @@ export interface ExcelCellStyle {
   background?: string;
   textAlign?: "left" | "center" | "right";
   verticalAlign?: "top" | "middle" | "bottom";
-  /** Legacy two-state wrap toggle — superseded by `textOverflow` but
-   *  kept so older sidecars don't visually drift on reopen. */
+  /** Legacy two-state wrap toggle retained for lossless recovery. */
   wrapText?: boolean;
   /**
    * Long-text behaviour. `clip` (default) truncates with ellipsis at the
@@ -442,25 +445,20 @@ export interface StorageImportInput {
   name: string;
   /** Destination folder (or null for workspace root). */
   parent: DocumentHandle | null;
-  /** Absolute source path on disk. Tauri provides this; preferred over bytes. */
+  /** Absolute source path supplied by Electron; preferred over bytes. */
   srcPath?: string;
   /** Raw bytes — used in browser dev mode where HTML5 DnD only exposes File objects. */
   bytes?: Uint8Array;
   /**
    * Import mode. `"create"` (the default) refuses to overwrite. `"replace"`
-   * is available only for Markdown Pages; attachments must use Keep both or
-   * Skip so same-name legacy recovery evidence cannot be stranded.
+   * overwrites the user file at the destination.
    */
   mode?: "create" | "replace";
 }
 
 /** Discriminator for `ImportError.code` so callers can react without string-matching. */
 export type ImportErrorCode =
-  | "destination-exists"
-  | "bad-extension"
-  | "no-source"
-  | "replace-not-allowed"
-  | "unknown";
+  "destination-exists" | "bad-extension" | "no-source" | "replace-not-allowed" | "unknown";
 
 export class ImportError extends Error {
   readonly code: ImportErrorCode;
@@ -513,54 +511,18 @@ export interface MarkdownSearchResults {
   results: MarkdownSearchResult[];
 }
 
-export interface PdfDocStateRead {
-  editor: PdfEditorState | null;
-  parsedCache: { sourceHash: string; parsed: unknown } | null;
-}
-
-export interface ExcelDocStateRead {
-  editor: ExcelEditorState | null;
-  parsedCache: { sourceHash: string; parsed: unknown } | null;
-}
-
 export interface StorageAdapter {
   readonly mode: WorkspaceMode;
 
   list(parent?: DocumentHandle | null): Promise<WorkspaceEntry[]>;
   read(handle: DocumentHandle): Promise<DocumentContent>;
+  readAsset(path: string): Promise<WorkspaceAssetRead>;
+  importAsset(input: WorkspaceAssetImportInput): Promise<WorkspaceAssetImportResult>;
   write(handle: DocumentHandle, content: StorageWriteInput): Promise<DocumentContent>;
-  readBinary?(handle: DocumentHandle): Promise<Uint8Array>;
-  /**
-   * Cheap (mtime, size) probe for cache invalidation. Used by the PDF/Excel
-   * workspace switch caches so that external edits to the source binary
-   * surface on the next open. Returns null if the underlying transport
-   * doesn't support stat (e.g. browser HTTP fallback). mtime is a decimal
-   * string of nanoseconds-since-epoch because Number can't hold ns precision.
-   */
-  statBinary?(handle: DocumentHandle): Promise<{ mtimeNs: string; size: number } | null>;
+  inspectPageRecovery(handle: DocumentHandle): Promise<PageRecoveryInspection>;
+  readPageRecovery(handle: DocumentHandle): Promise<PageRecoveryRead>;
   inspectAttachment(handle: DocumentHandle): Promise<AttachmentInspection>;
-  readAttachmentRecovery(
-    handle: DocumentHandle,
-    source: AttachmentRecoverySource
-  ): Promise<AttachmentRecoveryRead>;
-  /** @deprecated Legacy PDF sidecar recovery only; not a primary Page API. */
-  readPdfEditorState?(handle: DocumentHandle): Promise<PdfEditorState | null>;
-  /** @deprecated Kept temporarily so existing sidecar edits remain recoverable. */
-  writePdfEditorState?(handle: DocumentHandle, state: PdfEditorState): Promise<void>;
-  /** Combined sidecar read for PDF open: editor state + parsed-blocks cache. */
-  readPdfDocState?(handle: DocumentHandle): Promise<PdfDocStateRead | null>;
-  writePdfParsedCache?(handle: DocumentHandle, sourceHash: string, parsed: unknown): Promise<void>;
-  /** @deprecated Legacy spreadsheet sidecar recovery only; not a primary Page API. */
-  readExcelEditorState?(handle: DocumentHandle): Promise<ExcelEditorState | null>;
-  /** @deprecated Kept temporarily so existing sidecar edits remain recoverable. */
-  writeExcelEditorState?(handle: DocumentHandle, state: ExcelEditorState): Promise<void>;
-  /** Combined sidecar read for Excel open: editor state + parsed-workbook cache. */
-  readExcelDocState?(handle: DocumentHandle): Promise<ExcelDocStateRead | null>;
-  writeExcelParsedCache?(
-    handle: DocumentHandle,
-    sourceHash: string,
-    parsed: unknown
-  ): Promise<void>;
+  readAttachmentRecovery?(handle: DocumentHandle): Promise<AttachmentRecoveryRead | null>;
   create(input: StorageCreateInput): Promise<WorkspaceEntry>;
   /**
    * Copy a file from outside the workspace into it, always-copy semantics —
@@ -569,8 +531,16 @@ export interface StorageAdapter {
    * Keep both / Skip) is the #69 deliverable, not implemented here.
    */
   importExternal?(input: StorageImportInput): Promise<WorkspaceEntry>;
-  rename(handle: DocumentHandle, name: string): Promise<WorkspaceEntry>;
-  move(handle: DocumentHandle, parent: DocumentHandle | null): Promise<WorkspaceEntry>;
+  relocatePage(
+    handle: DocumentHandle,
+    relocation: PageRelocationInput
+  ): Promise<PageRelocationResult>;
+  relocateFolder(
+    handle: DocumentHandle,
+    relocation: FolderRelocationInput
+  ): Promise<FolderRelocationResult>;
+  renameAttachment(handle: DocumentHandle, name: string): Promise<WorkspaceEntry>;
+  moveAttachment(handle: DocumentHandle, parent: DocumentHandle | null): Promise<WorkspaceEntry>;
   delete(handle: DocumentHandle): Promise<void>;
   queryWorkspaceIndex?(query?: WorkspaceIndexQuery): Promise<WorkspaceIndexEntry[]>;
   searchMarkdown?(query: string, options?: MarkdownSearchOptions): Promise<MarkdownSearchResults>;

@@ -1,8 +1,7 @@
-"""PyMuPDF-backed paragraph block extraction.
+"""Read-only PyMuPDF paragraph extraction for CLI/MCP conversion.
 
-Returns the layout-aware block / line / span tree for a PDF. This is the
-foundation of the paragraph-mode PDF editor: each block becomes a flowable
-paragraph in the frontend with its own bounding box and span styles.
+Returns a bounded layout-aware block / line / span tree without modifying the
+PDF or creating editor state.
 
 PyMuPDF (MuPDF) handles paragraph clustering, reading order, and column
 detection — algorithms that are deliberately *not* reimplemented in the
@@ -163,10 +162,13 @@ def parse_pdf_blocks(
                 return copy.deepcopy(cached)
 
     pages_out: list[dict[str, Any]] = []
-    with perf_timed(
-        "pdf.parse_blocks.total",
-        bytes=len(pdf_bytes),
-    ) as total_span, pymupdf.open(stream=io.BytesIO(pdf_bytes), filetype="pdf") as doc:
+    with (
+        perf_timed(
+            "pdf.parse_blocks.total",
+            bytes=len(pdf_bytes),
+        ) as total_span,
+        pymupdf.open(stream=io.BytesIO(pdf_bytes), filetype="pdf") as doc,
+    ):
         page_count = doc.page_count
         total_span["page_count"] = page_count
         if page_count > limits.max_pages:
@@ -185,9 +187,7 @@ def parse_pdf_blocks(
                 rect = page.rect
                 text_dict = page.get_text("dict")
                 pages_out.append(
-                    _extract_page_blocks(
-                        text_dict, rect=rect, page_index=page_index, limits=limits
-                    )
+                    _extract_page_blocks(text_dict, rect=rect, page_index=page_index, limits=limits)
                 )
 
     result = {

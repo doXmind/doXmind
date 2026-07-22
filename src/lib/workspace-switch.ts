@@ -7,8 +7,8 @@ import { forceOpenNewWindowForTarget, type WindowTarget } from "@/lib/window";
 /**
  * Wait for any in-flight or queued editor save to drain before mutating
  * shared workspace state. The markdown editor uses a 1s debounce on save
- * (see EDITOR_DEBOUNCE_DELAY); the PDF editor 600ms. If the user types
- * and immediately switches workspace, the pending save would be discarded
+ * (see EDITOR_DEBOUNCE_DELAY). If the user types and immediately switches
+ * workspace, the pending save would be discarded
  * when openFolder() clobbers the files array — so we wait until both the
  * "dirty" and "saving" flags clear, with a hard ceiling so a stuck save
  * never blocks the UI forever.
@@ -28,7 +28,7 @@ export async function waitForSaveIdle(maxMs = 3000): Promise<void> {
  *
  * - newWindow=false: drain pending saves, then call openFolder/openFile in
  *   this window. Use for "Open in Current Window" and recents.
- * - newWindow=true: route through the Tauri shell; the current window is
+ * - newWindow=true: route through Electron; the current window is
  *   untouched, so no save drain is needed. We force-spawn a fresh window
  *   here rather than focus an existing one — the user explicitly picked
  *   "Open in New Window," so deduping by focusing an already-open instance

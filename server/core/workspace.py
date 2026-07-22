@@ -17,7 +17,8 @@ from typing import Any
 
 from api.workspace import (
     canonical_workspace_root,
-    ensure_path_within_root,
+    resolve_existing_workspace_path,
+    resolve_workspace_path_for_write,
     validate_relative_path,
     workspace_default_root,
     workspace_index_rebuild,
@@ -56,11 +57,9 @@ def resolve_in_root(root: str | Path | None, path: str | Path) -> Path:
     workspace = resolve_root(root)
     relative = validate_relative_path(_as_relative(workspace, path))
     candidate = workspace / relative
-    probe = candidate
-    while not probe.exists():
-        probe = probe.parent
-    ensure_path_within_root(workspace, probe.resolve())
-    return candidate
+    if candidate.exists() or candidate.is_symlink():
+        return resolve_existing_workspace_path(workspace, str(relative))
+    return resolve_workspace_path_for_write(workspace, str(relative))
 
 
 def _as_relative(workspace: Path, path: str | Path) -> str:
@@ -68,14 +67,14 @@ def _as_relative(workspace: Path, path: str | Path) -> str:
     if not p.is_absolute():
         return str(p)
     try:
-        return str(p.resolve().relative_to(workspace))
+        return str(p.relative_to(workspace))
     except ValueError as err:
         raise ValueError(f"path escapes workspace root: {path}") from err
 
 
 def list_workspace(root: str | Path | None = None) -> dict[str, Any]:
     """Scan the workspace and return ``{root, documents[]}`` (and refresh the
-    on-disk id index as a side effect, matching the desktop app)."""
+    app-private derived id index as a side effect, matching the desktop app)."""
     return workspace_scan(str(resolve_root(root)))
 
 
@@ -87,7 +86,7 @@ def search_documents(
 
 
 def rebuild_index(root: str | Path | None = None) -> dict[str, Any]:
-    """Rebuild and persist the workspace id->path index."""
+    """Rebuild and persist the app-private workspace id->path index."""
     return workspace_index_rebuild(str(resolve_root(root)))
 
 

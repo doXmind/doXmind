@@ -24,6 +24,7 @@ import { useFileStore } from "@/stores/file-store";
 export function useFileUrlSync(fileIdFromUrl: string | null) {
   const currentFileId = useFileStore((s) => s.currentFileId);
   const setCurrentFile = useFileStore((s) => s.setCurrentFile);
+  const requestCurrentFile = useFileStore((s) => s.requestCurrentFile);
   const isLoading = useFileStore((s) => s.isLoading);
   const isSynced = useFileStore((s) => s.isSynced);
   const fileIds = useFileStore((s) => s.files.map((f) => f.id).join(","));
@@ -84,20 +85,41 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
       // Only react when URL actually changed (not from our own History API calls)
       if (nextFileId === lastSyncedId.current) return;
 
-      lastSyncedId.current = nextFileId;
-
       if (nextFileId) {
         const files = useFileStore.getState().files;
         const exists = files.some((f) => f.id === nextFileId);
         if (exists) {
-          setCurrentFile(nextFileId);
+          const previousId = useFileStore.getState().currentFileId;
+          void requestCurrentFile(nextFileId).then((switched) => {
+            if (switched) {
+              lastSyncedId.current = nextFileId;
+              return;
+            }
+            lastSyncedId.current = previousId;
+            setEditorLocation(previousId, { replace: true });
+          });
         } else {
-          setCurrentFile(null);
-          setEditorLocation(null, { replace: true });
-          lastSyncedId.current = null;
+          const previousId = useFileStore.getState().currentFileId;
+          void requestCurrentFile(null).then((switched) => {
+            if (switched) {
+              lastSyncedId.current = null;
+              setEditorLocation(null, { replace: true });
+              return;
+            }
+            lastSyncedId.current = previousId;
+            setEditorLocation(previousId, { replace: true });
+          });
         }
       } else {
-        setCurrentFile(null);
+        const previousId = useFileStore.getState().currentFileId;
+        void requestCurrentFile(null).then((switched) => {
+          if (switched) {
+            lastSyncedId.current = null;
+            return;
+          }
+          lastSyncedId.current = previousId;
+          setEditorLocation(previousId, { replace: true });
+        });
       }
     };
 
@@ -107,7 +129,7 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
       window.removeEventListener("popstate", syncLocationToStore);
       window.removeEventListener(EDITOR_LOCATION_CHANGE_EVENT, syncLocationToStore);
     };
-  }, [setCurrentFile]);
+  }, [requestCurrentFile, setCurrentFile]);
 
   // === Store → URL: file deletion or programmatic store change ===
   useEffect(() => {
@@ -134,7 +156,7 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
 
     // Use push (not replace) so sidebar file switches create history entries
     // for browser back/forward navigation. This intentionally uses the
-    // History API instead of Next router navigation: the packaged Tauri app
+    // History API instead of Next router navigation: the packaged Electron app
     // is a static export and has no per-file `/editor/<id>.html` files.
     setEditorLocation(liveCurrentFileId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to store changes
@@ -160,15 +182,26 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
     if (exists) {
       // File now exists after loadFiles completed — sync store
       if (liveCurrentFileId !== urlFileId) {
-        setCurrentFile(urlFileId);
-        lastSyncedId.current = urlFileId;
+        void requestCurrentFile(urlFileId).then((switched) => {
+          if (switched) {
+            lastSyncedId.current = urlFileId;
+            return;
+          }
+          lastSyncedId.current = liveCurrentFileId;
+          setEditorLocation(liveCurrentFileId, { replace: true });
+        });
       }
     } else {
       const nextFile = files.find((f) => !f.isFolder);
       const nextId = nextFile?.id ?? null;
-      setCurrentFile(nextId);
-      lastSyncedId.current = nextId;
-      navigateToEditorFile(nextId, { replace: true });
+      void navigateToEditorFile(nextId, { replace: true }).then((switched) => {
+        if (switched) {
+          lastSyncedId.current = nextId;
+          return;
+        }
+        lastSyncedId.current = liveCurrentFileId;
+        setEditorLocation(liveCurrentFileId, { replace: true });
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- guard against stale URL after file list membership changes
   }, [fileIds, fileIdFromUrl]);

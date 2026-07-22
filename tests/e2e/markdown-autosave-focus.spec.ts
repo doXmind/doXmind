@@ -1,24 +1,29 @@
 import { expect, test, type Page } from "@playwright/test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { basename, dirname, extname, join } from "node:path";
 import { tmpdir } from "node:os";
 
 const workspaceDir = join(tmpdir(), "doxmind-autosave-focus-e2e");
 const markdownPath = join(workspaceDir, "autosave-focus.md");
 const repoMarkdownPath = join(process.cwd(), "__doxmind_autosave_focus_e2e.md");
+let runtimeErrors: string[];
 
-test.beforeEach(async () => {
+test.beforeEach(async ({ page }) => {
+  runtimeErrors = observeRuntimeErrors(page);
   await rm(workspaceDir, { recursive: true, force: true });
   await rm(repoMarkdownPath, { force: true });
-  await rm(join(process.cwd(), ".__doxmind_autosave_focus_e2e.doxmind"), { force: true });
+  await rm(legacyPageSidecarPath(repoMarkdownPath), { force: true });
   await mkdir(workspaceDir, { recursive: true });
   await writeAutosaveFixture(markdownPath);
   await writeAutosaveFixture(repoMarkdownPath);
 });
 
 test.afterEach(async () => {
+  expect(runtimeErrors).toEqual([]);
+  await rm(workspaceDir, { recursive: true, force: true });
   await rm(repoMarkdownPath, { force: true });
-  await rm(join(process.cwd(), ".__doxmind_autosave_focus_e2e.doxmind"), { force: true });
+  await rm(legacyPageSidecarPath(repoMarkdownPath), { force: true });
 });
 
 test("autosave does not refresh the editor or steal focus while typing", async ({ page }) => {
@@ -39,37 +44,41 @@ async function expectAutosaveKeepsFocus(page: Page, absolutePath: string) {
 
   await openLooseFile(page, absolutePath);
 
-  const editor = page.locator(".ProseMirror");
-  const scroll = page.locator("[data-editor-scroll]");
-  await expect(editor).toBeVisible();
-  await expect(page.locator('div.ProseMirror[contenteditable="false"]')).toBeVisible();
-
-  await scroll.evaluate((el) => {
-    el.scrollTop = Math.floor(el.scrollHeight * 0.45);
-  });
+  const scroll = page.locator("[data-native-markdown-scroll]");
+  const targetPreview = page.getByText("Spacer paragraph 40.", { exact: true });
+  await targetPreview.scrollIntoViewIfNeeded();
   const beforeEditScroll = await scroll.evaluate((el) => el.scrollTop);
   expect(beforeEditScroll).toBeGreaterThan(100);
 
-  const box = await scroll.boundingBox();
-  if (!box) throw new Error("editor scroll area was not visible");
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-  await expect(page.locator('div.ProseMirror[contenteditable="true"]')).toBeVisible();
+  await targetPreview.click();
+  const editor = page.locator("[data-native-block-editor]");
+  await expect(editor).toBeVisible();
+  await expect(editor).toBeFocused();
 
-  await page.keyboard.type(" autosave-focus-token");
+  const token = " autosave-focus-token";
+  await editor.type(token);
   const navigationsBeforeAutosave = navigations.length;
-  await page.waitForTimeout(1_700);
+  await expect
+    .poll(async () => (await readFile(absolutePath, "utf8")).includes(token), { timeout: 10_000 })
+    .toBe(true);
 
   expect(navigations).toHaveLength(navigationsBeforeAutosave);
-  await expect(page.locator('div.ProseMirror[contenteditable="true"]')).toBeFocused();
-  await expect(editor).toContainText("autosave-focus-token");
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveValue(/autosave-focus-token/);
   const afterSaveScroll = await scroll.evaluate((el) => el.scrollTop);
   expect(afterSaveScroll).toBeGreaterThan(beforeEditScroll - 100);
+  expect(afterSaveScroll).toBeLessThan(beforeEditScroll + 100);
+
+  const savedMarkdown = await readFile(absolutePath, "utf8");
+  expect(savedMarkdown).toContain("# Autosave Focus");
+  expect(savedMarkdown).toContain("Spacer paragraph 40. autosave-focus-token");
+  expect(existsSync(legacyPageSidecarPath(absolutePath))).toBe(false);
 }
 
 async function openLooseFile(page: Page, absolutePath: string) {
   await page.goto(`/editor?file=${encodeURIComponent(absolutePath)}`);
   await expect(page.locator("text=Loading")).toHaveCount(0);
-  await expect(page.getByTestId("markdown-runtime")).toBeVisible();
+  await expect(page.getByTestId("markdown-block-runtime")).toBeVisible();
 }
 
 async function writeAutosaveFixture(path: string) {
@@ -80,11 +89,26 @@ async function writeAutosaveFixture(path: string) {
       "",
       "Intro paragraph.",
       "",
-      ...Array.from({ length: 80 }, (_, index) => `Spacer paragraph ${index + 1}.`),
+      ...Array.from({ length: 80 }, (_, index) => [`Spacer paragraph ${index + 1}.`, ""]).flat(),
       "",
       "End paragraph.",
       "",
     ].join("\n"),
     "utf8"
   );
+}
+
+function legacyPageSidecarPath(markdownFilePath: string) {
+  const extension = extname(markdownFilePath);
+  const stem = basename(markdownFilePath, extension);
+  return join(dirname(markdownFilePath), `.${stem}.doxmind`);
+}
+
+function observeRuntimeErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(`console: ${message.text()}`);
+  });
+  return errors;
 }

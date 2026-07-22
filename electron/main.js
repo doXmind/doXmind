@@ -3,52 +3,57 @@
 /**
  * doXmind Electron main process.
  *
- * Boot sequence (mirrors the Tauri shell in src-tauri/src/lib.rs):
+ * Boot sequence:
  *   1. Serve the Next static export (./out) from http://127.0.0.1:<port>.
- *   2. Spawn the FastAPI sidecar on its own free port and WAIT for /health.
- *   3. Inject the sidecar URL into the renderer (preload -> __TAURI_BACKEND_URL__).
- *   4. Open the main window; dispatch shell:invoke commands.
- *   5. On quit, kill the sidecar and close the static server.
+ *   2. Register the native Node filesystem workspace dispatcher.
+ *   3. Open the main window; dispatch shell:invoke commands.
+ *   4. On quit, close workspace watchers and the static renderer server.
  *
- * Workspace/document commands are proxied to the sidecar (workspace-proxy.js).
- * Shell-native commands (dialogs, windows, save-pdf) are handled here.
+ * Workspace/document commands run in-process (native-workspace.js).
+ * Shell-native commands (dialogs, windows, local PDF export) are handled here.
  */
 
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, webContents, Menu, nativeImage } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  shell,
+  webContents,
+  Menu,
+  nativeImage,
+  session,
+} = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
-const { pathToFileURL } = require("node:url");
 
 const { startStaticServer } = require("./static-server");
-const { findFreePort, spawnSidecar, waitForHealth } = require("./sidecar");
-const { isWorkspaceCommand, proxyWorkspace } = require("./workspace-proxy");
-const { createAssetScope } = require("./asset-scope");
+const { createNativeWorkspaceDispatcher, isNativeWorkspaceCommand } = require("./native-workspace");
+const {
+  isExternallyOpenable,
+  isTrustedRendererUrl,
+  lockDownRendererPermissions,
+} = require("./renderer-boundary");
 const { WindowRegistry, normalizeOpenPath } = require("./window-registry");
-const { saveWindowPdf } = require("./pdf-save");
 const menus = require("./menus");
 const { createWindowLifecycle } = require("./window-lifecycle");
 const { createWorkspaceWatchers } = require("./workspace-watchers");
+const { exportPagePdf } = require("./local-pdf-export");
+const updater = require("./updater");
 
 const REPO_ROOT = path.join(__dirname, "..");
 const OUT_DIR = path.join(REPO_ROOT, "out");
-const ICON_DIR = path.join(REPO_ROOT, "src-tauri", "icons");
+const ICON_DIR = path.join(__dirname, "assets");
 const APP_ICON = path.join(ICON_DIR, "icon.png");
 const TRAY_ICON = path.join(ICON_DIR, "tray-icon-template.png");
 
 let rendererServer = null; // { url, port, close }
-let sidecarUrl = null;
-let sidecarChild = null;
 let pendingOpenPaths = [];
 let currentRecents = [];
 let tray = null;
 
 // Per-window open-target registry, keyed by webContents.id.
 const registry = new WindowRegistry();
-// Directories doxmind-asset:// may serve from (see asset-scope.js).
-const assetScope = createAssetScope();
-// Event listeners registered via @tauri-apps/api/event: {eventId, eventName, webContentsId, handlerId}.
-const eventListeners = [];
-let nextEventId = 1;
 let windowLifecycle = null;
 const workspaceWatchers = createWorkspaceWatchers({
   onChanged: (webContentsId, payload) =>
@@ -60,13 +65,9 @@ const workspaceWatchers = createWorkspaceWatchers({
     );
   },
 });
-
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: "doxmind-asset",
-    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true },
-  },
-]);
+const dispatchNativeWorkspace = createNativeWorkspaceDispatcher({
+  trashItem: (target) => shell.trashItem(target),
+});
 
 // Finder "Open With" / drag-to-dock. On a cold launch this fires before
 // 'ready', so buffer the paths and drain them once a window exists (Phase 4
@@ -88,7 +89,7 @@ function urlForTarget(target) {
 
 function createWindow(target) {
   const isMac = process.platform === "darwin";
-  // macOS gets the frameless/vibrancy chrome the frontend's is-tauri-macos CSS
+  // macOS gets the frameless/vibrancy chrome the frontend's Electron CSS
   // expects; other platforms use a normal native frame (title bar + min/max/
   // close) and an opaque background — the macOS-only chrome CSS never applies
   // there, so a transparent/frameless window would have no way to be moved or
@@ -127,9 +128,19 @@ function createWindow(target) {
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
-      sandbox: false,
-      additionalArguments: [`--doxmind-backend-url=${sidecarUrl}`, `--doxmind-platform=${platformArg}`],
+      nodeIntegration: false,
+      sandbox: true,
+      additionalArguments: [`--doxmind-platform=${platformArg}`],
     },
+  });
+  win.webContents.on("will-navigate", (event, navigationUrl) => {
+    if (isTrustedRendererUrl(rendererServer?.url, navigationUrl)) return;
+    event.preventDefault();
+    if (isExternallyOpenable(navigationUrl)) void shell.openExternal(navigationUrl);
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isExternallyOpenable(url)) void shell.openExternal(url);
+    return { action: "deny" };
   });
   // Pre-register so a concurrent focus-existing lookup sees this window before
   // its JS calls register_window_target (mirrors create_editor_window).
@@ -138,9 +149,6 @@ function createWindow(target) {
   win.webContents.on("destroyed", () => {
     registry.clear(wcId);
     workspaceWatchers.remove(wcId);
-    for (let i = eventListeners.length - 1; i >= 0; i--) {
-      if (eventListeners[i].webContentsId === wcId) eventListeners.splice(i, 1);
-    }
   });
   windowLifecycle.attachCloseToSave(win);
   win.once("ready-to-show", () => win.show());
@@ -172,14 +180,11 @@ async function pickFolder(win, title) {
     properties: ["openDirectory", "createDirectory"],
   });
   if (result.canceled || !result.filePaths.length) return null;
-  let picked;
   try {
-    picked = fs.realpathSync(result.filePaths[0]);
+    return fs.realpathSync(result.filePaths[0]);
   } catch {
-    picked = result.filePaths[0];
+    return result.filePaths[0];
   }
-  assetScope.addRoot(picked);
-  return picked;
 }
 
 async function pickFile(win, title, filters) {
@@ -189,7 +194,6 @@ async function pickFile(win, title, filters) {
     filters: filters || [],
   });
   if (result.canceled || !result.filePaths.length) return null;
-  assetScope.addRootForFile(result.filePaths[0]);
   return result.filePaths[0];
 }
 
@@ -222,32 +226,13 @@ function resolveDroppedPath(p) {
   }
 }
 
-function registerEventListener(sender, args) {
-  const eventId = nextEventId++;
-  eventListeners.push({
-    eventId,
-    eventName: args.event,
-    webContentsId: sender.id,
-    handlerId: args.handler,
-  });
-  return eventId;
-}
-
 // ── Native -> renderer event bridge ─────────────────────────────────────────
-// @tauri-apps/api/event delivers events by invoking the transformCallback'd
-// handler with the full event object; the preload's 'tauri://callback' channel
-// looks up the handler id and calls it.
 function deliver(eventName, payload, targetIds) {
-  for (const l of eventListeners) {
-    if (l.eventName !== eventName) continue;
-    if (targetIds && !targetIds.has(l.webContentsId)) continue;
-    const wc = webContents.fromId(l.webContentsId);
-    if (wc && !wc.isDestroyed()) {
-      wc.send("tauri://callback", {
-        id: l.handlerId,
-        data: { event: eventName, id: l.eventId, payload },
-      });
-    }
+  const targets = targetIds
+    ? [...targetIds].map((id) => webContents.fromId(id)).filter(Boolean)
+    : BrowserWindow.getAllWindows().map((window) => window.webContents);
+  for (const target of targets) {
+    if (!target.isDestroyed()) target.send("desktop:event", { event: eventName, payload });
   }
 }
 
@@ -257,7 +242,6 @@ function emitToAll(eventName, payload) {
 
 function emitToFocused(eventName, payload) {
   const focused = BrowserWindow.getFocusedWindow();
-  // Mirror Rust's emit_to_focused: fall back to broadcast when nothing focused.
   deliver(eventName, payload, focused ? new Set([focused.webContents.id]) : null);
 }
 
@@ -292,29 +276,30 @@ async function refreshMenus() {
 }
 
 async function dispatch(event, cmd, args) {
-  if (isWorkspaceCommand(cmd)) {
-    const result = await proxyWorkspace(sidecarUrl, cmd, args);
-    // Any root the data plane actually operates on is fair game for the
-    // asset protocol (image loads resolve relative to these roots).
-    if (args && typeof args.root === "string" && args.root) assetScope.addRoot(args.root);
-    if (cmd === "workspace_default_root" && typeof result === "string") {
-      assetScope.addRoot(result);
-    }
-    return result;
+  const senderUrl = event.senderFrame?.url || event.sender?.getURL?.() || "";
+  if (!isTrustedRendererUrl(rendererServer?.url, senderUrl)) {
+    throw new Error("shell command rejected from an untrusted renderer");
+  }
+  if (isNativeWorkspaceCommand(cmd)) {
+    return dispatchNativeWorkspace(cmd, args || {});
   }
 
   const sender = event.sender;
   const win = BrowserWindow.fromWebContents(sender);
   switch (cmd) {
-    case "get_backend_url":
-      return sidecarUrl;
     case "update_get_state":
-      return require("./updater").getUpdateState();
+      return updater.getUpdateState();
     case "update_check":
-      require("./updater").requestCheck();
+      updater.requestCheck();
       return null;
     case "update_restart":
-      require("./updater").quitAndInstallNow();
+      updater.quitAndInstallNow();
+      return null;
+    case "workspace_watch":
+      workspaceWatchers.watch(sender.id, args.root);
+      return null;
+    case "workspace_unwatch":
+      workspaceWatchers.unwatch(sender.id, args.root);
       return null;
     case "pick_workspace_folder":
       return pickFolder(win, args.title);
@@ -349,71 +334,46 @@ async function dispatch(event, cmd, args) {
     }
     case "resolve_dropped_path":
       return resolveDroppedPath(args.path);
-    case "workspace_watch":
-      workspaceWatchers.watch(sender.id, args.root);
-      return null;
-    case "workspace_unwatch":
-      workspaceWatchers.unwatch(sender.id, args.root);
-      return null;
-    case "save_window_pdf":
-      return saveWindowPdf(args);
+    case "export_page_pdf":
+      return exportPagePdf({
+        contents: sender,
+        ownerWindow: win,
+        suggestedName: args.suggestedName,
+        targetFileId: args.targetFileId,
+        showSaveDialog: (ownerWindow, options) => dialog.showSaveDialog(ownerWindow, options),
+      });
     case "shell_close_window":
       if (win) {
         windowLifecycle.closeWindowNow(win);
       }
       return null;
-    case "plugin:event|listen":
-      return registerEventListener(sender, args);
-    case "plugin:event|unlisten": {
-      const idx = eventListeners.findIndex((l) => l.eventId === args.eventId);
-      if (idx >= 0) eventListeners.splice(idx, 1);
+    case "shell_cancel_close":
+      if (win) {
+        windowLifecycle.cancelClose(win);
+      }
       return null;
-    }
-    case "plugin:event|emit":
-    case "plugin:event|emit_to":
-      return null; // renderer->renderer emit is unused by the app
-    case "plugin:opener|open_url":
+    case "shell_open_external":
       if (typeof args.url === "string" && /^(https?:|mailto:)/i.test(args.url)) {
         await shell.openExternal(args.url);
       }
       return null;
-    case "plugin:opener|open_path":
+    case "shell_open_path":
       if (typeof args.path === "string") await shell.openPath(args.path);
       return null;
-    case "plugin:opener|reveal_item_in_dir":
-      for (const p of args.paths || []) shell.showItemInFolder(p);
+    case "shell_reveal_path":
+      if (typeof args.path === "string") shell.showItemInFolder(args.path);
       return null;
     default:
       throw new Error(`unhandled shell command: ${cmd}`);
   }
 }
 
-function handleAsset(request) {
-  // convertFileSrc emits doxmind-asset://local/<encoded-absolute-path>.
-  const url = new URL(request.url);
-  const filePath = decodeURIComponent(url.pathname.replace(/^\//, ""));
-  if (!assetScope.allows(filePath)) {
-    // Outside every user-selected workspace / opened-file directory — refuse
-    // rather than hand the renderer an arbitrary local-file read.
-    return new Response("doxmind-asset: path outside workspace scope", { status: 403 });
-  }
-  return net.fetch(pathToFileURL(filePath).toString());
-}
-
-function pipeChild(child) {
-  const forward = (stream, sink) => {
-    stream.on("data", (chunk) => sink.write(`[sidecar] ${chunk}`));
-  };
-  if (child.stdout) forward(child.stdout, process.stdout);
-  if (child.stderr) forward(child.stderr, process.stderr);
-  child.on("exit", (code) => console.error(`[doxmind] sidecar exited (code ${code})`));
-}
-
 async function boot() {
-  // Set the Dock icon before the sidecar wait so the macOS-shaped logo shows
+  lockDownRendererPermissions(session.defaultSession);
+
+  // Set the Dock icon before renderer startup so the macOS-shaped logo shows
   // immediately. In a packaged build electron-builder's mac.icon (.icns) owns
-  // the bundle icon; this is the dev/unbundled path (mirrors Rust's
-  // apply_dock_icon via setApplicationIconImage on icons/icon.png).
+  // the bundle icon; this is the dev/unbundled path.
   if (process.platform === "darwin" && app.dock) {
     const dockIcon = nativeImage.createFromPath(APP_ICON);
     if (!dockIcon.isEmpty()) app.dock.setIcon(dockIcon);
@@ -424,18 +384,6 @@ async function boot() {
   }
   rendererServer = await startStaticServer(OUT_DIR);
 
-  const port = await findFreePort();
-  sidecarUrl = `http://127.0.0.1:${port}`;
-  sidecarChild = spawnSidecar({
-    repoRoot: REPO_ROOT,
-    port,
-    packaged: app.isPackaged,
-    resourcesPath: process.resourcesPath,
-  });
-  pipeChild(sidecarChild);
-  await waitForHealth(sidecarUrl);
-
-  protocol.handle("doxmind-asset", handleAsset);
   ipcMain.handle("shell:invoke", dispatch);
   windowLifecycle = createWindowLifecycle({
     deliver,
@@ -461,18 +409,14 @@ async function boot() {
   const first = pendingOpenPaths.length ? pendingOpenPaths.shift() : null;
   createWindow(first ? { kind: "file", path: first } : null);
 
-  // Background update checks (packaged builds only; no-op in dev).
-  require("./updater").initAutoUpdater({
-    // Push every updater transition to the renderers so the in-app
-    // "update ready" pill and Settings → About stay live.
-    broadcast: (state) => emitToAll("os://update-state", state),
-  });
+  // Configure renderer state delivery without contacting the update feed.
+  // The updater initializes and checks only after an explicit user action.
+  updater.configure({ broadcast: (state) => emitToAll("os://update-state", state) });
 }
 
 function enqueueOpenPath(raw) {
   const normalized = normalizeOpenPath(raw);
   if (normalized) {
-    assetScope.addRootForFile(normalized);
     pendingOpenPaths.push(normalized);
     return true;
   }
@@ -511,7 +455,8 @@ if (!app.requestSingleInstanceLock()) {
     if (!arg.startsWith("-")) enqueueOpenPath(arg);
   }
 
-  app.whenReady()
+  app
+    .whenReady()
     .then(boot)
     .catch((err) => {
       console.error("[doxmind] boot failed:", err);
@@ -534,14 +479,6 @@ app.on("before-quit", (event) => {
 });
 
 app.on("will-quit", () => {
-  if (sidecarChild) {
-    try {
-      sidecarChild.kill();
-    } catch {
-      // already gone
-    }
-    sidecarChild = null;
-  }
   if (rendererServer) {
     rendererServer.close();
     rendererServer = null;

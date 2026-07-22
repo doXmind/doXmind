@@ -1,5 +1,6 @@
 import { useFileStore } from "@/stores/file-store";
 import type { FileItem } from "@/types";
+import { invokeDesktop } from "@/lib/native-shell";
 
 // Build the absolute on-disk path for a FileItem so we can hand it to
 // `revealItemInDir`. The active storage root lives at `rootPath` regardless
@@ -18,18 +19,15 @@ export function absolutePathForFile(file: FileItem): string | null {
 export async function revealFileInFinder(file: FileItem): Promise<void> {
   const path = absolutePathForFile(file);
   if (!path) throw new Error("File has no absolute path to reveal");
-  const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
-  await revealItemInDir(path);
+  await invokeDesktop("shell_reveal_path", { path });
 }
 
 export async function openFileExternally(file: FileItem): Promise<void> {
   const path = absolutePathForFile(file);
   if (!path) throw new Error("File has no absolute path to open");
-  const { openPath } = await import("@tauri-apps/plugin-opener");
-  await openPath(path);
+  await invokeDesktop("shell_open_path", { path });
 }
 
 export async function revealPathInFinder(path: string): Promise<void> {
-  const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
-  await revealItemInDir(path);
+  await invokeDesktop("shell_reveal_path", { path });
 }

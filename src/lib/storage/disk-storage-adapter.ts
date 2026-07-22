@@ -1,25 +1,27 @@
 import type {
   AttachmentInspection,
   AttachmentRecoveryRead,
-  AttachmentRecoverySource,
-  CorrelationReport,
   DocumentContent,
   DocumentHandle,
   DocumentMeta,
   DocumentOutlineItem,
-  DocumentSourceState,
-  ExcelDocStateRead,
-  ExcelEditorState,
-  PdfDocStateRead,
-  PdfEditorState,
+  FolderRelocationInput,
+  FolderRelocationResult,
   WorkspaceDocumentType,
   MarkdownSearchOptions,
   MarkdownSearchResults,
+  PageRelocationInput,
+  PageRelocationResult,
+  PageRecoveryInspection,
+  PageRecoveryRead,
   StorageAdapter,
   StorageCreateInput,
   StorageImportInput,
   StorageWriteInput,
   WorkspaceEntry,
+  WorkspaceAssetImportInput,
+  WorkspaceAssetImportResult,
+  WorkspaceAssetRead,
   WorkspaceIndexEntry,
   WorkspaceIndexQuery,
 } from "./types";
@@ -27,13 +29,13 @@ import { ImportError } from "./types";
 import { entriesToWorkspaceIndex } from "./search";
 import { apiUrl } from "@/lib/api/base";
 import { perfAsync } from "@/lib/perf";
-import { unwrapCjkMath, unwrapMathInTableCells } from "@/lib/markdown";
+import { hasDesktopBridge, invokeDesktop, isElectronRenderer } from "@/lib/native-shell";
 
-type TauriInvoker = <T>(command: string, payload: Record<string, unknown>) => Promise<T>;
+export type DesktopInvoker = <T>(command: string, payload: Record<string, unknown>) => Promise<T>;
 
 export interface DiskStorageAdapterOptions {
   root?: string | null;
-  invoke?: TauriInvoker;
+  invoke?: DesktopInvoker;
 }
 
 interface WorkspaceScanResultDto {
@@ -48,29 +50,29 @@ interface WorkspaceDocumentDto {
   name: string;
   title?: string | null;
   documentType?: WorkspaceDocumentType;
-  hasSidecar: boolean;
   favorite?: boolean | null;
 }
 
-// Polymorphic return shape for `doc_move`. The Tauri command and the
-// browser-dev fallback both tag the result with `kind` so the frontend
-// narrows correctly per source type — see #66 for the consolidation.
-type MoveResultDto =
-  | ({ kind: "document" } & WorkspaceDocumentDto)
-  | { kind: "folder"; path: string };
+// `doc_move` is an Attachment-only compatibility command. Pages and folders
+// cross the topology-aware relocation Interfaces below instead.
+type MoveResultDto = { kind: "document" } & WorkspaceDocumentDto;
 
 interface DocReadResultDto {
-  html: string;
-  editorHtml?: string;
-  browsingHtml?: string;
   markdown: string;
+  revision?: string | null;
   meta: DocumentMeta;
-  extras?: unknown;
-  source: "sidecar" | "markdown" | "empty";
-  sourceState?: DocumentSourceState;
   outline?: DocumentOutlineItem[];
-  browsingRendererVersion?: string;
-  correlation?: CorrelationReport | null;
+}
+
+interface PageRelocationResultDto {
+  document: WorkspaceDocumentDto;
+  revision: string;
+  writes: Array<{ path: string; revision: string }>;
+}
+
+interface FolderRelocationResultDto {
+  path: string;
+  writes: Array<{ path: string; revision: string }>;
 }
 
 interface MarkdownSearchResultDto {
@@ -88,11 +90,11 @@ export class DiskStorageAdapter implements StorageAdapter {
   readonly mode = "disk" as const;
 
   private root: string | null;
-  private readonly invoke: TauriInvoker;
+  private readonly invoke: DesktopInvoker;
 
   constructor(options: DiskStorageAdapterOptions = {}) {
     this.root = options.root ?? null;
-    this.invoke = options.invoke ?? invokeTauri;
+    this.invoke = options.invoke ?? invokeWorkspace;
   }
 
   setRoot(root: string | null): void {
@@ -116,42 +118,38 @@ export class DiskStorageAdapter implements StorageAdapter {
       "doxmind.adapter.docRead",
       () =>
         this.invoke<DocReadResultDto>("doc_read", {
-          path: this.absolutePath(handle),
+          root: this.requireRoot(),
+          path: requireHandlePath(handle),
         }),
       { path: requireHandlePath(handle) }
     );
-    const editorHtml = unwrapCjkMath(unwrapMathInTableCells(result.editorHtml ?? result.html));
-    const browsingHtml = result.browsingHtml ?? editorHtml;
+    const meta = normalizePageMeta(result.meta, handle.id);
     return {
-      handle: this.handleFromRead(handle, result),
-      name: basename(handle.path || handle.relPath || result.meta.title || "Untitled.md"),
-      html: editorHtml,
-      editorHtml,
-      browsingHtml,
+      handle: this.handleFromRead(handle),
+      name: basename(handle.path || handle.relPath || meta.title || "Untitled.md"),
       markdown: result.markdown,
-      meta: result.meta,
-      extras: result.extras,
-      source: result.source,
-      sourceState: result.sourceState ?? legacySourceToState(result.source),
+      revision: result.revision,
+      meta,
       outline: result.outline ?? [],
-      browsingRendererVersion: result.browsingRendererVersion,
       documentType: docType,
-      updatedAt: result.meta.updated || new Date().toISOString(),
-      correlation: result.correlation ?? null,
+      updatedAt: meta.updated || new Date().toISOString(),
     };
   }
 
-  async statBinary(handle: DocumentHandle): Promise<{ mtimeNs: string; size: number } | null> {
-    try {
-      return await this.invoke<{ mtimeNs: string; size: number }>("workspace_stat_binary", {
-        root: this.requireRoot(),
-        path: requireHandlePath(handle),
-      });
-    } catch {
-      // The HTTP fallback (browser dev) may not implement stat. Returning
-      // null means "can't tell, assume cache is valid"; cache hit proceeds.
-      return null;
-    }
+  async readAsset(path: string): Promise<WorkspaceAssetRead> {
+    return this.invoke<WorkspaceAssetRead>("workspace_read_asset", {
+      root: this.requireRoot(),
+      path,
+    });
+  }
+
+  async importAsset(input: WorkspaceAssetImportInput): Promise<WorkspaceAssetImportResult> {
+    return this.invoke<WorkspaceAssetImportResult>("workspace_import_asset", {
+      root: this.requireRoot(),
+      name: input.name,
+      bytes: input.bytes,
+      ...(input.destinationDir === undefined ? {} : { destinationDir: input.destinationDir }),
+    });
   }
 
   async inspectAttachment(handle: DocumentHandle): Promise<AttachmentInspection> {
@@ -161,103 +159,24 @@ export class DiskStorageAdapter implements StorageAdapter {
     });
   }
 
-  async readAttachmentRecovery(
-    handle: DocumentHandle,
-    source: AttachmentRecoverySource
-  ): Promise<AttachmentRecoveryRead> {
-    return this.invoke<AttachmentRecoveryRead>("workspace_read_attachment_recovery", {
-      root: this.requireRoot(),
-      path: requireHandlePath(handle),
-      source,
-    });
-  }
-
-  async readBinary(handle: DocumentHandle): Promise<Uint8Array> {
-    // The Tauri command returns `tauri::ipc::Response` which surfaces here
-    // as an `ArrayBuffer` — that's the fast path (raw binary IPC, no JSON).
-    // The HTTP fallback (`invokeWorkspaceHttp`) hits a FastAPI endpoint that
-    // still returns a JSON `number[]`; we accept either shape.
-    const result = await perfAsync(
-      "doxmind.adapter.readBinary",
-      () =>
-        this.invoke<ArrayBuffer | number[] | Uint8Array>("workspace_read_binary", {
-          root: this.requireRoot(),
-          path: requireHandlePath(handle),
-        }),
-      { path: requireHandlePath(handle) }
-    );
-    if (result instanceof Uint8Array) return result;
-    if (result instanceof ArrayBuffer) return new Uint8Array(result);
-    return new Uint8Array(result);
-  }
-
-  async readPdfEditorState(handle: DocumentHandle): Promise<PdfEditorState | null> {
-    return this.invoke<PdfEditorState | null>("workspace_read_pdf_editor_state", {
+  async inspectPageRecovery(handle: DocumentHandle): Promise<PageRecoveryInspection> {
+    return this.invoke<PageRecoveryInspection>("workspace_inspect_page_recovery", {
       root: this.requireRoot(),
       path: requireHandlePath(handle),
     });
   }
 
-  async writePdfEditorState(handle: DocumentHandle, state: PdfEditorState): Promise<void> {
-    await this.invoke<void>("workspace_write_pdf_editor_state", {
-      root: this.requireRoot(),
-      path: requireHandlePath(handle),
-      payload: state,
-    });
-  }
-
-  async readExcelEditorState(handle: DocumentHandle): Promise<ExcelEditorState | null> {
-    return this.invoke<ExcelEditorState | null>("workspace_read_excel_editor_state", {
+  async readPageRecovery(handle: DocumentHandle): Promise<PageRecoveryRead> {
+    return this.invoke<PageRecoveryRead>("workspace_read_page_recovery", {
       root: this.requireRoot(),
       path: requireHandlePath(handle),
     });
   }
 
-  async writeExcelEditorState(handle: DocumentHandle, state: ExcelEditorState): Promise<void> {
-    await this.invoke<void>("workspace_write_excel_editor_state", {
+  async readAttachmentRecovery(handle: DocumentHandle): Promise<AttachmentRecoveryRead | null> {
+    return this.invoke<AttachmentRecoveryRead | null>("workspace_read_attachment_recovery", {
       root: this.requireRoot(),
       path: requireHandlePath(handle),
-      payload: state,
-    });
-  }
-
-  async readPdfDocState(handle: DocumentHandle): Promise<PdfDocStateRead | null> {
-    return this.invoke<PdfDocStateRead | null>("workspace_read_pdf_doc_state", {
-      root: this.requireRoot(),
-      path: requireHandlePath(handle),
-    });
-  }
-
-  async writePdfParsedCache(
-    handle: DocumentHandle,
-    sourceHash: string,
-    parsed: unknown
-  ): Promise<void> {
-    await this.invoke<void>("workspace_write_pdf_parsed_cache", {
-      root: this.requireRoot(),
-      path: requireHandlePath(handle),
-      sourceHash,
-      parsed,
-    });
-  }
-
-  async readExcelDocState(handle: DocumentHandle): Promise<ExcelDocStateRead | null> {
-    return this.invoke<ExcelDocStateRead | null>("workspace_read_excel_doc_state", {
-      root: this.requireRoot(),
-      path: requireHandlePath(handle),
-    });
-  }
-
-  async writeExcelParsedCache(
-    handle: DocumentHandle,
-    sourceHash: string,
-    parsed: unknown
-  ): Promise<void> {
-    await this.invoke<void>("workspace_write_excel_parsed_cache", {
-      root: this.requireRoot(),
-      path: requireHandlePath(handle),
-      sourceHash,
-      parsed,
     });
   }
 
@@ -267,15 +186,15 @@ export class DiskStorageAdapter implements StorageAdapter {
       throw new Error("Page write supports Markdown only; open attachments externally instead");
     }
 
-    // Partial payload: only include keys the caller actually wants to update.
-    // Meta-only writes (cover/icon/etc.) must NOT send empty html/markdown,
-    // or the server will overwrite the body with "" and wipe the document.
+    // Page persistence is Markdown-only. The returned Markdown remains the
+    // sole active in-memory Page state.
     const payload: Record<string, unknown> = {};
-    if (content.html !== undefined) payload.html = content.html;
     if (content.markdown !== undefined) payload.markdown = content.markdown;
     if (content.name !== undefined) payload.name = content.name;
     if (content.meta !== undefined) payload.meta = content.meta;
-    if (content.extras !== undefined) payload.extras = content.extras;
+    if (content.expectedRevision !== undefined) {
+      payload.expectedRevision = content.expectedRevision;
+    }
 
     const result = await this.invoke<DocReadResultDto>("doc_write_workspace", {
       root: this.requireRoot(),
@@ -283,25 +202,17 @@ export class DiskStorageAdapter implements StorageAdapter {
       payload,
     });
 
-    const nextHandle = this.handleFromRead(handle, result);
-    const editorHtml = result.editorHtml ?? result.html;
-    const browsingHtml = result.browsingHtml ?? editorHtml;
+    const nextHandle = this.handleFromRead(handle);
+    const meta = normalizePageMeta(result.meta, handle.id);
     return {
       handle: nextHandle,
-      name: basename(handle.path || handle.relPath || result.meta.title || "Untitled.md"),
-      html: editorHtml,
-      editorHtml,
-      browsingHtml,
+      name: basename(handle.path || handle.relPath || meta.title || "Untitled.md"),
       markdown: result.markdown,
-      meta: result.meta,
-      extras: result.extras,
-      source: result.source,
-      sourceState: result.sourceState ?? legacySourceToState(result.source),
+      revision: result.revision,
+      meta,
       outline: result.outline ?? [],
-      browsingRendererVersion: result.browsingRendererVersion,
       documentType: handle.documentType ?? documentTypeFromPath(requireHandlePath(handle)),
-      updatedAt: result.meta.updated || new Date().toISOString(),
-      correlation: result.correlation ?? null,
+      updatedAt: meta.updated || new Date().toISOString(),
     };
   }
 
@@ -335,6 +246,7 @@ export class DiskStorageAdapter implements StorageAdapter {
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
     const meta: DocumentMeta = {
+      ...input.content?.meta,
       id,
       title: stripMarkdownExtension(basename(path)),
       created: now,
@@ -344,10 +256,8 @@ export class DiskStorageAdapter implements StorageAdapter {
       root: this.requireRoot(),
       payload: {
         path,
-        html: input.content?.html ?? "",
         markdown: input.content?.markdown ?? "",
         meta,
-        extras: null,
       },
     });
     return entryFromDocument(document);
@@ -357,16 +267,16 @@ export class DiskStorageAdapter implements StorageAdapter {
     if (!input.srcPath && !input.bytes) {
       throw new ImportError("no-source", "importExternal requires either srcPath or bytes");
     }
-    if (!/\.(md|pdf|xlsx|csv)$/i.test(input.name)) {
+    if (!/\.(md|markdown|pdf|xlsx|csv)$/i.test(input.name)) {
       throw new ImportError(
         "bad-extension",
-        `only .md, .pdf, .xlsx, .csv are supported for external import: ${input.name}`
+        `only .md, .markdown, .pdf, .xlsx, .csv are supported for external import: ${input.name}`
       );
     }
-    if (input.mode === "replace" && !/\.md$/i.test(input.name)) {
+    if (input.mode === "replace" && !/\.(md|markdown)$/i.test(input.name)) {
       throw new ImportError(
         "replace-not-allowed",
-        `replace is only available for Markdown pages: ${input.name}`
+        `replace is available only for Markdown Pages: ${input.name}`
       );
     }
     const destFolder = input.parent ? requireHandlePath(input.parent) : "";
@@ -393,33 +303,67 @@ export class DiskStorageAdapter implements StorageAdapter {
     }
   }
 
-  async rename(handle: DocumentHandle, name: string): Promise<WorkspaceEntry> {
-    const currentPath = requireHandlePath(handle);
-    const newPath = siblingPath(
-      currentPath,
-      handle.kind === "folder" ? name : renameLeafPreservingExtension(currentPath, name)
-    );
-    if (newPath === currentPath) {
-      return handle.kind === "folder"
-        ? folderEntryFromPath(currentPath)
-        : entryFromDocument({
-            id: handle.id,
-            idSource: handle.id.startsWith("path:") ? "path" : "frontmatter",
-            path: currentPath,
-            name: basename(currentPath),
-            title: stripMarkdownExtension(basename(currentPath)),
-            hasSidecar: false,
-          });
+  async relocatePage(
+    handle: DocumentHandle,
+    relocation: PageRelocationInput
+  ): Promise<PageRelocationResult> {
+    const oldPath = requireHandlePath(handle);
+    const docType = handle.documentType ?? documentTypeFromPath(oldPath);
+    if (docType !== "markdown") {
+      throw new Error("Page relocation supports Markdown only");
     }
-    if (handle.kind === "folder") {
-      await this.invoke<void>("workspace_rename_folder", {
-        root: this.requireRoot(),
-        oldPath: currentPath,
-        newPath,
-      });
-      return folderEntryFromPath(newPath);
-    }
+    const result = await this.invoke<PageRelocationResultDto>("workspace_relocate_page", {
+      root: this.requireRoot(),
+      oldPath,
+      newPath: relocation.newPath,
+      expectedRevision: relocation.expectedRevision,
+      checks: relocation.checks,
+      ...(relocation.movedMarkdown !== undefined && {
+        movedMarkdown: relocation.movedMarkdown,
+      }),
+      writes: relocation.writes,
+    });
+    return {
+      entry: entryFromDocument(result.document),
+      revision: result.revision,
+      writes: result.writes,
+    };
+  }
 
+  async relocateFolder(
+    handle: DocumentHandle,
+    relocation: FolderRelocationInput
+  ): Promise<FolderRelocationResult> {
+    if (handle.kind !== "folder") {
+      throw new Error("Folder relocation requires a folder handle");
+    }
+    return this.invoke<FolderRelocationResultDto>("workspace_relocate_folder", {
+      root: this.requireRoot(),
+      oldPath: requireHandlePath(handle),
+      newPath: relocation.newPath,
+      checks: relocation.checks,
+      writes: relocation.writes,
+    });
+  }
+
+  async renameAttachment(handle: DocumentHandle, name: string): Promise<WorkspaceEntry> {
+    const currentPath = requireHandlePath(handle);
+    if (handle.kind === "folder") {
+      throw new Error("Folder rename must use relocateFolder so Page links remain valid");
+    }
+    if ((handle.documentType ?? documentTypeFromPath(currentPath)) === "markdown") {
+      throw new Error("Page rename must use relocatePage so Page links remain valid");
+    }
+    const newPath = siblingPath(currentPath, renameLeafPreservingExtension(currentPath, name));
+    if (newPath === currentPath) {
+      return entryFromDocument({
+        id: handle.id,
+        idSource: handle.id.startsWith("path:") ? "path" : "frontmatter",
+        path: currentPath,
+        name: basename(currentPath),
+        title: stripMarkdownExtension(basename(currentPath)),
+      });
+    }
     const document = await this.invoke<WorkspaceDocumentDto>("doc_rename", {
       root: this.requireRoot(),
       oldPath: currentPath,
@@ -428,49 +372,32 @@ export class DiskStorageAdapter implements StorageAdapter {
     return entryFromDocument(document);
   }
 
-  async move(handle: DocumentHandle, parent: DocumentHandle | null): Promise<WorkspaceEntry> {
+  async moveAttachment(
+    handle: DocumentHandle,
+    parent: DocumentHandle | null
+  ): Promise<WorkspaceEntry> {
     const currentPath = requireHandlePath(handle);
+    if (handle.kind === "folder") {
+      throw new Error("Folder move must use relocateFolder so Page links remain valid");
+    }
+    if ((handle.documentType ?? documentTypeFromPath(currentPath)) === "markdown") {
+      throw new Error("Page move must use relocatePage so Page links remain valid");
+    }
     const newPath = childPath(parent, basename(currentPath));
     if (newPath === currentPath) {
-      return handle.kind === "folder"
-        ? folderEntryFromPath(currentPath)
-        : entryFromDocument({
-            id: handle.id,
-            idSource: handle.id.startsWith("path:") ? "path" : "frontmatter",
-            path: currentPath,
-            name: basename(currentPath),
-            title: stripMarkdownExtension(basename(currentPath)),
-            hasSidecar: false,
-          });
-    }
-    // `doc_move` is polymorphic — it handles both documents (returns a doc
-    // DTO with metadata for in-place refresh) and folders (returns just the
-    // new path; metadata is rebuilt by the next scan). Renames keep using the
-    // dedicated rename commands because in-place rename has different
-    // semantics from cross-parent move at the UI layer.
-    if (handle.kind === "folder") {
-      const result = await this.invoke<MoveResultDto>("doc_move", {
-        root: this.requireRoot(),
-        oldPath: currentPath,
-        newPath,
+      return entryFromDocument({
+        id: handle.id,
+        idSource: handle.id.startsWith("path:") ? "path" : "frontmatter",
+        path: currentPath,
+        name: basename(currentPath),
+        title: stripMarkdownExtension(basename(currentPath)),
       });
-      // The Tauri/server backend may return either shape; we only care that
-      // the destination path matches what we asked for.
-      const destinationPath = result.kind === "folder" ? result.path : result.path;
-      return folderEntryFromPath(destinationPath);
     }
-
     const result = await this.invoke<MoveResultDto>("doc_move", {
       root: this.requireRoot(),
       oldPath: currentPath,
       newPath,
     });
-    if (result.kind === "folder") {
-      // Defensive: should never happen for document handles, but guard the
-      // narrowing so a backend regression surfaces here rather than breaking
-      // entry refresh downstream.
-      throw new Error(`doc_move returned folder result for document handle: ${currentPath}`);
-    }
     return entryFromDocument(result);
   }
 
@@ -539,17 +466,14 @@ export class DiskStorageAdapter implements StorageAdapter {
     return this.root;
   }
 
-  private absolutePath(handle: DocumentHandle): string {
-    const relPath = requireHandlePath(handle);
-    return joinPath(this.requireRoot(), relPath);
-  }
-
-  private handleFromRead(handle: DocumentHandle, result: DocReadResultDto): DocumentHandle {
+  private handleFromRead(handle: DocumentHandle): DocumentHandle {
     const relPath = handle.relPath ?? handle.path ?? null;
     return {
       ...handle,
       mode: "disk",
-      id: result.meta.id || handle.id,
+      // The scan resolves duplicate authored ids to deterministic path ids.
+      // A body read must never promote that safe handle back to the duplicate.
+      id: handle.id,
       kind: "document",
       documentType: handle.documentType ?? documentTypeFromPath(relPath ?? ""),
       path: relPath,
@@ -558,19 +482,37 @@ export class DiskStorageAdapter implements StorageAdapter {
   }
 }
 
-async function invokeTauri<T>(command: string, payload: Record<string, unknown>): Promise<T> {
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    return await invoke<T>(command, payload);
-  } catch (error) {
-    return invokeWorkspaceHttp<T>(command, payload, error);
+function normalizePageMeta(meta: DocumentMeta, fallbackId: string): DocumentMeta {
+  return { ...meta, id: validPageId(meta.id) ?? fallbackId };
+}
+
+function validPageId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const id = value.trim();
+  return id || null;
+}
+
+async function invokeWorkspace<T>(command: string, payload: Record<string, unknown>): Promise<T> {
+  if (!hasDesktopBridge()) {
+    if (process.env.NODE_ENV === "production" || isElectronRenderer()) {
+      throw new Error("Electron desktop bridge unavailable; refusing browser HTTP fallback");
+    }
+    if (command === "workspace_import_asset") {
+      throw new Error("Image asset import requires the Electron desktop app");
+    }
+    return invokeWorkspaceHttp<T>(command, payload);
   }
+
+  // Once a desktop bridge exists, every command error is authoritative. In
+  // particular, revision conflicts must reach the editor unchanged so it can
+  // pause saving and protect both versions instead of retrying an unrelated
+  // localhost transport.
+  return invokeDesktop<T>(command, payload);
 }
 
 async function invokeWorkspaceHttp<T>(
   command: string,
-  payload: Record<string, unknown>,
-  tauriError: unknown
+  payload: Record<string, unknown>
 ): Promise<T> {
   const response = await fetch(apiUrl("/api/workspace/invoke"), {
     method: "POST",
@@ -584,10 +526,8 @@ async function invokeWorkspaceHttp<T>(
       const body = await response.json();
       const detail = body?.detail;
       // FastAPI HTTPException(detail=...) accepts either a string or a
-      // structured dict. The structured form (e.g. `{"code": "document_read_only", ...}`)
-      // must be serialized to a string that downstream matchers like
-      // `isReadOnlyDocumentError` can substring-search, otherwise the
-      // implicit `String(detail)` would render it as "[object Object]".
+      // structured dict. Preserve structured details instead of collapsing
+      // them to "[object Object]".
       if (typeof detail === "string") {
         message = detail;
       } else if (detail && typeof detail === "object") {
@@ -601,10 +541,10 @@ async function invokeWorkspaceHttp<T>(
         message = body.error.message;
       }
     } catch {
-      // Keep the generic message when the local sidecar cannot return JSON.
+      // Keep the generic message when the local browser-development service
+      // cannot return JSON.
     }
-    const fallback = tauriError instanceof Error ? `; Tauri: ${tauriError.message}` : "";
-    throw new Error(`${message}${fallback}`);
+    throw new Error(message);
   }
 
   return response.json() as Promise<T>;
@@ -708,10 +648,6 @@ function siblingPath(path: string, name: string): string {
   return parent ? `${parent}/${trimSlashes(name)}` : trimSlashes(name);
 }
 
-function joinPath(root: string, relPath: string): string {
-  return `${root.replace(/\/+$/, "")}/${trimSlashes(relPath)}`;
-}
-
 function dirname(path: string): string {
   const parts = trimSlashes(path).split("/");
   parts.pop();
@@ -733,11 +669,11 @@ function ensureMarkdownExtension(name: string): string {
 // A document rename changes only the base name; the file keeps its original
 // type. The new name may arrive with the wrong extension (the sidebar's display
 // name has none, so callers default it to ".md") — strip whatever document
-// extension came in and re-apply the source file's, so a .pdf/.xlsx/.csv can never
+// extension came in and re-apply the source file's, so an attachment can never
 // be collapsed into a .md.
 function renameLeafPreservingExtension(currentPath: string, name: string): string {
   const sourceExt =
-    basename(currentPath).match(/\.(md|markdown|pdf|xlsx|xlsm|csv)$/i)?.[0] ?? ".md";
+    basename(currentPath).match(/\.(md|markdown|pdf|xlsx|xlsm|csv|html?)$/i)?.[0] ?? ".md";
   return `${stripDocumentExtension(basename(name))}${sourceExt}`;
 }
 
@@ -746,19 +682,13 @@ function stripMarkdownExtension(name: string): string {
 }
 
 function stripDocumentExtension(name: string): string {
-  return name.replace(/\.(md|markdown|pdf|xlsx|xlsm|csv)$/i, "");
+  return name.replace(/\.(md|markdown|pdf|xlsx|xlsm|csv|html?)$/i, "");
 }
 
 function documentTypeFromPath(path: string): WorkspaceDocumentType {
+  if (/\.(md|markdown)$/i.test(path)) return "markdown";
   if (/\.pdf$/i.test(path)) return "pdf";
   if (/\.(xlsx|xlsm|csv)$/i.test(path)) return "excel";
   if (/\.html?$/i.test(path)) return "html";
-  if (/\.(md|markdown)$/i.test(path)) return "markdown";
-  return "other";
-}
-
-function legacySourceToState(source: DocReadResultDto["source"]): DocumentSourceState {
-  if (source === "sidecar") return "sidecar_fresh";
-  if (source === "empty") return "empty";
-  return "sidecar_missing";
+  throw new Error(`Unsupported workspace document type: ${path}`);
 }

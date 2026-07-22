@@ -3,6 +3,11 @@
 Status: accepted
 Date: 2026-07-20
 
+Update (2026-07-21): [ADR-0012](0012-markdown-source-block-editor.md) refines
+decision 6 from “Sidecar may be a replaceable Page cache” to “normal Page
+operations do not use a Sidecar”; existing Sidecars remain legacy recovery
+artifacts.
+
 ## 背景
 
 doXmind 已经在 ADR-0001 中决定 Markdown 是唯一 first-class Document，但产品

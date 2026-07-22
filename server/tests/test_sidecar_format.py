@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import re
 
-from services.sidecar_io import markdown_to_html
-from services.synthetic_document import _placeholder_line
+from services.markdown_export import markdown_to_html
+
+
+def _placeholder_line(block_type: str, block_id: str, rel_src: str) -> str:
+    return f'<!-- {block_type} id="{block_id}" src="{rel_src}" -->'
 
 
 def test_canonical_block_placeholder_survives_markdown_rendering() -> None:
@@ -18,8 +21,7 @@ def test_canonical_block_placeholder_survives_markdown_rendering() -> None:
 
     # The placeholder must survive as a standalone block-level HTML comment.
     # If a future renderer change wrapped it inside <p>...</p> (or any other
-    # element), TipTap's parseHTML would not round-trip it cleanly, so guard
-    # against that here.
+    # element), the legacy recovery parser would not round-trip it cleanly.
     assert not re.search(
         r"<[^/!][^>]*>[^<]*" + re.escape(placeholder),
         rendered,

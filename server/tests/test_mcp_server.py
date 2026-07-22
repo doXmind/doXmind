@@ -78,3 +78,23 @@ async def test_doc_resource_path_based_id_with_colon(tmp_path, monkeypatch):
 
     contents = await server.mcp.read_resource(f"doc:///{listing['id']}")
     assert "no sidecar here" in contents[0].content
+
+
+async def test_html_doc_resource_is_read_only_attachment(tmp_path, monkeypatch):
+    monkeypatch.setenv("DOXMIND_WORKSPACE_ROOT", str(tmp_path))
+    (tmp_path / "reference.html").write_text("<h1>Reference</h1>\n", encoding="utf-8")
+
+    listing = next(
+        d for d in server.list_workspace()["documents"] if d["path"].endswith("reference.html")
+    )
+    monkeypatch.setattr(
+        server.documents,
+        "read_document_in_root",
+        lambda *_args, **_kwargs: pytest.fail("HTML Attachment reached the Markdown Page reader"),
+    )
+
+    contents = await server.mcp.read_resource(f"doc:///{listing['id']}")
+
+    assert contents[0].content == (
+        "html Attachment at reference.html — read-only in doXmind; open it externally."
+    )

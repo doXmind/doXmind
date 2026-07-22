@@ -16,15 +16,16 @@ env:
 
 jobs:
   frontend:
-    name: Frontend (lint + type-check + build) — ${{ matrix.os }}
+    name: Frontend (format + lint + test + build) — ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         # Windows is intentionally not run on every push/PR — lint/type-check/
         # build are OS-independent and Windows runners are slow. Validate the
-        # Windows desktop build on demand via the /build-windows PR comment
-        # (see desktop.yml). Re-add windows-latest here to restore matrix CI.
+        # Windows Electron build on demand via the manual
+        # release-windows.yml workflow. Re-add windows-latest here to restore
+        # matrix CI.
         os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
@@ -33,9 +34,32 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
+      - run: npm run format:check
       - run: npm run lint
       - run: npm run type-check
+      - run: npm run test -- --run
+      - run: npm run electron:test-native
       - run: npm run build
+      - run: npm run electron:smoke
+
+  e2e:
+    name: Native Markdown editor (Chromium E2E)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: npm ci
+      - run: python -m pip install -r server/requirements.txt
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          DOXMIND_PYTHON: python
 
   backend:
     name: Backend (ruff + pytest) — ${{ matrix.os }}
@@ -45,8 +69,9 @@ jobs:
       matrix:
         # Windows is intentionally not run on every push/PR — lint/type-check/
         # build are OS-independent and Windows runners are slow. Validate the
-        # Windows desktop build on demand via the /build-windows PR comment
-        # (see desktop.yml). Re-add windows-latest here to restore matrix CI.
+        # Windows Electron build on demand via the manual
+        # release-windows.yml workflow. Re-add windows-latest here to restore
+        # matrix CI.
         os: [ubuntu-latest]
     defaults:
       run:
@@ -59,4 +84,5 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -r requirements.txt ruff
       - run: ruff check .
+      - run: ruff format --check .
       - run: pytest -q

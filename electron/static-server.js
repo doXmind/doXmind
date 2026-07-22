@@ -5,17 +5,22 @@
  *
  * The export emits ABSOLUTE asset URLs (`/_next/static/...`), so loading it
  * over `file://` 404s on every chunk — the renderer must run at an http
- * origin. Serving from `http://127.0.0.1:<port>` also makes the page origin
- * match the sidecar's CORS allowlist (`^https?://(localhost|127.0.0.1)...$`)
- * for free, so no server change is needed.
+ * origin. The listener binds only to loopback and serves renderer assets; it
+ * is not a content backend or child process.
  *
  * Pure Node (no `electron` import) so it can be exercised headlessly by
  * scripts/electron-smoke.mjs.
  */
 
 const http = require("node:http");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+
+const CONTENT_SECURITY_POLICY_TAIL =
+  "connect-src 'self'; img-src 'self' data: blob:; " +
+  "font-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; " +
+  "base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -47,6 +52,25 @@ function isFile(p) {
   }
 }
 
+function isWithin(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
+}
+
+function contentSecurityPolicy(file) {
+  const hashes = new Set();
+  if (path.extname(file).toLowerCase() === ".html") {
+    const html = fs.readFileSync(file, "utf8");
+    const inlineScript = /<script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script>/gi;
+    for (const match of html.matchAll(inlineScript)) {
+      const digest = crypto.createHash("sha256").update(match[1]).digest("base64");
+      hashes.add(`'sha256-${digest}'`);
+    }
+  }
+  const scriptSources = ["'self'", ...hashes].join(" ");
+  return `default-src 'self'; script-src ${scriptSources}; ${CONTENT_SECURITY_POLICY_TAIL}`;
+}
+
 /**
  * Resolve a request path to a file on disk, mirroring Next's static-export
  * routing: exact file -> `<dir>/index.html` -> `<path>.html` -> nearest
@@ -58,33 +82,69 @@ function resolveFile(outDir, urlPath) {
   try {
     pathname = decodeURIComponent(urlPath.split("?")[0].split("#")[0]);
   } catch {
-    pathname = urlPath.split("?")[0];
+    return null;
   }
-  const segments = pathname.split("/").filter((s) => s && s !== "." && s !== "..");
-  const base = path.join(outDir, ...segments);
+  if (pathname.includes("\0")) return null;
 
-  if (isFile(base)) return base;
-  if (isFile(path.join(base, "index.html"))) return path.join(base, "index.html");
-  if (isFile(`${base}.html`)) return `${base}.html`;
+  // Treat both separators as path boundaries even on POSIX. Electron packages
+  // run on Windows too, where a decoded `%5C` is a real directory separator.
+  const segments = pathname.replaceAll("\\", "/").split("/").filter(Boolean);
+  if (segments.some((segment) => segment === "." || segment === "..")) return null;
+
+  const root = path.resolve(outDir);
+  let realRoot;
+  try {
+    realRoot = fs.realpathSync(root);
+  } catch {
+    return null;
+  }
+
+  const safeFile = (candidate) => {
+    const resolved = path.resolve(candidate);
+    if (!isWithin(root, resolved) || !isFile(resolved)) return null;
+    try {
+      if (!isWithin(realRoot, fs.realpathSync(resolved))) return null;
+    } catch {
+      return null;
+    }
+    return resolved;
+  };
+
+  const base = path.join(root, ...segments);
+
+  const exact = safeFile(base);
+  if (exact) return exact;
+  const directoryIndex = safeFile(path.join(base, "index.html"));
+  if (directoryIndex) return directoryIndex;
+  const html = safeFile(`${base}.html`);
+  if (html) return html;
 
   for (let i = segments.length - 1; i >= 0; i--) {
-    const candidate = path.join(outDir, ...segments.slice(0, i), "index.html");
-    if (isFile(candidate)) return candidate;
+    const candidate = safeFile(path.join(root, ...segments.slice(0, i), "index.html"));
+    if (candidate) return candidate;
   }
 
-  const rootIndex = path.join(outDir, "index.html");
-  return isFile(rootIndex) ? rootIndex : null;
+  return safeFile(path.join(root, "index.html"));
 }
 
 function startStaticServer(outDir) {
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Referrer-Policy", "no-referrer");
+      res.setHeader("X-Frame-Options", "DENY");
+      res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
       const file = resolveFile(outDir, req.url || "/");
       if (!file) {
+        res.setHeader(
+          "Content-Security-Policy",
+          `default-src 'self'; script-src 'self'; ${CONTENT_SECURITY_POLICY_TAIL}`
+        );
         res.statusCode = 404;
         res.end("Not found");
         return;
       }
+      res.setHeader("Content-Security-Policy", contentSecurityPolicy(file));
       const type = MIME[path.extname(file).toLowerCase()] || "application/octet-stream";
       res.setHeader("Content-Type", type);
       // Hashed `/_next/` assets are immutable; HTML must always revalidate.

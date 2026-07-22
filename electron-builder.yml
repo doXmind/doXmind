@@ -1,8 +1,7 @@
-# electron-builder config for the Electron shell (replaces tauri.bundle.conf.json
-# once the migration completes).
+# electron-builder config for the primary Electron release shell.
 #
 # Build:  npm run dist:electron
-#         (build:sidecar:electron + next build run first — see package.json)
+#         (the Next static export is built first — see package.json)
 # Local unsigned test pack:
 #         CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --publish never
 #
@@ -21,6 +20,10 @@ copyright: doXmind
 directories:
   output: dist-electron
 
+# Electron's stock macOS plist declares arbitrary network and device access.
+# Rewrite it after packing and before signing to keep only loopback renderer HTTP.
+afterPack: electron/harden-info-plist.js
+
 # Notarize the signed .app before it is zipped (see electron/notarize.js).
 afterSign: electron/notarize.js
 
@@ -29,17 +32,12 @@ afterSign: electron/notarize.js
 files:
   - electron/**/*
   - out/**/*
-  - src-tauri/icons/icon.png
-  - src-tauri/icons/tray-icon-template.png
+  - electron/assets/icon.png
+  - electron/assets/tray-icon-template.png
   - package.json
   - "!node_modules/**/*"
-
-extraResources:
-  # PyInstaller one-dir sidecar (scripts/build-sidecar.mjs --electron) →
-  # resources/doxmind-server/doxmind-server, the path electron/sidecar.js
-  # expects in packaged mode.
-  - from: server/dist/doxmind-server
-    to: doxmind-server
+  - "!electron/harden-info-plist.js"
+  - "!electron/notarize.js"
 
 mac:
   category: public.app-category.productivity
@@ -48,7 +46,7 @@ mac:
       arch: [arm64]
     - target: zip
       arch: [arm64]
-  icon: src-tauri/icons/icon.icns
+  icon: electron/assets/icon.icns
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: electron/entitlements.mac.plist
@@ -78,7 +76,7 @@ win:
   target:
     - target: nsis
       arch: [x64]
-  icon: src-tauri/icons/icon.ico
+  icon: electron/assets/icon.ico
   fileAssociations:
     - ext: md
       name: Markdown Document

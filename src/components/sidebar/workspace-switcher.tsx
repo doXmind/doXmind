@@ -15,7 +15,7 @@ import {
 import { Modal, ModalFooter, ModalHeader } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { useFileStore } from "@/stores/file-store";
-import { useIsTauri } from "@/hooks/use-is-tauri";
+import { useDesktopShell } from "@/hooks/use-desktop-shell";
 import { pickNativeFolder } from "@/lib/native-dialog";
 import { openNewWindow } from "@/lib/window";
 import { switchWorkspace } from "@/lib/workspace-switch";
@@ -44,7 +44,7 @@ interface WorkspaceSwitcherProps {
 
 export function WorkspaceSwitcher({ label, titleAttr }: WorkspaceSwitcherProps) {
   const t = useTranslations("sidebar");
-  const { isTauri: isDesktopShell } = useIsTauri();
+  const { isDesktop: isDesktopShell } = useDesktopShell();
 
   const recents = useFileStore((s) => s.recents);
   const rootPath = useFileStore((s) => s.rootPath);

@@ -13,8 +13,7 @@ from typing import Any
 from api.workspace import (
     doc_delete,
     doc_import_external,
-    doc_move,
-    move_document_pair,
+    move_attachment_pair,
     workspace_create_folder,
 )
 from core.workspace import resolve_in_root, resolve_root
@@ -23,19 +22,25 @@ from core.workspace import resolve_in_root, resolve_root
 def rename_document(
     root: str | Path | None, old_path: str | Path, new_path: str | Path
 ) -> dict[str, Any]:
-    """Rename a document in place, carrying its sidecar along."""
-    return move_document_pair(str(resolve_root(root)), str(old_path), str(new_path))
+    """Rename an Attachment while preserving any legacy recovery artifacts.
+
+    Page and Folder relocation requires the desktop's source-backed impact
+    preview and atomic multi-Page repair transaction, so this shell-agnostic
+    surface fails closed for those targets.
+    """
+    return move_attachment_pair(str(resolve_root(root)), str(old_path), str(new_path))
 
 
 def move_document(
     root: str | Path | None, old_path: str | Path, new_path: str | Path
 ) -> dict[str, Any]:
-    """Move a document or folder to a new workspace location."""
-    return doc_move(str(resolve_root(root)), str(old_path), str(new_path))
+    """Move an Attachment; Page and Folder targets fail closed."""
+    result = move_attachment_pair(str(resolve_root(root)), str(old_path), str(new_path))
+    return {"kind": "document", **result}
 
 
 def delete_document(root: str | Path | None, rel_path: str | Path) -> dict[str, Any]:
-    """Move a document (and its sidecar) to the OS Trash."""
+    """Move a document and any legacy recovery artifacts to the OS Trash."""
     return doc_delete(str(resolve_root(root)), str(rel_path))
 
 

@@ -98,7 +98,7 @@ function createWorkspaceWatchers({
   function queueChange(webContentsId, entry, filename) {
     if (!entry.active || byWebContentsId.get(webContentsId) !== entry) return;
     // Once a relevant change starts a coalesce window, every subsequent event
-    // extends the quiet-period timer just like the Tauri receiver drain does.
+    // extends the quiet-period timer so bursts settle before the refresh event.
     if (!entry.pending && !watchPathIsRelevant(entry.root, filename)) return;
 
     if (!entry.pending) {

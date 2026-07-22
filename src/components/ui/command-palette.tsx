@@ -14,16 +14,19 @@ import {
   AlertTriangle,
   RefreshCw,
   X,
+  CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
-import { useEditorRefStore } from "@/stores/editor-ref-store";
 
 import { useThemeManager } from "@/hooks/use-theme-manager";
 import { createStorageAdapter, searchMarkdown, type MarkdownSearchResult } from "@/lib/storage";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
+import { createPageForContext } from "@/lib/new-page";
+import { openTodayDailyNote } from "@/lib/daily-notes";
+import { notify } from "@/lib/notifications";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -71,13 +74,11 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
   const abortControllerRef = React.useRef<AbortController | null>(null);
 
   const files = useFileStore((s) => s.files);
-  const createFile = useFileStore((s) => s.createFile);
   const rootPath = useFileStore((s) => s.rootPath);
   const setKeyboardShortcutsOpen = useLayoutStore((s) => s.setKeyboardShortcutsOpen);
   const isHighContrast = useLayoutStore((s) => s.isHighContrast);
   const toggleHighContrast = useLayoutStore((s) => s.toggleHighContrast);
   const { currentTheme, toggleBaseMode } = useThemeManager();
-  const { editor } = useEditorRefStore();
 
   // Perform search with debounce
   const performSearch = useDebouncedCallback(async (searchQuery: string) => {
@@ -137,12 +138,33 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
         shortcut: ["Ctrl", "N"],
         category: "file",
         action: async () => {
-          const newId = await createFile("Untitled");
+          const newId = await createPageForContext(useFileStore.getState());
           navigateToEditorFile(newId);
           onClose();
         },
         keywords: ["create", "new", "document", "file"],
       },
+      ...(rootPath
+        ? [
+            {
+              id: "daily-note",
+              label: "Open today's Daily Note",
+              icon: <CalendarDays className="h-4 w-4" />,
+              category: "file" as const,
+              action: async () => {
+                try {
+                  await openTodayDailyNote();
+                  onClose();
+                } catch (error) {
+                  notify.error("Could not open today's Daily Note", {
+                    description: error instanceof Error ? error.message : String(error),
+                  });
+                }
+              },
+              keywords: ["daily", "today", "journal", "日记", "今日日志"],
+            },
+          ]
+        : []),
       {
         id: "toggle-theme",
         label: currentTheme.baseMode === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode",
@@ -196,13 +218,13 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
     return [...baseCommands, ...fileCommands];
   }, [
     files,
-    createFile,
     setKeyboardShortcutsOpen,
     isHighContrast,
     toggleHighContrast,
     currentTheme,
     toggleBaseMode,
     onClose,
+    rootPath,
   ]);
 
   // Filter commands based on query
@@ -226,33 +248,14 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
       category: "searchFiles" as const,
       action: () => {
         const fileId = result.metadata.fileId;
-        const start = result.metadata?.start as number | undefined;
-
-        // Open the file first
         navigateToEditorFile(fileId);
-
-        // If we have position info, navigate to it after file loads
-        if (start !== undefined && editor) {
-          // Use setTimeout to wait for file content to load into editor
-          setTimeout(() => {
-            const currentEditor = useEditorRefStore.getState().editor;
-            if (currentEditor) {
-              // Clamp position to document length
-              const maxPos = currentEditor.state.doc.content.size;
-              const safePos = Math.min(start, maxPos - 1);
-              currentEditor.commands.setTextSelection(safePos);
-              currentEditor.commands.scrollIntoView();
-            }
-          }, 100);
-        }
-
         onClose();
       },
       keywords: [],
       preview: result.content.slice(0, 100),
       score: result.score !== undefined ? Math.round(result.score * 100) : undefined,
     }));
-  }, [fileSearchResults, onClose, editor]);
+  }, [fileSearchResults, onClose]);
 
   // Group filtered commands by category
   const groupedCommands = React.useMemo(() => {

@@ -1,20 +1,15 @@
-import type { DocumentHandle } from "@/lib/storage";
-import type {
-  DocumentOutlineItem,
-  DocumentSourceState,
-  WorkspaceDocumentType,
-} from "@/lib/storage/types";
+import type { DocumentHandle, DocumentMeta } from "@/lib/storage";
+import type { DocumentOutlineItem, WorkspaceDocumentType } from "@/lib/storage/types";
 
 export interface FileItem {
   id: string;
   name: string;
+  /** Canonical Markdown for Pages; empty for unloaded entries, folders, and attachments. */
   content: string;
-  editorHtml?: string;
-  browsingHtml?: string;
-  contentMarkdown?: string | null;
-  sourceState?: DocumentSourceState;
+  sourceRevision?: string | null;
   outline?: DocumentOutlineItem[];
-  browsingRendererVersion?: string;
+  /** Typed projection of Page frontmatter; canonical bytes remain on disk. */
+  meta?: DocumentMeta;
   storageHandle?: DocumentHandle;
   documentType?: WorkspaceDocumentType;
   isFolder: boolean;

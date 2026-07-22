@@ -1,8 +1,0 @@
-User-agent: *
-Allow: /
-Disallow: /editor
-Disallow: /auth/
-Disallow: /reset-password
-Disallow: /api/
-
-Sitemap: https://app.doxmind.com/sitemap.xml

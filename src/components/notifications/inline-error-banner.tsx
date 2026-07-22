@@ -14,6 +14,7 @@ export function InlineErrorBanner() {
     <div
       role="region"
       aria-label="Notifications"
+      data-native-editor-chrome
       className="pointer-events-none fixed left-1/2 top-3 z-[1000] flex w-full max-w-[480px] -translate-x-1/2 flex-col gap-1.5 px-3"
     >
       <AnimatePresence initial={false}>

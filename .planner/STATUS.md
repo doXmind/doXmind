@@ -1,5 +1,9 @@
 # Feature Status
 
+> **Historical only (2026-07-22):** this event log describes the retired
+> TipTap/ProseMirror outline implementation. ADR-0012 and the native
+> `MarkdownBlockDocument` editor are authoritative.
+
 > Last derived: **2026-05-27T23:10:00Z**
 > Branch: `main`
 > Baseline: **286 tests passing across 38 files, lint 0 errors (3 pre-existing warnings tolerated), type-check clean**

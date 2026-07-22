@@ -1,58 +1,77 @@
 """Local Markdown workspace API for plain web development.
 
-The Tauri app calls filesystem commands directly. A regular browser cannot do
-that, so this router exposes the same command names over localhost while keeping
-the source of truth as `.md` files plus hidden `.doxmind` sidecars.
+The Electron app calls filesystem commands directly. A regular browser cannot
+do that, so this router exposes the same command names over localhost. Markdown
+Pages are single-file sources of truth; sidecars are legacy recovery inputs for
+older Pages and Attachments, never part of the active Page write path.
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import re
 import shutil
+import stat
 import time
 import uuid
-from html.parser import HTMLParser
+from collections import Counter
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from send2trash import send2trash
 
+from config import get_settings
 from services.attachment_inspection import (
     inspect_attachment as inspect_attachment_sidecar,
 )
 from services.attachment_inspection import (
     read_attachment_recovery as read_attachment_recovery_sidecar,
 )
-from services.sidecar_io import (
-    SIDECAR_VERSION,
-    Corrupt,
-    CorruptSidecarError,
-    Loaded,
+from services.legacy_sidecar import sidecar_path_for
+from services.markdown_page_store import (
+    MarkdownPageStore,
+    PageRevisionConflictError,
+    project_page_meta,
+)
+from services.markdown_source import (
     atomic_write,
-    hash_markdown,
-    markdown_to_html,
-    now_iso,
+    extract_frontmatter_block,
     parse_frontmatter,
     parse_yaml_scalar,
-    read_sidecar,
-    sidecar_path_for,
-)
-from services.synthetic_document import (
-    LegacySidecarError,
-    ReadOnlyDocumentError,
-    SidecarMigrationError,
-    SyntheticDocumentFactory,
+    portable_page_id_from_token,
 )
 
 router = APIRouter()
 
 
-IGNORED_SCAN_DIRS = {".git", "node_modules", "target", ".next", "out", "dist", "build"}
+IGNORED_SCAN_DIRS = {
+    ".doxmind",
+    ".git",
+    "node_modules",
+    "target",
+    ".next",
+    "out",
+    "dist",
+    "build",
+}
+IMAGE_ASSET_MIME = {
+    ".apng": "image/apng",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".ico": "image/x-icon",
+    ".webp": "image/webp",
+    ".avif": "image/avif",
+}
+MAX_IMAGE_ASSET_BYTES = 20 * 1024 * 1024
 
 # Per-root TTL cache for `workspace_scan`. Within a single user action the
 # adapter often calls scan -> index_rebuild -> search back-to-back, each of
@@ -61,67 +80,11 @@ IGNORED_SCAN_DIRS = {".git", "node_modules", "target", ".next", "out", "dist", "
 # below explicitly invalidate the entry for their root.
 _SCAN_CACHE_TTL_SECONDS = 1.5
 _scan_cache: dict[str, tuple[float, dict[str, Any]]] = {}
-BROWSING_RENDERER_VERSION = "browsing-html/v1"
-VOID_HTML_TAGS = {
-    "area",
-    "base",
-    "br",
-    "col",
-    "embed",
-    "hr",
-    "img",
-    "input",
-    "link",
-    "meta",
-    "source",
-    "track",
-    "wbr",
-}
-SKIP_HTML_TAGS = {"script", "style", "iframe", "object", "embed"}
-SAFE_URL_SCHEMES = {"", "http", "https", "mailto", "tel"}
-SAFE_IMAGE_URL_SCHEMES = {"", "http", "https"}
-ALLOWED_BROWSING_TAGS: dict[str, set[str]] = {
-    "a": {"href", "title"},
-    "blockquote": set(),
-    "br": set(),
-    "code": {"class"},
-    "del": set(),
-    "div": {"class", "data-code", "data-latex", "data-type"},
-    "em": set(),
-    "h1": {"id"},
-    "h2": {"id"},
-    "h3": {"id"},
-    "h4": {"id"},
-    "h5": {"id"},
-    "h6": {"id"},
-    "hr": set(),
-    "img": {"alt", "height", "src", "title", "width"},
-    "li": {"data-checked", "data-type"},
-    "ol": set(),
-    "p": set(),
-    "pre": {"class"},
-    "span": {"class", "data-latex", "data-type"},
-    "strong": set(),
-    "table": set(),
-    "tbody": set(),
-    "td": set(),
-    "th": set(),
-    "thead": set(),
-    "tr": set(),
-    "ul": {"data-type"},
-}
 
 
 def _invalidate_scan_cache(root: str | Path) -> None:
     key = str(Path(root).resolve()) if root else ""
     _scan_cache.pop(key, None)
-
-
-def _write_forensic_copy(sidecar_path: Path, raw: bytes) -> Path:
-    timestamp = now_iso().replace(":", "-")
-    forensic_path = sidecar_path.parent / f"{sidecar_path.name}.corrupt-{timestamp}"
-    atomic_write(forensic_path, raw)
-    return forensic_path
 
 
 class WorkspaceInvokeRequest(BaseModel):
@@ -131,52 +94,11 @@ class WorkspaceInvokeRequest(BaseModel):
 
 @router.post("/invoke")
 async def invoke_workspace(request: WorkspaceInvokeRequest):
-    """Invoke a local workspace command by its Tauri-compatible name."""
+    """Invoke a local workspace command by its shell-agnostic name."""
     try:
         return _invoke(request.command, request.payload)
     except HTTPException:
         raise
-    except SidecarMigrationError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "sidecar_migration_failed",
-                "sidecar_path": str(exc.sidecar_path),
-                "block_type": exc.block_type,
-                "reason": exc.reason,
-                "recovery": "rename <sidecar>.bak back to <sidecar> to restore the original",
-            },
-        )
-    except LegacySidecarError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "legacy_sidecar_unrecoverable",
-                "sidecar_path": str(exc.sidecar_path),
-                "block_type": exc.block_type,
-                "reason": exc.reason,
-            },
-        )
-    except ReadOnlyDocumentError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "document_read_only",
-                "path": str(exc.path),
-                "recovery": "unset DOXMIND_SIDECAR_MIGRATE or set it to 1 to enable migration; or restore from <sidecar>.bak",
-            },
-        )
-    except CorruptSidecarError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "sidecar_corrupt",
-                "sidecar_path": str(exc.sidecar_path),
-                "forensic_path": str(exc.forensic_path) if exc.forensic_path else None,
-                "reason": exc.reason,
-                "recovery": "investigate the forensic copy; restore over the sidecar manually if appropriate",
-            },
-        )
     except FileExistsError as exc:
         # External-import collisions raise this; #69 will replace the toast
         # with a Replace / Keep both / Skip modal driven by the same backend
@@ -185,41 +107,23 @@ async def invoke_workspace(request: WorkspaceInvokeRequest):
             status_code=409,
             detail={"code": "destination_exists", "message": str(exc)},
         )
+    except PageRevisionConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "page_revision_conflict",
+                "path": str(exc.path),
+                "expectedRevision": exc.expected,
+                "actualRevision": exc.actual,
+            },
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-@router.get("/binary")
-def workspace_binary(root: str, path: str):
-    """Stream a workspace PDF/Excel as raw bytes.
-
-    The generic ``workspace_read_binary`` command in ``_invoke`` returns a JSON
-    ``number[]`` (~4.5x wire bloat). The Electron shell routes binary reads here
-    instead so multi-MB PDFs/workbooks transfer as an ``application/octet-stream``
-    body that the renderer reads via ``res.arrayBuffer()``.
-    """
-    try:
-        workspace = canonical_workspace_root(root)
-        resolved = resolve_existing_workspace_path(workspace, path)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if not is_pdf_file(resolved) and not is_excel_file(resolved):
-        raise HTTPException(
-            status_code=400,
-            detail="binary workspace reads are only enabled for PDF and Excel files",
-        )
-    return Response(content=resolved.read_bytes(), media_type="application/octet-stream")
-
-
 def _invoke(command: str, payload: dict[str, Any]) -> Any:
-    if command == "workspace_default_root":
-        return workspace_default_root()
     if command == "workspace_scan":
         return workspace_scan(str(payload.get("root") or ""))
-    if command == "workspace_index_rebuild":
-        return workspace_index_rebuild(str(payload.get("root") or ""))
     if command == "workspace_markdown_search":
         return workspace_markdown_search(
             str(payload.get("root") or ""),
@@ -227,14 +131,22 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
             payload.get("limit"),
         )
     if command == "doc_read":
-        return read_doc(Path(str(payload.get("path") or "")))
-    if command == "workspace_read_binary":
-        return read_workspace_binary(
+        return read_doc_workspace(
             str(payload.get("root") or ""),
             str(payload.get("path") or ""),
         )
-    if command == "workspace_stat_binary":
-        return stat_workspace_binary(
+    if command == "workspace_read_asset":
+        return read_workspace_asset(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+        )
+    if command == "workspace_inspect_page_recovery":
+        return inspect_page_recovery(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+        )
+    if command == "workspace_read_page_recovery":
+        return read_page_recovery(
             str(payload.get("root") or ""),
             str(payload.get("path") or ""),
         )
@@ -247,53 +159,6 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
         return read_attachment_recovery(
             str(payload.get("root") or ""),
             str(payload.get("path") or ""),
-            str(payload.get("source") or ""),
-        )
-    if command == "workspace_read_pdf_editor_state":
-        return read_pdf_editor_state(
-            str(payload.get("root") or ""),
-            str(payload.get("path") or ""),
-        )
-    if command == "workspace_write_pdf_editor_state":
-        return write_pdf_editor_state(
-            str(payload.get("root") or ""),
-            str(payload.get("path") or ""),
-            payload.get("payload") or {},
-        )
-    if command == "workspace_read_excel_editor_state":
-        return read_excel_editor_state(
-            str(payload.get("root") or ""),
-            str(payload.get("path") or ""),
-        )
-    if command == "workspace_write_excel_editor_state":
-        return write_excel_editor_state(
-            str(payload.get("root") or ""),
-            str(payload.get("path") or ""),
-            payload.get("payload") or {},
-        )
-    if command == "workspace_read_pdf_doc_state":
-        return read_pdf_doc_state(
-            str(payload.get("root") or ""),
-            str(payload.get("path") or ""),
-        )
-    if command == "workspace_write_pdf_parsed_cache":
-        return write_pdf_parsed_cache(
-            str(payload.get("root") or ""),
-            str(payload.get("path") or ""),
-            str(payload.get("sourceHash") or ""),
-            payload.get("parsed") or {},
-        )
-    if command == "workspace_read_excel_doc_state":
-        return read_excel_doc_state(
-            str(payload.get("root") or ""),
-            str(payload.get("path") or ""),
-        )
-    if command == "workspace_write_excel_parsed_cache":
-        return write_excel_parsed_cache(
-            str(payload.get("root") or ""),
-            str(payload.get("path") or ""),
-            str(payload.get("sourceHash") or ""),
-            payload.get("parsed") or {},
         )
     if command == "doc_write_workspace":
         return write_doc_workspace(
@@ -303,18 +168,6 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
         )
     if command == "doc_create":
         return doc_create(str(payload.get("root") or ""), payload.get("payload") or {})
-    if command == "doc_create_pdf":
-        return doc_create_pdf(
-            str(payload.get("root") or ""),
-            str(payload.get("path") or ""),
-            payload.get("bytes") or [],
-        )
-    if command == "doc_create_excel":
-        return doc_create_excel(
-            str(payload.get("root") or ""),
-            str(payload.get("path") or ""),
-            payload.get("bytes") or [],
-        )
     if command == "doc_import_external":
         return doc_import_external(
             str(payload.get("root") or ""),
@@ -325,16 +178,35 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
             str(payload.get("mode") or "create"),
         )
     if command == "doc_rename":
-        return move_document_pair(
+        return move_attachment_pair(
             str(payload.get("root") or ""),
             str(payload.get("oldPath") or ""),
             str(payload.get("newPath") or ""),
         )
     if command == "doc_move":
-        return doc_move(
+        document = move_attachment_pair(
             str(payload.get("root") or ""),
             str(payload.get("oldPath") or ""),
             str(payload.get("newPath") or ""),
+        )
+        return {"kind": "document", **document}
+    if command == "workspace_relocate_page":
+        return workspace_relocate_page(
+            str(payload.get("root") or ""),
+            str(payload.get("oldPath") or ""),
+            str(payload.get("newPath") or ""),
+            payload.get("expectedRevision"),
+            payload.get("checks", []),
+            payload.get("movedMarkdown"),
+            payload.get("writes", []),
+        )
+    if command == "workspace_relocate_folder":
+        return workspace_relocate_folder(
+            str(payload.get("root") or ""),
+            str(payload.get("oldPath") or ""),
+            str(payload.get("newPath") or ""),
+            payload.get("checks", []),
+            payload.get("writes", []),
         )
     if command == "doc_delete":
         return doc_delete(str(payload.get("root") or ""), str(payload.get("path") or ""))
@@ -342,24 +214,10 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
         return workspace_create_folder(
             str(payload.get("root") or ""), str(payload.get("path") or "")
         )
-    if command == "workspace_rename_folder":
-        return workspace_rename_folder(
-            str(payload.get("root") or ""),
-            str(payload.get("oldPath") or ""),
-            str(payload.get("newPath") or ""),
-        )
     if command == "workspace_delete_folder":
         return workspace_delete_folder(
             str(payload.get("root") or ""), str(payload.get("path") or "")
         )
-    if command == "workspace_import_asset":
-        return workspace_import_asset(
-            str(payload.get("root") or ""),
-            str(payload.get("documentPath") or ""),
-            str(payload.get("filename") or ""),
-            payload.get("bytes"),
-        )
-
     raise HTTPException(status_code=404, detail=f"unsupported workspace command: {command}")
 
 
@@ -388,10 +246,23 @@ def workspace_scan(root: str) -> dict[str, Any]:
     # to `rglob`'s unstable filesystem order, defeating this whole sort.
     for path in iter_workspace_document_paths(workspace):
         documents.append(document_dto_for_path(workspace, path))
+    resolve_duplicate_page_ids(documents)
     result = {"root": str(workspace), "documents": documents}
     write_workspace_index(workspace, workspace_index_from_documents(documents))
     _scan_cache[key] = (now, result)
     return result
+
+
+def resolve_duplicate_page_ids(documents: list[dict[str, Any]]) -> None:
+    counts = Counter(
+        str(document["id"])
+        for document in documents
+        if document.get("documentType") == "markdown" and document.get("idSource") == "frontmatter"
+    )
+    for document in documents:
+        if document.get("idSource") == "frontmatter" and counts[str(document["id"])] > 1:
+            document["id"] = stable_path_id(str(document["path"]))
+            document["idSource"] = "path"
 
 
 def workspace_index_rebuild(root: str) -> dict[str, Any]:
@@ -404,21 +275,29 @@ def workspace_index_rebuild(root: str) -> dict[str, Any]:
 def workspace_index_from_documents(documents: list[dict[str, Any]]) -> dict[str, Any]:
     ids: dict[str, str] = {}
     for doc in documents:
-        if doc.get("documentType") == "markdown" and doc.get("idSource") in (
-            "frontmatter",
-            "sidecar",
-        ):
+        if doc.get("documentType") == "markdown" and doc.get("idSource") == "frontmatter":
             ids.setdefault(str(doc["id"]), str(doc["path"]))
     return {"version": 1, "ids": ids}
 
 
 def write_workspace_index(workspace: Path, index: dict[str, Any]) -> None:
-    index_path = workspace / ".doxmind" / "index.json"
-    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path = workspace_index_path(workspace)
     raw = json.dumps(index, indent=2, ensure_ascii=False)
     if index_path.exists() and index_path.read_text(encoding="utf-8") == raw:
         return
-    index_path.write_text(raw, encoding="utf-8")
+    atomic_write(index_path, raw.encode("utf-8"))
+
+
+def workspace_index_path(workspace: Path) -> Path:
+    """Return the app-private cache path for a canonical workspace root.
+
+    The index is derived state. Keeping it under DATA_DIR means even a read-only
+    scan never adds doXmind-owned files to the user's Markdown tree.
+    """
+
+    canonical = workspace.resolve()
+    workspace_key = hashlib.sha256(canonical.as_posix().encode("utf-8")).hexdigest()
+    return get_settings().data_dir / "workspaces" / workspace_key / "index.json"
 
 
 def workspace_markdown_search(root: str, query: str, limit: Any = None) -> list[dict[str, Any]]:
@@ -428,6 +307,9 @@ def workspace_markdown_search(root: str, query: str, limit: Any = None) -> list[
         raise ValueError("search query is required")
     max_results = min(int(limit or 50), 200)
     results: list[dict[str, Any]] = []
+    scan_by_path = {
+        str(document["path"]): document for document in workspace_scan(str(workspace))["documents"]
+    }
 
     for path in iter_workspace_document_paths(workspace):
         if not is_markdown_file(path):
@@ -439,15 +321,13 @@ def workspace_markdown_search(root: str, query: str, limit: Any = None) -> list[
             if needle in line.lower():
                 matches.append({"line": line_number, "preview": line.strip()[:240]})
         if matches:
-            frontmatter_id, title = parse_frontmatter_scan_fields(raw)
-            # Identity precedence (#148): frontmatter -> sidecar -> path.
-            doc_id = frontmatter_id or _sidecar_id_for(path) or stable_path_id(rel_path)
+            scanned = scan_by_path[rel_path]
             results.append(
                 {
-                    "id": doc_id,
+                    "id": scanned["id"],
                     "path": rel_path,
                     "name": path.name,
-                    "title": title or path.stem,
+                    "title": scanned.get("title") or path.stem,
                     "matches": matches,
                 }
             )
@@ -456,246 +336,87 @@ def workspace_markdown_search(root: str, query: str, limit: Any = None) -> list[
     return results
 
 
-def read_html_doc(path: Path) -> dict[str, Any]:
-    # #139: an .html file's body IS the editor HTML — no frontmatter, no
-    # markdown_to_html. The sidecar caches the last-saved editor HTML + carries
-    # extras; the hash detects external edits. The browsing view sanitizes the
-    # raw HTML (via _render_browsing_from_html).
-    raw = path.read_text(encoding="utf-8")
-    current_hash = hash_markdown(raw)
-    sidecar = read_sidecar(sidecar_path_for(path))
-
-    editor_html = raw
-    extras: Any = None
-    source_state = "sidecar_missing"
-    legacy_source = "markdown"
-    doc_id = str(uuid.uuid4())
-
-    if isinstance(sidecar, Loaded):
-        data = sidecar.data
-        sidecar_id = data.get("id")
-        if isinstance(sidecar_id, str) and sidecar_id.strip():
-            doc_id = sidecar_id
-        extras_val = data.get("extras")
-        extras = extras_val if isinstance(extras_val, dict) else None
-        if data.get("version") == SIDECAR_VERSION and data.get("markdown_hash") == current_hash:
-            editor_html = data.get("html") or raw
-            source_state = "sidecar_fresh"
-            legacy_source = "sidecar"
-        else:
-            # External edit: editor HTML is the file body; extras carry (#147).
-            source_state = "sidecar_stale"
-
-    return _document_read_response(
-        editor_html=editor_html,
-        markdown=raw,
-        meta={"id": doc_id},
-        extras=extras,
-        legacy_source=legacy_source,
-        source_state=source_state,
-        correlation=None,
-        markdown_html=raw,
-    )
-
-
 def read_doc(path: Path) -> dict[str, Any]:
-    if is_html_file(path):
-        return read_html_doc(path)
-
-    from services.block_correlation import BlockCorrelation, CorrelationReport
-    from services.external_ref_blocks import default_external_ref_block_registry
-    from services.markdown_document_state import (
-        EmptyDocument,
-        MarkdownDocumentState,
-        NoSidecar,
-        SidecarStale,
-        UsedSidecar,
-    )
-
-    state = MarkdownDocumentState(
-        correlator=BlockCorrelation(default_external_ref_block_registry()),
-    )
-    outcome = state.read(path)
-    correlation: CorrelationReport | None = outcome.correlation
-    if isinstance(outcome, UsedSidecar):
-        return _document_read_response(
-            editor_html=outcome.html,
-            markdown=outcome.markdown,
-            meta=outcome.meta,
-            extras=outcome.extras,
-            legacy_source="sidecar",
-            source_state="sidecar_fresh",
-            correlation=correlation,
-        )
-    if isinstance(outcome, EmptyDocument):
-        return _document_read_response(
-            editor_html="",
-            markdown="",
-            meta=outcome.meta,
-            extras=None,
-            legacy_source="empty",
-            source_state="empty",
-            correlation=correlation,
-        )
-    if isinstance(outcome, SidecarStale):
-        if not outcome.markdown.strip():
-            return _document_read_response(
-                editor_html="",
-                markdown="",
-                meta=outcome.meta,
-                extras=outcome.salvaged_extras or None,
-                legacy_source="empty",
-                source_state="empty",
-                correlation=correlation,
-            )
-        return _document_read_response(
-            editor_html=outcome.fresh_html,
-            markdown=outcome.markdown,
-            meta=outcome.meta,
-            extras=outcome.salvaged_extras or None,
-            legacy_source="markdown",
-            source_state="sidecar_stale",
-            correlation=correlation,
-            markdown_html=outcome.fresh_html,
-        )
-    assert isinstance(outcome, NoSidecar)
-    return _document_read_response(
-        editor_html=outcome.html,
-        markdown=outcome.markdown,
-        meta=outcome.meta,
-        extras=None,
-        legacy_source="markdown",
-        source_state="sidecar_missing",
-        correlation=correlation,
-        markdown_html=outcome.html,
+    ensure_markdown_path(str(path))
+    page = MarkdownPageStore().read(path)
+    return _page_read_response(
+        markdown=page.markdown,
+        meta=page.meta,
+        revision=page.revision,
     )
 
 
-def _document_read_response(
-    *,
-    editor_html: str,
-    markdown: str,
-    meta: dict[str, Any],
-    extras: Any,
-    legacy_source: str,
-    source_state: str,
-    correlation: Any,
-    markdown_html: str | None = None,
-) -> dict[str, Any]:
-    # When upstream (NoSidecar / SidecarStale branches) already produced
-    # `markdown_to_html(markdown)` for `editor_html`, hand that HTML over so
-    # the browsing sanitizer can reuse it. UsedSidecar passes None — its
-    # `editor_html` comes from the cached sidecar (TipTap-serialized HTML),
-    # which is not interchangeable with the plain markdown render.
-    if not markdown.strip():
-        browsing_html = ""
-    elif markdown_html is not None:
-        browsing_html = _render_browsing_from_html(markdown_html)
-    else:
-        browsing_html = _render_browsing_markdown(markdown)
+def read_workspace_asset(root: str, rel_path: str) -> dict[str, str]:
+    workspace = canonical_workspace_root(root)
+    relative = validate_relative_path(rel_path)
+    normalized_path = relative.as_posix()
+    mime = IMAGE_ASSET_MIME.get(relative.suffix.lower())
+    if mime is None:
+        raise ValueError(f"unsupported local image type: {rel_path}")
+    current = workspace
+    for part in relative.parts:
+        current /= part
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError as error:
+            raise ValueError(f"workspace path does not exist: {rel_path}") from error
+        if stat.S_ISLNK(metadata.st_mode):
+            raise ValueError(f"symbolic-link image assets are not allowed: {rel_path}")
+    source = resolve_existing_workspace_path(workspace, normalized_path)
+    metadata = source.stat()
+    if not source.is_file():
+        raise ValueError(f"image asset is not a file: {rel_path}")
+    if metadata.st_size <= 0 or metadata.st_size > MAX_IMAGE_ASSET_BYTES:
+        raise ValueError(f"image asset must be between 1 byte and {MAX_IMAGE_ASSET_BYTES} bytes")
+    content = source.read_bytes()
+    if not _image_bytes_match_mime(content, mime):
+        raise ValueError(f"image asset content does not match image type: {rel_path}")
     return {
-        "html": editor_html,
-        "editorHtml": editor_html,
-        "browsingHtml": browsing_html,
-        "markdown": markdown,
-        "meta": meta,
-        "extras": extras,
-        "source": legacy_source,
-        "sourceState": source_state,
-        "outline": _outline_from_markdown(markdown),
-        "browsingRendererVersion": BROWSING_RENDERER_VERSION,
-        "correlation": _serialize_correlation_report(correlation),
+        "path": normalized_path,
+        "mime": mime,
+        "base64": base64.b64encode(content).decode("ascii"),
     }
 
 
-class BrowsingHtmlSanitizer(HTMLParser):
-    """Small allowlist sanitizer for localhost browser fallback browsing HTML."""
-
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.parts: list[str] = []
-        self.skip_depth = 0
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        clean_tag = tag.lower()
-        if clean_tag in SKIP_HTML_TAGS:
-            self.skip_depth += 1
-            return
-        if self.skip_depth or clean_tag not in ALLOWED_BROWSING_TAGS:
-            return
-        rendered_attrs = self._render_attrs(clean_tag, attrs)
-        self.parts.append(f"<{clean_tag}{rendered_attrs}>")
-
-    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        self.handle_starttag(tag, attrs)
-
-    def handle_endtag(self, tag: str) -> None:
-        clean_tag = tag.lower()
-        if clean_tag in SKIP_HTML_TAGS and self.skip_depth:
-            self.skip_depth -= 1
-            return
-        if self.skip_depth or clean_tag not in ALLOWED_BROWSING_TAGS or clean_tag in VOID_HTML_TAGS:
-            return
-        self.parts.append(f"</{clean_tag}>")
-
-    def handle_data(self, data: str) -> None:
-        if not self.skip_depth:
-            self.parts.append(_escape_html(data))
-
-    def handle_entityref(self, name: str) -> None:
-        if not self.skip_depth:
-            self.parts.append(f"&{name};")
-
-    def handle_charref(self, name: str) -> None:
-        if not self.skip_depth:
-            self.parts.append(f"&#{name};")
-
-    def _render_attrs(self, tag: str, attrs: list[tuple[str, str | None]]) -> str:
-        allowed = ALLOWED_BROWSING_TAGS[tag]
-        rendered: list[str] = []
-        for raw_name, raw_value in attrs:
-            name = raw_name.lower()
-            value = raw_value or ""
-            if name not in allowed and not name.startswith("aria-"):
-                continue
-            if name in {"href", "src"} and not _is_safe_browsing_url(name, value):
-                continue
-            rendered.append(f' {name}="{_escape_html(value)}"')
-        return "".join(rendered)
-
-    def html(self) -> str:
-        return "".join(self.parts)
+def _image_bytes_match_mime(content: bytes, mime: str) -> bool:
+    if mime in {"image/png", "image/apng"}:
+        return content.startswith(b"\x89PNG\r\n\x1a\n")
+    if mime == "image/jpeg":
+        return content.startswith(b"\xff\xd8\xff")
+    if mime == "image/gif":
+        return content.startswith((b"GIF87a", b"GIF89a"))
+    if mime == "image/bmp":
+        return content.startswith(b"BM")
+    if mime == "image/x-icon":
+        return content.startswith(b"\x00\x00\x01\x00")
+    if mime == "image/webp":
+        return len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP"
+    if mime == "image/avif":
+        return (
+            len(content) >= 12 and content[4:8] == b"ftyp" and content[8:12] in {b"avif", b"avis"}
+        )
+    return False
 
 
-def _render_browsing_markdown(markdown: str) -> str:
-    return _render_browsing_from_html(markdown_to_html(markdown))
+def read_doc_workspace(root: str, rel_path: str) -> dict[str, Any]:
+    workspace = canonical_workspace_root(root)
+    ensure_markdown_path(rel_path)
+    return read_doc(resolve_existing_workspace_path(workspace, rel_path))
 
 
-def _render_browsing_from_html(html: str) -> str:
-    sanitizer = BrowsingHtmlSanitizer()
-    sanitizer.feed(html)
-    sanitizer.close()
-    return sanitizer.html()
-
-
-def _is_safe_browsing_url(attr_name: str, value: str) -> bool:
-    trimmed = value.strip()
-    if not trimmed:
-        return False
-    if attr_name == "src" and trimmed.lower().startswith("data:image/"):
-        return True
-    try:
-        scheme = urlsplit(trimmed).scheme.lower()
-    except ValueError:
-        return False
-    allowed = SAFE_IMAGE_URL_SCHEMES if attr_name == "src" else SAFE_URL_SCHEMES
-    return scheme in allowed
-
-
-def _escape_html(value: str) -> str:
-    return (
-        value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
-    )
+def _page_read_response(
+    *,
+    markdown: str,
+    meta: dict[str, Any],
+    revision: str | None = None,
+) -> dict[str, Any]:
+    """Serialize the active Page wire shape from Markdown source only."""
+    return {
+        "markdown": markdown,
+        "meta": meta,
+        "outline": _outline_from_markdown(markdown),
+        "revision": revision,
+    }
 
 
 def _outline_from_markdown(markdown: str) -> list[dict[str, Any]]:
@@ -725,50 +446,44 @@ def _slugify_heading(text: str) -> str:
     return slug or "section"
 
 
-def _serialize_correlation_report(report: Any) -> dict[str, Any] | None:
-    """Serialize a ``CorrelationReport`` into a JSON-safe dict.
-
-    Returns ``None`` when no correlator ran (the report itself is ``None``).
-    An empty report (correlator ran, no events) serializes as
-    ``{"events": [], "blocking": False}`` so callers can distinguish
-    "correlation didn't run" from "correlation ran cleanly".
-    """
-    from services.block_correlation import CorrelationReport
-
-    if report is None:
-        return None
-    if not isinstance(report, CorrelationReport):
-        raise TypeError(f"expected CorrelationReport, got {type(report).__name__}")
+def inspect_page_recovery(root: str, rel_path: str) -> dict[str, Any]:
+    """Inventory a Page's legacy recovery artifacts without reading Page state."""
+    workspace, artifacts = _page_recovery_family(root, rel_path)
     return {
-        "events": [
-            {
-                "kind": event.kind,
-                "block_type": event.block_type,
-                "id": event.id,
-                "how_handled": event.how_handled.value,
-                "detail": dict(event.detail),
-            }
-            for event in report.events
-        ],
-        "blocking": report.blocking,
+        "recoveryStatus": "available" if artifacts else "none",
+        "artifacts": [relative_path_string(workspace, artifact) for artifact in artifacts],
     }
 
 
-def read_workspace_binary(root: str, rel_path: str) -> list[int]:
-    workspace = canonical_workspace_root(root)
-    path = resolve_existing_workspace_path(workspace, rel_path)
-    if not is_pdf_file(path) and not is_excel_file(path):
-        raise ValueError("binary workspace reads are only enabled for PDF and Excel files")
-    return list(path.read_bytes())
+def read_page_recovery(root: str, rel_path: str) -> dict[str, Any]:
+    """Read Page legacy recovery artifacts as exact raw bytes without parsing."""
+    workspace, artifacts = _page_recovery_family(root, rel_path)
+    return {
+        "artifacts": [
+            {
+                "path": relative_path_string(workspace, artifact),
+                "bytes": list(artifact.read_bytes()),
+            }
+            for artifact in artifacts
+        ]
+    }
 
 
-def stat_workspace_binary(root: str, rel_path: str) -> dict[str, Any]:
+def _page_recovery_family(root: str, rel_path: str) -> tuple[Path, list[Path]]:
     workspace = canonical_workspace_root(root)
-    path = resolve_existing_workspace_path(workspace, rel_path)
-    if not is_pdf_file(path) and not is_excel_file(path):
-        raise ValueError("binary workspace stat is only enabled for PDF and Excel files")
-    stat = path.stat()
-    return {"mtimeNs": str(stat.st_mtime_ns), "size": stat.st_size}
+    ensure_markdown_path(rel_path)
+    page = resolve_existing_workspace_path(workspace, rel_path)
+    if page.is_symlink():
+        raise ValueError(f"Page path is a symbolic link: {rel_path}")
+    if not page.is_file():
+        raise ValueError(f"Page path is not a file: {rel_path}")
+    artifacts = _existing_legacy_sidecar_family(page)
+    for artifact in artifacts:
+        if artifact.is_symlink():
+            raise ValueError(f"legacy sidecar family contains a symbolic link: {artifact}")
+        if not artifact.is_file():
+            raise ValueError(f"legacy sidecar family member is not a file: {artifact}")
+    return workspace, artifacts
 
 
 def inspect_attachment(root: str, rel_path: str) -> dict[str, Any]:
@@ -778,273 +493,62 @@ def inspect_attachment(root: str, rel_path: str) -> dict[str, Any]:
     return inspect_attachment_sidecar(path)
 
 
-def read_attachment_recovery(root: str, rel_path: str, source: str) -> dict[str, Any]:
-    """Read one explicit legacy recovery source without migration or fallback."""
+def read_attachment_recovery(root: str, rel_path: str) -> dict[str, Any] | None:
+    """Read exact legacy editor state without migrating or rewriting sidecars."""
     workspace = canonical_workspace_root(root)
     path = resolve_existing_workspace_path(workspace, rel_path)
-    return read_attachment_recovery_sidecar(path, source)
-
-
-def read_pdf_editor_state(root: str, rel_path: str) -> dict[str, Any] | None:
-    """Deprecated: delegates to ``SyntheticDocumentFactory.open_pdf``.
-
-    Slice 3 of #3 routes the on-disk shape through a markdown-shape
-    sidecar; the wire response is preserved. The frontend will switch to
-    the unified read/write surface in a later slice and this handler
-    will be removed.
-    """
-    return _read_block_slot_field(root, rel_path, _is_pdf_path, _open_pdf, "editor")
-
-
-def write_pdf_editor_state(root: str, rel_path: str, payload: dict[str, Any]) -> None:
-    """Deprecated: delegates to ``SyntheticDocumentFactory.open_pdf``.
-
-    See :func:`read_pdf_editor_state`.
-    """
-    _write_block_slot_field(root, rel_path, _is_pdf_path, _open_pdf, "editor", payload)
-
-
-def read_pdf_doc_state(root: str, rel_path: str) -> dict[str, Any] | None:
-    """Deprecated: combined PDF read; delegates to ``SyntheticDocumentFactory``."""
-    return _read_block_slot_combined(root, rel_path, _is_pdf_path, _open_pdf)
-
-
-def write_pdf_parsed_cache(root: str, rel_path: str, source_hash: str, parsed: Any) -> None:
-    """Deprecated: delegates to ``SyntheticDocumentFactory.open_pdf``."""
-    if not source_hash.strip():
-        raise ValueError("sourceHash is required")
-    _write_block_slot_field(
-        root,
-        rel_path,
-        _is_pdf_path,
-        _open_pdf,
-        "parsedCache",
-        {"sourceHash": source_hash, "parsed": parsed},
-        cache_guard="pdf_editor",
-    )
-
-
-def read_excel_editor_state(root: str, rel_path: str) -> dict[str, Any] | None:
-    """Deprecated: delegates to ``SyntheticDocumentFactory.open_excel``."""
-    return _read_block_slot_field(root, rel_path, _is_excel_path, _open_excel, "editor")
-
-
-def write_excel_editor_state(root: str, rel_path: str, payload: dict[str, Any]) -> None:
-    """Deprecated: delegates to ``SyntheticDocumentFactory.open_excel``."""
-    _write_block_slot_field(root, rel_path, _is_excel_path, _open_excel, "editor", payload)
-
-
-def read_excel_doc_state(root: str, rel_path: str) -> dict[str, Any] | None:
-    """Deprecated: combined Excel read; delegates to ``SyntheticDocumentFactory``."""
-    return _read_block_slot_combined(root, rel_path, _is_excel_path, _open_excel)
-
-
-def write_excel_parsed_cache(root: str, rel_path: str, source_hash: str, parsed: Any) -> None:
-    """Deprecated: delegates to ``SyntheticDocumentFactory.open_excel``."""
-    if not source_hash.strip():
-        raise ValueError("sourceHash is required")
-    _write_block_slot_field(
-        root,
-        rel_path,
-        _is_excel_path,
-        _open_excel,
-        "parsedCache",
-        {"sourceHash": source_hash, "parsed": parsed},
-        cache_guard="excel_editor",
-    )
-
-
-def _is_pdf_path(path: Path) -> None:
-    if not is_pdf_file(path):
-        raise ValueError("PDF editor state is only enabled for PDFs")
-
-
-def _is_excel_path(path: Path) -> None:
-    if not is_excel_file(path):
-        raise ValueError("Excel editor state is only enabled for .xlsx/.xlsm/.csv files")
-
-
-def _open_pdf(path: Path):
-    return SyntheticDocumentFactory().open_pdf(path)
-
-
-def _open_excel(path: Path):
-    return SyntheticDocumentFactory().open_excel(path)
-
-
-def _block_slot(document) -> dict[str, Any]:
-    extras = document.snapshot.extras or {}
-    blocks = extras.get("blocks") if isinstance(extras.get("blocks"), dict) else {}
-    slot = blocks.get(document.block_id)
-    return slot if isinstance(slot, dict) else {}
-
-
-def _read_block_slot_field(
-    root: str,
-    rel_path: str,
-    type_check,
-    opener,
-    slot_field: str,
-) -> dict[str, Any] | None:
-    workspace = canonical_workspace_root(root)
-    path = resolve_existing_workspace_path(workspace, rel_path)
-    type_check(path)
-    document = opener(path)
-    value = _block_slot(document).get(slot_field)
-    return value if isinstance(value, dict) else None
-
-
-def _read_block_slot_combined(
-    root: str,
-    rel_path: str,
-    type_check,
-    opener,
-) -> dict[str, Any] | None:
-    workspace = canonical_workspace_root(root)
-    path = resolve_existing_workspace_path(workspace, rel_path)
-    type_check(path)
-    document = opener(path)
-    slot = _block_slot(document)
-    editor = slot.get("editor")
-    cache = slot.get("parsedCache")
-    return {
-        "editor": editor if isinstance(editor, dict) else None,
-        "parsedCache": cache if isinstance(cache, dict) else None,
-    }
-
-
-def _write_block_slot_field(
-    root: str,
-    rel_path: str,
-    type_check,
-    opener,
-    slot_field: str,
-    value: Any,
-    *,
-    cache_guard: str | None = None,
-) -> None:
-    from dataclasses import replace as _replace
-
-    workspace = canonical_workspace_root(root)
-    path = resolve_existing_workspace_path(workspace, rel_path)
-    type_check(path)
-    if cache_guard is not None:
-        _reject_parsed_cache_rebind(path, cache_guard)
-    factory = SyntheticDocumentFactory()
-    document = opener(path)
-    extras = dict(document.snapshot.extras or {})
-    blocks_raw = extras.get("blocks")
-    blocks = dict(blocks_raw) if isinstance(blocks_raw, dict) else {}
-    slot_raw = blocks.get(document.block_id)
-    slot = dict(slot_raw) if isinstance(slot_raw, dict) else {}
-    if cache_guard is not None:
-        _reject_non_empty_editor_state(slot.get("editor"))
-    slot[slot_field] = value
-    blocks[document.block_id] = slot
-    extras["blocks"] = blocks
-    new_snapshot = _replace(document.snapshot, extras=extras)
-    factory.write_full(document, new_snapshot)
-    _invalidate_scan_cache(workspace)
-
-
-def _reject_parsed_cache_rebind(path: Path, legacy_editor_key: str) -> None:
-    """Fail before migration/write when existing editor state could be rebound."""
-    result = read_sidecar(sidecar_path_for(path))
-    if not isinstance(result, Loaded):
-        return
-
-    sidecar = result.data
-    editors = [sidecar.get(legacy_editor_key)] if legacy_editor_key in sidecar else []
-    extras = sidecar.get("extras")
-    blocks = extras.get("blocks") if isinstance(extras, dict) else None
-    if isinstance(blocks, dict):
-        editors.extend(
-            slot["editor"]
-            for slot in blocks.values()
-            if isinstance(slot, dict) and "editor" in slot
-        )
-
-    for editor in editors:
-        _reject_non_empty_editor_state(editor)
-
-
-def _reject_non_empty_editor_state(editor: Any) -> None:
-    if _state_value_is_non_empty(editor):
-        raise ValueError(
-            "parsed-cache refresh is disabled when the target slot has non-empty editor state"
-        )
-
-
-def _state_value_is_non_empty(value: Any) -> bool:
-    if value is None:
-        return False
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (str, list, dict)):
-        return bool(value)
-    return True
+    return read_attachment_recovery_sidecar(path)
 
 
 def write_doc_workspace(root: str, rel_path: str, payload: dict[str, Any]) -> dict[str, Any]:
-    """Persist a markdown document and return its post-write DocReadResult.
+    """Persist a Markdown Page and return its post-write read model.
 
     Returning the result eliminates the round-trip the client previously
     needed to refresh state after every save.
     """
     workspace = canonical_workspace_root(root)
-    ensure_text_document_path(rel_path)
+    ensure_markdown_path(rel_path)
     path = resolve_workspace_path_for_write(workspace, rel_path)
 
-    # Merge incoming meta with existing sidecar/frontmatter so callers can
-    # send partial payloads (the editor only knows about html/markdown).
+    store = MarkdownPageStore()
     incoming_meta = dict(payload.get("meta") or {})
-    existing_meta: dict[str, Any] = {}
-    existing_extras: Any = None
+    existing_markdown = ""
     if path.exists():
-        try:
-            raw = path.read_text(encoding="utf-8")
-            existing_meta, _ = parse_frontmatter(raw)
-        except OSError:
-            existing_meta = {}
-        sidecar_path = sidecar_path_for(path)
-        sidecar = read_sidecar(sidecar_path)
-        if isinstance(sidecar, Loaded):
-            if not existing_meta.get("id") and sidecar.data.get("id"):
-                existing_meta["id"] = sidecar.data["id"]
-            existing_extras = sidecar.data.get("extras")
-        elif isinstance(sidecar, Corrupt):
-            forensic_path = _write_forensic_copy(sidecar_path, sidecar.raw)
-            raise CorruptSidecarError(sidecar_path, forensic_path, sidecar.reason)
+        existing = store.read(path)
+        existing_markdown = existing.markdown
+        # Identity of an existing Page belongs to its exact on-disk
+        # frontmatter. A path-derived UI id must never replace a numeric,
+        # object, empty, or otherwise hand-authored source token while
+        # applying an unrelated metadata patch such as `favorite`.
+        incoming_meta.pop("id", None)
 
-    merged_meta: dict[str, Any] = {**existing_meta, **incoming_meta}
-    if not str(merged_meta.get("id") or "").strip():
-        merged_meta["id"] = str(uuid.uuid4())
-    name = payload.get("name")
-    if name and not merged_meta.get("title"):
-        merged_meta["title"] = name
-    merged_meta["updated"] = now_iso()
-
-    extras = payload.get("extras")
-    if extras is None and "extras" not in payload:
-        extras = existing_extras
-
-    final_payload = {
-        "html": payload.get("html") or "",
-        "markdown": payload.get("markdown") or "",
-        "extras": extras,
-        "meta": merged_meta,
-    }
-    write_doc(path, final_payload)
+    markdown_value = payload.get("markdown")
+    markdown = existing_markdown if markdown_value is None else str(markdown_value)
+    if path.exists():
+        store.write(
+            path,
+            markdown,
+            incoming_meta or None,
+            str(payload["expectedRevision"])
+            if payload.get("expectedRevision") is not None
+            else None,
+        )
+    else:
+        requested_id = incoming_meta.get("id")
+        page_id = (
+            requested_id.strip()
+            if isinstance(requested_id, str) and requested_id.strip()
+            else str(uuid.uuid4())
+        )
+        store.create(path, page_id, markdown, incoming_meta)
     _invalidate_scan_cache(workspace)
 
-    return _document_read_response(
-        editor_html=final_payload["html"],
-        markdown=final_payload["markdown"],
-        meta=merged_meta,
-        extras=extras,
-        legacy_source="sidecar",
-        source_state="sidecar_fresh",
-        correlation=None,
+    persisted = store.read(path)
+
+    return _page_read_response(
+        markdown=markdown,
+        meta=persisted.meta,
+        revision=persisted.revision,
     )
 
 
@@ -1055,49 +559,25 @@ def doc_create(root: str, payload: dict[str, Any]) -> dict[str, Any]:
     path = resolve_workspace_path_for_write(workspace, rel_path)
     if path.exists():
         raise ValueError(f"document already exists: {rel_path}")
-    write_doc(path, payload)
+    meta = dict(payload.get("meta") or {})
+    requested_id = meta.get("id")
+    page_id = (
+        requested_id.strip()
+        if isinstance(requested_id, str) and requested_id.strip()
+        else str(uuid.uuid4())
+    )
+    MarkdownPageStore().create(
+        path,
+        page_id,
+        str(payload.get("markdown") or ""),
+        meta,
+    )
     _invalidate_scan_cache(workspace)
-    return document_dto_for_path(workspace, path)
-
-
-def doc_create_pdf(root: str, rel_path: str, byte_list: Any) -> dict[str, Any]:
-    workspace = canonical_workspace_root(root)
-    ensure_pdf_path(rel_path)
-    path = resolve_workspace_path_for_write(workspace, rel_path)
-    if path.exists():
-        raise ValueError(f"document already exists: {rel_path}")
-    if not isinstance(byte_list, (list, tuple)):
-        raise ValueError("PDF bytes payload must be a list of unsigned bytes")
-    try:
-        data = bytes(int(b) & 0xFF for b in byte_list)
-    except (TypeError, ValueError) as err:
-        raise ValueError(f"invalid PDF bytes payload: {err}") from err
-    if not data.startswith(b"%PDF-"):
-        raise ValueError("payload is not a PDF (missing %PDF- header)")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write(path, data)
-    _invalidate_scan_cache(workspace)
-    return document_dto_for_path(workspace, path)
-
-
-def doc_create_excel(root: str, rel_path: str, byte_list: Any) -> dict[str, Any]:
-    workspace = canonical_workspace_root(root)
-    ensure_excel_path(rel_path)
-    path = resolve_workspace_path_for_write(workspace, rel_path)
-    if path.exists():
-        raise ValueError(f"document already exists: {rel_path}")
-    if not isinstance(byte_list, (list, tuple)):
-        raise ValueError("XLSX bytes payload must be a list of unsigned bytes")
-    try:
-        data = bytes(int(b) & 0xFF for b in byte_list)
-    except (TypeError, ValueError) as err:
-        raise ValueError(f"invalid XLSX bytes payload: {err}") from err
-    if path.suffix.lower() != ".csv" and not data.startswith(b"PK\x03\x04"):
-        raise ValueError("payload is not an XLSX (missing PK ZIP header)")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write(path, data)
-    _invalidate_scan_cache(workspace)
-    return document_dto_for_path(workspace, path)
+    return next(
+        document
+        for document in workspace_scan(str(workspace))["documents"]
+        if document["path"] == rel_path
+    )
 
 
 # Import-supported extensions for external DnD. Mirrors the frontend D2 module's
@@ -1106,7 +586,7 @@ def doc_create_excel(root: str, rel_path: str, byte_list: Any) -> dict[str, Any]
 # we re-validate on the backend boundary so a misbehaving caller (or browser
 # DataTransfer feeding a `.txt` straight through) can't smuggle a non-document
 # file into the workspace.
-IMPORT_SUPPORTED_EXTENSIONS = {".md", ".pdf", ".xlsx", ".csv"}
+IMPORT_SUPPORTED_EXTENSIONS = {".md", ".markdown", ".pdf", ".xlsx", ".csv"}
 
 
 def doc_import_external(
@@ -1117,7 +597,7 @@ def doc_import_external(
     name: str,
     mode: str,
 ) -> dict[str, Any]:
-    """Copy an external `.md`/`.pdf`/`.xlsx`/`.csv` into the workspace.
+    """Copy an external `.md`/`.markdown`/`.pdf`/`.xlsx`/`.csv` into the workspace.
 
     Always-copy semantics: the source on disk (e.g. user's Downloads) is left
     untouched.
@@ -1125,9 +605,10 @@ def doc_import_external(
     `mode`:
     - ``"create"`` — refuse to overwrite. A name clash raises ``FileExistsError``
       and the FastAPI layer translates it to a 409.
-    - ``"replace"`` — overwrite an existing Markdown Page. Attachments must
-      use Keep both or Skip so replacing their source file cannot strand
-      same-name legacy recovery evidence.
+    - ``"replace"`` — overwrite the user file at the destination. Any
+      pre-existing ``.doxmind`` artifact is deliberately left byte-identical.
+      Normal Page open ignores it; the user can inspect and export it only
+      through the explicit legacy-recovery surface.
     """
     if mode not in {"create", "replace"}:
         raise ValueError(f"unsupported import mode: {mode}")
@@ -1144,10 +625,8 @@ def doc_import_external(
     suffix = Path(name).suffix.lower()
     if suffix not in IMPORT_SUPPORTED_EXTENSIONS:
         raise ValueError(
-            f"only .md, .pdf, .xlsx, .csv are supported for external import: {name}"
+            f"only .md, .markdown, .pdf, .xlsx, .csv are supported for external import: {name}"
         )
-    if mode == "replace" and suffix != ".md":
-        raise ValueError(f"replace is only available for Markdown pages: {name}")
 
     destination = resolve_workspace_path_for_write(workspace, rel_path)
     if mode == "create" and destination.exists():
@@ -1177,121 +656,534 @@ def doc_import_external(
         # `shutil.copyfile` is the always-copy primitive: it preserves the
         # source on disk byte-for-byte. We deliberately don't call `copy2` —
         # carrying mtime / metadata across is a UX call we haven't made yet.
-        # Replace reaches this branch only for Markdown Pages. Attachments are
-        # rejected before destination resolution so recovery evidence remains
-        # byte-for-byte untouched.
+        # In replace mode this overwrites only the user file; the hidden
+        # sidecar next to it is intentionally NOT touched.
         shutil.copyfile(source, destination)
     else:
         raise ValueError("doc_import_external requires either srcPath or bytes")
 
     _invalidate_scan_cache(workspace)
-    return document_dto_for_path(workspace, destination)
-
-
-def write_html_doc(path: Path, payload: dict[str, Any]) -> None:
-    # #139: the .html file body IS the editor HTML (`html` = getHTML()); write
-    # it verbatim with no frontmatter. The sidecar caches it + carries extras.
-    meta = dict(payload.get("meta") or {})
-    doc_id = str(meta.get("id") or "").strip()
-    if not doc_id:
-        raise ValueError("document id is required")
-    html = str(payload.get("html") or "")
-    atomic_write(path, html.encode("utf-8"))
-
-    sidecar: dict[str, Any] = {
-        "version": SIDECAR_VERSION,
-        "id": doc_id,
-        "html": html,
-        "markdown_hash": hash_markdown(html),
-        "updated_at": now_iso(),
-    }
-    extras = payload.get("extras")
-    if extras is not None:
-        sidecar["extras"] = extras
-    atomic_write(
-        sidecar_path_for(path),
-        json.dumps(sidecar, indent=2, ensure_ascii=False).encode(),
+    imported_path = relative_path_string(workspace, destination)
+    return next(
+        document
+        for document in workspace_scan(str(workspace))["documents"]
+        if document["path"] == imported_path
     )
 
 
-def write_doc(path: Path, payload: dict[str, Any]) -> None:
-    if is_html_file(path):
-        write_html_doc(path, payload)
-        return
+def _existing_legacy_sidecar_family(document_path: Path) -> list[Path]:
+    """Return existing recovery artifacts for ``document_path`` in stable order."""
+    sidecar = sidecar_path_for(document_path)
+    candidates = [
+        sidecar,
+        sidecar.with_name(f"{sidecar.name}.bak"),
+        sidecar.with_name(f"{sidecar.name}.lock"),
+    ]
+    corrupt_prefix = f"{sidecar.name}.corrupt-"
+    if sidecar.parent.is_dir():
+        candidates.extend(
+            sorted(
+                (
+                    candidate
+                    for candidate in sidecar.parent.iterdir()
+                    if candidate.name.startswith(corrupt_prefix)
+                ),
+                key=lambda candidate: candidate.name,
+            )
+        )
+    return [candidate for candidate in candidates if candidate.exists() or candidate.is_symlink()]
 
-    from services.markdown_document_state import DocumentSnapshot, MarkdownDocumentState
 
-    snapshot = DocumentSnapshot(
-        html=str(payload.get("html") or ""),
-        markdown=str(payload.get("markdown") or ""),
-        meta=dict(payload.get("meta") or {}),
-        extras=payload.get("extras"),
-    )
-    MarkdownDocumentState().write_full(path, snapshot)
-
-
-def move_document_pair(root: str, old_path: str, new_path: str) -> dict[str, Any]:
+def _move_document_family(root: str, old_path: str, new_path: str) -> dict[str, Any]:
     workspace = canonical_workspace_root(root)
     ensure_same_document_extension(old_path, new_path)
     source = resolve_existing_workspace_path(workspace, old_path)
-    if not source.is_file():
-        raise ValueError(f"document is not a file: {old_path}")
-    ensure_page_move_path(old_path)
     destination = resolve_workspace_path_for_write(workspace, new_path)
     if destination.exists():
         raise ValueError(f"destination already exists: {new_path}")
-    destination.parent.mkdir(parents=True, exist_ok=True)
 
     source_sidecar = sidecar_path_for(source)
+    source_artifacts = _existing_legacy_sidecar_family(source)
     destination_sidecar = sidecar_path_for(destination)
-    source.rename(destination)
-    # The document has moved — invalidate before the sidecar step so a failure
-    # below can't leave the cache serving a stale entry (mirrors doc_delete).
-    _invalidate_scan_cache(workspace)
-    if source_sidecar.exists():
-        # Pair atomicity (ADR 0005) is captured in the error surfaced here: if
-        # the sidecar move fails the document is already at the destination, so
-        # report the half-moved pair instead of returning a consistent-looking
-        # DTO over an inconsistent workspace.
-        try:
-            source_sidecar.rename(destination_sidecar)
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(
-                f"document moved to {new_path} but sidecar move failed: {exc}"
-            ) from exc
-    return document_dto_for_path(workspace, destination)
+    destination_artifacts = _existing_legacy_sidecar_family(destination)
+    if destination_artifacts:
+        raise ValueError(
+            "destination sidecar already exists: "
+            f"{relative_path_string(workspace, destination_artifacts[0])}"
+        )
 
-
-def move_folder(root: str, old_path: str, new_path: str) -> dict[str, Any]:
-    """Move a folder atomically. Pair atomicity (ADR 0005) is preserved by
-    relying on the OS's directory rename: every nested `.md` + `.doxmind`
-    pair travels with the parent inode, so either the whole subtree moves or
-    none of it does."""
-    workspace = canonical_workspace_root(root)
-    source = resolve_existing_workspace_path(workspace, old_path)
-    if not source.is_dir():
-        raise ValueError(f"folder is not a directory: {old_path}")
-    destination = resolve_workspace_path_for_write(workspace, new_path)
-    if destination.exists():
-        raise ValueError(f"destination already exists: {new_path}")
+    artifact_moves = [
+        (
+            source_artifact,
+            destination_sidecar.with_name(
+                f"{destination_sidecar.name}{source_artifact.name[len(source_sidecar.name) :]}"
+            ),
+        )
+        for source_artifact in source_artifacts
+    ]
     destination.parent.mkdir(parents=True, exist_ok=True)
-    source.rename(destination)
+    page_move_attempted = False
+    attempted_artifact_moves: list[tuple[Path, Path]] = []
+    try:
+        page_move_attempted = True
+        source.rename(destination)
+        for source_artifact, destination_artifact in artifact_moves:
+            attempted_artifact_moves.append((source_artifact, destination_artifact))
+            source_artifact.rename(destination_artifact)
+        result = document_dto_for_path(workspace, destination)
+    except Exception as exc:  # noqa: BLE001
+        rollback_errors: list[str] = []
+        for source_artifact, destination_artifact in reversed(attempted_artifact_moves):
+            source_exists = source_artifact.exists() or source_artifact.is_symlink()
+            destination_exists = destination_artifact.exists() or destination_artifact.is_symlink()
+            if destination_exists and not source_exists:
+                try:
+                    destination_artifact.rename(source_artifact)
+                except Exception as rollback_exc:  # noqa: BLE001
+                    rollback_errors.append(f"{destination_artifact.name}: {rollback_exc}")
+            elif destination_exists and source_exists:
+                rollback_errors.append(
+                    f"{destination_artifact.name}: source and destination both exist"
+                )
+
+        if page_move_attempted:
+            source_exists = source.exists() or source.is_symlink()
+            destination_exists = destination.exists() or destination.is_symlink()
+            if destination_exists and not source_exists:
+                try:
+                    destination.rename(source)
+                except Exception as rollback_exc:  # noqa: BLE001
+                    rollback_errors.append(f"{destination.name}: {rollback_exc}")
+            elif destination_exists and source_exists:
+                rollback_errors.append(f"{destination.name}: source and destination both exist")
+
+        _invalidate_scan_cache(workspace)
+        rollback_status = (
+            "completed" if not rollback_errors else f"incomplete ({'; '.join(rollback_errors)})"
+        )
+        raise RuntimeError(f"document move failed; rollback {rollback_status}: {exc}") from exc
+
     _invalidate_scan_cache(workspace)
-    return {"kind": "folder", "path": new_path}
+    return result
 
 
-def doc_move(root: str, old_path: str, new_path: str) -> dict[str, Any]:
-    """Polymorphic move: delegates to `move_document_pair` for documents and
-    to `move_folder` for directories. Mirrors the Tauri `doc_move` command so
-    the browser-dev fallback honours the same contract."""
+def move_attachment_pair(root: str, old_path: str, new_path: str) -> dict[str, Any]:
+    """Legacy structural command restricted to non-Markdown Attachments."""
     workspace = canonical_workspace_root(root)
     source = resolve_existing_workspace_path(workspace, old_path)
     if source.is_dir():
-        return move_folder(root, old_path, new_path)
-    payload = move_document_pair(root, old_path, new_path)
-    payload = dict(payload)
-    payload["kind"] = "document"
-    return payload
+        raise ValueError("Folder rename/move must use workspace_relocate_folder")
+    if is_markdown_file(source):
+        raise ValueError("Page rename/move must use workspace_relocate_page")
+    return _move_document_family(root, old_path, new_path)
+
+
+def _workspace_markdown_relpaths(workspace: Path) -> set[str]:
+    return {
+        relative_path_string(workspace, path)
+        for path in iter_workspace_document_paths(workspace)
+        if is_markdown_file(path)
+    }
+
+
+def _ensure_complete_relocation_topology(
+    workspace: Path,
+    checked_pages: dict[str, dict[str, Any]],
+    operation: str,
+) -> None:
+    current_pages = _workspace_markdown_relpaths(workspace)
+    checked_paths = set(checked_pages)
+    unplanned = sorted(current_pages - checked_paths)
+    missing = sorted(checked_paths - current_pages)
+    if unplanned or missing:
+        details = []
+        if unplanned:
+            details.append(f"unplanned Pages {', '.join(unplanned)}")
+        if missing:
+            details.append(f"missing Pages {', '.join(missing)}")
+        raise ValueError(f"{operation} topology changed: {'; '.join(details)}")
+
+
+def _prepare_relocation_checks(
+    workspace: Path,
+    checks_value: Any,
+    operation: str,
+    store: MarkdownPageStore,
+) -> dict[str, dict[str, Any]]:
+    if not isinstance(checks_value, list):
+        raise ValueError(f"{operation} checks must be an array")
+    checked_pages: dict[str, dict[str, Any]] = {}
+    for value in checks_value:
+        if not isinstance(value, dict):
+            raise ValueError(f"invalid {operation} check")
+        rel_path = validate_relative_path(str(value.get("path") or "")).as_posix()
+        ensure_markdown_path(rel_path)
+        if rel_path in checked_pages:
+            raise ValueError(f"duplicate {operation} check: {rel_path}")
+        expected_revision = value.get("expectedRevision")
+        if not isinstance(expected_revision, str) or not expected_revision:
+            raise ValueError(f"{operation} check requires a revision: {rel_path}")
+        page_path = resolve_existing_workspace_path(workspace, rel_path)
+        if not page_path.is_file():
+            raise ValueError(f"Page is not a file: {rel_path}")
+        before_bytes = page_path.read_bytes()
+        revision = f"sha256:{hashlib.sha256(before_bytes).hexdigest()}"
+        if revision != expected_revision:
+            raise PageRevisionConflictError(page_path, expected_revision, revision)
+        store.read(page_path)
+        checked_pages[rel_path] = {
+            "path": page_path,
+            "bytes": before_bytes,
+            "revision": revision,
+        }
+    _ensure_complete_relocation_topology(workspace, checked_pages, operation)
+    return checked_pages
+
+
+def _revalidate_relocation_checks(
+    workspace: Path,
+    checked_pages: dict[str, dict[str, Any]],
+    operation: str,
+) -> None:
+    _ensure_complete_relocation_topology(workspace, checked_pages, operation)
+    for checked in checked_pages.values():
+        current_bytes = checked["path"].read_bytes()
+        if current_bytes == checked["bytes"]:
+            continue
+        actual_revision = f"sha256:{hashlib.sha256(current_bytes).hexdigest()}"
+        raise PageRevisionConflictError(checked["path"], checked["revision"], actual_revision)
+
+
+def workspace_relocate_page(
+    root: str,
+    old_path: str,
+    new_path: str,
+    expected_revision: Any,
+    checks_value: Any,
+    moved_markdown: Any,
+    writes_value: Any,
+) -> dict[str, Any]:
+    """Relocate one Page and commit all source-preserving link repairs together."""
+    workspace = canonical_workspace_root(root)
+    ensure_markdown_path(old_path)
+    ensure_markdown_path(new_path)
+    normalized_old = validate_relative_path(old_path).as_posix()
+    normalized_new = validate_relative_path(new_path).as_posix()
+    if normalized_old == normalized_new:
+        raise ValueError("Page relocation requires a new path")
+    if not isinstance(expected_revision, str) or not expected_revision:
+        raise ValueError("Page relocation requires the moved Page revision")
+    if moved_markdown is not None and not isinstance(moved_markdown, str):
+        raise ValueError("Page relocation movedMarkdown must be Markdown")
+    if not isinstance(writes_value, list):
+        raise ValueError("Page relocation writes must be an array")
+
+    store = MarkdownPageStore()
+    checked_pages = _prepare_relocation_checks(workspace, checks_value, "Page relocation", store)
+    source_check = checked_pages.get(normalized_old)
+    if source_check is None or source_check["revision"] != expected_revision:
+        raise ValueError(
+            f"Page relocation moved source is missing its matching topology check: {normalized_old}"
+        )
+
+    source = source_check["path"]
+    if not source.is_file():
+        raise ValueError(f"Page is not a file: {old_path}")
+    source_bytes = source_check["bytes"]
+    source_revision = source_check["revision"]
+    # Validate UTF-8 and the post-move DTO inputs before any path changes.
+    document_dto_for_path(workspace, source)
+
+    destination = resolve_workspace_path_for_write(workspace, normalized_new)
+    if destination.exists() or destination.is_symlink():
+        raise ValueError(f"destination already exists: {new_path}")
+
+    source_sidecar = sidecar_path_for(source)
+    destination_sidecar = sidecar_path_for(destination)
+    source_artifacts = _existing_legacy_sidecar_family(source)
+    destination_artifacts = _existing_legacy_sidecar_family(destination)
+    for artifact in [*source_artifacts, *destination_artifacts]:
+        if artifact.is_symlink():
+            raise ValueError(f"legacy sidecar family contains a symbolic link: {artifact}")
+        if not artifact.is_file():
+            raise ValueError(f"legacy sidecar family member is not a file: {artifact}")
+    if destination_artifacts:
+        raise ValueError(
+            "destination sidecar family already exists: "
+            + ", ".join(relative_path_string(workspace, path) for path in destination_artifacts)
+        )
+
+    seen_paths: set[str] = set()
+    write_plans: list[dict[str, Any]] = []
+    for value in writes_value:
+        if not isinstance(value, dict):
+            raise ValueError("invalid Page relocation write")
+        rel_path = validate_relative_path(str(value.get("path") or "")).as_posix()
+        ensure_markdown_path(rel_path)
+        if rel_path in seen_paths:
+            raise ValueError(f"duplicate Page relocation write: {rel_path}")
+        seen_paths.add(rel_path)
+        if rel_path in {normalized_old, normalized_new}:
+            raise ValueError(f"moved Page repairs must use movedMarkdown: {normalized_new}")
+        write_revision = value.get("expectedRevision")
+        markdown = value.get("markdown")
+        if not isinstance(write_revision, str) or not write_revision:
+            raise ValueError(f"Page relocation write requires a revision: {rel_path}")
+        if not isinstance(markdown, str):
+            raise ValueError(f"Page relocation write requires Markdown: {rel_path}")
+        checked = checked_pages.get(rel_path)
+        if checked is None or checked["revision"] != write_revision:
+            raise ValueError(
+                f"Page relocation write is missing its matching topology check: {rel_path}"
+            )
+        page_path = checked["path"]
+        before_bytes = checked["bytes"]
+        write_plans.append(
+            {
+                "path": page_path,
+                "rel_path": rel_path,
+                "before_bytes": before_bytes,
+                "expected_revision": write_revision,
+                "markdown": markdown,
+            }
+        )
+
+    artifact_moves = [
+        (
+            artifact,
+            destination_sidecar.with_name(
+                f"{destination_sidecar.name}{artifact.name[len(source_sidecar.name) :]}"
+            ),
+        )
+        for artifact in source_artifacts
+    ]
+    _revalidate_relocation_checks(workspace, checked_pages, "Page relocation")
+    missing_directories: list[Path] = []
+    current = destination.parent
+    while current != workspace and not current.exists():
+        missing_directories.append(current)
+        current = current.parent
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    moved: list[tuple[Path, Path]] = []
+    written: list[dict[str, Any]] = []
+    try:
+        source.rename(destination)
+        moved.append((source, destination))
+        for artifact_source, artifact_destination in artifact_moves:
+            artifact_source.rename(artifact_destination)
+            moved.append((artifact_source, artifact_destination))
+
+        if moved_markdown is None:
+            moved_revision = source_revision
+        else:
+            moved_revision = store.write(
+                destination,
+                moved_markdown,
+                expected_revision=source_revision,
+            )
+            written.append(
+                {
+                    "path": destination,
+                    "rel_path": normalized_new,
+                    "before_bytes": source_bytes,
+                    "output_revision": moved_revision,
+                }
+            )
+
+        write_results: list[dict[str, str]] = []
+        for plan in write_plans:
+            revision = store.write(
+                plan["path"],
+                plan["markdown"],
+                expected_revision=plan["expected_revision"],
+            )
+            written.append({**plan, "output_revision": revision})
+            write_results.append({"path": plan["rel_path"], "revision": revision})
+
+        document = document_dto_for_path(workspace, destination)
+        _invalidate_scan_cache(workspace)
+        return {
+            "document": document,
+            "revision": moved_revision,
+            "writes": write_results,
+        }
+    except Exception as exc:  # noqa: BLE001
+        rollback_errors: list[str] = []
+        for write in reversed(written):
+            page_path = write["path"]
+            try:
+                current_bytes = page_path.read_bytes()
+                current_revision = f"sha256:{hashlib.sha256(current_bytes).hexdigest()}"
+                if current_revision != write["output_revision"]:
+                    rollback_errors.append(f"{write['rel_path']}: changed during relocation")
+                    continue
+                atomic_write(page_path, write["before_bytes"])
+            except Exception as rollback_exc:  # noqa: BLE001
+                rollback_errors.append(f"{write['rel_path']}: {rollback_exc}")
+
+        for move_source, move_destination in reversed(moved):
+            source_exists = move_source.exists() or move_source.is_symlink()
+            destination_exists = move_destination.exists() or move_destination.is_symlink()
+            if destination_exists and not source_exists:
+                try:
+                    move_destination.rename(move_source)
+                except Exception as rollback_exc:  # noqa: BLE001
+                    rollback_errors.append(f"{move_destination.name}: {rollback_exc}")
+            elif destination_exists and source_exists:
+                rollback_errors.append(
+                    f"{move_destination.name}: source and destination both exist"
+                )
+
+        if not rollback_errors:
+            for directory in missing_directories:
+                with suppress(OSError):
+                    directory.rmdir()
+        _invalidate_scan_cache(workspace)
+        if rollback_errors:
+            raise RuntimeError(
+                f"page_relocation_rollback_incomplete: {exc}; {'; '.join(rollback_errors)}"
+            ) from exc
+        raise RuntimeError(f"Page relocation failed and was rolled back: {exc}") from exc
+
+
+def workspace_relocate_folder(
+    root: str,
+    old_path: str,
+    new_path: str,
+    checks_value: Any,
+    writes_value: Any,
+) -> dict[str, Any]:
+    """Relocate one folder and commit all affected Markdown link repairs together."""
+    workspace = canonical_workspace_root(root)
+    old_relative = validate_relative_path(old_path)
+    new_relative = validate_relative_path(new_path)
+    normalized_old = old_relative.as_posix()
+    normalized_new = new_relative.as_posix()
+    if normalized_old == normalized_new:
+        raise ValueError("Folder relocation requires a new path")
+    if normalized_new.startswith(f"{normalized_old}/"):
+        raise ValueError("Folder cannot be relocated inside itself")
+    source = resolve_existing_workspace_path(workspace, normalized_old)
+    if not source.is_dir():
+        raise ValueError(f"folder is not a directory: {old_path}")
+    destination = resolve_workspace_path_for_write(workspace, normalized_new)
+    if destination.exists() or destination.is_symlink():
+        raise ValueError(f"destination already exists: {new_path}")
+    if not isinstance(writes_value, list):
+        raise ValueError("Folder relocation writes must be an array")
+
+    store = MarkdownPageStore()
+    checked_pages = _prepare_relocation_checks(workspace, checks_value, "Folder relocation", store)
+
+    seen_sources: set[str] = set()
+    seen_destinations: set[str] = set()
+    write_plans: list[dict[str, Any]] = []
+    for value in writes_value:
+        if not isinstance(value, dict):
+            raise ValueError("invalid Folder relocation write")
+        source_path = validate_relative_path(str(value.get("sourcePath") or "")).as_posix()
+        destination_path = validate_relative_path(
+            str(value.get("destinationPath") or "")
+        ).as_posix()
+        ensure_markdown_path(source_path)
+        ensure_markdown_path(destination_path)
+        if source_path in seen_sources:
+            raise ValueError(f"duplicate Folder relocation write: {source_path}")
+        if destination_path in seen_destinations:
+            raise ValueError(f"duplicate Folder relocation destination: {destination_path}")
+        seen_sources.add(source_path)
+        seen_destinations.add(destination_path)
+        expected_revision = value.get("expectedRevision")
+        markdown = value.get("markdown")
+        if not isinstance(expected_revision, str) or not expected_revision:
+            raise ValueError(f"Folder relocation write requires a revision: {source_path}")
+        if not isinstance(markdown, str):
+            raise ValueError(f"Folder relocation write requires Markdown: {source_path}")
+        checked = checked_pages.get(source_path)
+        if checked is None or checked["revision"] != expected_revision:
+            raise ValueError(
+                f"Folder relocation write is missing its matching topology check: {source_path}"
+            )
+        source_relative = Path(source_path)
+        moved_source = source_relative == old_relative or old_relative in source_relative.parents
+        expected_destination = (
+            (new_relative / source_relative.relative_to(old_relative)).as_posix()
+            if moved_source
+            else source_path
+        )
+        if destination_path != expected_destination:
+            raise ValueError(
+                "Folder relocation write path mismatch: "
+                f"{source_path} -> {destination_path}, expected {expected_destination}"
+            )
+        after_path = workspace / Path(destination_path) if moved_source else checked["path"]
+        write_plans.append(
+            {
+                "source_path": source_path,
+                "destination_path": destination_path,
+                "after_path": after_path,
+                "before_bytes": checked["bytes"],
+                "expected_revision": expected_revision,
+                "markdown": markdown,
+            }
+        )
+
+    _revalidate_relocation_checks(workspace, checked_pages, "Folder relocation")
+    missing_directories: list[Path] = []
+    current = destination.parent
+    while current != workspace and not current.exists():
+        missing_directories.append(current)
+        current = current.parent
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    moved = False
+    written: list[dict[str, Any]] = []
+    try:
+        source.rename(destination)
+        moved = True
+        write_results: list[dict[str, str]] = []
+        for plan in write_plans:
+            revision = store.write(
+                plan["after_path"],
+                plan["markdown"],
+                expected_revision=plan["expected_revision"],
+            )
+            written.append({**plan, "output_revision": revision})
+            write_results.append({"path": plan["destination_path"], "revision": revision})
+        _invalidate_scan_cache(workspace)
+        return {"path": normalized_new, "writes": write_results}
+    except Exception as exc:  # noqa: BLE001
+        rollback_errors: list[str] = []
+        for write in reversed(written):
+            page_path = write["after_path"]
+            try:
+                current_bytes = page_path.read_bytes()
+                current_revision = f"sha256:{hashlib.sha256(current_bytes).hexdigest()}"
+                if current_revision != write["output_revision"]:
+                    rollback_errors.append(
+                        f"{write['destination_path']}: changed during relocation"
+                    )
+                    continue
+                atomic_write(page_path, write["before_bytes"])
+            except Exception as rollback_exc:  # noqa: BLE001
+                rollback_errors.append(f"{write['destination_path']}: {rollback_exc}")
+
+        if moved:
+            try:
+                destination.rename(source)
+            except Exception as rollback_exc:  # noqa: BLE001
+                rollback_errors.append(f"{normalized_new}: {rollback_exc}")
+        if not rollback_errors:
+            for directory in missing_directories:
+                with suppress(OSError):
+                    directory.rmdir()
+        _invalidate_scan_cache(workspace)
+        if rollback_errors:
+            raise RuntimeError(
+                f"folder_relocation_rollback_incomplete: {exc}; {'; '.join(rollback_errors)}"
+            ) from exc
+        raise RuntimeError(f"Folder relocation failed and was rolled back: {exc}") from exc
 
 
 def doc_delete(root: str, rel_path: str) -> dict[str, Any]:
@@ -1299,29 +1191,35 @@ def doc_delete(root: str, rel_path: str) -> dict[str, Any]:
     source = resolve_existing_workspace_path(workspace, rel_path)
     if not source.is_file():
         raise ValueError(f"document is not a file: {rel_path}")
-    if not is_markdown_file(source):
-        raise ValueError(f"attachments cannot be deleted: {rel_path}")
+    if not is_workspace_document_file(source):
+        raise ValueError(
+            f"document path must end in .md, .markdown, .pdf, .xlsx, .xlsm, or .csv: {rel_path}"
+        )
 
     sidecar_path = sidecar_path_for(source)
-    sidecar_existed = sidecar_path.exists()
-    sidecar_rel: str | None = relative_path_string(workspace, sidecar_path) if sidecar_existed else None
+    legacy_artifacts = _existing_legacy_sidecar_family(source)
+    sidecar_existed = sidecar_path in legacy_artifacts
+    sidecar_rel: str | None = (
+        relative_path_string(workspace, sidecar_path) if sidecar_existed else None
+    )
 
     _move_to_os_trash(source)
     # The primary file has left the workspace — invalidate the scan cache
     # before the sidecar step, otherwise a partial failure below leaves the
     # cache serving a stale entry for a `.md` that's already in OS Trash.
     _invalidate_scan_cache(workspace)
-    if sidecar_existed:
-        # Sidecar travels into Trash as a separate entry — pair atomicity is
-        # captured in the user-facing Confirm copy, not enforced by the OS.
-        # If the sidecar move fails the .md is already gone, so surface the
-        # error and let the caller know the pair is half-deleted.
+    artifact_errors: list[str] = []
+    for legacy_artifact in legacy_artifacts:
         try:
-            _move_to_os_trash(sidecar_path)
+            _move_to_os_trash(legacy_artifact)
         except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(
-                f"document moved to Trash but sidecar move failed: {exc}"
-            ) from exc
+            artifact_errors.append(f"{legacy_artifact.name}: {exc}")
+
+    if artifact_errors:
+        raise RuntimeError(
+            "document moved to Trash but legacy recovery artifact move failed: "
+            f"{'; '.join(artifact_errors)}"
+        )
 
     return {
         "path": rel_path,
@@ -1343,95 +1241,17 @@ def workspace_create_folder(root: str, rel_path: str) -> None:
     _invalidate_scan_cache(workspace)
 
 
-def workspace_rename_folder(root: str, old_path: str, new_path: str) -> None:
-    workspace = canonical_workspace_root(root)
-    source = resolve_existing_workspace_path(workspace, old_path)
-    if not source.is_dir():
-        raise ValueError(f"folder is not a directory: {old_path}")
-    destination = resolve_workspace_path_for_write(workspace, new_path)
-    if destination.exists():
-        raise ValueError(f"destination already exists: {new_path}")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    source.rename(destination)
-    _invalidate_scan_cache(workspace)
-
-
 def workspace_delete_folder(root: str, rel_path: str) -> dict[str, Any]:
     workspace = canonical_workspace_root(root)
     source = resolve_existing_workspace_path(workspace, rel_path)
     if not source.is_dir():
         raise ValueError(f"folder is not a directory: {rel_path}")
-    if folder_contains_attachment_evidence(source):
-        raise ValueError(
-            f"folder contains attachment recovery evidence and cannot be deleted: {rel_path}"
-        )
     _move_to_os_trash(source)
     _invalidate_scan_cache(workspace)
     return {
         "path": rel_path,
         "sidecarPath": None,
     }
-
-
-def workspace_import_asset(
-    root: str, document_path: str, filename: str, byte_list: Any
-) -> dict[str, Any]:
-    """Write an embedded asset next to a markdown document, returning its
-    workspace-relative ``./assets/<name>`` reference.
-
-    Mirrors the Rust ``workspace_import_asset`` command (src-tauri/src/lib.rs):
-    sanitize the filename, create a sibling ``assets/`` directory, and pick a
-    collision-free ``name (2).ext`` path. Bytes arrive over the wire as a
-    ``number[]`` of unsigned bytes, matching ``doc_create_pdf``.
-    """
-    workspace = canonical_workspace_root(root)
-    ensure_markdown_path(document_path)
-    document = resolve_existing_workspace_path(workspace, document_path)
-    if not document.is_file():
-        raise ValueError(f"document is not a file: {document_path}")
-    if not isinstance(byte_list, (list, tuple)):
-        raise ValueError("asset bytes payload must be a list of unsigned bytes")
-    try:
-        data = bytes(int(b) & 0xFF for b in byte_list)
-    except (TypeError, ValueError) as err:
-        raise ValueError(f"invalid asset bytes payload: {err}") from err
-    if not data:
-        raise ValueError("asset is empty")
-
-    safe_name = sanitize_asset_filename(filename)
-    assets_dir = document.parent / "assets"
-    assets_dir.mkdir(parents=True, exist_ok=True)
-    destination = unique_asset_path(assets_dir, safe_name)
-    destination.write_bytes(data)
-    return {"path": f"./assets/{destination.name}"}
-
-
-def sanitize_asset_filename(filename: str) -> str:
-    # Cc is U+0000–U+001F and U+007F–U+009F — the exact range Rust's
-    # `char::is_control` replaces, alongside the Windows/macOS-unsafe punctuation.
-    unsafe = set('<>:"/\\|?*')
-    name = Path(filename).name or "image"
-    cleaned = "".join(
-        "_" if (ch in unsafe or ch <= "\x1f" or "\x7f" <= ch <= "\x9f") else ch
-        for ch in name
-    )
-    cleaned = cleaned.strip().strip(".")
-    return cleaned or "image"
-
-
-def unique_asset_path(assets_dir: Path, filename: str) -> Path:
-    first = assets_dir / filename
-    if not first.exists():
-        return first
-    name = Path(filename)
-    stem = name.stem or "image"
-    extension = name.suffix  # includes the leading "."
-    counter = 2
-    while True:
-        candidate = assets_dir / f"{stem} ({counter}){extension}"
-        if not candidate.exists():
-            return candidate
-        counter += 1
 
 
 def canonical_workspace_root(root: str) -> Path:
@@ -1466,27 +1286,6 @@ def ensure_markdown_path(path: str) -> None:
         raise ValueError(f"document path must end in .md or .markdown: {path}")
 
 
-def ensure_page_move_path(path: str) -> None:
-    if Path(path).suffix.lower() not in {".md", ".markdown"}:
-        raise ValueError(f"attachments cannot be renamed or moved: {path}")
-
-
-def ensure_text_document_path(path: str) -> None:
-    # Wire-compatible name retained for callers; only Markdown Pages are
-    # writable through the normal workspace surface. HTML is an Attachment.
-    ensure_markdown_path(path)
-
-
-def ensure_pdf_path(path: str) -> None:
-    if Path(path).suffix.lower() != ".pdf":
-        raise ValueError(f"document path must end in .pdf: {path}")
-
-
-def ensure_excel_path(path: str) -> None:
-    if Path(path).suffix.lower() not in (".xlsx", ".xlsm", ".csv"):
-        raise ValueError(f"document path must end in .xlsx, .xlsm, or .csv: {path}")
-
-
 WORKSPACE_DOCUMENT_SUFFIXES = {
     ".md",
     ".markdown",
@@ -1497,45 +1296,20 @@ WORKSPACE_DOCUMENT_SUFFIXES = {
     ".html",
     ".htm",
 }
-WORKSPACE_ATTACHMENT_SUFFIXES = {".pdf", ".xlsx", ".xlsm", ".csv", ".html", ".htm"}
-ATTACHMENT_EVIDENCE_SUFFIXES = (".doxmind", ".doxmind.bak", ".doxmind.lock")
-ATTACHMENT_CORRUPT_EVIDENCE_MARKER = ".doxmind.corrupt-"
-
-
-def folder_contains_attachment_evidence(folder: Path) -> bool:
-    for path in folder.rglob("*"):
-        if not path.is_file():
-            continue
-        if path.suffix.lower() in WORKSPACE_ATTACHMENT_SUFFIXES:
-            return True
-        lower_name = path.name.lower()
-        corrupt_source_name, marker, _ = lower_name.partition(
-            ATTACHMENT_CORRUPT_EVIDENCE_MARKER
-        )
-        if marker and Path(corrupt_source_name).suffix in WORKSPACE_ATTACHMENT_SUFFIXES:
-            return True
-        for evidence_suffix in ATTACHMENT_EVIDENCE_SUFFIXES:
-            if lower_name.endswith(evidence_suffix):
-                source_name = lower_name[: -len(evidence_suffix)]
-                if Path(source_name).suffix in WORKSPACE_ATTACHMENT_SUFFIXES:
-                    return True
-                break
-    return False
 
 
 def ensure_same_document_extension(old_path: str, new_path: str) -> None:
-    """Keep a Page's exact Markdown extension during rename or move.
-
-    ``move_document_pair`` rejects Attachments before this check; the broader
-    suffix validation remains defensive for malformed destination paths.
-    """
+    """A rename or in-place move may target any document type, but must not
+    change the file's type: the destination keeps the source's extension so a
+    ``.pdf`` can't silently become a ``.md``. This browser-development adapter
+    mirrors the Electron core's extension contract."""
     old_ext = Path(old_path).suffix.lower()
     new_ext = Path(new_path).suffix.lower()
     for ext, path in ((old_ext, old_path), (new_ext, new_path)):
         if ext not in WORKSPACE_DOCUMENT_SUFFIXES:
             raise ValueError(
-                "document path must end in .md, .markdown, .pdf, .xlsx, .xlsm, .csv, .html, or .htm: "
-                f"{path}"
+                "document path must end in .md, .markdown, .pdf, .xlsx, .xlsm, "
+                f".csv, .html, or .htm: {path}"
             )
     if old_ext != new_ext:
         raise ValueError(f"cannot change document type on move: {old_path} -> {new_path}")
@@ -1544,6 +1318,12 @@ def ensure_same_document_extension(old_path: str, new_path: str) -> None:
 def resolve_existing_workspace_path(root: Path, rel_path: str) -> Path:
     relative = validate_relative_path(rel_path)
     candidate = root / relative
+    try:
+        metadata = candidate.lstat()
+    except FileNotFoundError as error:
+        raise ValueError(f"workspace path does not exist: {rel_path}") from error
+    if stat.S_ISLNK(metadata.st_mode):
+        raise ValueError(f"symbolic link operations are not allowed: {rel_path}")
     resolved = candidate.resolve(strict=True)
     ensure_path_within_root(root, resolved)
     return candidate
@@ -1552,9 +1332,25 @@ def resolve_existing_workspace_path(root: Path, rel_path: str) -> Path:
 def resolve_workspace_path_for_write(root: Path, rel_path: str) -> Path:
     relative = validate_relative_path(rel_path)
     candidate = root / relative
-    nearest = candidate if candidate.exists() else candidate.parent
-    while not nearest.exists():
-        nearest = nearest.parent
+    try:
+        candidate_metadata = candidate.lstat()
+    except FileNotFoundError:
+        candidate_metadata = None
+    if candidate_metadata is not None and stat.S_ISLNK(candidate_metadata.st_mode):
+        raise ValueError(f"symbolic link writes are not allowed: {rel_path}")
+
+    nearest = candidate if candidate_metadata is not None else candidate.parent
+    while True:
+        try:
+            nearest_metadata = nearest.lstat()
+            break
+        except FileNotFoundError:
+            parent = nearest.parent
+            if parent == nearest:
+                raise ValueError(f"document path escapes workspace root: {rel_path}")
+            nearest = parent
+    if stat.S_ISLNK(nearest_metadata.st_mode):
+        raise ValueError(f"symbolic link writes are not allowed: {rel_path}")
     ensure_path_within_root(root, nearest.resolve())
     return candidate
 
@@ -1562,16 +1358,6 @@ def resolve_workspace_path_for_write(root: Path, rel_path: str) -> Path:
 def ensure_path_within_root(root: Path, path: Path) -> None:
     if os.path.commonpath([str(root), str(path)]) != str(root):
         raise ValueError(f"path escapes workspace root: {path}")
-
-
-def _sidecar_id_for(path: Path) -> str | None:
-    """The id recorded in a document's sidecar, or None if absent/unreadable."""
-    sidecar = read_sidecar(sidecar_path_for(path))
-    if isinstance(sidecar, Loaded):
-        sidecar_id = sidecar.data.get("id")
-        if isinstance(sidecar_id, str) and sidecar_id.strip():
-            return sidecar_id
-    return None
 
 
 def document_dto_for_path(root: Path, path: Path) -> dict[str, Any]:
@@ -1587,16 +1373,14 @@ def document_dto_for_path(root: Path, path: Path) -> dict[str, Any]:
     if document_type == "markdown":
         raw = path.read_text(encoding="utf-8")
         frontmatter_id, title = parse_frontmatter_scan_fields(raw)
+        scan_meta, _ = parse_frontmatter(raw)
+        scan_meta = project_page_meta(scan_meta)
         title = title or path.stem  # #148: no authored frontmatter -> title is the filename
-        # Identity precedence (#148): legacy frontmatter id -> sidecar id ->
-        # path. doXmind no longer writes id into the `.md`, so for its own docs
-        # the canonical id lives in the sidecar and must be sourced from there.
+        # Identity is portable: frontmatter for doXmind-created Pages, path for
+        # external Markdown that has no id. A legacy Page sidecar never wins.
         if frontmatter_id:
             id_source = "frontmatter"
             doc_id = frontmatter_id
-        elif (sidecar_id := _sidecar_id_for(path)) is not None:
-            id_source = "sidecar"
-            doc_id = sidecar_id
         else:
             id_source = "path"
             doc_id = stable_path_id(rel_path)
@@ -1604,56 +1388,81 @@ def document_dto_for_path(root: Path, path: Path) -> dict[str, Any]:
         id_source = "path"
         doc_id = stable_path_id(rel_path)
         title = path.stem
-    return {
+        scan_meta = {}
+    dto = {
         "id": doc_id,
         "idSource": id_source,
         "path": rel_path,
         "name": path.name,
         "title": title,
         "documentType": document_type,
-        "hasSidecar": sidecar_path_for(path).exists(),
     }
+    for key in ("icon", "cover", "cover_position", "favorite"):
+        value = scan_meta.get(key)
+        if value is not None:
+            dto[key if key != "cover_position" else "coverPosition"] = value
+    return dto
 
 
 def iter_workspace_document_paths(workspace: Path):
+    # Prune generated and legacy cache directories before descent. Path.rglob
+    # can only filter after it has enumerated a subtree, which means a normal
+    # scan would still touch every entry under an old `.doxmind/` directory.
+    documents: list[Path] = []
+    for current_root, directory_names, filenames in os.walk(
+        workspace, topdown=True, followlinks=False
+    ):
+        directory_names[:] = [name for name in directory_names if name not in IGNORED_SCAN_DIRS]
+        current = Path(current_root)
+        for filename in filenames:
+            path = current / filename
+            if (
+                not path.is_symlink()
+                and not is_hidden_sidecar_name(filename)
+                and is_workspace_document_file(path)
+            ):
+                documents.append(path)
+
     # Sort by lowercased file name so listing/search order is deterministic
     # across scans and matches the frontend's name-asc sort.
-    for path in sorted(workspace.rglob("*"), key=lambda p: (p.name.lower(), p.as_posix())):
-        if any(part in IGNORED_SCAN_DIRS for part in path.relative_to(workspace).parts[:-1]):
-            continue
-        if (
-            path.is_file()
-            and not is_hidden_sidecar_name(path.name)
-            and is_workspace_document_file(path)
-        ):
-            yield path
+    yield from sorted(documents, key=lambda path: (path.name.lower(), path.as_posix()))
 
 
 def parse_frontmatter_scan_fields(raw: str) -> tuple[str | None, str | None]:
-    if not raw.startswith("---"):
+    head = extract_frontmatter_block(raw)
+    if head is None:
         return None, None
-    lines = raw.splitlines()
-    if not lines or lines[0].strip() != "---":
+    source = head.removeprefix("\ufeff")
+    lines = source.splitlines()
+    if not lines or lines[0] != "---":
         return None, None
     doc_id = None
     title = None
     for line in lines[1:]:
-        if line.strip() == "---":
+        if line == "---":
             break
         if ":" not in line:
             continue
         key, value = line.split(":", 1)
         key = key.strip()
-        parsed = parse_yaml_scalar(value.strip())
-        if key == "id" and isinstance(parsed, str) and parsed:
-            doc_id = parsed
+        token = value.strip()
+        parsed = parse_yaml_scalar(token)
+        if key == "id" and token:
+            doc_id = portable_page_id_from_token(token)
         if key == "title" and isinstance(parsed, str) and parsed:
             title = parsed
     return doc_id, title
 
 
 def is_hidden_sidecar_name(name: str) -> bool:
-    return name.startswith(".") and name.endswith(".doxmind")
+    if not name.startswith("."):
+        return False
+    marker = ".doxmind"
+    marker_index = name.find(marker, 1)
+    if marker_index <= 1:
+        return False
+    tail_index = marker_index + len(marker)
+    return tail_index == len(name) or name[tail_index] == "."
 
 
 def is_markdown_file(path: Path) -> bool:
@@ -1669,18 +1478,12 @@ def is_excel_file(path: Path) -> bool:
 
 
 def is_html_file(path: Path) -> bool:
-    # HTML is a text document type whose file body IS the editor HTML — no
-    # frontmatter, no markdown conversion (#139).
+    # HTML is a read-only Attachment; its bytes never enter the Markdown Page editor.
     return path.suffix.lower() in {".html", ".htm"}
 
 
 def is_workspace_document_file(path: Path) -> bool:
-    return (
-        is_markdown_file(path)
-        or is_pdf_file(path)
-        or is_excel_file(path)
-        or is_html_file(path)
-    )
+    return is_markdown_file(path) or is_pdf_file(path) or is_excel_file(path) or is_html_file(path)
 
 
 def relative_path_string(root: Path, path: Path) -> str:

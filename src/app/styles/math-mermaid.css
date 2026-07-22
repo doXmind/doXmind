@@ -1,176 +1,53 @@
-/* ====================================
-   Math Node Styles (LaTeX/KaTeX)
-   Notion-style click-to-edit math
-   ==================================== */
+/* Native source-backed math and Mermaid previews. */
 
-/* Inline math wrapper */
-.ProseMirror .inline-math-wrapper {
-  @apply inline;
-}
-
-/* Block math wrapper */
-.ProseMirror .block-math-wrapper {
+.markdown-page .block-math-wrapper {
   @apply my-4 block;
 }
 
-/* Rendered math base styles */
-.ProseMirror .math-rendered {
+.markdown-page .math-rendered {
   @apply cursor-pointer;
-  transition:
-    background-color 0.15s ease,
-    box-shadow 0.15s ease;
 }
 
-/* Inline math hover */
-.ProseMirror .inline-math-wrapper .math-rendered:hover {
-  @apply rounded bg-accent/50;
-}
-
-/* Block math hover */
-.ProseMirror .block-math-wrapper .math-rendered:hover {
+.markdown-page .block-math-wrapper .math-rendered:hover {
   @apply bg-accent/30;
 }
 
-/* Selected state uses shared .block-selected-ring class from editor.css */
-
-/* Math editor panel */
-.math-editor-panel {
-  animation: mathPanelFadeIn 0.15s ease-out;
-}
-
-@keyframes mathPanelFadeIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-/* KaTeX sizing — match Notion, which renders equations at KaTeX's native
-   1.21em for both inline and block (no custom override). */
-.ProseMirror .katex {
+.markdown-page .katex,
+.markdown-page .block-math-wrapper .katex {
   font-size: 1.21em;
 }
 
-.ProseMirror .block-math-wrapper .katex {
-  font-size: 1.21em;
-}
-
-/* KaTeX display mode — left-aligned to match Notion's equation block (Notion
-   does not center block equations). */
-.ProseMirror .katex-display {
+.markdown-page .katex-display {
   @apply my-0;
   text-align: left;
 }
 
-.ProseMirror .katex-display > .katex {
+.markdown-page .katex-display > .katex {
   text-align: left;
 }
 
-/* Error state for invalid LaTeX */
-.ProseMirror .math-rendered.math-error {
-  @apply rounded border border-destructive/30 px-2 py-1 text-destructive;
-}
-
-/* Empty equation placeholder */
-.ProseMirror .math-rendered .math-empty-placeholder {
-  font-size: 0.875rem;
-  color: hsl(var(--muted-foreground));
-  font-style: italic;
-}
-
-/* ============================================
-   Mermaid Chart Styles
-   ============================================ */
-
-/* Mermaid chart wrapper — reset font-size so foreignObject labels
-   match what mermaid measured when calculating node dimensions */
-.ProseMirror .mermaid-chart-wrapper {
+.markdown-page .mermaid-chart-wrapper {
   @apply my-4 block;
   font-size: 16px;
   line-height: 1.5;
 }
 
-/* Empty chart placeholder */
-.ProseMirror .mermaid-chart-wrapper .mermaid-empty-placeholder {
-  font-size: 0.875rem;
-  color: hsl(var(--muted-foreground));
-  font-style: italic;
-}
-
-/* Mermaid editor panel animation */
-.mermaid-editor-panel {
-  animation: mathPanelFadeIn 0.15s ease-out;
-}
-
-/* Mermaid rendered chart layout.
- *
- * `display: block` (not flex) — WebKit (which Tauri ships) collapses SVG
- * children inside flex containers to 0×0 when the SVG sizes via viewBox +
- * width="100%" + inline max-width, which is exactly what mermaid emits.
- * Block layout with text-align centers the chart horizontally without
- * triggering that bug. The empty-placeholder span centers the same way.
- */
-.ProseMirror .mermaid-chart-wrapper .mermaid-rendered {
+.markdown-page .mermaid-chart-wrapper .mermaid-rendered {
   display: block;
-  text-align: center;
-  max-height: 480px;
   min-height: 4rem;
+  max-height: 480px;
   overflow: auto;
+  text-align: center;
 }
 
-.ProseMirror .mermaid-chart-wrapper .mermaid-rendered-svg-host {
+.markdown-page .mermaid-chart-wrapper .mermaid-rendered img {
   display: block;
-}
-
-/* Mermaid emits `style="max-width: <natural>px"` inline on the SVG; that
- * inline rule beats the CSS rule below on specificity and keeps the chart
- * pinned at its natural width. Use !important so the SVG can flex with the
- * container instead of staying at mermaid's calculated width. */
-.ProseMirror .mermaid-chart-wrapper .mermaid-rendered svg {
-  max-width: 100% !important;
-  max-height: 460px;
-  height: auto;
   width: auto;
+  max-width: 100%;
+  max-height: 460px;
   margin: 0 auto;
-  display: inline-block;
 }
 
-/*
- * Force high-contrast text in dark mode.
- * Imported or pasted Mermaid code sometimes includes inline `style`
- * directives with light-mode colors (e.g. fill:#D4EDDA, color:#333) that become
- * unreadable on dark backgrounds. These overrides ensure text is always
- * legible regardless of inline styles.
- */
-.dark .mermaid-rendered .nodeLabel,
-.dark .mermaid-rendered .edgeLabel,
-.dark .mermaid-rendered .label,
-.dark .mermaid-rendered .cluster-label,
-.dark .mermaid-rendered text,
-.dark .mermaid-rendered tspan,
-.dark .mermaid-rendered .messageText,
-.dark .mermaid-rendered .loopText,
-.dark .mermaid-rendered .noteText,
-.dark .mermaid-rendered .labelText,
-.dark .mermaid-rendered .sectionTitle,
-.dark .mermaid-rendered .taskText {
-  color: #f5f5f7 !important;
-  fill: #f5f5f7 !important;
-}
-
-/* Edge/arrow lines in dark mode */
-.dark .mermaid-rendered .flowchart-link,
-.dark .mermaid-rendered .edgePath path,
-.dark .mermaid-rendered .arrowMarkerPath {
-  stroke: #636366 !important;
-}
-
-/* Arrow marker heads in dark mode */
-.dark .mermaid-rendered marker path {
-  fill: #636366 !important;
-  stroke: #636366 !important;
+.markdown-page .mermaid-chart-wrapper [data-mermaid-print-preview] {
+  display: none;
 }

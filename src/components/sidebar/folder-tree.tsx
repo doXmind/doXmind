@@ -43,7 +43,7 @@ import {
 import { ImportError } from "@/lib/storage";
 import { ImportConflictModal } from "./import-conflict-modal";
 import { getSidebarTreePaddingLeft } from "./tree-layout";
-import { isMarkdownFile } from "@/lib/document-types";
+import { usePageRelocationConfirmation } from "./use-page-relocation-confirmation";
 
 const log = storeLogger.child("FolderTree");
 
@@ -77,6 +77,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   ref
 ) {
   const t = useTranslations("sidebar");
+  const confirmPageRelocation = usePageRelocationConfirmation();
 
   const files = useFileStore((s) => s.files);
   const openTarget = useFileStore((s) => s.openTarget);
@@ -151,7 +152,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   );
 
   // Build a D1-shaped tree snapshot from the file store. The policy module
-  // only needs identity, hierarchy, and attachment status, so we strip out everything else
+  // only needs the four fields it asks for, so we strip out everything else
   // — keeps the verdict path independent of FileItem evolution.
   const dndTree: DnDNode[] = useMemo(
     () =>
@@ -159,7 +160,6 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         id: f.id,
         name: f.name,
         isFolder: f.isFolder,
-        isAttachment: !f.isFolder && !isMarkdownFile(f),
         parentId: f.parentId,
       })),
     [files]
@@ -194,6 +194,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
      *  underneath us while the modal is open. */
     existingNames: string[];
   } | null>(null);
+  const [conflictApplying, setConflictApplying] = useState(false);
 
   // Execute a list of resolved actions against the storage adapter. Pulled
   // out so both the accepted-bucket dispatch and the post-modal Apply share
@@ -240,7 +241,12 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
       const filesAtDest = useFileStore
         .getState()
         .files.filter((file) => (file.parentId ?? null) === folderId);
-      const existingNames = filesAtDest.map((file) => file.name);
+      const existingNames = filesAtDest.map(
+        (file) =>
+          file.storageHandle?.relPath?.replaceAll("\\", "/").split("/").pop() ||
+          file.storageHandle?.path?.replaceAll("\\", "/").split("/").pop() ||
+          file.name
+      );
       const plan = planExternalImport({
         items,
         destFolderId: folderId,
@@ -282,8 +288,8 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   const handleConflictApply = useCallback(
     async (decisions: Record<string, CollisionResolution>) => {
       const conflict = pendingConflict;
-      if (!conflict) return;
-      setPendingConflict(null);
+      if (!conflict || conflictApplying) return;
+      setConflictApplying(true);
       // Re-run the resolve step now that we have decisions. We rebuild a
       // synthetic ImportPlan so resolveImportPlan's accepted/rejected
       // bookkeeping stays consistent — we pass an empty accepted list since
@@ -299,26 +305,35 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         existingNames: conflict.existingNames,
         decisions,
       });
-      if (resolved.actions.length === 0) return;
-      await runActions(resolved.actions, conflict.folderId);
+      try {
+        if (resolved.actions.length > 0) {
+          await runActions(resolved.actions, conflict.folderId);
+        }
+        // Keep the dialog mounted until every selected filesystem action has
+        // settled. This makes its close state a reliable completion signal
+        // and prevents users from closing the app mid-batch unknowingly.
+        setPendingConflict(null);
+      } finally {
+        setConflictApplying(false);
+      }
     },
-    [pendingConflict, runActions]
+    [conflictApplying, pendingConflict, runActions]
   );
 
   const handleConflictCancelAll = useCallback(() => {
+    if (conflictApplying) return;
     // Cancel-all drops the entire collision sub-batch. Items already
     // accepted earlier in the same drop are unaffected — the modal only
     // controls the collision sub-batch, never the accepted one.
     setPendingConflict(null);
-  }, []);
+  }, [conflictApplying]);
 
   // Drag & drop. Two distinct flows share the same drop targets:
   //   1. Internal moves (text/plain payload = a file id from `FileItem`),
   //      gated by D1 policy (cycle / would-be-self → not-allowed cursor;
   //      name-collision → toast on drop).
-  //   2. External imports (HTML5 `DataTransfer.files` in browser dev mode;
-  //      Tauri `tauri://drag-drop` window events in the desktop shell —
-  //      subscribed in the effect below).
+  //   2. External imports through HTML5 `DataTransfer.files` in Electron and
+  //      browser development.
 
   const handleDragOver = (e: React.DragEvent, folderId: string) => {
     e.preventDefault();
@@ -370,26 +385,15 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     cancelHoverExpand();
   };
 
-  const resolveDropFolderId = (rawTarget: string | null): string | null => {
-    // file-row → file's parent. Folder-row → that folder. Empty area → root.
-    if (!rawTarget) return null;
-    const file = useFileStore.getState().files.find((f) => f.id === rawTarget);
-    if (!file) return null;
-    if (file.isFolder) return file.id;
-    return file.parentId ?? null;
-  };
-
   const handleDrop = async (e: React.DragEvent, folderId: string | null) => {
     e.preventDefault();
     e.stopPropagation();
     setDragOverFolderId(null);
     cancelHoverExpandTimer();
 
-    // External file drop (browser dev mode): HTML5 DataTransfer.files. Each
+    // External file drop: HTML5 DataTransfer.files. Each
     // File comes through as bytes — the disk adapter forwards them to
-    // `doc_import_external`. In the Tauri shell this branch is unreachable
-    // for OS DnD because the webview intercepts the event; only internal
-    // drags reach here. The Tauri path is wired through the useEffect below.
+    // `doc_import_external`.
     const droppedFiles = Array.from(e.dataTransfer.files ?? []);
     if (droppedFiles.length > 0) {
       const items = await Promise.all(
@@ -417,7 +421,6 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     switch (decision.verdict) {
       case "cycle":
       case "would-be-self":
-      case "attachment-source":
         // Cursor already showed not-allowed during the drag; nothing to do
         // on drop beyond eating the event so the parent doesn't pick it up.
         return;
@@ -428,7 +431,9 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         return;
       case "ok":
         try {
-          await moveFileToFolder(draggedId, decision.destinationParentId);
+          await moveFileToFolder(draggedId, decision.destinationParentId, {
+            confirm: confirmPageRelocation,
+          });
         } catch (error) {
           log.error("Failed to move file", error);
           notify.error(t("failedToMove"));
@@ -448,57 +453,6 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     cancelHoverExpandTimer();
   };
 
-  // Tauri drag-drop integration. The webview consumes OS DnD events before
-  // they reach the DOM, so we listen at the window level and hit-test the
-  // reported pointer position against `data-drop-target-*` attributes that
-  // the folder-row / file-row JSX advertises. The event is fire-once per
-  // drop, batched across all paths the user dragged.
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    let cancelled = false;
-
-    void import("@tauri-apps/api/webview")
-      .then(({ getCurrentWebview }) =>
-        getCurrentWebview().onDragDropEvent(async (event) => {
-          if (cancelled) return;
-          if (event.payload.type !== "drop") return;
-          const paths = event.payload.paths ?? [];
-          if (paths.length === 0) return;
-
-          const { x, y } = event.payload.position;
-          // PhysicalPosition is in device pixels; CSS pixels are scaled by DPR.
-          const cssX = x / window.devicePixelRatio;
-          const cssY = y / window.devicePixelRatio;
-          const element = document.elementFromPoint(cssX, cssY);
-          const targetId =
-            element?.closest<HTMLElement>("[data-drop-target-id]")?.dataset.dropTargetId ?? null;
-          const folderId = resolveDropFolderId(targetId);
-
-          const items = paths.map((srcPath) => ({
-            name: srcPath.split(/[\\/]/).pop() || srcPath,
-            srcPath,
-          }));
-          await importItems(items, folderId);
-        })
-      )
-      .then((u) => {
-        if (cancelled) {
-          u();
-        } else {
-          unlisten = u;
-        }
-      })
-      .catch(() => {
-        // Browser dev mode (no Tauri runtime). The HTML5 onDrop handler on
-        // the JSX below covers this case.
-      });
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [importItems]);
-
   // Folder rename
   const handleFolderRename = async () => {
     if (!renamingFolderId || !renamingFolderName.trim()) {
@@ -507,7 +461,9 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
       return;
     }
     try {
-      await renameFile(renamingFolderId, renamingFolderName.trim());
+      await renameFile(renamingFolderId, renamingFolderName.trim(), {
+        confirm: confirmPageRelocation,
+      });
     } catch (error) {
       log.error("Failed to rename folder", error);
       const { title, description } = getErrorMessage(error);
@@ -539,7 +495,8 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
 
   // Count documents under a folder by walking the file-store entries
   // (already in memory) rather than hitting disk. Subfolders are traversed
-  // but not counted themselves; sidecars are implicit (one per doc).
+  // but not counted themselves. Hidden legacy artifacts are absent from the
+  // file-store scan and therefore cannot inflate this count.
   const countDocsUnderFolder = (folder: FileItemType | null): number => {
     if (!folder) return 0;
     let docs = 0;
@@ -865,6 +822,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
 
   return (
     <div
+      data-testid="folder-tree-drop-root"
       // `grow` (not just min-h-full) so the tree reliably fills the scroll
       // viewport even with only a few files — otherwise the blank space below
       // the last row falls outside this onContextMenu and right-click there
@@ -1019,6 +977,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
       <ImportConflictModal
         open={pendingConflict !== null}
         collisions={pendingConflict?.collisions ?? []}
+        applying={conflictApplying}
         onApply={handleConflictApply}
         onCancelAll={handleConflictCancelAll}
       />

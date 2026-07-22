@@ -16,8 +16,6 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 hiddenimports: list[str] = ["orjson"]
 hiddenimports += collect_submodules("mcp")
-# The MCP server never touches the SQLite db (it has no `serve` command), so
-# db / aiosqlite / sqlalchemy are intentionally not collected here.
 for _pkg in ("api", "services", "core", "doxmind_mcp", "lib"):
     hiddenimports += collect_submodules(_pkg)
 

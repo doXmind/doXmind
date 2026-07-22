@@ -1,12 +1,10 @@
 import type { Config } from "tailwindcss";
-import typography from "@tailwindcss/typography";
 
 export default {
   darkMode: "class",
   content: [
-    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/extensions/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/editor/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
@@ -51,44 +49,7 @@ export default {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
-      typography: {
-        DEFAULT: {
-          css: {
-            maxWidth: "none",
-            color: "hsl(var(--foreground))",
-            a: {
-              color: "hsl(var(--primary))",
-              "&:hover": {
-                color: "hsl(var(--primary))",
-              },
-            },
-            "h1, h2, h3, h4, h5, h6": {
-              color: "hsl(var(--foreground))",
-            },
-            code: {
-              color: "hsl(var(--foreground))",
-              backgroundColor: "hsl(var(--muted))",
-              borderRadius: "0.25rem",
-              padding: "0.125rem 0.25rem",
-            },
-            "code::before": {
-              content: '""',
-            },
-            "code::after": {
-              content: '""',
-            },
-            pre: {
-              backgroundColor: "hsl(var(--muted))",
-              color: "hsl(var(--foreground))",
-            },
-            blockquote: {
-              borderLeftColor: "hsl(var(--border))",
-              color: "hsl(var(--muted-foreground))",
-            },
-          },
-        },
-      },
     },
   },
-  plugins: [typography],
+  plugins: [],
 } satisfies Config;

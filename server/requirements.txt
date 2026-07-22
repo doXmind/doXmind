@@ -7,33 +7,23 @@ python-dotenv==1.0.1
 pydantic==2.10.3
 pydantic-settings==2.7.0
 
-# Database — local SQLite
-sqlalchemy==2.0.36
-aiosqlite==0.20.0
-greenlet==3.1.1
-
-# HTTP
-python-multipart==0.0.19
+# Test HTTP client
 httpx==0.28.1
 
-# Markdown → HTML rendering for the workspace import path.
+# Neutral Markdown → HTML rendering for explicit standalone export.
 markdown==3.7
 
-# PDF editor parse + export pipeline lives on PyMuPDF directly. No
-# DOCX / PPTX / scan-OCR conversion happens server-side any more — the
-# workspace folder is the source of truth and external formats are
-# expected to land there as `.md` or `.pdf` directly.
+# Read-only PDF attachment parsing. Electron generates Page PDF output in its
+# own process; this dependency must not be used for Page export.
 pymupdf>=1.24.0
 
-# Excel editor parse + export pipeline. openpyxl handles read/modify/write
-# of .xlsx and .xlsm with full style fidelity. We deliberately do not pull
-# in calamine here: it can't write, and the read speed gap only matters for
-# multi-MB sheets which the editor isn't optimised for yet.
+# Read-only spreadsheet attachment inspection. openpyxl preserves enough
+# workbook structure to build the bounded preview DTO; no workbook is saved.
 openpyxl>=3.1.5
 
 # Cross-platform OS trash for the doc_delete fallback used by the browser
-# dev surface. On macOS / Windows it talks to the native recycle bin; the
-# Tauri app uses the Rust `trash` crate directly and never touches this.
+# dev surface. On macOS / Windows it talks to the native recycle bin; packaged
+# Electron uses its in-process native workspace command instead.
 send2trash>=1.8.3
 
 # Fast JSON encoder/decoder. Used by the parsed-workbook LRU in

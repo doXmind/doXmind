@@ -21,14 +21,15 @@ def _write_md(tmp_path: Path) -> Path:
     return doc
 
 
-def test_read_document_returns_markdown_and_html(tmp_path):
+def test_read_document_returns_markdown_only(tmp_path):
     doc = _write_md(tmp_path)
+    original = doc.read_bytes()
     result = read_document(doc)
     assert "Hello world" in result["markdown"]
-    assert "Hello world" in result["html"]
-    assert result["meta"].get("id")
-    # No sidecar on disk for a freshly written .md.
-    assert result["sourceState"] == "sidecar_missing"
+    assert "id" not in result["meta"]
+    assert set(result) == {"markdown", "meta", "outline", "revision"}
+    assert doc.read_bytes() == original
+    assert not (tmp_path / ".note.doxmind").exists()
 
 
 def test_cli_read_prints_markdown(tmp_path):
@@ -44,7 +45,7 @@ def test_cli_read_json(tmp_path):
     assert res.exit_code == 0, res.output
     data = json.loads(res.stdout)
     assert "Hello world" in data["markdown"]
-    assert data["sourceState"] == "sidecar_missing"
+    assert set(data) == {"markdown", "meta", "outline", "revision"}
 
 
 def test_cli_read_html(tmp_path):

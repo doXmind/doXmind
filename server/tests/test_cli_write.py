@@ -1,7 +1,5 @@
 """S6 (ADR 0010): create + edit markdown via CLI and MCP."""
 
-import json
-
 import pytest
 from typer.testing import CliRunner
 
@@ -12,17 +10,12 @@ from doxmind_mcp import server
 runner = CliRunner()
 
 
-def test_create_document_writes_markdown_shape_sidecar(tmp_path):
+def test_create_document_writes_one_markdown_page(tmp_path):
     dto = create_document(tmp_path, "note.md", markdown="# Hi\n\nbody\n")
-    assert (tmp_path / "note.md").read_text(encoding="utf-8").strip().endswith("body")
+    page = (tmp_path / "note.md").read_text(encoding="utf-8")
+    assert page == f"---\nid: {dto['id']}\n---\n\n# Hi\n\nbody\n"
     sidecar = tmp_path / ".note.doxmind"
-    assert sidecar.exists()
-    data = json.loads(sidecar.read_text(encoding="utf-8"))
-    assert data["version"] == 2
-    assert data["id"] == dto["id"]
-    assert {"html", "markdown_hash", "updated_at"} <= set(data)
-    # No legacy top-level fields (ADR 0003).
-    assert "pdf_editor" not in data and "excel_editor" not in data
+    assert not sidecar.exists()
 
 
 def test_create_refuses_overwrite(tmp_path):
@@ -36,7 +29,7 @@ def test_edit_document_replaces_body(tmp_path):
     edit_document(tmp_path, "note.md", "rewritten body")
     doc = read_document_in_root(tmp_path, "note.md")
     assert "rewritten body" in doc["markdown"]
-    assert doc["sourceState"] == "sidecar_fresh"
+    assert {"extras", "source", "sourceState", "correlation"}.isdisjoint(doc)
 
 
 def test_edit_document_empty_markdown_wipes_body(tmp_path):
@@ -45,7 +38,7 @@ def test_edit_document_empty_markdown_wipes_body(tmp_path):
     edit_document(tmp_path, "note.md", "")
     wiped = read_document_in_root(tmp_path, "note.md")
     assert wiped["markdown"] == ""
-    assert wiped["html"] == ""
+    assert set(wiped) == {"markdown", "meta", "outline", "revision"}
 
 
 def test_cli_new_creates_document(tmp_path):

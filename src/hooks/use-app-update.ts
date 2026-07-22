@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useIsTauri } from "@/hooks/use-is-tauri";
+import { getDesktopBridge } from "@/lib/native-shell";
 
 /**
  * Live auto-update state for the desktop shell.
@@ -9,19 +9,13 @@ import { useIsTauri } from "@/hooks/use-is-tauri";
  * The Electron main process owns the Squirrel updater and broadcasts every
  * transition as an `os://update-state` event (see electron/updater.js); this
  * hook seeds from `update_get_state` and then follows the pushes. Outside the
- * Electron shell (browser dev, legacy Tauri without these commands) the state
- * stays `unsupported` and consumers render nothing.
+ * Electron shell (browser development or a preload failure) the state stays
+ * `unsupported` and consumers render nothing.
  */
 
 export interface AppUpdateState {
   status:
-    | "unsupported"
-    | "idle"
-    | "checking"
-    | "downloading"
-    | "downloaded"
-    | "up-to-date"
-    | "error";
+    "unsupported" | "idle" | "checking" | "downloading" | "downloaded" | "up-to-date" | "error";
   currentVersion: string;
   availableVersion: string | null;
   error: string | null;
@@ -37,26 +31,26 @@ const UNSUPPORTED: AppUpdateState = {
 };
 
 export function useAppUpdate() {
-  const { isTauri } = useIsTauri();
   const [state, setState] = useState<AppUpdateState>(UNSUPPORTED);
 
   useEffect(() => {
-    if (!isTauri) return;
+    const bridge = getDesktopBridge();
+    if (!bridge) return;
     let cancelled = false;
     let unlisten: (() => void) | null = null;
+    let receivedEvent = false;
 
     (async () => {
       try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const initial = await invoke<AppUpdateState>("update_get_state");
-        if (!cancelled && initial) setState(initial);
-        const { listen } = await import("@tauri-apps/api/event");
-        unlisten = await listen<AppUpdateState>("os://update-state", (event) => {
+        unlisten = bridge.listen<AppUpdateState>("os://update-state", (event) => {
+          receivedEvent = true;
           if (!cancelled && event.payload) setState(event.payload);
         });
+        const initial = await bridge.invoke<AppUpdateState>("update_get_state");
+        if (!cancelled && !receivedEvent && initial) setState(initial);
         if (cancelled) unlisten?.();
       } catch {
-        // Shell without update commands (legacy Tauri) — stay unsupported.
+        // Shell without update commands — stay unsupported.
       }
     })();
 
@@ -64,21 +58,23 @@ export function useAppUpdate() {
       cancelled = true;
       unlisten?.();
     };
-  }, [isTauri]);
+  }, []);
 
   const checkForUpdates = useCallback(async () => {
+    const bridge = getDesktopBridge();
+    if (!bridge) return;
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("update_check");
+      await bridge.invoke("update_check");
     } catch {
       // unsupported shell — ignore
     }
   }, []);
 
   const restartToUpdate = useCallback(async () => {
+    const bridge = getDesktopBridge();
+    if (!bridge) return;
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("update_restart");
+      await bridge.invoke("update_restart");
     } catch {
       // unsupported shell — ignore
     }

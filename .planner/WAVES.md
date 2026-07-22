@@ -1,5 +1,9 @@
 # Wave Decomposition & Briefs
 
+> **Historical only (2026-07-22):** these TipTap/ProseMirror waves predate
+> ADR-0012 and the native `MarkdownBlockDocument` editor. They are retained as
+> an execution record, not current implementation guidance.
+
 Atomic task breakdown for PRD #108 — _Optimize Markdown outline data flow, active tracking, and rendering_.
 
 **Dependency order:** **A → B → C → D → E → F**

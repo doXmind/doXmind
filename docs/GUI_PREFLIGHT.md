@@ -1,8 +1,8 @@
 # GUI Preflight Test Design
 
-GUI preflight is the fast, local confidence suite for doXmind's desktop
-shell. It protects the Markdown Page workflow, Attachment navigation, and
-legacy PDF/Excel recovery until that compatibility bridge is retired.
+GUI preflight is the fast, local confidence suite for doXmind's desktop shell.
+It protects the native Markdown Page workflow, read-only Attachment boundary,
+and local-only product surface.
 
 Run it with:
 
@@ -16,7 +16,7 @@ npm run preflight:gui
 - Cover the primary Markdown Page workflow and safe handling of Attachments.
 - Exercise behavior through accessible UI surfaces and store state, not through private implementation details.
 - Keep the suite deterministic enough to run on every local branch and in CI.
-- Protect the local sidecar edition from accidental cloud/auth/AI UI surfaces.
+- Protect the local desktop edition from accidental cloud/auth/AI UI surfaces.
 
 ## Current Coverage
 
@@ -28,91 +28,134 @@ The first GUI preflight lives in `src/__tests__/preflight/gui-preflight.test.tsx
 - Hydrated Markdown Pages route into the editor; PDF, spreadsheet, and HTML
   files route into the generic read-only Attachment surface.
 - Markdown headings expose the collapsed outline rail and reserve editor gutter space.
-- A Markdown preflight fixture contains every supported user-facing block:
-  text, headings 1-6, quote, bullet/ordered/task lists, divider, table, image,
-  code block, 2/3/4-column layouts, table of contents, web bookmark, PDF/Excel
-  legacy external-reference blocks, mermaid, callout, inline math, block math,
-  toggle, and page link.
+- Native Markdown Pages route through the source-backed Block runtime; focused
+  editor tests cover lossless text/list/quote/code/table/math/Mermaid/callout
+  projections, portable Toggles, slash-command source insertion, structural
+  Block commands and keyboard focus/navigation, exact multi-Block paste,
+  autosave, conflicts, search, outline, Wiki links, recursive Page/heading/block-id
+  embeds, explicit failure states, target navigation, and PDF-export readiness.
+- Focused Page Modules cover scalar/list and exact Wiki-Link relation frontmatter
+  patches, local-date Daily Notes, the shared zero-write Page Catalog, read-only
+  `doxmind-collection` Table/Board/Calendar views, computed relation/formula/rollup
+  diagnostics, the derived Page graph, safe local-image Blob preview, and
+  no-overwrite Electron paste/drop import.
 - Attachment scenarios prove that PDF and spreadsheet files expose Open
   Externally and Reveal without editor or Page-export controls.
 - Focus mode hides header/sidebar chrome and can be exited from the hover control.
 
-This intentionally mocks the heavy TipTap engine and native Attachment actions
-while preserving the real `DocumentWorkspace` routing boundary. Legacy
-recovery keeps focused detection/export tests until that bridge is retired.
+This preflight mocks native shell actions while preserving the real
+`DocumentWorkspace` and `PageEditorHost` routing boundaries. There is no TipTap
+engine or custom-extension registry. New native Block kinds need focused source
+round-trip tests and user-visible runtime coverage.
 
-The all-block fixture is tied to `CustomBlockExtensions`: adding a registry block without adding a GUI preflight fixture should fail `npm run preflight:gui`.
+Cross-boundary browser acceptance lives in `tests/e2e/`. It uses a fresh local
+workspace for each scenario, drives the accessible GUI with Playwright, captures
+unexpected renderer errors, and reads the resulting Markdown or complete legacy
+artifact family back from disk. The matrix covers Block editing and history,
+Slash insertion, Properties and relations, Wiki navigation/backlinks/unlinked
+mentions/graph, Daily Notes, Table/Board/Calendar collections, computed fields,
+Page/heading/block embeds, local images, autosave, import conflicts, read-only
+attachments, and zero-write recovery exports.
+
+The production-shell acceptance is `scripts/electron-gui-acceptance.mjs`. It
+launches the packaged app with isolated user data and a temporary workspace, then
+checks the real preload/IPC boundary, renderer sandbox, native menu delivery,
+window creation and target de-duplication, Block operations, autosave, image
+paste/drop, Page recovery, real printer-independent Page PDF generation,
+attachment Open/Reveal request, focus mode, and light/dark Settings. For PDF it
+controls only the Save-dialog destination, leaves `printToPDF` untouched, reads
+the real file back, checks its PDF signature/pages/text, and proves the Page and
+legacy artifact family stayed byte-identical. It fails on any `pageerror` or
+renderer `console.error` and writes screenshots plus `report.json` under
+`test-results/electron-gui-acceptance/`.
 
 ## Expansion Matrix
 
 Add scenarios to preflight when they cross multiple UI boundaries or represent a release-blocking happy path.
 
-| Area            | Scenario                                                                                           | Assertion style                                                                                                                    |
-| --------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| First run       | New untitled Page, open folder unavailable in browser, recent file/workspace reopen                | User clicks visible controls; assert selected state and notification text                                                          |
-| Workspace       | Create Page/folder/template, open settings, collapse folders                                       | Assert Page creation uses the Markdown path and no PDF/Excel creation action exists                                                |
-| Markdown editor | Research note with every block type, then later type/slash/format/save                             | Assert all block fixtures load through the editor route; assert resulting document HTML/Markdown and save payload in focused tests |
-| Custom blocks   | Callout, toggle, inline math, block math, Mermaid, Page link, plus legacy PDF/Excel fixtures       | Assert portable blocks round-trip; legacy placeholders remain recoverable                                                          |
-| Core blocks     | Text, headings 1-6, quote, divider, bullet list, ordered list, task list, table, image, code block | Assert visible shell loading and minimal HTML fixture presence                                                                     |
-| Legacy workbook | Detect existing edit state and export it without changing recovery evidence                        | Assert recovery output plus unchanged source, sidecar, `.bak`, `.lock`, and `.corrupt-*`                                           |
-| Legacy PDF      | Detect existing annotation state and export it without changing recovery evidence                  | Assert recovery output plus unchanged source, sidecar, `.bak`, `.lock`, and `.corrupt-*`                                           |
-| Collections     | Query Pages by frontmatter and switch views                                                        | Assert rows remain Markdown Pages and survive sidecar/index deletion                                                               |
-| Layout blocks   | 2-column, 3-column, and 4-column layouts, table of contents, web bookmark                          | Assert fixture presence and later add focused interaction coverage                                                                 |
-| Attachments     | Open PDF/spreadsheet/HTML, reveal, open externally                                                 | Assert no editable document toolbar and no new sidecar write                                                                       |
-| Settings        | Theme, typography, workspace settings                                                              | Assert local settings state and immediately visible UI changes                                                                     |
-| Safety rails    | No sign-in, provider, telemetry, billing, or sharing entry points                                  | Assert forbidden labels are absent from shell surfaces                                                                             |
+| Area            | Scenario                                                                                    | Assertion style                                                                                                   |
+| --------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| First run       | Start writing, open folder unavailable in browser, recent file/workspace reopen             | User clicks visible controls; assert selected state and notification text                                         |
+| Workspace       | Create Page/folder/template, open settings, collapse folders                                | Assert Page creation uses the Markdown path and no PDF/Excel creation action exists                               |
+| Markdown editor | Research note with supported Block kinds, then type/reorder/format/save                     | Assert exact Markdown source changes, command payloads, focus stability, and save/conflict behavior               |
+| Source blocks   | Callout, block math, Mermaid, Wiki link/embed, table, code, raw unsupported syntax          | Assert semantic preview plus byte-identical untouched source; unsupported structure remains editable raw Markdown |
+| Core blocks     | Text, headings 1-6, quote, divider, bullet list, ordered list, task list, table, code block | Assert native Block projection, keyboard operations, and Markdown-only persistence                                |
+| Legacy workbook | Detect existing edit state and export it without changing source/sidecar                    | Assert recovery output plus byte-identical source, sidecar, timestamps, and directory members                     |
+| Legacy PDF      | Detect existing annotation state and export it without changing source/sidecar              | Assert recovery output plus byte-identical source, sidecar, timestamps, and directory members                     |
+| Properties      | Edit tags, aliases, scalar/list fields, and exact Wiki-Link relations                       | Assert one revision-checked minimal frontmatter patch and byte-identical unrelated source                         |
+| Daily Notes     | Open today's note from workspace home/palette                                               | Assert local-date `Daily Notes/YYYY-MM-DD.md`, safe dirty-Page save, and no private record                        |
+| Collections     | Query Pages through Table, Board, and Calendar; derive relations/formulas/rollups           | Assert deterministic read-only Page projections, fail-closed diagnostics, and zero persistence                    |
+| Knowledge graph | Open, rebuild, and navigate the active Page neighborhood                                    | Assert nodes/edges derive from resolved links with no workspace write                                             |
+| Local images    | Preview safe relative images; paste/drop a supported raster in Electron                     | Assert typed Blob revocation, confined no-overwrite asset copy, relative source insertion, and no remote request  |
+| Block embeds    | Project one unique trailing `^block-id` and reject missing/duplicate/code-fence anchors     | Assert exact source projection, canonical expression preservation, recursive guards, and zero workspace writes    |
+| Future blocks   | Inline math, layout syntax, image resize/crop, or another semantic extension                | Add only after a portable Markdown grammar exists; assert exact round-trip before UI coverage                     |
+| Attachments     | Open PDF/spreadsheet/HTML, reveal, open externally                                          | Assert no editable document toolbar and no new sidecar write                                                      |
+| Settings        | Theme, typography, workspace settings                                                       | Assert local settings state and immediately visible UI changes                                                    |
+| Safety rails    | No sign-in, provider, telemetry, billing, or sharing entry points                           | Assert forbidden labels are absent from shell surfaces                                                            |
 
 ## Test Rules
 
 - Prefer role/name queries such as `getByRole("button", { name: /new/i })`.
 - Use `data-testid` only for structural shell elements that do not have stable accessible names.
-- Mock expensive editor engines at preflight level; test their internals in focused component/unit suites.
+- Mock native shell actions at preflight level; test the Block kernel in focused component/unit suites.
 - Assert user-visible outcomes, persisted state, or command payloads. Avoid CSS class snapshots.
-- Keep each scenario under one second. If it needs real browser rendering, move it to a future Playwright/Tauri smoke suite.
+- Keep each scenario under one second. If it needs real browser rendering, move it to the Playwright or Electron smoke suite.
 
 ## Release Gate
 
-Minimum automated release preflight:
+Minimum local release preflight:
 
 ```bash
 npm run preflight:gui
 npm run preflight:excel
 npm run type-check
-npm run test:ci
-npm run lint
-(cd server && .venv/bin/python -m pytest)
-(cd server && .venv/bin/python -m ruff check .)
-cargo test --workspace
 ```
 
-The GUI preflight mocks TipTap and native Attachment actions, so it is not a
-packaged-app release gate by itself. Before publishing a signed/notarized build,
-install the exact candidate package on a macOS test account and record a manual
-smoke run that proves:
+For larger UI changes, also run:
 
-1. Every New menu creates only a Page, Folder, or Page from Template; no blank
-   PDF or workbook action is present.
-2. A Markdown Page can be created, edited, saved, closed, and reopened from its
-   real `.md` file.
-3. PDF, XLSX/XLSM/CSV, and HTML open in the shared read-only Attachment surface.
-   **Open Externally** and **Reveal** work, editor/save controls are absent, and
-   opening an ordinary Attachment creates no sidecar.
-4. Real legacy fixtures cover main-sidecar-only, backup-only, and differing
-   main/backup recovery. Every successful attempt creates a new unverified copy.
-5. Unsupported or `unknown` state refuses recovery and gives preservation
-   guidance. Before and after each case, record hashes, mtimes, and directory
-   membership for the source, main sidecar, every `.bak`, `.lock`, and
-   `.corrupt-*` artifact.
-6. The exact older fallback build, download URL, and checksum in the 1.8.0
-   release notes have been validated against an isolated evidence copy. A
-   **Pending release validation** entry blocks publication; it must never be
-   presented to users as a verified fallback.
+```bash
+npm run test:ci
+npm run lint
+npm run test:e2e
+npm run electron:test-native
+npm run dist:electron
+npm run electron:smoke
+npm run test:electron-gui
+```
 
-## Next Steps
+## Native OS Boundary
 
-1. Add workspace creation preflight coverage around `FilesSidebar` and `WorkspaceHome`.
-2. Add a focused Markdown editor workflow test for typing, slash insertion, and save payload.
-3. Add packaged GUI automation for legacy PDF/Excel recovery; focused tests
-   already protect the zero-write exporter contract.
-4. Add safety-rail assertions that removed cloud/auth/AI labels do not reappear in the desktop shell.
-5. Consider a separate `preflight:browser` later if Playwright becomes a direct dev dependency.
+The automated Electron suite redirects only the PDF Save dialog to a temporary
+test path; the packaged app still runs its real `webContents.printToPDF` and
+atomic file writer. Open Externally and Reveal are intercepted at Electron's
+final system-API boundary so CI never opens Finder or Preview. A macOS release
+pass clicks the real Save dialog, exports a file without any configured printer,
+opens that file in Preview, and visually checks traffic lights and window focus.
+Windows release candidates run the same packaged suite on a Windows runner and
+receive a separate native-frame spot check.
+
+### macOS release pass — 2026-07-22
+
+- Browser GUI acceptance: 19/19 scenarios passed with no unexpected renderer
+  errors.
+- Packaged Electron GUI acceptance: 19/19 checks passed with no `pageerror` or
+  renderer `console.error` output.
+- Packaged Electron smoke: 15/15 checks passed.
+- The signed, notarized, and stapled arm64 app was opened with isolated user
+  data and a temporary workspace. Its real macOS Save dialog generated a
+  one-page A4 PDF (60,256 bytes) without any configured printer. Preview opened
+  the file and exposed the expected heading, tasks, quote, and code; the
+  workspace still contained only the original Markdown Page. Evidence is
+  `real-save-dialog.pdf` and `real-save-dialog-preview.jpg`. A second real Save
+  dialog was cancelled; the existing PDF SHA-256 and workspace entries remained
+  unchanged.
+- The final DMG was accepted by Apple notarization, stapled, and validated.
+  Its blockmap and `latest-mac.yml` checksum/size were regenerated after
+  stapling.
+- The former system-print/no-printer check is superseded by
+  [ADR-0014](adr/0014-local-page-pdf-export.md) and no longer counts as PDF
+  acceptance. Current acceptance requires a real generated PDF, deterministic
+  save/cancel outcomes, and byte-identical source and sidecar artifacts.
+
+Screenshots and the packaged-run report are written under
+`test-results/electron-gui-acceptance/`.
