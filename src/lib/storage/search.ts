@@ -45,7 +45,7 @@ export async function searchMarkdown(
     if (fileIdSet && !fileIdSet.has(entry.handle.id)) continue;
 
     const content = await adapter.read(entry.handle);
-    const text = content.markdown ?? content.html;
+    const text = content.markdown;
     const match = findTextMatch(text, normalizedQuery);
     if (!match) continue;
 
@@ -121,7 +121,7 @@ async function searchEntries(
     if (fileIdSet && !fileIdSet.has(entry.handle.id)) continue;
 
     const document = await read(entry.handle);
-    const text = document.markdown ?? document.html;
+    const text = document.markdown;
     const match = findTextMatch(text, normalizedQuery);
     if (!match) continue;
 

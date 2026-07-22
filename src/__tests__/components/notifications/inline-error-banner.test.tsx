@@ -44,7 +44,7 @@ describe("InlineErrorBanner", () => {
 
     act(() => {
       useNotificationStore.getState().pushError("Document opened in read-only mode", {
-        description: "DOXMIND_SIDECAR_MIGRATE=off is in effect against a legacy sidecar.",
+        description: "Legacy recovery data is read-only.",
         persistent: true,
       });
     });

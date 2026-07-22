@@ -1,5 +1,5 @@
 /**
- * Resolve the active heading id from a single viewport-probe ProseMirror
+ * Resolve the active heading id from a single viewport probe of the Page
  * position. Uses binary search against the canonical heading list to find
  * the nearest heading whose `.pos` is ≤ `probePos`.
  *

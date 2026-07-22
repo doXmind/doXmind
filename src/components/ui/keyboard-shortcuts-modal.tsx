@@ -21,32 +21,9 @@ interface ShortcutGroup {
 
 const shortcutGroups: ShortcutGroup[] = [
   {
-    titleKey: "textFormatting",
-    shortcuts: [
-      { keys: ["Ctrl", "B"], descriptionKey: "bold" },
-      { keys: ["Ctrl", "I"], descriptionKey: "italic" },
-      { keys: ["Ctrl", "U"], descriptionKey: "underline" },
-      { keys: ["Ctrl", "Shift", "S"], descriptionKey: "strikethrough" },
-      { keys: ["Ctrl", "E"], descriptionKey: "inlineCode" },
-      { keys: ["Ctrl", "Shift", "H"], descriptionKey: "highlight" },
-      { keys: ["Ctrl", "K"], descriptionKey: "addLinkSelected" },
-    ],
-  },
-  {
-    titleKey: "headingsBlocks",
-    shortcuts: [
-      { keys: ["Ctrl", "Alt", "1"], descriptionKey: "heading1" },
-      { keys: ["Ctrl", "Alt", "2"], descriptionKey: "heading2" },
-      { keys: ["Ctrl", "Alt", "3"], descriptionKey: "heading3" },
-      { keys: ["Ctrl", "Shift", "8"], descriptionKey: "bulletList" },
-      { keys: ["Ctrl", "Shift", "7"], descriptionKey: "numberedList" },
-      { keys: ["Ctrl", "Shift", "9"], descriptionKey: "taskList" },
-    ],
-  },
-  {
     titleKey: "navigationView",
     shortcuts: [
-      { keys: ["Ctrl", "K"], descriptionKey: "commandPaletteNoSelection" },
+      { keys: ["Ctrl", "K"], descriptionKey: "commandPalette" },
       { keys: ["Ctrl", "F"], descriptionKey: "findInDocument" },
       { keys: ["Ctrl", "?"], descriptionKey: "keyboardShortcuts" },
     ],
@@ -54,8 +31,9 @@ const shortcutGroups: ShortcutGroup[] = [
   {
     titleKey: "editing",
     shortcuts: [
+      { keys: ["Ctrl", "S"], descriptionKey: "saveAction" },
       { keys: ["Ctrl", "Z"], descriptionKey: "undoAction" },
-      { keys: ["Ctrl", "Y"], descriptionKey: "redoAction" },
+      { keys: ["Ctrl", "Shift", "Z"], descriptionKey: "redoAction" },
     ],
   },
 ];
@@ -134,14 +112,6 @@ export function KeyboardShortcutsModal({ open, onClose }: KeyboardShortcutsModal
             </div>
           ))}
         </div>
-      </div>
-
-      <div className="mt-4 border-t border-border pt-4 text-center">
-        <p className="text-xs text-muted-foreground">
-          Press <KeyboardKey>{isMac ? "⌘" : "Ctrl"}</KeyboardKey>
-          <span className="mx-1">+</span>
-          <KeyboardKey>?</KeyboardKey> to toggle this panel
-        </p>
       </div>
     </Modal>
   );

@@ -6,11 +6,7 @@ import { AlertTriangle, FileText } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  canReplaceExternalImport,
-  type CollisionItem,
-  type CollisionResolution,
-} from "@/lib/external-import-resolver";
+import type { CollisionItem, CollisionResolution } from "@/lib/external-import-resolver";
 
 /**
  * Conflict-resolution modal surfaced when a sidebar external DnD batch
@@ -19,30 +15,33 @@ import {
  * surfaced HERE in one place, and everything in `rejected` shows the
  * bad-extension toast(s) (already wired in #67).
  *
- * Markdown Page collisions offer Replace / Keep both / Skip. Attachment
- * collisions offer only Keep both / Skip so their source file cannot be
- * replaced underneath same-name legacy recovery evidence. The user then
- * presses Apply (commits the batch) or Cancel all (drops the entire batch —
- * accepted items dropped earlier in the same drop are unaffected; this dialog
- * only controls the collision sub-batch).
+ * The user picks Replace / Keep both / Skip per row, then presses Apply
+ * (commits the batch) or Cancel all (drops the entire batch — accepted
+ * items dropped earlier in the same drop are unaffected; this dialog only
+ * controls the collision sub-batch).
  *
- * Replace is available only for first-class Markdown Pages.
+ * Replace is load-bearing: it overwrites the selected source file while any
+ * pre-existing hidden legacy recovery artifact remains byte-identical. The
+ * next open reads the replaced Markdown directly; recovery data never becomes
+ * active editor state.
  */
 export interface ImportConflictModalProps {
   open: boolean;
   collisions: CollisionItem[];
+  /** True while the selected filesystem actions are being committed. */
+  applying?: boolean;
   /** Apply with the per-collision decisions. Keyed by `existingName`. */
   onApply: (decisions: Record<string, CollisionResolution>) => void;
   /** Drop the entire collision sub-batch — equivalent to "skip" for every row. */
   onCancelAll: () => void;
 }
 
-const PAGE_RESOLUTIONS: CollisionResolution[] = ["replace", "keep-both", "skip"];
-const ATTACHMENT_RESOLUTIONS: CollisionResolution[] = ["keep-both", "skip"];
+const RESOLUTIONS: CollisionResolution[] = ["replace", "keep-both", "skip"];
 
 export function ImportConflictModal({
   open,
   collisions,
+  applying = false,
   onApply,
   onCancelAll,
 }: ImportConflictModalProps) {
@@ -75,8 +74,8 @@ export function ImportConflictModal({
   };
 
   return (
-    <Modal open={open} onClose={onCancelAll} className="max-w-xl">
-      <ModalHeader onClose={onCancelAll}>
+    <Modal open={open} onClose={applying ? () => {} : onCancelAll} className="max-w-xl">
+      <ModalHeader onClose={applying ? undefined : onCancelAll}>
         <span className="flex items-center gap-2">
           <AlertTriangle className="h-5 w-5 text-amber-500" />
           {t("importConflictTitle", { count: collisions.length })}
@@ -87,9 +86,6 @@ export function ImportConflictModal({
       <div className="mt-4 max-h-[50vh] space-y-2 overflow-y-auto pr-1">
         {collisions.map((collision) => {
           const current = decisions[collision.existingName];
-          const resolutions = canReplaceExternalImport(collision.extension)
-            ? PAGE_RESOLUTIONS
-            : ATTACHMENT_RESOLUTIONS;
           return (
             <div
               key={collision.existingName}
@@ -106,12 +102,9 @@ export function ImportConflictModal({
               <div
                 role="radiogroup"
                 aria-label={collision.existingName}
-                className={cn(
-                  "mt-2 grid gap-1.5",
-                  resolutions.length === 3 ? "grid-cols-3" : "grid-cols-2"
-                )}
+                className="mt-2 grid grid-cols-3 gap-1.5"
               >
-                {resolutions.map((resolution) => (
+                {RESOLUTIONS.map((resolution) => (
                   <ResolutionButton
                     key={resolution}
                     resolution={resolution}
@@ -123,6 +116,7 @@ export function ImportConflictModal({
                       }))
                     }
                     label={labelFor(t, resolution)}
+                    disabled={applying}
                   />
                 ))}
               </div>
@@ -136,10 +130,10 @@ export function ImportConflictModal({
       </div>
 
       <ModalFooter>
-        <Button variant="outline" onClick={onCancelAll}>
+        <Button variant="outline" onClick={onCancelAll} disabled={applying}>
           {t("importConflictCancelAll")}
         </Button>
-        <Button onClick={handleApply} disabled={!allDecided}>
+        <Button onClick={handleApply} disabled={!allDecided || applying}>
           {t("importConflictApply")}
         </Button>
       </ModalFooter>
@@ -152,11 +146,13 @@ function ResolutionButton({
   selected,
   onSelect,
   label,
+  disabled,
 }: {
   resolution: CollisionResolution;
   selected: boolean;
   onSelect: () => void;
   label: string;
+  disabled: boolean;
 }) {
   return (
     <button
@@ -164,6 +160,7 @@ function ResolutionButton({
       role="radio"
       aria-checked={selected}
       onClick={onSelect}
+      disabled={disabled}
       className={cn(
         "rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
         "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",

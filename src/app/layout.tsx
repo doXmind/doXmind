@@ -2,9 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import "./styles/editor.css";
-import "./styles/code-block.css";
 import "./styles/math-mermaid.css";
-import "./styles/components.css";
 import "./styles/print.css";
 import { Providers } from "@/components/providers";
 import { InlineErrorBanner } from "@/components/notifications/inline-error-banner";
@@ -34,20 +32,14 @@ export const metadata: Metadata = {
   },
 };
 
-// Tauri sets `window.__TAURI_PLATFORM__` via an initialization script that
-// runs at WKUserScriptInjectionTimeAtDocumentStart — i.e. before any HTML
-// parsing. By the time this synchronous head <script> executes, the
-// `<html>` element exists and the global is set, so we can flip the class
-// on documentElement immediately. This is the layer that lets globals.css
-// rules like `html.is-tauri-macos body { background: transparent }` apply
-// before the first paint, which is essential for the NSVisualEffectView
-// vibrancy below the webview to actually show through.
-const tauriClassBootstrapScript = `(function(){
+// Electron's preload bridge exists before page scripts execute, so desktop
+// chrome classes can be applied before first paint without exposing Node.
+const desktopClassBootstrapScript = `(function(){
   try {
-    var p = window.__TAURI_PLATFORM__;
+    var p = window.__DOXMIND_DESKTOP__ && window.__DOXMIND_DESKTOP__.platform;
     if (!p) return;
     var d = document.documentElement;
-    d.classList.add('is-tauri', 'is-tauri-' + p);
+    d.classList.add('is-electron', 'is-electron-' + p);
     if (p === 'macos') d.classList.add('macos-vibrancy');
   } catch (_) {}
 })();`;
@@ -121,7 +113,7 @@ export default function RootLayout({
   return (
     <html suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: tauriClassBootstrapScript }} />
+        <script dangerouslySetInnerHTML={{ __html: desktopClassBootstrapScript }} />
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
       </head>
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>

@@ -7,28 +7,28 @@ const HTML_RE = /\.html?$/i;
 const MARKDOWN_RE = /\.(md|markdown)$/i;
 const ANY_DOC_RE = /\.(md|markdown|pdf|xlsx|xlsm|csv|html?)$/i;
 
-export function documentTypeFromName(name: string): WorkspaceDocumentType {
+export function documentTypeFromName(name: string): WorkspaceDocumentType | null {
+  if (MARKDOWN_RE.test(name)) return "markdown";
   if (PDF_RE.test(name)) return "pdf";
   if (EXCEL_RE.test(name)) return "excel";
   if (HTML_RE.test(name)) return "html";
-  if (MARKDOWN_RE.test(name)) return "markdown";
-  return "other";
+  return null;
 }
 
 export function isPdfFile(file: Pick<FileItem, "name" | "documentType">): boolean {
-  return file.documentType === "pdf" || PDF_RE.test(file.name);
+  return file.documentType ? file.documentType === "pdf" : PDF_RE.test(file.name);
 }
 
 export function isExcelFile(file: Pick<FileItem, "name" | "documentType">): boolean {
-  return file.documentType === "excel" || EXCEL_RE.test(file.name);
+  return file.documentType ? file.documentType === "excel" : EXCEL_RE.test(file.name);
 }
 
 export function isHtmlFile(file: Pick<FileItem, "name" | "documentType">): boolean {
-  return file.documentType === "html" || HTML_RE.test(file.name);
+  return file.documentType ? file.documentType === "html" : HTML_RE.test(file.name);
 }
 
 export function isMarkdownFile(file: Pick<FileItem, "name" | "documentType">): boolean {
-  return file.documentType === "markdown" || (!file.documentType && MARKDOWN_RE.test(file.name));
+  return file.documentType ? file.documentType === "markdown" : MARKDOWN_RE.test(file.name);
 }
 
 export function getDisplayName(name: string): string {

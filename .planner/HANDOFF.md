@@ -1,5 +1,9 @@
 # Planner Handoff — Markdown outline data flow & active tracking
 
+> **Historical only (2026-07-22):** this May 2026 TipTap/ProseMirror handoff is
+> superseded by ADR-0012 and the native `MarkdownBlockDocument` editor. Its
+> runtime paths and implementation instructions must not be reused.
+
 **Date:** 2026-05-27
 **Branch:** `main`
 **Baseline:** 286 vitest tests passing across 38 files; ESLint 0 errors / 3 pre-existing warnings (unrelated files); type-check clean.

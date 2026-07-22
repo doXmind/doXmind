@@ -3,7 +3,7 @@
 import type { DocumentOutlineItem } from "@/lib/storage/types";
 
 /**
- * Placeholder shown while TipTap is mounting (markdown-runtime) or while
+ * Placeholder shown while the source-backed Page editor is mounting or while
  * the file's content is in flight (desktop-editor). Notion-style: when the
  * caller hands us a file's cached metadata, we render the real title and
  * outline-derived heading shapes so the user gets immediate "this is the

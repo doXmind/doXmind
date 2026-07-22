@@ -1,54 +1,4 @@
-import type { ThemeDefinition, ThemeDiffTokens, ThemeStatusTokens } from "./types";
-
-// ─── Shared diff / status templates ──────────────────────────────────────────
-// Diff and status accents read consistently across themes — Apple-style red /
-// green for inserted/deleted, neutral blue for focus. Per-theme deviations
-// only matter when the theme's own accent palette is dramatic enough to
-// warrant overriding (e.g. Dracula); kept centralised otherwise.
-
-const LIGHT_DIFF: ThemeDiffTokens = {
-  deletedBg: "rgba(255, 59, 48, 0.08)",
-  deletedBgHover: "rgba(255, 59, 48, 0.12)",
-  deletedBorder: "rgba(255, 59, 48, 0.2)",
-  deletedText: "rgba(255, 59, 48, 0.7)",
-  insertedBg: "rgba(52, 199, 89, 0.07)",
-  insertedBgHover: "rgba(52, 199, 89, 0.11)",
-  insertedBorder: "rgba(52, 199, 89, 0.18)",
-  insertedAccent: "rgba(52, 199, 89, 0.5)",
-  focusRing: "rgba(0, 122, 255, 0.25)",
-  focusBorder: "rgba(0, 122, 255, 0.3)",
-  toolbarBg: "rgba(255, 255, 255, 0.72)",
-  toolbarBorder: "rgba(0, 0, 0, 0.06)",
-  toolbarShadow: "0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03)",
-  btnAcceptBg: "rgba(52, 199, 89, 0.12)",
-  btnAcceptFg: "rgb(36, 138, 61)",
-  btnAcceptHover: "rgba(52, 199, 89, 0.2)",
-  btnRejectBg: "rgba(255, 59, 48, 0.1)",
-  btnRejectFg: "rgb(196, 43, 28)",
-  btnRejectHover: "rgba(255, 59, 48, 0.18)",
-};
-
-const DARK_DIFF: ThemeDiffTokens = {
-  deletedBg: "rgba(248, 81, 73, 0.1)",
-  deletedBgHover: "rgba(248, 81, 73, 0.16)",
-  deletedBorder: "rgba(248, 81, 73, 0.22)",
-  deletedText: "rgba(248, 81, 73, 0.85)",
-  insertedBg: "rgba(63, 185, 80, 0.08)",
-  insertedBgHover: "rgba(63, 185, 80, 0.14)",
-  insertedBorder: "rgba(63, 185, 80, 0.22)",
-  insertedAccent: "rgba(63, 185, 80, 0.5)",
-  focusRing: "rgba(47, 129, 247, 0.35)",
-  focusBorder: "rgba(47, 129, 247, 0.4)",
-  toolbarBg: "rgba(22, 27, 34, 0.85)",
-  toolbarBorder: "rgba(255, 255, 255, 0.08)",
-  toolbarShadow: "0 1px 3px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.2)",
-  btnAcceptBg: "rgba(63, 185, 80, 0.15)",
-  btnAcceptFg: "rgb(63, 185, 80)",
-  btnAcceptHover: "rgba(63, 185, 80, 0.25)",
-  btnRejectBg: "rgba(248, 81, 73, 0.15)",
-  btnRejectFg: "rgb(248, 81, 73)",
-  btnRejectHover: "rgba(248, 81, 73, 0.25)",
-};
+import type { ThemeDefinition, ThemeStatusTokens } from "./types";
 
 const LIGHT_STATUS: ThemeStatusTokens = {
   successBg: "rgba(34, 197, 94, 0.1)",
@@ -57,8 +7,6 @@ const LIGHT_STATUS: ThemeStatusTokens = {
   errorBorder: "rgba(239, 68, 68, 0.3)",
   infoBg: "rgba(59, 130, 246, 0.1)",
   infoBorder: "rgba(59, 130, 246, 0.3)",
-  thinkingBg: "rgba(168, 85, 247, 0.1)",
-  thinkingBorder: "rgba(168, 85, 247, 0.3)",
   warningBg: "rgba(251, 191, 36, 0.1)",
   warningBorder: "rgba(251, 191, 36, 0.3)",
 };
@@ -70,8 +18,6 @@ const DARK_STATUS: ThemeStatusTokens = {
   errorBorder: "rgba(248, 81, 73, 0.3)",
   infoBg: "rgba(47, 129, 247, 0.1)",
   infoBorder: "rgba(47, 129, 247, 0.3)",
-  thinkingBg: "rgba(168, 85, 247, 0.1)",
-  thinkingBorder: "rgba(168, 85, 247, 0.3)",
   warningBg: "rgba(210, 153, 34, 0.1)",
   warningBorder: "rgba(210, 153, 34, 0.3)",
 };
@@ -85,7 +31,6 @@ const doxmind: ThemeDefinition = {
   name: "doXmind",
   description: "doXmind's own monochrome — crisp black, white, and gray",
   baseMode: "light",
-  tier: "free",
   preview: { accentColor: "#212121", backgroundColor: "#FFFFFF", foregroundColor: "#212121" },
   tokens: {
     background: "0 0% 100%",
@@ -110,7 +55,6 @@ const doxmind: ThemeDefinition = {
     ring: "0 0% 13%",
     sidebar: "0 0% 98%", // #FAFAFA — quiet off-white rail
   },
-  diff: LIGHT_DIFF,
   status: LIGHT_STATUS,
 };
 
@@ -119,7 +63,6 @@ const doxmindDark: ThemeDefinition = {
   name: "doXmind",
   description: "doXmind's own monochrome — charcoal, ash, and white",
   baseMode: "dark",
-  tier: "free",
   preview: { accentColor: "#ECECEC", backgroundColor: "#212121", foregroundColor: "#ECECEC" },
   tokens: {
     background: "0 0% 13%", // #212121
@@ -144,7 +87,6 @@ const doxmindDark: ThemeDefinition = {
     ring: "0 0% 80%",
     sidebar: "0 0% 9%", // #171717 — deeper rail
   },
-  diff: DARK_DIFF,
   status: DARK_STATUS,
 };
 
@@ -156,7 +98,6 @@ const notion: ThemeDefinition = {
   name: "Notion",
   description: "Clean, warm, minimal — the classic writing surface",
   baseMode: "light",
-  tier: "free",
   preview: { accentColor: "#37352F", backgroundColor: "#FFFFFF", foregroundColor: "#37352F" },
   tokens: {
     background: "0 0% 100%",
@@ -181,7 +122,6 @@ const notion: ThemeDefinition = {
     ring: "45 8% 20%",
     sidebar: "0 0% 100%",
   },
-  diff: LIGHT_DIFF,
   status: LIGHT_STATUS,
 };
 
@@ -190,7 +130,6 @@ const notionDark: ThemeDefinition = {
   name: "Notion",
   description: "Notion's nocturnal palette — neutral charcoal with warm ink",
   baseMode: "dark",
-  tier: "free",
   preview: { accentColor: "#2EAADC", backgroundColor: "#191919", foregroundColor: "#FFFFFF" },
   tokens: {
     background: "0 0% 10%", // #191919
@@ -215,7 +154,6 @@ const notionDark: ThemeDefinition = {
     ring: "0 0% 80%",
     sidebar: "0 0% 10%",
   },
-  diff: DARK_DIFF,
   status: DARK_STATUS,
 };
 
@@ -226,7 +164,6 @@ const githubLight: ThemeDefinition = {
   name: "GitHub",
   description: "GitHub's primer light palette",
   baseMode: "light",
-  tier: "free",
   preview: { accentColor: "#0969DA", backgroundColor: "#FFFFFF", foregroundColor: "#1F2328" },
   tokens: {
     background: "0 0% 100%",
@@ -251,7 +188,6 @@ const githubLight: ThemeDefinition = {
     ring: "212 92% 45%",
     sidebar: "0 0% 100%",
   },
-  diff: LIGHT_DIFF,
   status: LIGHT_STATUS,
 };
 
@@ -260,7 +196,6 @@ const githubDark: ThemeDefinition = {
   name: "GitHub",
   description: "GitHub's primer dark palette",
   baseMode: "dark",
-  tier: "free",
   preview: { accentColor: "#2F81F7", backgroundColor: "#0D1117", foregroundColor: "#E6EDF3" },
   tokens: {
     background: "215 28% 7%",
@@ -285,7 +220,6 @@ const githubDark: ThemeDefinition = {
     ring: "212 92% 58%",
     sidebar: "215 28% 7%",
   },
-  diff: DARK_DIFF,
   status: DARK_STATUS,
 };
 
@@ -295,7 +229,6 @@ const vscodeLight: ThemeDefinition = {
   name: "VS Code",
   description: "VS Code's Default Light+ — editor white with statusbar blue",
   baseMode: "light",
-  tier: "free",
   preview: { accentColor: "#007ACC", backgroundColor: "#FFFFFF", foregroundColor: "#000000" },
   tokens: {
     background: "0 0% 100%",
@@ -320,7 +253,6 @@ const vscodeLight: ThemeDefinition = {
     ring: "204 100% 40%",
     sidebar: "0 0% 95%",
   },
-  diff: LIGHT_DIFF,
   status: LIGHT_STATUS,
 };
 
@@ -329,7 +261,6 @@ const vscodeDark: ThemeDefinition = {
   name: "VS Code",
   description: "VS Code's Default Dark+ — editor #1E1E1E with statusbar blue",
   baseMode: "dark",
-  tier: "free",
   preview: { accentColor: "#007ACC", backgroundColor: "#1E1E1E", foregroundColor: "#D4D4D4" },
   tokens: {
     background: "0 0% 12%",
@@ -354,7 +285,6 @@ const vscodeDark: ThemeDefinition = {
     ring: "204 100% 50%",
     sidebar: "240 2% 15%",
   },
-  diff: DARK_DIFF,
   status: DARK_STATUS,
 };
 
@@ -364,7 +294,6 @@ const oneLight: ThemeDefinition = {
   name: "Atom One",
   description: "Atom's One Light — soft cream with measured blue accent",
   baseMode: "light",
-  tier: "free",
   preview: { accentColor: "#4078F2", backgroundColor: "#FAFAFA", foregroundColor: "#383A42" },
   tokens: {
     background: "0 0% 98%", // #fafafa
@@ -389,7 +318,6 @@ const oneLight: ThemeDefinition = {
     ring: "220 87% 60%",
     sidebar: "0 0% 98%",
   },
-  diff: LIGHT_DIFF,
   status: LIGHT_STATUS,
 };
 
@@ -398,7 +326,6 @@ const oneDark: ThemeDefinition = {
   name: "Atom One",
   description: "Atom's One Dark — slate with cool blue + muted comments",
   baseMode: "dark",
-  tier: "free",
   preview: { accentColor: "#61AFEF", backgroundColor: "#282C34", foregroundColor: "#ABB2BF" },
   tokens: {
     background: "220 13% 18%", // #282c34
@@ -423,7 +350,6 @@ const oneDark: ThemeDefinition = {
     ring: "207 82% 66%",
     sidebar: "220 13% 18%",
   },
-  diff: DARK_DIFF,
   status: DARK_STATUS,
 };
 
@@ -434,7 +360,6 @@ const solarizedLight: ThemeDefinition = {
   name: "Solarized",
   description: "Solarized base3 cream — warm yellow surface with cyan accent",
   baseMode: "light",
-  tier: "free",
   preview: { accentColor: "#268BD2", backgroundColor: "#FDF6E3", foregroundColor: "#657B83" },
   tokens: {
     background: "44 87% 94%", // #fdf6e3
@@ -459,7 +384,6 @@ const solarizedLight: ThemeDefinition = {
     ring: "205 69% 49%",
     sidebar: "44 87% 94%",
   },
-  diff: LIGHT_DIFF,
   status: LIGHT_STATUS,
 };
 
@@ -468,7 +392,6 @@ const solarizedDark: ThemeDefinition = {
   name: "Solarized",
   description: "Solarized base03 — deep teal surface with cyan accent",
   baseMode: "dark",
-  tier: "free",
   preview: { accentColor: "#268BD2", backgroundColor: "#002B36", foregroundColor: "#839496" },
   tokens: {
     background: "192 100% 11%", // #002b36
@@ -493,7 +416,6 @@ const solarizedDark: ThemeDefinition = {
     ring: "205 69% 49%",
     sidebar: "192 100% 11%",
   },
-  diff: DARK_DIFF,
   status: DARK_STATUS,
 };
 
@@ -503,7 +425,6 @@ const tokyoDay: ThemeDefinition = {
   name: "Tokyo",
   description: "Tokyo Night Day — cool periwinkle haze with deep blue ink",
   baseMode: "light",
-  tier: "free",
   preview: { accentColor: "#2E7DE9", backgroundColor: "#E1E2E7", foregroundColor: "#3760BF" },
   tokens: {
     background: "225 13% 90%", // #e1e2e7
@@ -528,7 +449,6 @@ const tokyoDay: ThemeDefinition = {
     ring: "213 81% 55%",
     sidebar: "225 13% 90%",
   },
-  diff: LIGHT_DIFF,
   status: LIGHT_STATUS,
 };
 
@@ -537,7 +457,6 @@ const tokyoNight: ThemeDefinition = {
   name: "Tokyo",
   description: "Tokyo Night — indigo midnight with periwinkle text",
   baseMode: "dark",
-  tier: "free",
   preview: { accentColor: "#7AA2F7", backgroundColor: "#1A1B26", foregroundColor: "#C0CAF5" },
   tokens: {
     background: "235 19% 13%", // #1a1b26
@@ -562,7 +481,6 @@ const tokyoNight: ThemeDefinition = {
     ring: "218 89% 73%",
     sidebar: "235 19% 13%",
   },
-  diff: DARK_DIFF,
   status: DARK_STATUS,
 };
 
@@ -572,7 +490,6 @@ const catppuccinLatte: ThemeDefinition = {
   name: "Catppuccin",
   description: "Catppuccin Latte — pastel cream with mauve accent",
   baseMode: "light",
-  tier: "free",
   preview: { accentColor: "#1E66F5", backgroundColor: "#EFF1F5", foregroundColor: "#4C4F69" },
   tokens: {
     background: "220 23% 95%", // #eff1f5
@@ -597,7 +514,6 @@ const catppuccinLatte: ThemeDefinition = {
     ring: "220 91% 54%",
     sidebar: "220 23% 95%",
   },
-  diff: LIGHT_DIFF,
   status: LIGHT_STATUS,
 };
 
@@ -606,7 +522,6 @@ const catppuccinMocha: ThemeDefinition = {
   name: "Catppuccin",
   description: "Catppuccin Mocha — warm midnight with pastel accents",
   baseMode: "dark",
-  tier: "free",
   preview: { accentColor: "#89B4FA", backgroundColor: "#1E1E2E", foregroundColor: "#CDD6F4" },
   tokens: {
     background: "240 21% 15%", // #1e1e2e base
@@ -631,7 +546,6 @@ const catppuccinMocha: ThemeDefinition = {
     ring: "217 92% 76%",
     sidebar: "240 21% 15%",
   },
-  diff: DARK_DIFF,
   status: DARK_STATUS,
 };
 
@@ -641,7 +555,6 @@ const gruvboxLight: ThemeDefinition = {
   name: "Gruvbox",
   description: "Gruvbox medium light — warm parchment with retro accents",
   baseMode: "light",
-  tier: "free",
   preview: { accentColor: "#076678", backgroundColor: "#FBF1C7", foregroundColor: "#3C3836" },
   tokens: {
     background: "47 87% 88%", // #fbf1c7
@@ -666,7 +579,6 @@ const gruvboxLight: ThemeDefinition = {
     ring: "192 89% 25%",
     sidebar: "47 87% 88%",
   },
-  diff: LIGHT_DIFF,
   status: LIGHT_STATUS,
 };
 
@@ -675,7 +587,6 @@ const gruvboxDark: ThemeDefinition = {
   name: "Gruvbox",
   description: "Gruvbox medium dark — charcoal with cream text and warm accents",
   baseMode: "dark",
-  tier: "free",
   preview: { accentColor: "#FE8019", backgroundColor: "#282828", foregroundColor: "#EBDBB2" },
   tokens: {
     background: "0 0% 16%", // #282828
@@ -700,7 +611,6 @@ const gruvboxDark: ThemeDefinition = {
     ring: "24 99% 55%",
     sidebar: "0 0% 16%",
   },
-  diff: DARK_DIFF,
   status: DARK_STATUS,
 };
 
@@ -769,17 +679,4 @@ export function getTheme(id: string): ThemeDefinition {
 
 export function getThemesByBaseMode(mode: "light" | "dark"): ThemeDefinition[] {
   return THEME_LIST.filter((t) => t.baseMode === mode);
-}
-
-export function isThemeFree(id: string): boolean {
-  const theme = THEMES[id];
-  return !theme || theme.tier === "free";
-}
-
-export function getFreeThemesByBaseMode(mode: "light" | "dark"): ThemeDefinition[] {
-  return THEME_LIST.filter((t) => t.baseMode === mode && t.tier === "free");
-}
-
-export function getPremiumThemesByBaseMode(mode: "light" | "dark"): ThemeDefinition[] {
-  return THEME_LIST.filter((t) => t.baseMode === mode && t.tier === "pro");
 }

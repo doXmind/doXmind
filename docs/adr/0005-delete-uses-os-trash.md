@@ -1,5 +1,9 @@
 # Delete 走 OS 回收站，doXmind 不维护内部 Trash
 
+Status: accepted; Electron/Node is the sole desktop implementation under
+[ADR-0013](0013-electron-only-desktop-runtime.md). Tauri-specific implementation
+details below are historical.
+
 ## 背景
 
 doXmind 早期带过一个 DB 模型，**Trashed Document** 是一个有意义的内部状态，配套 Settings → Trash UI、`useFileStore.trashFiles`、四个 store 方法（`loadTrash` / `restoreFile` / `permanentDeleteFile` / `emptyTrash`）。在向"用户硬盘 = 真相来源"模型迁移的过程中，backend 实现了一种 workspace 内 trash 的妥协方案：`doc_delete` 把 `.md` + Sidecar 移到 `<workspace>/.trash/`，scan 排除该目录。前端 store 方法保留为 stub，从未接通。

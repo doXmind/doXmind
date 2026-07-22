@@ -1,9 +1,13 @@
 # doXmind CLI & MCP server
 
 > Product scope follows [`PRODUCT_DIRECTION.md`](PRODUCT_DIRECTION.md). Create
-> and edit operations apply to Markdown Pages only. PDF, spreadsheet, and HTML
-> commands are Attachment read/convert or legacy-recovery surfaces; they do not
-> establish editable document types.
+> and edit operations apply to Markdown Pages only. PDF and spreadsheet commands
+> are read-only Attachment parsing/conversion surfaces; HTML has no dedicated
+> import or conversion command. None establishes an editable document type. The
+> current Page storage/editor contract
+> follows [ADR-0012](adr/0012-markdown-source-block-editor.md): one portable
+> Markdown file is the complete Page state; same-name `.doxmind` files are
+> legacy recovery artifacts, not active Page state.
 
 doXmind ships two standalone shells over the same workspace (ADR
 [0010](adr/0010-cli-and-mcp-share-a-shell-agnostic-core.md)):
@@ -14,8 +18,8 @@ doXmind ships two standalone shells over the same workspace (ADR
   exposes the workspace to external agents (Claude Code, Claude Desktop, …).
 
 Both run as their own Python process and operate directly on the filesystem —
-the `.md` file plus its hidden `.doxmind` sidecar are the source of truth. **The
-desktop app does not need to be running.**
+the `.md`/`.markdown` file is the source of truth. **The desktop app does not
+need to be running.**
 
 ## Workspace root
 
@@ -35,7 +39,7 @@ confinement boundary. Its workspace commands (`ls`/`new`/`mv`/`rm`/…) are
 root-relative; the file commands (`read`/`export`/`convert`) take a relative
 path resolved against the root (`..` is rejected) **or** an absolute path used
 as-is, so a human can read or write anywhere they own (e.g.
-`--out ~/Desktop/x.pdf`).
+`--out ~/Desktop/x.html`).
 
 ## Install
 
@@ -68,7 +72,8 @@ doxmind search "TODO"           # full-text search markdown
 doxmind read notes/idea.md            # print markdown (--html / --json)
 doxmind new notes/idea.md --title Idea --content "# Idea\n\n..."
 doxmind edit notes/idea.md --content "# Idea\n\nrewritten"   # or pipe via stdin
-doxmind export notes/idea.md --to pdf --out idea.pdf
+doxmind export notes/idea.md --to html --out idea.html
+doxmind export notes/idea.md --to md --out idea-copy.md
 doxmind convert spec.pdf              # parse PDF -> JSON blocks
 doxmind mv a.md sub/a.md              # move/rename (prompts unless --yes)
 doxmind rm old.md                     # -> system Trash (prompts unless --yes)
@@ -78,6 +83,14 @@ doxmind index rebuild
 doxmind --root /path/to/workspace ls  # override the workspace root
 ```
 
+`doxmind export` supports only `html` and `md` (default: `html`). The `md`
+result is a byte-for-byte copy of the complete Page file, including BOM,
+frontmatter, comments, line endings, and trailing newlines. HTML is a neutral,
+derived projection with no editor schema. Export refuses the Page itself, an
+existing destination, or a destination symlink; choose a new output path. PDF
+output belongs to the packaged Electron app's printer-independent local export
+flow; neither the CLI nor MCP exports PDF.
+
 ## MCP server
 
 `doxmind-mcp` speaks MCP over stdio and exposes these tools: `list_workspace`,
@@ -85,6 +98,8 @@ doxmind --root /path/to/workspace ls  # override the workspace root
 `export_document`, `create_document`, `edit_document`, `rename_document`,
 `move_document`, `delete_document` (→ system Trash), `create_folder`,
 `import_document`.
+
+`export_document` has the same `html`/`md`-only contract and defaults to HTML.
 
 It also exposes resources: `docs://list` (a listing of every document with its
 stable id) and `doc:///<id>` (a document's markdown content, addressed by id).
@@ -121,8 +136,9 @@ npx @modelcontextprotocol/inspector doxmind-mcp
 
 ## Concurrency caveat
 
-The shells write to disk directly. doXmind treats external markdown edits as
-authoritative (a `markdown_hash` mismatch regenerates the sidecar) and writes
-atomically, so editing markdown from the CLI/MCP while the app is open is safe.
+The shells write to disk directly. doXmind treats external Markdown edits as
+authoritative and writes the Markdown file atomically; it does not create or
+rebuild Page recovery state. Editing from the CLI/MCP is atomic at the
+file-write boundary.
 Editing the **same** document simultaneously in the app and a shell can still
 lose a write — avoid concurrent edits of one file.

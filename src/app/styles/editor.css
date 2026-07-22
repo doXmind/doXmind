@@ -1,28 +1,18 @@
-/* Editor Styles */
+/* Native source-backed Markdown Block editor. */
 
-/* Shared horizontal frame: the editor page content, the header title row, and
-   the status bar all sit in this same centered column so their left (and right)
-   edges line up. Width + centering only — no vertical padding — so it can wrap
-   chrome rows too. */
-.editor-content-frame,
 .editor-page-frame {
-  /* Side gutter has to fit the floating block handle ([+] [⋮], 2 × 28px
-     buttons + 6px content gap = 62px, see block-handle.tsx). Anything
-     smaller and the handle clips into the sidebar / window edge. */
+  /* The native row controls sit 40px left of the source Block. */
   --editor-page-x: 4rem;
+  --editor-outline-gutter: 0px;
   box-sizing: border-box;
   width: min(
-    calc(100% - (var(--editor-page-x) * 2) - var(--editor-outline-gutter, 0px)),
+    calc(100% - (var(--editor-page-x) * 2) - var(--editor-outline-gutter)),
     var(--editor-content-width)
   );
   margin-right: auto;
   margin-left: auto;
-  transform: translateX(calc(var(--editor-outline-gutter, 0px) / -2));
-}
-
-.editor-page-frame {
-  --editor-outline-gutter: 0px;
   padding: 0.5rem 0 1rem;
+  transform: translateX(calc(var(--editor-outline-gutter) / -2));
 }
 
 @media (min-width: 768px) {
@@ -32,874 +22,131 @@
   }
 }
 
-.ProseMirror {
+.markdown-page {
   @apply min-h-[500px] pb-[50vh] pt-4 outline-none;
   font-size: 1rem;
-  /* Notion body rhythm: 16px / 24px == 1.5. */
   line-height: 1.5;
 }
 
-.ProseMirror > * + * {
+.markdown-page > * + * {
   margin-top: 0.75em;
 }
 
-/* Typography Settings - Font Family */
-.editor-font-serif .ProseMirror {
-  font-family: Georgia, "Times New Roman", Times, serif;
-}
-.editor-font-mono .ProseMirror {
-  font-family:
-    "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
-    "Liberation Mono", monospace;
-}
-
-/* Typography Settings - Font Size */
-.editor-font-small .ProseMirror {
-  font-size: 0.875rem;
-}
-.editor-font-large .ProseMirror {
-  font-size: 1.125rem;
-}
-
-/* Typography Settings - Line Height */
-.editor-leading-compact .ProseMirror {
+.editor-leading-compact .markdown-page {
   line-height: 1.4;
 }
-.editor-leading-relaxed .ProseMirror {
+
+.editor-leading-relaxed .markdown-page {
   line-height: 1.75;
 }
 
-.ProseMirror p.is-empty::before {
-  @apply pointer-events-none float-left h-0 select-none text-muted-foreground;
-  content: attr(data-placeholder);
-}
-
-/* Hide placeholder when diff blocks are present */
-.ProseMirror:has(.diff-inserted-wrapper) p.is-empty::before,
-.ProseMirror:has(.diff-deleted) p.is-empty::before {
-  content: none;
-}
-
-/* While the page picker is open, swap the editor's empty-paragraph placeholder
-   from "Type '/' for commands" to "Search for a page..." — the user keeps
-   typing in the editor itself; the picker is just the floating list below. */
-body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
-  content: "Search for a page...";
-}
-
-/* Notion-style: no placeholder inside table cells so empty cells stay tight */
-.ProseMirror td p.is-empty::before,
-.ProseMirror th p.is-empty::before {
-  content: none;
-}
-
-/* GapCursor - visible cursor indicator between block nodes */
-.ProseMirror .ProseMirror-gapcursor {
-  display: none;
-  pointer-events: none;
-  position: relative;
-}
-
-.ProseMirror .ProseMirror-gapcursor::after {
-  content: "";
-  display: block;
-  position: absolute;
-  top: -2px;
-  width: 20px;
-  border-top: 1px solid hsl(var(--foreground));
-  animation: ProseMirror-cursor-blink 1.1s steps(2, start) infinite;
-}
-
-@keyframes ProseMirror-cursor-blink {
-  to {
-    visibility: hidden;
-  }
-}
-
-.ProseMirror-focused .ProseMirror-gapcursor {
-  display: block;
-}
-
-.ProseMirror ul,
-.ProseMirror ol {
-  @apply pl-6;
-}
-
-.ProseMirror ul {
-  @apply list-disc;
-}
-
-.ProseMirror ol {
-  @apply list-decimal;
-}
-
-.ProseMirror li p {
-  @apply m-0;
-}
-
-.ProseMirror strong,
-.ProseMirror b {
+.markdown-page strong,
+.markdown-page b {
   color: inherit;
 }
 
-.doxmind-browsing-prose {
-  user-select: text;
-}
-
-.doxmind-browsing-prose mark[data-browsing-search-result="true"] {
-  border-radius: 2px;
-  background: rgba(245, 196, 66, 0.35);
-  color: inherit;
-}
-
-.doxmind-browsing-prose mark[data-browsing-search-current="true"] {
-  background: rgba(245, 158, 11, 0.58);
-  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35);
-}
-
-/* Notion quote: upright (not italic), full text color, a solid left bar that
-   tracks the text color rather than a faint hairline. */
-.ProseMirror blockquote {
+.markdown-page blockquote {
   @apply border-l-[3px] border-foreground text-foreground;
   padding-left: 14px;
   font-style: normal;
 }
 
-.ProseMirror .doxmind-callout-wrapper {
-  display: block;
-  margin: 4px 0;
-}
-
-.ProseMirror .doxmind-callout-card {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  align-items: flex-start;
-  gap: 10px;
-  width: 100%;
-  min-height: 0;
-  border-radius: 10px;
-  /* Notion callout surface: a warm near-white (rgb 249,248,247), 12px inset. */
-  background: rgb(249, 248, 247);
-  padding: 12px;
-  color: hsl(var(--foreground));
-}
-
-.dark .ProseMirror .doxmind-callout-card {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-/* Shared callout-like surface for empty/expanded block placeholders
-   (math, mermaid, image empty state). Matches callout bg so empty
-   blocks read as inline content rather than floating cards. */
-.doxmind-block-placeholder {
-  background: rgb(249, 248, 247);
-}
-
-.dark .doxmind-block-placeholder {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.ProseMirror .doxmind-callout-icon-slot {
-  display: flex;
-  height: 24px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-}
-
-.ProseMirror .doxmind-callout-icon-button {
-  display: flex;
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  /* Notion renders the callout emoji at ~21.6px. */
-  font-size: 21.6px;
-  line-height: 1;
-  outline: none;
-  transition: background-color 120ms ease;
-}
-
-.ProseMirror .doxmind-callout-icon-button:hover,
-.ProseMirror .doxmind-callout-icon-button:focus-visible {
-  background: rgba(0, 0, 0, 0.06);
-}
-
-.dark .ProseMirror .doxmind-callout-icon-button:hover,
-.dark .ProseMirror .doxmind-callout-icon-button:focus-visible {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.ProseMirror .doxmind-callout-content {
-  min-width: 0;
-  flex: 1;
-  min-height: 24px;
-  padding: 0;
-  font-size: 1rem;
-  line-height: 24px;
-}
-
-.ProseMirror .doxmind-callout-content [data-node-view-content] {
-  min-height: 24px;
-}
-
-.ProseMirror .doxmind-callout-content > * {
-  margin: 0 !important;
-}
-
-.ProseMirror .doxmind-callout-content p {
-  margin: 0 !important;
-  min-height: 24px;
-  line-height: 24px;
-}
-
-.ProseMirror .doxmind-callout-content > * + * {
-  margin-top: 0.75em !important;
-}
-
-.ProseMirror .doxmind-callout-content p.is-empty::before {
-  color: hsl(var(--muted-foreground) / 0.7);
-}
-
-.ProseMirror pre {
+.markdown-page pre {
   @apply overflow-x-auto rounded-lg bg-muted p-4 font-mono text-sm;
 }
 
-.ProseMirror code {
+.markdown-page code {
   @apply rounded bg-muted px-1 py-0.5 font-mono text-sm;
-  /* Notion's signature inline-code red. */
   color: #eb5757;
 }
 
-.ProseMirror pre code {
+.markdown-page pre code {
   @apply bg-transparent p-0;
-  /* Code-block code keeps the syntax/foreground color, not the inline red. */
   color: inherit;
 }
 
-/* Image Node View */
-.ProseMirror .image-node-wrapper {
-  @apply my-4 block;
-}
-
-.ProseMirror .image-node-wrapper[data-align="left"] {
-  @apply text-left;
-}
-
-.ProseMirror .image-node-wrapper[data-align="center"] {
-  @apply text-center;
-}
-
-.ProseMirror .image-node-wrapper[data-align="right"] {
-  @apply text-right;
-}
-
-.ProseMirror .image-container {
-  @apply relative inline-block;
-  line-height: 0;
-}
-
-/* Unified selected ring for non-text blocks (image, math, chart). Notion marks
-   a selected block with its blue (#2383E2), not the neutral primary ink. */
-.block-selected-ring {
-  @apply rounded-lg ring-2 ring-[#2383e2]/60 ring-offset-2 ring-offset-background;
-}
-
-.ProseMirror .image-container img {
-  @apply h-auto max-w-full rounded-lg;
-  display: block;
-}
-
-/* ===== Notion-style image overlay toolbar ===== */
-.image-overlay-toolbar {
-  @apply absolute flex items-center gap-0.5 rounded-lg;
-  top: 8px;
-  right: 8px;
-  z-index: 20;
-  background: hsl(var(--popover) / 0.92);
-  backdrop-filter: blur(8px);
-  border: 1px solid hsl(var(--border) / 0.5);
-  padding: 3px 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  animation: imageToolbarFadeIn 0.15s ease-out;
-}
-
-@keyframes imageToolbarFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.image-toolbar-btn {
-  @apply flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground;
-  @apply transition-colors duration-75;
-  @apply hover:bg-accent hover:text-accent-foreground;
-  font-size: 12px;
-  line-height: 1;
-}
-
-.image-toolbar-icon-btn {
-  @apply flex items-center justify-center rounded-md p-1.5 text-muted-foreground;
-  @apply transition-colors duration-75;
-  @apply hover:bg-accent hover:text-accent-foreground;
-}
-
-.image-toolbar-icon-btn.active {
-  @apply bg-accent text-accent-foreground;
-}
-
-.image-toolbar-sep {
-  @apply mx-0.5 h-4 w-px bg-border/60;
-}
-
-/* More dropdown menu */
-.image-more-menu {
-  @apply absolute right-0 top-full mt-1 min-w-[160px] rounded-lg border border-border bg-popover p-1 shadow-lg;
-  z-index: 30;
-  animation: imageToolbarFadeIn 0.1s ease-out;
-}
-
-.image-more-menu-item {
-  @apply flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-foreground;
-  @apply transition-colors duration-75;
-  @apply hover:bg-accent hover:text-accent-foreground;
-}
-
-.image-more-menu-item.text-destructive {
-  color: hsl(var(--destructive));
-}
-.image-more-menu-item.text-destructive:hover {
-  color: hsl(var(--destructive));
-}
-
-/* Inline edit input overlay (for URL/alt text editing) */
-.image-edit-input-overlay {
-  @apply absolute left-3 right-3 top-3 flex items-center gap-1.5 rounded-lg border border-border bg-popover/95 p-1.5 shadow-lg;
-  backdrop-filter: blur(8px);
-  z-index: 25;
-  animation: imageToolbarFadeIn 0.1s ease-out;
-}
-
-/* ===== Notion-style edge resize handles ===== */
-.image-resize-handle-left,
-.image-resize-handle-right {
-  @apply absolute top-0 flex h-full cursor-col-resize items-center;
-  width: 20px;
-  z-index: 15;
-}
-
-.image-resize-handle-left {
-  left: -4px;
-  justify-content: flex-start;
-  padding-left: 4px;
-}
-
-.image-resize-handle-right {
-  right: -4px;
-  justify-content: flex-end;
-  padding-right: 4px;
-}
-
-.image-resize-bar {
-  @apply rounded-full bg-foreground/50;
-  width: 4px;
-  height: 36px;
-  max-height: 40%;
-  transition:
-    background-color 0.15s ease,
-    transform 0.15s ease;
-}
-
-.image-resize-handle-left:hover .image-resize-bar,
-.image-resize-handle-right:hover .image-resize-bar {
-  @apply bg-foreground/80;
-  transform: scaleY(1.15);
-}
-
-.image-resize-handle-left:active .image-resize-bar,
-.image-resize-handle-right:active .image-resize-bar {
-  @apply bg-primary;
-}
-
-/* Size label during resize */
-.ProseMirror .size-label {
-  @apply pointer-events-none absolute whitespace-nowrap text-xs;
-  @apply rounded border border-border bg-popover px-2 py-0.5;
-  bottom: -28px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 20;
-}
-
-/* Resizing state */
-.ProseMirror .image-container.is-resizing {
-  user-select: none;
-}
-
-/* Notion divider: a single 1px hairline at ~11% ink, sitting in a tight ~13px
-   block (≈6px breathing room each side) — not an airy 24px gap. */
-.ProseMirror hr {
+.markdown-page hr {
   @apply my-2 border-0 border-t;
   border-top-color: hsl(var(--foreground) / 0.11);
 }
 
-/* Notion headings: semibold (600), tight line-height (~1.3), and only a
-   whisper of negative tracking on the largest size. Sizes are set explicitly
-   (not via text-2xl/text-xl) because those utilities are re-pointed at the
-   UI font-size slider in globals.css and would otherwise shrink editor
-   headings (H2→21px, H3→17px). Pin them to Notion's 30 / 24 / 20px. */
-.ProseMirror h1 {
+.markdown-page h1 {
   @apply mb-1 mt-8 font-semibold;
   font-size: 1.875rem;
   line-height: 1.3;
-  /* Notion headings use normal tracking (measured), not negative. */
-  letter-spacing: normal;
 }
 
-.ProseMirror h2 {
+.markdown-page h2 {
   @apply mb-1 mt-6 font-semibold;
   font-size: 1.5rem;
   line-height: 1.3;
 }
 
-.ProseMirror h3 {
+.markdown-page h3 {
   @apply mb-1 mt-5 font-semibold;
   font-size: 1.25rem;
   line-height: 1.3;
 }
 
-/* H4–H6 (markdown-only; Notion itself stops at 3 levels). Explicit rem sizes
-   so they descend gently and stay immune to the UI font-size slider that
-   re-points text-lg/base/sm. */
-.ProseMirror h4 {
+.markdown-page h4 {
   @apply mb-1 mt-4 font-semibold;
   font-size: 1.125rem;
   line-height: 1.3;
 }
 
-.ProseMirror h5 {
+.markdown-page h5 {
   @apply mb-1 mt-3 font-semibold;
   font-size: 1rem;
   line-height: 1.3;
 }
 
-.ProseMirror h6 {
+.markdown-page h6 {
   @apply mb-1 mt-2 font-semibold;
   font-size: 0.875rem;
   line-height: 1.3;
 }
 
-/* Notion links: full text color with a faint underline that darkens on hover
-   (not a colored link). */
-.ProseMirror a {
-  @apply text-foreground underline decoration-foreground/40 underline-offset-2;
-  text-decoration-thickness: 1px;
-}
-
-.ProseMirror a:hover {
-  @apply decoration-foreground/70;
-}
-
-/* Default highlight uses Notion's muted yellow (same as the yellow block
-   background), not a bright highlighter. */
-.ProseMirror mark {
-  @apply rounded px-0.5;
-  background-color: #fbf3db;
-}
-
-.dark .ProseMirror mark {
-  background-color: rgb(86, 67, 40);
-}
-
-/* Block text colors — dark-mode overrides. Keyed on Notion's light text-color
-   hexes (see block-actions.ts), each remapped to Notion's brighter dark-mode
-   ink so colored text stays legible on the dark surface. */
-.dark [data-text-color="#787774"] {
-  color: #9b9b9b !important;
-} /* Gray */
-.dark [data-text-color="#9F6B53"] {
-  color: #ba856f !important;
-} /* Brown */
-.dark [data-text-color="#D44C47"] {
-  color: #df7165 !important;
-} /* Red */
-.dark [data-text-color="#C14C8A"] {
-  color: #c76a99 !important;
-} /* Pink */
-.dark [data-text-color="#D9730D"] {
-  color: #c77d48 !important;
-} /* Orange */
-.dark [data-text-color="#CB912F"] {
-  color: #ca9849 !important;
-} /* Yellow */
-.dark [data-text-color="#448361"] {
-  color: #529e72 !important;
-} /* Green */
-.dark [data-text-color="#2D9B87"] {
-  color: #4fa89a !important;
-} /* Teal */
-.dark [data-text-color="#337EA9"] {
-  color: #519ec8 !important;
-} /* Blue */
-.dark [data-text-color="#5E5BC9"] {
-  color: #8a88d6 !important;
-} /* Indigo */
-.dark [data-text-color="#9065B0"] {
-  color: #a779c8 !important;
-} /* Purple */
-
-/* Block background colors — dark-mode overrides. Keyed on Notion's light bg
-   hexes, remapped to Notion's dark-mode tinted fills. */
-.dark [data-bg-color="#F1F1EF"] {
-  background-color: rgb(47, 47, 47) !important;
-} /* Gray */
-.dark [data-bg-color="#F4EEEE"] {
-  background-color: rgb(74, 50, 40) !important;
-} /* Brown */
-.dark [data-bg-color="#FDEBEC"] {
-  background-color: rgb(82, 46, 42) !important;
-} /* Red */
-.dark [data-bg-color="#FAF1F5"] {
-  background-color: rgb(78, 44, 60) !important;
-} /* Pink */
-.dark [data-bg-color="#FAEBDD"] {
-  background-color: rgb(92, 59, 35) !important;
-} /* Orange */
-.dark [data-bg-color="#FBF3DB"] {
-  background-color: rgb(86, 67, 40) !important;
-} /* Yellow */
-.dark [data-bg-color="#EDF3EC"] {
-  background-color: rgb(36, 61, 48) !important;
-} /* Green */
-.dark [data-bg-color="#E0EFEC"] {
-  background-color: rgb(22, 58, 54) !important;
-} /* Teal */
-.dark [data-bg-color="#E7F3F8"] {
-  background-color: rgb(20, 58, 78) !important;
-} /* Blue */
-.dark [data-bg-color="#E9E7F5"] {
-  background-color: rgb(42, 42, 80) !important;
-} /* Indigo */
-.dark [data-bg-color="#F4F0F7"] {
-  background-color: rgb(60, 45, 73) !important;
-} /* Purple */
-
-/* Task List */
-.ProseMirror ul[data-type="taskList"] {
-  @apply list-none pl-0;
-}
-
-.ProseMirror ul[data-type="taskList"] li {
-  @apply flex items-start gap-2;
-}
-
-.ProseMirror ul[data-type="taskList"] li > label {
-  @apply flex flex-none items-center pt-1;
-}
-
-.ProseMirror ul[data-type="taskList"] li > div {
-  @apply min-w-0 flex-1;
-}
-
-.ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
-  @apply m-0 rounded border-border align-middle;
-  /* Notion checkbox: 14px square, 3px radius, filled Notion-blue when checked
-     (accent-color keeps the native control but pins the brand blue instead of
-     the OS accent). */
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
+.markdown-page input[type="checkbox"] {
   accent-color: #2383e2;
 }
 
-/* Table */
-.ProseMirror table {
+.markdown-page table {
   @apply my-4 border-collapse;
-  /* Clip the column-resize-handle (right:-2px) on the last column
-     so it doesn't cause wrapper overflow / phantom scrollbar */
-  overflow: clip;
-  /* Notion tables span the full content column; columns distribute across the
-     available width rather than hugging their content. */
   width: 100%;
   max-width: 100%;
   table-layout: auto;
 }
 
-.ProseMirror th,
-.ProseMirror td {
-  @apply relative text-left;
-  /* Notion simple-table cells use full body text (16px), not a small size.
-     Set explicitly so the UI font-size slider (which re-points text-sm) can't
-     shrink table text. Roomy padding + min-width gives Notion's ~35px rows. */
-  font-size: 1rem;
-  padding: 6px 9px;
+.markdown-page th,
+.markdown-page td {
+  @apply text-left;
   min-width: 60px;
+  padding: 6px 9px;
   border: 1px solid hsl(var(--foreground) / 0.094);
+  font-size: 1rem;
   line-height: 1.5;
   vertical-align: top;
-  /* Force long URLs / unbroken tokens to wrap so a single cell can't push
-     the whole table past the content column. */
   word-break: break-word;
   overflow-wrap: anywhere;
 }
 
-/* Remove paragraph/block margins inside table cells for Notion-like compact layout */
-.ProseMirror td > *,
-.ProseMirror th > * {
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
-}
-
-/* Notion header row: a faint warm-gray fill, medium weight, full text color
-   (not muted). */
-.ProseMirror th {
+.markdown-page th {
   @apply font-medium text-foreground;
   background: hsl(var(--foreground) / 0.035);
 }
 
-/* Notion cell selection: a clean blue ring around the cell. Multi-cell
-   selection adds a faint blue wash on top. */
-.ProseMirror td.selectedCell,
-.ProseMirror th.selectedCell {
-  background: rgba(35, 131, 226, 0.1);
-}
-
-.ProseMirror .selectedCell::after {
-  @apply pointer-events-none absolute;
-  content: "";
-  inset: -1px;
-  border: 2px solid #2383e2;
-  z-index: 2;
-}
-
-/* Column resize handle — invisible by default, blue highlight on hover */
-.ProseMirror .column-resize-handle {
-  position: absolute;
-  right: -2px;
-  top: -1px;
-  bottom: -1px;
-  width: 3px;
-  background: transparent;
-  cursor: col-resize;
-  z-index: 5;
-}
-.ProseMirror.resize-cursor .column-resize-handle {
-  background-color: #2383e2;
-}
-
-/* Table wrapper — strictly bounded by the content column (Typora-style).
-   No horizontal scroll: long content wraps inside cells via the word-break
-   rules on th/td. Manual column drags redistribute widths within 100%. */
-.ProseMirror .tableWrapper {
-  margin-top: 1.5rem;
-  margin-bottom: 1rem;
-  width: 100%;
-  max-width: 100%;
-  overflow: hidden;
-}
-
-/* Table column/row highlight on handle hover — Notion uses a neutral gray
-   wash (not a brand-tinted one) to preview the row/column under the handle. */
-.ProseMirror td.table-col-highlight,
-.ProseMirror th.table-col-highlight,
-.ProseMirror td.table-row-highlight,
-.ProseMirror th.table-row-highlight {
-  background-color: hsl(var(--foreground) / 0.045);
-}
-
-/* Editor text selection — Notion blue (#2383E2 family), matching the cell /
-   selection-ring / drag-indicator blue used elsewhere. */
-.ProseMirror ::selection {
+.markdown-page ::selection {
   background-color: rgba(35, 131, 226, 0.28);
 }
 
-.dark .ProseMirror ::selection {
+.dark .markdown-page ::selection {
   background-color: rgba(35, 131, 226, 0.34);
 }
 
-.ProseMirror ::-moz-selection {
+.markdown-page ::-moz-selection {
   background-color: rgba(35, 131, 226, 0.28);
 }
 
-.dark .ProseMirror ::-moz-selection {
+.dark .markdown-page ::-moz-selection {
   background-color: rgba(35, 131, 226, 0.34);
-}
-
-/* Bubble Menu Animation */
-.bubble-menu {
-  animation:
-    fadeIn 0.2s ease-out,
-    zoomIn 0.2s ease-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes zoomIn {
-  from {
-    scale: 0.95;
-  }
-  to {
-    scale: 1;
-  }
-}
-
-/* Search Highlight - Keyword (Yellow) */
-.ProseMirror .search-result {
-  background-color: rgba(255, 235, 59, 0.4);
-  border-radius: 2px;
-}
-
-.ProseMirror .search-result-current {
-  background-color: rgba(255, 152, 0, 0.6);
-  box-shadow: 0 0 0 1px rgba(255, 152, 0, 0.8);
-}
-
-.dark .ProseMirror .search-result {
-  background-color: rgba(255, 235, 59, 0.3);
-}
-
-.dark .ProseMirror .search-result-current {
-  background-color: rgba(255, 152, 0, 0.5);
-  box-shadow: 0 0 0 1px rgba(255, 152, 0, 0.7);
-}
-
-/* Slash command inline query hint (Notion-like).
-   Keep `display: inline` here — using inline-flex/inline-block on a
-   contenteditable decoration span breaks caret positioning, snapping the
-   caret to the start edge of the styled box (so the cursor visually
-   appears *before* the typed `/`). Use padding + border-radius for the
-   pill look; box-decoration-break keeps it intact across line wraps. */
-.ProseMirror .slash-command-query {
-  display: inline;
-  border-radius: 6px;
-  background: hsl(var(--muted) / 0.78);
-  padding: 2px 6px;
-  color: hsl(var(--foreground));
-  font-weight: 500;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-}
-
-.dark .ProseMirror .slash-command-query {
-  background: rgba(255, 255, 255, 0.055);
-}
-
-.ProseMirror .slash-command-query-empty::after {
-  content: "Type to search";
-  display: inline;
-  color: hsl(var(--muted-foreground) / 0.62);
-  margin-left: 0.08rem;
-  white-space: nowrap;
-  pointer-events: none;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-/* Inline Comment Highlights */
-.ProseMirror .inline-comment-highlight {
-  background-color: rgba(255, 193, 7, 0.15);
-  border-bottom: 2px solid rgba(255, 193, 7, 0.4);
-  cursor: pointer;
-  transition: background-color 0.2s;
-  border-radius: 2px;
-}
-
-.ProseMirror .inline-comment-highlight:hover {
-  background-color: rgba(255, 193, 7, 0.28);
-}
-
-.ProseMirror .inline-comment-active {
-  background-color: rgba(255, 193, 7, 0.3);
-  border-bottom-color: rgba(255, 193, 7, 0.7);
-}
-
-.ProseMirror .inline-comment-resolved {
-  background-color: rgba(156, 163, 175, 0.1);
-  border-bottom-color: rgba(156, 163, 175, 0.3);
-  opacity: 0.6;
-}
-
-.dark .ProseMirror .inline-comment-highlight {
-  background-color: rgba(255, 193, 7, 0.12);
-  border-bottom-color: rgba(255, 193, 7, 0.35);
-}
-
-.dark .ProseMirror .inline-comment-highlight:hover {
-  background-color: rgba(255, 193, 7, 0.22);
-}
-
-.dark .ProseMirror .inline-comment-active {
-  background-color: rgba(255, 193, 7, 0.25);
-  border-bottom-color: rgba(255, 193, 7, 0.6);
-}
-
-.dark .ProseMirror .inline-comment-resolved {
-  background-color: rgba(156, 163, 175, 0.08);
-  border-bottom-color: rgba(156, 163, 175, 0.25);
-}
-
-/* ===== Columns Layout ===== */
-.ProseMirror .columns-wrapper {
-  display: flex;
-  gap: 1rem;
-  margin: 0.75rem 0;
-  min-height: 2rem;
-}
-
-.ProseMirror .columns-wrapper > .column {
-  flex: 1;
-  min-width: 0;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.375rem;
-  transition: background-color 0.15s ease;
-}
-
-/* Notion columns carry no persistent divider and no hover tint — the resting
-   state is just the gap. A faint hairline fades in only while hovering the
-   block, hinting at the column boundary without the heavy bordered look. */
-.ProseMirror .columns-wrapper > .column + .column {
-  border-left: 1px solid transparent;
-  transition: border-color 0.15s ease;
-}
-
-.ProseMirror .columns-wrapper:hover > .column + .column {
-  border-left-color: hsl(var(--border) / 0.5);
-}
-
-/* Remove extra top margin on first child inside a column */
-.ProseMirror .columns-wrapper > .column > *:first-child {
-  margin-top: 0 !important;
-}
-
-/* Remove extra bottom margin on last child inside a column */
-.ProseMirror .columns-wrapper > .column > *:last-child {
-  margin-bottom: 0 !important;
-}
-
-/* Mobile: stack columns vertically */
-@media (max-width: 767px) {
-  .ProseMirror .columns-wrapper {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .ProseMirror .columns-wrapper > .column + .column {
-    border-left: none;
-    border-top: 1.5px solid hsl(var(--border) / 0.5);
-    padding-top: 0.5rem;
-  }
 }

@@ -1,14 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { invokeMock } = vi.hoisted(() => ({
   invokeMock: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: invokeMock,
-}));
-
 import { useFileStore } from "@/stores/file-store";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
+import { useEditorStore } from "@/stores/editor-store";
 
 const now = "2026-04-30T00:00:00.000Z";
 
@@ -50,30 +48,54 @@ function markdownFile(id: string, name: string) {
   };
 }
 
-function attachmentFile(id: string, name: string, documentType: "pdf" | "excel" | "html") {
+function folderItem(id: string, name: string, relPath: string, parentId: string | null = null) {
   return {
     ...markdownFile(id, name),
-    documentType,
+    isFolder: true,
+    parentId,
+    documentType: undefined,
     storageHandle: {
       mode: "disk" as const,
       id,
-      kind: "document" as const,
-      documentType,
-      relPath: name,
+      kind: "folder" as const,
+      path: relPath,
+      relPath,
     },
   };
 }
 
-function mockRead(path = "Doc.md", html = "<p>Hello</p>", markdown = "Hello") {
+function markdownFileAt(id: string, name: string, relPath: string, parentId: string | null = null) {
+  return {
+    ...markdownFile(id, name),
+    parentId,
+    storageHandle: {
+      mode: "disk" as const,
+      id,
+      kind: "document" as const,
+      documentType: "markdown" as const,
+      path: relPath,
+      relPath,
+    },
+  };
+}
+
+function mockRead(path = "Doc.md", markdown = "Hello") {
   invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
     if (command === "doc_read") {
-      expect(payload).toEqual({ path: `/workspace/${path}` });
+      expect(payload).toEqual({ root: "/workspace", path });
       return {
-        html,
-        editorHtml: html,
+        html: "<p>legacy wire field</p>",
+        editorHtml: "<p>legacy wire field</p>",
         browsingHtml: '<h1 id="hello">Hello</h1>',
         markdown,
-        meta: { id: "doc-1", title: "Doc", created: now, updated: now },
+        meta: {
+          id: "doc-1",
+          title: "Doc",
+          tags: ["local"],
+          aliases: ["Home"],
+          created: now,
+          updated: now,
+        },
         extras: { databases: {} },
         source: "sidecar",
         sourceState: "sidecar_fresh",
@@ -88,8 +110,20 @@ function mockRead(path = "Doc.md", html = "<p>Hello</p>", markdown = "Hello") {
 describe("useFileStore disk workspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("__DOXMIND_DESKTOP__", {
+      platform: "macos",
+      invoke: invokeMock,
+      listen: vi.fn(() => vi.fn()),
+      getPathForFile: vi.fn(() => null),
+    });
     window.history.replaceState({}, "", "/editor");
     resetStore();
+    useEditorStore.setState({ isDirty: false, isSaving: false });
+    useEditorRefStore.setState({ requestSave: null });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("loads files from the disk workspace scan", async () => {
@@ -197,10 +231,7 @@ describe("useFileStore disk workspace", () => {
       files: [
         {
           ...markdownFile("doc-old", "Doc.md"),
-          content: "<p>Draft</p>",
-          editorHtml: "<p>Draft</p>",
-          browsingHtml: "<p>Draft</p>",
-          contentMarkdown: "Draft",
+          content: "Draft",
           storageHandle: {
             mode: "disk",
             id: "doc-old",
@@ -257,7 +288,7 @@ describe("useFileStore disk workspace", () => {
     expect(state.currentFileId).toBe("doc-new");
     expect(state.openTabIds).toEqual(["doc-new", "doc-other"]);
     expect(state.loadedContentIds.has("doc-new")).toBe(true);
-    expect(state.getFile("doc-new")?.content).toBe("<p>Draft</p>");
+    expect(state.getFile("doc-new")?.content).toBe("Draft");
   });
 
   it("adds workspace files to the open tab list as they become current", () => {
@@ -322,7 +353,8 @@ describe("useFileStore disk workspace", () => {
       isSynced: false,
     });
     window.history.replaceState({}, "", "/editor/doc-1?folder=%2Fmissing-workspace");
-    invokeMock.mockRejectedValue(new Error("tauri unavailable in tests"));
+    vi.stubGlobal("__DOXMIND_DESKTOP__", undefined);
+    invokeMock.mockRejectedValue(new Error("desktop unavailable in tests"));
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -364,7 +396,7 @@ describe("useFileStore disk workspace", () => {
     expect(window.location.pathname + window.location.search).toBe("/editor?folder=%2Fworkspace");
   });
 
-  it("loads document content from the sidecar reader", async () => {
+  it("loads Page content while discarding injected legacy wire state", async () => {
     useFileStore.setState({
       files: [
         {
@@ -388,13 +420,18 @@ describe("useFileStore disk workspace", () => {
     await useFileStore.getState().loadFileContent("doc-1");
 
     const file = useFileStore.getState().getFile("doc-1");
-    expect(file?.content).toBe("<p>Hello</p>");
-    expect(file?.editorHtml).toBe("<p>Hello</p>");
-    expect(file?.browsingHtml).toBe('<h1 id="hello">Hello</h1>');
-    expect(file?.contentMarkdown).toBe("Hello");
-    expect(file?.sourceState).toBe("sidecar_fresh");
+    expect(file?.content).toBe("Hello");
+    expect(file?.meta).toMatchObject({ tags: ["local"], aliases: ["Home"] });
     expect(file?.outline).toEqual([{ id: "hello", depth: 1, text: "Hello" }]);
-    expect(file?.browsingRendererVersion).toBe("browsing-html/v1");
+    expect(Object.keys(file ?? {})).not.toEqual(
+      expect.arrayContaining([
+        "editorHtml",
+        "browsingHtml",
+        "contentMarkdown",
+        "sourceState",
+        "browsingRendererVersion",
+      ])
+    );
     expect(useFileStore.getState().loadedContentIds.has("doc-1")).toBe(true);
   });
 
@@ -417,7 +454,7 @@ describe("useFileStore disk workspace", () => {
 
     await useFileStore.getState().loadFileContent("path:reference");
 
-    expect(invokeMock).not.toHaveBeenCalled();
+    expect(invokeMock).not.toHaveBeenCalledWith("doc_read", expect.anything());
     expect(useFileStore.getState().loadedContentIds.has("path:reference")).toBe(true);
   });
 
@@ -425,7 +462,7 @@ describe("useFileStore disk workspace", () => {
     await useFileStore.getState().openFile("/workspace/reference.html");
 
     const state = useFileStore.getState();
-    expect(invokeMock).not.toHaveBeenCalled();
+    expect(invokeMock).not.toHaveBeenCalledWith("doc_read", expect.anything());
     expect(state.openTarget).toBe("file");
     expect(state.rootPath).toBe("/workspace");
     expect(state.files).toHaveLength(1);
@@ -436,34 +473,37 @@ describe("useFileStore disk workspace", () => {
     });
   });
 
-  it("creates a new local markdown document", async () => {
+  it("creates a new local Page from canonical Markdown without dropping template content", async () => {
     invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
       if (command === "doc_create") {
         expect(payload).toMatchObject({
           root: "/workspace",
           payload: {
             path: "New Note.md",
-            html: "<p>Draft</p>",
-            markdown: "",
+            markdown: "# Draft",
+            meta: { status: "draft" },
           },
         });
+        expect((payload.payload as Record<string, unknown>).html).toBeUndefined();
         return {
           id: "doc-new",
           idSource: "frontmatter",
           path: "New Note.md",
           name: "New Note.md",
           title: "New Note",
-          hasSidecar: true,
+          hasSidecar: false,
         };
       }
       throw new Error(`Unexpected command: ${command}`);
     });
 
-    const id = await useFileStore.getState().createFile("New Note", "<p>Draft</p>");
+    const id = await useFileStore
+      .getState()
+      .createFile("New Note", "# Draft", null, { status: "draft" });
 
     expect(id).toBe("doc-new");
     expect(useFileStore.getState().currentFileId).toBe("doc-new");
-    expect(useFileStore.getState().getFile("doc-new")?.content).toBe("<p>Draft</p>");
+    expect(useFileStore.getState().getFile("doc-new")?.content).toBe("# Draft");
   });
 
   it("keeps primary creation on the Markdown Page path for attachment-like names", async () => {
@@ -473,10 +513,10 @@ describe("useFileStore disk workspace", () => {
           root: "/workspace",
           payload: {
             path: "Untitled.pdf.md",
-            html: "",
             markdown: "",
           },
         });
+        expect((payload.payload as Record<string, unknown>).html).toBeUndefined();
         return {
           id: "page-new",
           idSource: "frontmatter",
@@ -484,7 +524,7 @@ describe("useFileStore disk workspace", () => {
           name: "Untitled.pdf.md",
           title: "Untitled.pdf",
           documentType: "markdown",
-          hasSidecar: true,
+          hasSidecar: false,
         };
       }
       throw new Error(`Unexpected command: ${command}`);
@@ -502,7 +542,8 @@ describe("useFileStore disk workspace", () => {
         {
           id: "doc-1",
           name: "Doc.md",
-          content: "<p>Old</p>",
+          content: "Old",
+          sourceRevision: "sha256:old",
           isFolder: false,
           parentId: null,
           position: 0,
@@ -518,30 +559,23 @@ describe("useFileStore disk workspace", () => {
     invokeMock.mockImplementation(async (command: string) => {
       if (command === "doc_read") {
         return {
-          html: "<p>Old</p>",
           markdown: "Old",
           meta: { id: "generated-by-backend", title: "Doc", updated: now },
-          extras: { databases: {} },
-          source: "sidecar",
+          outline: [],
         };
       }
       if (command === "doc_write_workspace") {
         return {
-          html: "<p>New</p>",
-          editorHtml: "<p>New</p>",
-          browsingHtml: "<p>New</p>",
           markdown: "New",
+          revision: "sha256:new",
           meta: { id: "doc-1", title: "Doc", updated: now },
-          extras: { databases: {} },
-          source: "sidecar",
+          outline: [],
         };
       }
       throw new Error(`Unexpected command: ${command}`);
     });
 
-    await useFileStore
-      .getState()
-      .updateFile("doc-1", { content: "<p>New</p>", contentMarkdown: "New" });
+    await useFileStore.getState().updateFile("doc-1", { content: "New" });
 
     expect(invokeMock).toHaveBeenCalledWith(
       "doc_write_workspace",
@@ -549,24 +583,211 @@ describe("useFileStore disk workspace", () => {
         root: "/workspace",
         path: "Doc.md",
         payload: expect.objectContaining({
-          html: "<p>New</p>",
           markdown: "New",
-          meta: { id: "doc-1" },
+          expectedRevision: "sha256:old",
         }),
       })
     );
+    const writePayload = invokeMock.mock.calls.find(
+      ([command]) => command === "doc_write_workspace"
+    )?.[1] as { payload: Record<string, unknown> };
+    expect(writePayload.payload.html).toBeUndefined();
+    expect(writePayload.payload.meta).toBeUndefined();
+    expect(useFileStore.getState().getFile("doc-1")?.sourceRevision).toBe("sha256:new");
   });
 
-  it("keeps the live editor html after autosave when the backend returns normalized html", async () => {
+  it("persists Page properties as a metadata-only revision-checked patch", async () => {
+    useFileStore.setState({
+      files: [
+        {
+          ...markdownFile("doc-1", "Doc.md"),
+          content: "Body\n",
+          sourceRevision: "sha256:old",
+          meta: { id: "doc-1", tags: ["old"] },
+        },
+      ],
+    });
+    invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
+      if (command !== "doc_write_workspace") throw new Error(`Unexpected command: ${command}`);
+      expect(payload).toEqual({
+        root: "/workspace",
+        path: "Doc.md",
+        payload: {
+          meta: {
+            tags: ["local", "markdown"],
+            aliases: null,
+            status: "doing",
+            priority: 2,
+            published: false,
+          },
+          expectedRevision: "sha256:old",
+        },
+      });
+      return {
+        markdown: "Body\n",
+        revision: "sha256:properties",
+        meta: {
+          id: "doc-1",
+          tags: ["local", "markdown"],
+          status: "doing",
+          priority: 2,
+          published: false,
+          updated: now,
+        },
+        outline: [],
+      };
+    });
+
+    await useFileStore.getState().updatePageProperties("doc-1", {
+      tags: ["local", "markdown"],
+      aliases: null,
+      status: "doing",
+      priority: 2,
+      published: false,
+    });
+
+    const saved = useFileStore.getState().getFile("doc-1");
+    expect(saved?.content).toBe("Body\n");
+    expect(saved?.meta?.tags).toEqual(["local", "markdown"]);
+    expect(saved?.meta).toMatchObject({ status: "doing", priority: 2, published: false });
+    expect(saved?.sourceRevision).toBe("sha256:properties");
+  });
+
+  it("leaves Page properties untouched when an external revision wins", async () => {
+    const file = {
+      ...markdownFile("doc-1", "Doc.md"),
+      sourceRevision: "sha256:old",
+      meta: { id: "doc-1", tags: ["old"] },
+    };
+    useFileStore.setState({ files: [file] });
+    invokeMock.mockRejectedValue(new Error("page_revision_conflict"));
+
+    await expect(
+      useFileStore.getState().updatePageProperties("doc-1", { tags: ["new"] })
+    ).rejects.toThrow("page_revision_conflict");
+
+    expect(useFileStore.getState().getFile("doc-1")).toEqual(file);
+  });
+
+  it("promotes a no-frontmatter path identity after its first property write", async () => {
+    const generatedId = "8e23b249-39bb-474d-93be-ea244dfe2c9d";
+    const file = {
+      ...markdownFile("path:external", "External.md"),
+      sourceRevision: "sha256:old",
+      meta: { id: "path:external" },
+    };
+    useFileStore.setState({
+      files: [file],
+      currentFileId: file.id,
+      openTabIds: [file.id],
+      loadedContentIds: new Set([file.id]),
+      selectedFileIds: new Set([file.id]),
+    });
+    invokeMock.mockResolvedValue({
+      markdown: "Body\n",
+      revision: "sha256:properties",
+      meta: { id: generatedId, tags: ["local"] },
+      outline: [],
+    });
+
+    await useFileStore.getState().updatePageProperties(file.id, { tags: ["local"] });
+
+    const state = useFileStore.getState();
+    expect(state.getFile(generatedId)).toMatchObject({
+      id: generatedId,
+      meta: { id: generatedId, tags: ["local"] },
+      storageHandle: { id: generatedId, relPath: "External.md" },
+    });
+    expect(state.getFile(file.id)).toBeUndefined();
+    expect(state.currentFileId).toBe(generatedId);
+    expect(state.openTabIds).toEqual([generatedId]);
+    expect(state.loadedContentIds).toEqual(new Set([generatedId]));
+    expect(state.selectedFileIds).toEqual(new Set([generatedId]));
+  });
+
+  it("keeps duplicate authored ids on their scan-resolved path identity", async () => {
+    const file = {
+      ...markdownFile("path:duplicate", "Copy.md"),
+      sourceRevision: "sha256:old",
+      meta: { id: "authored-duplicate", tags: ["old"] },
+    };
+    useFileStore.setState({ files: [file], currentFileId: file.id, openTabIds: [file.id] });
+    invokeMock.mockResolvedValue({
+      markdown: "Body\n",
+      revision: "sha256:properties",
+      meta: { id: "authored-duplicate", tags: ["new"] },
+      outline: [],
+    });
+
+    await useFileStore.getState().updatePageProperties(file.id, { tags: ["new"] });
+
+    expect(useFileStore.getState().currentFileId).toBe(file.id);
+    expect(useFileStore.getState().getFile(file.id)?.meta?.id).toBe("authored-duplicate");
+  });
+
+  it("saves a dirty Page before switching files", async () => {
+    let finishSave!: (saved: boolean) => void;
+    const requestSave = vi.fn(() => new Promise<boolean>((resolve) => (finishSave = resolve)));
+    useFileStore.setState({
+      files: [markdownFile("page-a", "A.md"), markdownFile("page-b", "B.md")],
+      currentFileId: "page-a",
+      openTabIds: ["page-a"],
+    });
+    useEditorStore.setState({ isDirty: true });
+    useEditorRefStore.setState({ requestSave });
+
+    const switching = useFileStore.getState().requestCurrentFile("page-b");
+    expect(useFileStore.getState().currentFileId).toBe("page-a");
+
+    finishSave(true);
+    await expect(switching).resolves.toBe(true);
+    expect(useFileStore.getState().currentFileId).toBe("page-b");
+    expect(requestSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the current Page selected when the pre-switch save fails", async () => {
+    useFileStore.setState({
+      files: [markdownFile("page-a", "A.md"), markdownFile("page-b", "B.md")],
+      currentFileId: "page-a",
+      openTabIds: ["page-a"],
+    });
+    useEditorStore.setState({ isDirty: true });
+    useEditorRefStore.setState({
+      requestSave: vi.fn().mockRejectedValue(new Error("disk full")),
+    });
+
+    await expect(useFileStore.getState().requestCurrentFile("page-b")).resolves.toBe(false);
+    expect(useFileStore.getState().currentFileId).toBe("page-a");
+  });
+
+  it("lets a newer navigation intent cancel an in-flight dirty switch", async () => {
+    let finishSave!: (saved: boolean) => void;
+    useFileStore.setState({
+      files: [markdownFile("page-a", "A.md"), markdownFile("page-b", "B.md")],
+      currentFileId: "page-a",
+      openTabIds: ["page-a"],
+    });
+    useEditorStore.setState({ isDirty: true });
+    useEditorRefStore.setState({
+      requestSave: vi.fn(() => new Promise<boolean>((resolve) => (finishSave = resolve))),
+    });
+
+    const staleSwitch = useFileStore.getState().requestCurrentFile("page-b");
+    await expect(useFileStore.getState().requestCurrentFile("page-a")).resolves.toBe(true);
+    finishSave(true);
+
+    await expect(staleSwitch).resolves.toBe(false);
+    expect(useFileStore.getState().currentFileId).toBe("page-a");
+  });
+
+  it("commits the canonical Markdown returned after save", async () => {
     useFileStore.setState({
       files: [
         {
           id: "doc-1",
           name: "Doc.md",
-          content: "<p>Old</p>",
-          editorHtml: "<p>Old</p>",
-          browsingHtml: "<p>Old</p>",
-          contentMarkdown: "Old",
+          content: "Old",
+          sourceRevision: "sha256:old",
           isFolder: false,
           parentId: null,
           position: 0,
@@ -583,41 +804,68 @@ describe("useFileStore disk workspace", () => {
     invokeMock.mockImplementation(async (command: string) => {
       if (command === "doc_write_workspace") {
         return {
-          html: "<p>New normalized by backend</p>",
-          editorHtml: "<p>New normalized by backend</p>",
-          browsingHtml: "<p>New normalized by backend</p>",
           markdown: "New normalized by backend",
+          revision: "sha256:normalized",
           meta: { id: "doc-1", title: "Doc", updated: now },
-          extras: { databases: {} },
-          source: "sidecar",
+          outline: [],
         };
       }
       throw new Error(`Unexpected command: ${command}`);
     });
 
-    await useFileStore
-      .getState()
-      .updateFile("doc-1", { content: "<p>New</p>", contentMarkdown: "New" });
+    await useFileStore.getState().updateFile("doc-1", { content: "New" });
 
     const saved = useFileStore.getState().getFile("doc-1");
-    expect(saved?.content).toBe("<p>New</p>");
+    expect(saved?.content).toBe("New normalized by backend");
     expect(saved?.id).toBe("doc-1");
     expect(saved?.storageHandle?.id).toBe("doc-1");
-    expect(saved?.editorHtml).toBe("<p>New</p>");
-    expect(saved?.contentMarkdown).toBe("New");
-    expect(saved?.browsingHtml).toBe("<p>New normalized by backend</p>");
+    expect(saved?.sourceRevision).toBe("sha256:normalized");
   });
 
-  it("keeps live editor html when a forced reread sees the same markdown saved by autosave", async () => {
+  it("rejects an update when the Page write fails after optimistic rollback", async () => {
+    const writeError = new Error("disk full");
+    const originalFile = {
+      ...markdownFile("doc-1", "Doc.md"),
+      content: "Old\n",
+      sourceRevision: "sha256:old",
+      outline: [{ id: "old", depth: 1 as const, text: "Old" }],
+    };
+    useFileStore.setState({
+      files: [originalFile],
+      loadedContentIds: new Set(["doc-1"]),
+    });
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "doc_write_workspace") throw writeError;
+      if (command === "workspace_scan") {
+        return {
+          root: "/workspace",
+          documents: [
+            {
+              id: "doc-1",
+              idSource: "frontmatter",
+              path: "Doc.md",
+              name: "Doc.md",
+              documentType: "markdown",
+              hasSidecar: false,
+            },
+          ],
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await expect(useFileStore.getState().updateFile("doc-1", { content: "New" })).rejects.toThrow();
+    expect(useFileStore.getState().getFile("doc-1")).toEqual(originalFile);
+    expect(useFileStore.getState().loadedContentIds.has("doc-1")).toBe(true);
+  });
+
+  it("keeps canonical Markdown when a forced reread sees the same saved source", async () => {
     useFileStore.setState({
       files: [
         {
           id: "doc-1",
           name: "Doc.md",
-          content: "<p>New</p>",
-          editorHtml: "<p>New</p>",
-          browsingHtml: "<p>New</p>",
-          contentMarkdown: "New",
+          content: "New",
           isFolder: false,
           parentId: null,
           position: 0,
@@ -635,16 +883,9 @@ describe("useFileStore disk workspace", () => {
     invokeMock.mockImplementation(async (command: string) => {
       if (command === "doc_read") {
         return {
-          html: "<p>New normalized by backend</p>",
-          editorHtml: "<p>New normalized by backend</p>",
-          browsingHtml: '<h1 id="new">New</h1>',
           markdown: "New",
           meta: { id: "doc-1", title: "Doc", updated: now },
-          extras: { databases: {} },
-          source: "sidecar",
-          sourceState: "sidecar_fresh",
           outline: [{ id: "new", depth: 1, text: "New" }],
-          browsingRendererVersion: "browsing-html/v1",
         };
       }
       throw new Error(`Unexpected command: ${command}`);
@@ -653,11 +894,53 @@ describe("useFileStore disk workspace", () => {
     await useFileStore.getState().loadFileContent("doc-1", { force: true });
 
     const refreshed = useFileStore.getState().getFile("doc-1");
-    expect(refreshed?.content).toBe("<p>New</p>");
-    expect(refreshed?.editorHtml).toBe("<p>New</p>");
-    expect(refreshed?.contentMarkdown).toBe("New");
-    expect(refreshed?.browsingHtml).toBe('<h1 id="new">New</h1>');
+    expect(refreshed?.content).toBe("New");
     expect(refreshed?.outline).toEqual([{ id: "new", depth: 1, text: "New" }]);
+  });
+
+  it("can surface a forced Page load failure to a caller that must abort", async () => {
+    useFileStore.setState({
+      files: [markdownFile("doc-1", "Doc.md")],
+      loadedContentIds: new Set(["doc-1"]),
+    });
+    invokeMock.mockRejectedValue(new Error("disk read failed"));
+
+    await expect(
+      useFileStore.getState().loadFileContent("doc-1", { force: true, throwOnError: true })
+    ).rejects.toThrow("disk read failed");
+  });
+
+  it("surfaces a missing Page instead of treating it as a successful forced load", async () => {
+    await expect(
+      useFileStore.getState().loadFileContent("missing-page", { force: true, throwOnError: true })
+    ).rejects.toThrow("Page is no longer available: missing-page");
+  });
+
+  it("applies a forced reread when only the Markdown source bytes changed", async () => {
+    useFileStore.setState({
+      files: [
+        {
+          ...markdownFile("doc-1", "Doc.md"),
+          content: "Same rendering\n",
+          outline: [],
+        },
+      ],
+      loadedContentIds: new Set(["doc-1"]),
+    });
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "doc_read") {
+        return {
+          markdown: "Same rendering\n\n",
+          meta: { id: "doc-1", title: "Doc", updated: now },
+          outline: [],
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await useFileStore.getState().loadFileContent("doc-1", { force: true });
+
+    expect(useFileStore.getState().getFile("doc-1")?.content).toBe("Same rendering\n\n");
   });
 
   it("applies a forced reread when the markdown changed externally", async () => {
@@ -666,10 +949,7 @@ describe("useFileStore disk workspace", () => {
         {
           id: "doc-1",
           name: "Doc.md",
-          content: "<p>New</p>",
-          editorHtml: "<p>New</p>",
-          browsingHtml: "<p>New</p>",
-          contentMarkdown: "New",
+          content: "New",
           isFolder: false,
           parentId: null,
           position: 0,
@@ -687,14 +967,8 @@ describe("useFileStore disk workspace", () => {
     invokeMock.mockImplementation(async (command: string) => {
       if (command === "doc_read") {
         return {
-          html: "<p>External edit</p>",
-          editorHtml: "<p>External edit</p>",
-          browsingHtml: "<p>External edit</p>",
           markdown: "External edit",
           meta: { id: "doc-1", title: "Doc", updated: now },
-          extras: { databases: {} },
-          source: "markdown",
-          sourceState: "sidecar_stale",
           outline: [],
         };
       }
@@ -704,47 +978,59 @@ describe("useFileStore disk workspace", () => {
     await useFileStore.getState().loadFileContent("doc-1", { force: true });
 
     const refreshed = useFileStore.getState().getFile("doc-1");
-    expect(refreshed?.content).toBe("<p>External edit</p>");
-    expect(refreshed?.editorHtml).toBe("<p>External edit</p>");
-    expect(refreshed?.contentMarkdown).toBe("External edit");
+    expect(refreshed?.content).toBe("External edit");
   });
 
   it("keeps the new filename after rename even when the returned title is stale", async () => {
-    // Renaming a doc moves the file but never rewrites its frontmatter `title`,
-    // so doc_rename returns the *old* title. The tree must reflect the new
+    // Relocating a Page moves the file but never rewrites its frontmatter `title`.
+    // The transaction therefore returns the old title. The tree must reflect the new
     // filename, otherwise the name snaps back to "Untitled-N" after Enter.
     useFileStore.setState({
-      files: [
-        {
-          id: "doc-1",
-          name: "Untitled-1",
-          content: "",
-          isFolder: false,
-          parentId: null,
-          position: 0,
-          isFavorite: false,
-          createdAt: now,
-          updatedAt: now,
-          wordCount: 0,
-          preview: "",
-          storageHandle: { mode: "disk", id: "doc-1", kind: "document", relPath: "Untitled-1.md" },
-        },
-      ],
+      files: [markdownFile("doc-1", "Untitled-1.md")],
     });
     invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
-      if (command === "doc_rename") {
+      if (command === "workspace_scan") {
+        return {
+          root: "/workspace",
+          documents: [
+            {
+              id: "doc-1",
+              idSource: "frontmatter",
+              path: "Untitled-1.md",
+              name: "Untitled-1.md",
+              title: "Untitled-1",
+              documentType: "markdown",
+            },
+          ],
+        };
+      }
+      if (command === "doc_read") {
+        return {
+          markdown: "",
+          revision: "sha256:untitled",
+          meta: { id: "doc-1", title: "Untitled-1" },
+          outline: [],
+        };
+      }
+      if (command === "workspace_relocate_page") {
         expect(payload).toMatchObject({
           root: "/workspace",
           oldPath: "Untitled-1.md",
           newPath: "Report.md",
+          expectedRevision: "sha256:untitled",
+          checks: [{ path: "Untitled-1.md", expectedRevision: "sha256:untitled" }],
         });
         return {
-          id: "doc-1",
-          idSource: "frontmatter",
-          path: "Report.md",
-          name: "Report.md",
-          title: "Untitled-1", // stale: rename leaves frontmatter untouched
-          hasSidecar: true,
+          document: {
+            id: "doc-1",
+            idSource: "frontmatter",
+            path: "Report.md",
+            name: "Report.md",
+            title: "Untitled-1",
+            documentType: "markdown",
+          },
+          revision: "sha256:untitled",
+          writes: [],
         };
       }
       throw new Error(`Unexpected command: ${command}`);
@@ -753,6 +1039,236 @@ describe("useFileStore disk workspace", () => {
     await useFileStore.getState().renameFile("doc-1", "Report.md");
 
     expect(useFileStore.getState().getFile("doc-1")?.name).toBe("Report");
+  });
+
+  it("flushes active Markdown edits before renaming the Page on disk", async () => {
+    const requestSave = vi.fn(async () => {
+      useEditorStore.setState({ isDirty: false });
+      return true;
+    });
+    useEditorRefStore.setState({ requestSave });
+    useEditorStore.setState({ isDirty: true });
+    useFileStore.setState({
+      currentFileId: "doc-2",
+      files: [markdownFile("doc-1", "Draft.md"), markdownFile("doc-2", "Active.md")],
+    });
+    invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
+      if (command === "workspace_scan") {
+        return {
+          root: "/workspace",
+          documents: [
+            {
+              id: "doc-1",
+              idSource: "frontmatter",
+              path: "Draft.md",
+              name: "Draft.md",
+              title: "Draft",
+              documentType: "markdown",
+            },
+            {
+              id: "doc-2",
+              idSource: "frontmatter",
+              path: "Active.md",
+              name: "Active.md",
+              title: "Active",
+              documentType: "markdown",
+            },
+          ],
+        };
+      }
+      if (command === "doc_read") {
+        const active = payload.path === "Active.md";
+        return {
+          markdown: "",
+          revision: active ? "sha256:active" : "sha256:draft",
+          meta: { id: active ? "doc-2" : "doc-1" },
+          outline: [],
+        };
+      }
+      if (command === "workspace_relocate_page") {
+        return {
+          document: {
+            id: "doc-1",
+            idSource: "frontmatter",
+            path: "Final.md",
+            name: "Final.md",
+            title: "Draft",
+            documentType: "markdown",
+          },
+          revision: "sha256:draft",
+          writes: [],
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await useFileStore.getState().renameFile("doc-1", "Final.md");
+
+    expect(requestSave).toHaveBeenCalledTimes(1);
+    expect(requestSave.mock.invocationCallOrder[0]).toBeLessThan(
+      invokeMock.mock.invocationCallOrder[0]
+    );
+  });
+
+  it("renames a Page and repairs its incoming links through one relocation transaction", async () => {
+    useFileStore.setState({
+      currentFileId: "page-1",
+      openTabIds: ["page-1", "daily-1"],
+      loadedContentIds: new Set(["page-1", "daily-1"]),
+      files: [
+        {
+          ...markdownFile("page-1", "Draft.md"),
+          content: "# Draft\n",
+          sourceRevision: "sha256:draft",
+        },
+        {
+          ...markdownFile("daily-1", "Daily.md"),
+          content: "See [[Draft]].\n",
+          sourceRevision: "sha256:daily",
+        },
+      ],
+    });
+    invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
+      if (command === "workspace_scan") {
+        return {
+          root: "/workspace",
+          documents: [
+            {
+              id: "page-1",
+              idSource: "frontmatter",
+              path: "Draft.md",
+              name: "Draft.md",
+              title: "Draft",
+              documentType: "markdown",
+            },
+            {
+              id: "daily-1",
+              idSource: "frontmatter",
+              path: "Daily.md",
+              name: "Daily.md",
+              title: "Daily",
+              documentType: "markdown",
+            },
+          ],
+        };
+      }
+      if (command === "doc_read") {
+        const path = String(payload.path);
+        return path === "Draft.md"
+          ? {
+              markdown: "# Draft\n",
+              revision: "sha256:draft",
+              meta: { id: "page-1" },
+              outline: [],
+            }
+          : {
+              markdown: "See [[Draft]].\n",
+              revision: "sha256:daily",
+              meta: { id: "daily-1" },
+              outline: [],
+            };
+      }
+      if (command === "workspace_relocate_page") {
+        expect(payload).toEqual({
+          root: "/workspace",
+          oldPath: "Draft.md",
+          newPath: "Final.md",
+          expectedRevision: "sha256:draft",
+          checks: [
+            { path: "Daily.md", expectedRevision: "sha256:daily" },
+            { path: "Draft.md", expectedRevision: "sha256:draft" },
+          ],
+          writes: [
+            {
+              path: "Daily.md",
+              expectedRevision: "sha256:daily",
+              markdown: "See [[Final]].\n",
+            },
+          ],
+        });
+        return {
+          document: {
+            id: "page-1",
+            idSource: "frontmatter",
+            path: "Final.md",
+            name: "Final.md",
+            title: "Draft",
+            documentType: "markdown",
+          },
+          revision: "sha256:draft",
+          writes: [{ path: "Daily.md", revision: "sha256:daily-new" }],
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await useFileStore.getState().renameFile("page-1", "Final.md");
+
+    expect(invokeMock.mock.calls.some(([command]) => command === "doc_rename")).toBe(false);
+    expect(useFileStore.getState().getFile("page-1")?.name).toBe("Final");
+    expect(useFileStore.getState().getFile("daily-1")).toMatchObject({
+      content: "See [[Final]].\n",
+      sourceRevision: "sha256:daily-new",
+    });
+  });
+
+  it("keeps every Page unchanged when relocation preview is declined", async () => {
+    useFileStore.setState({ files: [markdownFile("page-1", "Draft.md")] });
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "workspace_scan") {
+        return {
+          root: "/workspace",
+          documents: [
+            {
+              id: "page-1",
+              idSource: "frontmatter",
+              path: "Draft.md",
+              name: "Draft.md",
+              title: "Draft",
+              documentType: "markdown",
+            },
+          ],
+        };
+      }
+      if (command === "doc_read") {
+        return {
+          markdown: "",
+          revision: "sha256:draft",
+          meta: { id: "page-1" },
+          outline: [],
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    const confirm = vi.fn().mockResolvedValue(false);
+
+    await useFileStore.getState().renameFile("page-1", "Final.md", { confirm });
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relocation: expect.objectContaining({ fromPath: "Draft.md", toPath: "Final.md" }),
+      })
+    );
+    expect(invokeMock.mock.calls.some(([command]) => command === "workspace_relocate_page")).toBe(
+      false
+    );
+    expect(useFileStore.getState().getFile("page-1")?.name).toBe("Draft.md");
+  });
+
+  it("does not rename the Page when its active edits cannot be saved", async () => {
+    useEditorRefStore.setState({ requestSave: vi.fn().mockResolvedValue(false) });
+    useEditorStore.setState({ isDirty: true });
+    useFileStore.setState({
+      currentFileId: "doc-1",
+      files: [markdownFile("doc-1", "Draft.md")],
+    });
+
+    await expect(useFileStore.getState().renameFile("doc-1", "Final.md")).rejects.toThrow(
+      "Save the active Page before renaming it"
+    );
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(useFileStore.getState().getFile("doc-1")?.name).toBe("Draft.md");
   });
 
   it("keeps the .pdf extension and carries selection when renaming a PDF", async () => {
@@ -816,6 +1332,396 @@ describe("useFileStore disk workspace", () => {
     expect(state.loadedContentIds.has("pdf-new")).toBe(true);
   });
 
+  it("carries every path-derived Page identity slot when moving it to a folder", async () => {
+    const oldId = "path:Note.md";
+    const newId = "path:Archive/Note.md";
+    const folder = {
+      ...markdownFile("folder:Archive", "Archive"),
+      isFolder: true,
+      documentType: undefined,
+      storageHandle: {
+        mode: "disk" as const,
+        id: "folder:Archive",
+        kind: "folder" as const,
+        relPath: "Archive",
+      },
+    };
+    useFileStore.setState({
+      files: [markdownFile(oldId, "Note.md"), folder],
+      currentFileId: oldId,
+      openTabIds: [oldId],
+      loadedContentIds: new Set([oldId]),
+      selectedFileIds: new Set([oldId]),
+      justCreatedFileId: oldId,
+    });
+    invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
+      if (command === "workspace_scan") {
+        return {
+          root: "/workspace",
+          documents: [
+            {
+              id: oldId,
+              idSource: "path",
+              path: "Note.md",
+              name: "Note.md",
+              title: "Note",
+              documentType: "markdown",
+            },
+          ],
+        };
+      }
+      if (command === "doc_read") {
+        return { markdown: "", revision: "sha256:note", meta: {}, outline: [] };
+      }
+      if (command === "workspace_relocate_page") {
+        expect(payload).toMatchObject({
+          root: "/workspace",
+          oldPath: "Note.md",
+          newPath: "Archive/Note.md",
+          expectedRevision: "sha256:note",
+        });
+        return {
+          document: {
+            id: newId,
+            idSource: "path",
+            path: "Archive/Note.md",
+            name: "Note.md",
+            title: "Note",
+            documentType: "markdown",
+          },
+          revision: "sha256:note",
+          writes: [],
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await useFileStore.getState().moveFileToFolder(oldId, "folder:Archive");
+
+    const state = useFileStore.getState();
+    expect(state.getFile(newId)?.parentId).toBe("folder:Archive");
+    expect(state.getFile(oldId)).toBeUndefined();
+    expect(state.currentFileId).toBe(newId);
+    expect(state.openTabIds).toEqual([newId]);
+    expect(state.loadedContentIds).toEqual(new Set([newId]));
+    expect(state.selectedFileIds).toEqual(new Set([newId]));
+    expect(state.justCreatedFileId).toBe(newId);
+  });
+
+  it("flushes active Markdown edits before moving the Page on disk", async () => {
+    const requestSave = vi.fn(async () => {
+      useEditorStore.setState({ isDirty: false });
+      return true;
+    });
+    useEditorRefStore.setState({ requestSave });
+    useEditorStore.setState({ isDirty: true });
+    useFileStore.setState({
+      currentFileId: "doc-1",
+      files: [
+        markdownFile("doc-1", "Draft.md"),
+        {
+          ...markdownFile("folder:Archive", "Archive"),
+          isFolder: true,
+          documentType: undefined,
+          storageHandle: {
+            mode: "disk",
+            id: "folder:Archive",
+            kind: "folder",
+            relPath: "Archive",
+          },
+        },
+      ],
+    });
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "workspace_scan") {
+        return {
+          root: "/workspace",
+          documents: [
+            {
+              id: "doc-1",
+              idSource: "frontmatter",
+              path: "Draft.md",
+              name: "Draft.md",
+              title: "Draft",
+              documentType: "markdown",
+            },
+          ],
+        };
+      }
+      if (command === "doc_read") {
+        return {
+          markdown: "",
+          revision: "sha256:draft",
+          meta: { id: "doc-1" },
+          outline: [],
+        };
+      }
+      if (command === "workspace_relocate_page") {
+        return {
+          document: {
+            id: "doc-1",
+            idSource: "frontmatter",
+            path: "Archive/Draft.md",
+            name: "Draft.md",
+            title: "Draft",
+            documentType: "markdown",
+          },
+          revision: "sha256:draft",
+          writes: [],
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await useFileStore.getState().moveFileToFolder("doc-1", "folder:Archive");
+
+    expect(requestSave).toHaveBeenCalledOnce();
+    expect(requestSave.mock.invocationCallOrder[0]).toBeLessThan(
+      invokeMock.mock.invocationCallOrder[0]
+    );
+  });
+
+  it("surfaces a Page relocation failure without an optimistic state mutation", async () => {
+    const originalLoadFiles = useFileStore.getState().loadFiles;
+    const moveError = new Error("move failed");
+    const loadFilesMock = vi.fn().mockResolvedValue(undefined);
+    useFileStore.setState({
+      files: [
+        markdownFile("doc-1", "Doc.md"),
+        {
+          ...markdownFile("folder:Archive", "Archive"),
+          isFolder: true,
+          documentType: undefined,
+          storageHandle: {
+            mode: "disk",
+            id: "folder:Archive",
+            kind: "folder",
+            relPath: "Archive",
+          },
+        },
+      ],
+      loadFiles: loadFilesMock,
+    });
+    invokeMock.mockRejectedValueOnce(moveError);
+
+    try {
+      await expect(
+        useFileStore.getState().moveFileToFolder("doc-1", "folder:Archive")
+      ).rejects.toBe(moveError);
+      expect(loadFilesMock).not.toHaveBeenCalled();
+      expect(useFileStore.getState().getFile("doc-1")?.parentId).toBeNull();
+    } finally {
+      useFileStore.setState({ loadFiles: originalLoadFiles });
+    }
+  });
+
+  it("moves a Folder subtree and repairs links while preserving every open identity slot", async () => {
+    const oldPageId = "path:old-target";
+    const newPageId = "path:new-target";
+    const oldRootId = "folder:Notes";
+    const oldSubId = "folder:Notes/Sub";
+    const newRootId = "folder:Archive/Notes";
+    const newSubId = "folder:Archive/Notes/Sub";
+    const confirm = vi.fn().mockResolvedValue(true);
+    useFileStore.setState({
+      files: [
+        folderItem("folder:Archive", "Archive", "Archive"),
+        folderItem(oldRootId, "Notes", "Notes"),
+        folderItem(oldSubId, "Sub", "Notes/Sub", oldRootId),
+        {
+          ...markdownFileAt(oldPageId, "Target", "Notes/Sub/Target.md", oldSubId),
+          content: "See [[../../Daily]].\n",
+          sourceRevision: "sha256:target",
+        },
+        {
+          ...markdownFileAt("daily-1", "Daily", "Daily.md"),
+          content: "See [[Notes/Sub/Target]].\n",
+          sourceRevision: "sha256:daily",
+        },
+      ],
+      currentFileId: oldPageId,
+      openTabIds: [oldPageId, "daily-1"],
+      currentFolderId: oldSubId,
+      loadedContentIds: new Set([oldPageId, "daily-1"]),
+      selectedFileIds: new Set([oldPageId, oldSubId]),
+      expandedFolderIds: new Set([oldRootId, oldSubId]),
+      justCreatedFileId: oldPageId,
+    });
+
+    let scan = 0;
+    invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
+      if (command === "workspace_scan") {
+        scan += 1;
+        return scan === 1
+          ? {
+              root: "/workspace",
+              documents: [
+                {
+                  id: "daily-1",
+                  idSource: "frontmatter",
+                  path: "Daily.md",
+                  name: "Daily.md",
+                  title: "Daily",
+                  documentType: "markdown",
+                },
+                {
+                  id: oldPageId,
+                  idSource: "path",
+                  path: "Notes/Sub/Target.md",
+                  name: "Target.md",
+                  title: "Target",
+                  documentType: "markdown",
+                },
+              ],
+            }
+          : {
+              root: "/workspace",
+              documents: [
+                {
+                  id: "daily-1",
+                  idSource: "frontmatter",
+                  path: "Daily.md",
+                  name: "Daily.md",
+                  title: "Daily",
+                  documentType: "markdown",
+                },
+                {
+                  id: newPageId,
+                  idSource: "path",
+                  path: "Archive/Notes/Sub/Target.md",
+                  name: "Target.md",
+                  title: "Target",
+                  documentType: "markdown",
+                },
+              ],
+            };
+      }
+      if (command === "doc_read") {
+        return payload.path === "Daily.md"
+          ? {
+              markdown: "See [[Notes/Sub/Target]].\n",
+              revision: "sha256:daily",
+              meta: { id: "daily-1" },
+              outline: [],
+            }
+          : {
+              markdown: "See [[../../Daily]].\n",
+              revision: "sha256:target",
+              meta: {},
+              outline: [],
+            };
+      }
+      if (command === "workspace_relocate_folder") {
+        expect(payload).toEqual({
+          root: "/workspace",
+          oldPath: "Notes",
+          newPath: "Archive/Notes",
+          checks: [
+            { path: "Daily.md", expectedRevision: "sha256:daily" },
+            { path: "Notes/Sub/Target.md", expectedRevision: "sha256:target" },
+          ],
+          writes: [
+            {
+              sourcePath: "Daily.md",
+              destinationPath: "Daily.md",
+              expectedRevision: "sha256:daily",
+              markdown: "See [[Archive/Notes/Sub/Target]].\n",
+            },
+            {
+              sourcePath: "Notes/Sub/Target.md",
+              destinationPath: "Archive/Notes/Sub/Target.md",
+              expectedRevision: "sha256:target",
+              markdown: "See [[../../../Daily]].\n",
+            },
+          ],
+        });
+        return {
+          path: "Archive/Notes",
+          writes: [
+            { path: "Daily.md", revision: "sha256:daily-new" },
+            { path: "Archive/Notes/Sub/Target.md", revision: "sha256:target-new" },
+          ],
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await useFileStore.getState().moveFileToFolder(oldRootId, "folder:Archive", { confirm });
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relocation: expect.objectContaining({ fromPath: "Notes", toPath: "Archive/Notes" }),
+      })
+    );
+    expect(invokeMock.mock.calls.some(([command]) => command === "doc_move")).toBe(false);
+    const state = useFileStore.getState();
+    expect(state.currentFileId).toBe(newPageId);
+    expect(state.openTabIds).toEqual([newPageId, "daily-1"]);
+    expect(state.currentFolderId).toBe(newSubId);
+    expect(state.loadedContentIds).toEqual(new Set([newPageId, "daily-1"]));
+    expect(state.selectedFileIds).toEqual(new Set([newPageId, newSubId]));
+    expect(state.expandedFolderIds).toEqual(new Set([newRootId, newSubId]));
+    expect(state.justCreatedFileId).toBe(newPageId);
+    expect(state.getFile(newPageId)).toMatchObject({
+      parentId: newSubId,
+      content: "See [[../../../Daily]].\n",
+      sourceRevision: "sha256:target-new",
+    });
+    expect(state.getFile("daily-1")).toMatchObject({
+      content: "See [[Archive/Notes/Sub/Target]].\n",
+      sourceRevision: "sha256:daily-new",
+    });
+    expect(state.getFile(oldPageId)).toBeUndefined();
+    expect(state.getFile(oldRootId)).toBeUndefined();
+  });
+
+  it("does not rename a Folder when its link-impact preview is declined", async () => {
+    const folder = folderItem("folder:Notes", "Notes", "Notes");
+    useFileStore.setState({
+      files: [folder, markdownFileAt("page-1", "Page", "Notes/Page.md", folder.id)],
+    });
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "workspace_scan") {
+        return {
+          root: "/workspace",
+          documents: [
+            {
+              id: "page-1",
+              idSource: "frontmatter",
+              path: "Notes/Page.md",
+              name: "Page.md",
+              title: "Page",
+              documentType: "markdown",
+            },
+          ],
+        };
+      }
+      if (command === "doc_read") {
+        return {
+          markdown: "",
+          revision: "sha256:page",
+          meta: { id: "page-1" },
+          outline: [],
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    const confirm = vi.fn().mockReturnValue(false);
+
+    await useFileStore.getState().renameFile(folder.id, "Archive", { confirm });
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relocation: expect.objectContaining({ fromPath: "Notes", toPath: "Archive" }),
+      })
+    );
+    expect(invokeMock.mock.calls.some(([command]) => command === "workspace_relocate_folder")).toBe(
+      false
+    );
+    expect(useFileStore.getState().files).toEqual([folder, expect.any(Object)]);
+    expect(useFileStore.getState().getFile(folder.id)?.name).toBe("Notes");
+  });
+
   it("deletes documents through workspace delete commands", async () => {
     useFileStore.setState({
       files: [
@@ -846,49 +1752,6 @@ describe("useFileStore disk workspace", () => {
     expect(useFileStore.getState().files).toHaveLength(0);
   });
 
-  it("excludes PDF, Excel, and HTML attachments from sidebar selection", () => {
-    const firstPage = markdownFile("page-1", "First.md");
-    const secondPage = markdownFile("page-2", "Second.md");
-    const pdf = attachmentFile("pdf", "Spec.pdf", "pdf");
-    const excel = attachmentFile("excel", "Forecast.xlsx", "excel");
-    const html = attachmentFile("html", "Guide.html", "html");
-    useFileStore.setState({
-      files: [firstPage, pdf, excel, html, secondPage],
-      currentFolderId: null,
-    });
-
-    useFileStore.getState().toggleFileSelection(pdf.id);
-    expect(useFileStore.getState().selectedFileIds).toEqual(new Set());
-
-    useFileStore.getState().selectAll();
-    expect(useFileStore.getState().selectedFileIds).toEqual(new Set([firstPage.id, secondPage.id]));
-
-    useFileStore.getState().clearSelection();
-    useFileStore.getState().selectFileRange(firstPage.id, secondPage.id);
-    expect(useFileStore.getState().selectedFileIds).toEqual(new Set([firstPage.id, secondPage.id]));
-  });
-
-  it.each([
-    attachmentFile("pdf", "Spec.pdf", "pdf"),
-    attachmentFile("excel", "Forecast.xlsx", "excel"),
-    attachmentFile("html", "Guide.html", "html"),
-  ])("does not bulk move or delete $documentType attachments", async (attachment) => {
-    useFileStore.setState({
-      files: [attachment],
-      selectedFileIds: new Set([attachment.id]),
-    });
-
-    await useFileStore.getState().bulkMoveFiles([attachment.id], "folder:archive");
-    expect(useFileStore.getState().getFile(attachment.id)?.parentId).toBeNull();
-    expect(invokeMock).not.toHaveBeenCalled();
-
-    useFileStore.setState({ selectedFileIds: new Set([attachment.id]) });
-    await useFileStore.getState().bulkDeleteFiles([attachment.id]);
-    expect(useFileStore.getState().getFile(attachment.id)).toBeDefined();
-    expect(useFileStore.getState().selectedFileIds).toEqual(new Set());
-    expect(invokeMock).not.toHaveBeenCalled();
-  });
-
   it("preserves the original delete error if reverting with loadFiles also throws", async () => {
     const originalLoadFiles = useFileStore.getState().loadFiles;
     const deleteError = new Error("delete failed");
@@ -916,7 +1779,8 @@ describe("useFileStore disk workspace", () => {
     });
     const fetchMock = vi.fn().mockRejectedValue(deleteError);
     vi.stubGlobal("fetch", fetchMock);
-    invokeMock.mockRejectedValueOnce(new Error("tauri unavailable"));
+    vi.stubGlobal("__DOXMIND_DESKTOP__", undefined);
+    invokeMock.mockRejectedValueOnce(new Error("desktop unavailable"));
 
     try {
       await expect(useFileStore.getState().deleteFile("doc-1")).rejects.toBe(deleteError);

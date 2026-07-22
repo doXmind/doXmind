@@ -57,7 +57,7 @@ export default function SettingsPage() {
       {/* Window-drag strip across the top. The traffic lights sit over its
           left end; the rail's back/search controls start below it (pt-[44px])
           so the Chromium drag region never swallows their clicks. */}
-      <div data-tauri-drag-region className="absolute inset-x-0 top-0 z-10 h-[38px]" />
+      <div data-window-drag-region className="absolute inset-x-0 top-0 z-10 h-[38px]" />
 
       <SettingsNav
         items={items}

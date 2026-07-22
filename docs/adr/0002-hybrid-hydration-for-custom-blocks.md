@@ -1,8 +1,9 @@
 # Custom Block 采用混合 hydration mode（eager 默认 + lazy opt-in）
 
-Status: PDF/Excel portions are legacy-recovery only after
-[ADR-0012](0012-local-markdown-knowledge-workspace.md). Do not use this pattern
-to add new editable Attachment blocks.
+Status: historical; implementation fully superseded by
+[ADR-0012](0012-markdown-source-block-editor.md). Current Pages have no Extras
+hydration mode or custom-block registry. The text below records the retired
+sidecar architecture and must not guide new work.
 
 打开一个 Document 时，**Custom Block** 的状态从 Sidecar 的 **Extras** 加载到内存，有两种合理策略：
 

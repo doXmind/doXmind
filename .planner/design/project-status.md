@@ -1,5 +1,10 @@
 # Project Status — Markdown outline data flow & active tracking
 
+> **Superseded architecture note (2026-07-22):** this is a historical May 2026
+> implementation plan. ADR-0012 has since removed TipTap/ProseMirror and the
+> referenced node-view/runtime files. It must not be used as current editor
+> guidance; the native `MarkdownBlockDocument` source model is authoritative.
+
 **Source PRD:** GitHub issue [#108](https://github.com/doXmind/local-desk/issues/108) — _Optimize Markdown outline data flow, active tracking, and rendering_ (updated 2026-05-27)
 **Date:** 2026-05-27
 **Branch:** `main`

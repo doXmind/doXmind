@@ -9,6 +9,7 @@ import { WorkspaceChangeListener } from "@/components/workspace-change-listener"
 import { ContextMenuGuard } from "@/components/context-menu-guard";
 import { AppearanceInjector } from "@/components/appearance-injector";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
+import { useEditorStore } from "@/stores/editor-store";
 import { onShellCloseRequested } from "@/lib/shell/close";
 
 function ThemeInitializer() {
@@ -22,7 +23,8 @@ function ShellCloseListener() {
     let unlisten: (() => void) | null = null;
     void onShellCloseRequested(async () => {
       const requestSave = useEditorRefStore.getState().requestSave;
-      if (requestSave) await requestSave();
+      if (requestSave) return requestSave();
+      return !useEditorStore.getState().isDirty;
     }).then((nextUnlisten) => {
       if (disposed) {
         nextUnlisten();

@@ -1,24 +1,20 @@
 [project]
 name = "doxmind-backend"
 version = "1.0.0"
-description = "doXmind - Local Writing Studio Backend"
+description = "doXmind - Optional local document tooling service"
 requires-python = ">=3.11"
 
 # Runtime dependencies for the installable `doxmind` / `doxmind-mcp` shells
 # (ADR 0010). Kept in sync with requirements.txt, which remains the source for
-# the desktop sidecar's pinned dev environment; test-only deps stay there.
+# the local tooling service's pinned dev environment; test-only deps stay there.
 dependencies = [
     "fastapi==0.115.6",
     "uvicorn[standard]==0.34.0",
     "python-dotenv==1.0.1",
     "pydantic==2.10.3",
     "pydantic-settings==2.7.0",
-    "sqlalchemy==2.0.36",
-    "aiosqlite==0.20.0",
-    "greenlet==3.1.1",
-    "python-multipart==0.0.19",
-    "httpx==0.28.1",
     "markdown==3.7",
+    # Read-only PDF attachment parsing; never Page export.
     "pymupdf>=1.24.0",
     "openpyxl>=3.1.5",
     "send2trash>=1.8.3",
@@ -42,8 +38,8 @@ build-backend = "setuptools.build_meta"
 # discovery is listed explicitly (auto-discovery rejects multiple top-level
 # packages). `tests` is intentionally omitted.
 [tool.setuptools]
-packages = ["api", "cli", "core", "db", "doxmind_mcp", "lib", "services"]
-py-modules = ["config", "dependencies", "exceptions", "main", "run_sidecar"]
+packages = ["api", "cli", "core", "doxmind_mcp", "lib", "services"]
+py-modules = ["config", "exceptions", "main"]
 
 [tool.ruff]
 # Exclude directories
@@ -101,7 +97,7 @@ indent-style = "space"
 line-ending = "lf"
 
 [tool.ruff.lint.isort]
-known-first-party = ["api", "db", "services", "middleware"]
+known-first-party = ["api", "services", "middleware"]
 
 [tool.ruff.lint.per-file-ignores]
 # Ignore unused arguments in tests (mock parameters are required by decorators)

@@ -13,9 +13,9 @@ const isProd = process.env.NODE_ENV === "production";
 
 const nextConfig: NextConfig = {
   devIndicators: false,
-  // Static export so Tauri can serve the frontend from the bundled `out/`
-  // directory. All API traffic goes directly to the FastAPI sidecar at the
-  // URL injected as window.__TAURI_BACKEND_URL__ (see src/lib/api/client.ts).
+  // Static export so Electron can serve the frontend from the bundled `out/`
+  // directory. Desktop workspace I/O crosses the native
+  // command bridge; it does not require a localhost service.
   //
   // Only enable for production builds. In dev, `output: "export"` makes Next's
   // dev server reject any catch-all route param that isn't listed in

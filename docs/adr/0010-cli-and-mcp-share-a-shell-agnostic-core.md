@@ -1,6 +1,8 @@
 # CLI 与 MCP 是新的 shell，三个前端共用一套 shell 无关的 core
 
-Status: amended by [ADR-0012](0012-local-markdown-knowledge-workspace.md).
+Status: amended by [ADR-0011](0011-local-markdown-knowledge-workspace.md); its
+Page storage/editor clauses are superseded by
+[ADR-0012](0012-markdown-source-block-editor.md).
 Create/edit applies to Markdown Pages; PDF/Excel operations are Attachment
 read/convert or legacy recovery only.
 
@@ -24,8 +26,9 @@ doXmind 要新增两个入口：一个面向人/脚本的 `doxmind` **CLI**（�
 
 - 新增 `server/core/`，承载 shell 无关的操作（workspace / documents / convert /
   exporting）。CLI、MCP、FastAPI 路由都调用 core，命令语义只有一份。
-- CLI 与 MCP 都是**独立 Python 进程，直接 import services**，硬盘上的 `.md` + 隐藏
-  `.doxmind` sidecar 仍是唯一真相源；**不要求桌面 app 在运行**。
+- CLI 与 MCP 都是**独立 Python 进程，直接 import services**，**不要求桌面 app 在运行**。
+  本 ADR 当时采用的 `.md + .doxmind` Page 存储条款已被 ADR-0012 取代；当前唯一真相是
+  单个 Markdown 文件，已有 sidecar 仅作为 legacy recovery artifact 保留。
 - 语言用 **Python**，直接复用全部 services；不引入 TS 侧重复实现。
 
 **理由**：
@@ -66,9 +69,9 @@ providers_。本 ADR 的 MCP server **方向相反**：它把 doXmind _暴露给
 1. **工作区越界防护**：完整控制 MCP 必须把所有路径**限定在 workspace root 内**
    （拒绝 `../` 逃逸、symlink 逃逸）。这是 MCP 的头号安全项，且要先于其它写操作落地。
    现有 asset handler 仅注释 "Phase 3 会限定"，本工作要补齐这层。
-2. **与开着的 app 并发写**：独立进程直接读写磁盘。doXmind 已把 "外部改 `.md`" 当
-   权威（`markdown_hash` 不匹配 → SidecarStale → 重生成 HTML），且 services 用
-   atomic write（temp + rename），所以外部写 markdown 是安全的。残留风险：同一文档
+2. **与开着的 app 并发写**：独立进程直接读写磁盘。按 ADR-0012，doXmind 把外部
+   Markdown 修改当作权威且只原子写回 Markdown，不创建或重建 Page sidecar。残留
+   风险：同一文档
    在 app 与 CLI/MCP 同时编辑可能丢写——作为**已知 caveat 写进文档**，不为此引入跨
    进程锁。
 3. **破坏性操作**：删除统一走 `send2trash`（延续 ADR-0005，不硬删）。CLI 的 `rm` /
@@ -80,8 +83,8 @@ providers_。本 ADR 的 MCP server **方向相反**：它把 doXmind _暴露给
 
 - `pyproject.toml` 增加 `[project.scripts]`：`doxmind = "cli.__main__:main"`、
   `doxmind-mcp = "mcp.server:main"`，供 pip / pipx / uvx 安装（开发者友好、易迭代）。
-- PyInstaller 单文件二进制，对齐现有 `doxmind-server` 打包，供无 Python 环境的用户
-  与 Claude 接入（最省心）。
+- PyInstaller 单文件二进制仅用于独立的 `doxmind` / `doxmind-mcp` 工具，供无 Python
+  环境的用户与 Claude 接入；这些二进制不进入桌面应用，桌面运行时也不启动 Python。
 
 ## 分阶段与验收
 
@@ -89,8 +92,9 @@ providers_。本 ADR 的 MCP server **方向相反**：它把 doXmind _暴露给
    create，全程不起 HTTP。
 2. **CLI** — 验收：`ls` / `read` / `search` / `new` / `export` 在真实临时工作区端到端
    通过 + CLI 测试。
-3. **MCP server** — 验收：MCP Inspector 连上，每个 tool 走通一次往返；读写后磁盘
-   sidecar 形态正确（延续 ADR-0003 的 markdown shape）。
+3. **MCP server** — 验收：MCP Inspector 连上，每个 tool 走通一次往返；原
+   “sidecar 形态正确”验收已 superseded，当前按 ADR-0012 验证只写 Markdown 文件且
+   legacy sidecar 字节不变。
 4. **打包** — `[project.scripts]` 两个入口 + 两个 PyInstaller 二进制 + Claude 接入
    文档（`claude mcp add` / Claude Desktop config 片段）。
 5. **安全加固** — workspace-root 限定的单元测试（逃逸用例）；删除走 trash 的断言。

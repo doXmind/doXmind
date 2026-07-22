@@ -1,5 +1,8 @@
 # Planner Follow-ups
 
+> **Historical only (2026-07-22):** these follow-ups belong to the retired
+> TipTap/ProseMirror editor project and are not an active doXmind backlog.
+
 Issues caught during execution but deliberately NOT fixed, to keep workers
 on-task. Each entry: date, wave during which found, description, fix options,
 owner/priority.

@@ -1,70 +1,49 @@
 "use strict";
 
 /**
- * Makes the Electron renderer look like the Tauri WebView to the existing
- * frontend, so no React/store code has to branch on the shell:
- *
- *   - window.__TAURI_BACKEND_URL__  — sidecar base URL (read by lib/api/base).
- *   - window.__TAURI_PLATFORM__     — 'macos' (read by the layout bootstrap
- *                                     script to flip is-tauri / vibrancy CSS).
- *   - window.__TAURI_INTERNALS__    — the object @tauri-apps/api/core delegates
- *                                     to: invoke / transformCallback /
- *                                     convertFileSrc. invoke() forwards every
- *                                     command to the main-process dispatcher.
- *
- * The sidecar URL and platform arrive via webPreferences.additionalArguments.
+ * Minimal Electron renderer bridge. The renderer never receives Node or
+ * Electron objects; every privileged operation crosses a named IPC command.
  */
 
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 function argValue(prefix) {
-  const found = process.argv.find((a) => a.startsWith(prefix));
+  const found = process.argv.find((argument) => argument.startsWith(prefix));
   return found ? found.slice(prefix.length) : null;
 }
 
-const backendUrl = argValue("--doxmind-backend-url=") || "";
 const platform = argValue("--doxmind-platform=") || "macos";
+const listeners = new Map();
 
-// Event callback registry. @tauri-apps/api/event's listen() registers a
-// handler via transformCallback and gets back an id; native code later
-// delivers events by invoking that id. Main forwards events on the
-// 'tauri://callback' channel; Phase 1 registers them but nothing emits yet.
-const callbacks = new Map();
-let nextCallbackId = 1;
-
-ipcRenderer.on("tauri://callback", (_event, { id, data }) => {
-  const entry = callbacks.get(id);
-  if (!entry) return;
-  try {
-    entry.cb(data);
-  } finally {
-    if (entry.once) callbacks.delete(id);
-  }
+ipcRenderer.on("desktop:event", (_event, message) => {
+  if (!message || typeof message.event !== "string") return;
+  const callbacks = listeners.get(message.event);
+  if (!callbacks) return;
+  const desktopEvent = { event: message.event, payload: message.payload };
+  for (const callback of [...callbacks]) callback(desktopEvent);
 });
 
-const internals = {
-  invoke(cmd, args) {
-    return ipcRenderer.invoke("shell:invoke", cmd, args ?? {});
-  },
-  transformCallback(cb, once = false) {
-    const id = nextCallbackId++;
-    callbacks.set(id, { cb, once: Boolean(once) });
-    return id;
-  },
-  convertFileSrc(filePath, protocol = "doxmind-asset") {
-    return `${protocol}://local/${encodeURIComponent(filePath)}`;
-  },
-};
-
-contextBridge.exposeInMainWorld("__TAURI_INTERNALS__", internals);
-contextBridge.exposeInMainWorld("__TAURI_BACKEND_URL__", backendUrl);
-contextBridge.exposeInMainWorld("__TAURI_PLATFORM__", platform);
-
-// Dropped File objects no longer expose `.path` under contextIsolation; the
-// renderer resolves the absolute path through webUtils. Used by the welcome
-// screen's drag-and-drop to open files/folders by path.
 contextBridge.exposeInMainWorld("__DOXMIND_DESKTOP__", {
-  getPathForFile: (file) => {
+  platform,
+  invoke(command, payload = {}) {
+    return ipcRenderer.invoke("shell:invoke", command, payload);
+  },
+  listen(event, callback) {
+    if (typeof event !== "string" || typeof callback !== "function") {
+      throw new TypeError("desktop event name and callback are required");
+    }
+    let callbacks = listeners.get(event);
+    if (!callbacks) {
+      callbacks = new Set();
+      listeners.set(event, callbacks);
+    }
+    callbacks.add(callback);
+    return () => {
+      callbacks.delete(callback);
+      if (callbacks.size === 0) listeners.delete(event);
+    };
+  },
+  getPathForFile(file) {
     try {
       return webUtils.getPathForFile(file) || null;
     } catch {

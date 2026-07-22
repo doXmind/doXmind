@@ -6,6 +6,9 @@ node_modules/
 # Testing
 coverage/
 .coverage
+.coverage.*
+test-results/
+playwright-report/
 
 # Next.js
 .next/
@@ -86,17 +89,6 @@ test_output.txt
 # session, so this directory must not be tracked.
 testdata/
 
-# Tauri
-target/
-src-tauri/target/
-src-tauri/gen/
-src-tauri/binaries/*
-!src-tauri/binaries/.gitkeep
-
-# Rust workspace crates (e.g. crates/sidecar)
-crates/*/target/
-crates/target/
-
 # PyInstaller intermediates
 server/dist/
 server/build/
@@ -104,3 +96,6 @@ server/__pycache__/
 
 # electron-builder output
 dist-electron/
+
+# Retired Rust/Tauri build output
+target/

@@ -4,7 +4,7 @@
  * Pure verdict function. UI layers consume verdicts; they never re-derive
  * legality rules. Treating this as a single source of truth keeps the
  * not-allowed-cursor / toast-on-collision branches symmetric across the
- * Tauri shell, the browser-dev fallback, and any future entry points.
+ * Electron shell and browser-development fallback.
  *
  * The verdict pipeline:
  *  1. Resolve the drop target to an effective parent folder id (or null = root):
@@ -14,8 +14,8 @@
  *                              targets themselves; sub-page semantics are
  *                              explicitly out of scope per PRD #63).
  *     - Drop on root spacer → null.
- *  2. Reject attachment sources; their recovery evidence must remain beside
- *     the original file.
+ *  2. Reject Attachment sources: they remain ordinary files and must not be
+ *     moved through Page topology operations.
  *  3. Reject self-drop and ancestor-cycle for folder sources.
  *  4. Reject same-name folder collisions at the destination.
  *  5. Return `no-op-same-parent` if source already lives there.
@@ -25,12 +25,7 @@
  */
 
 export type DnDVerdict =
-  | "ok"
-  | "cycle"
-  | "no-op-same-parent"
-  | "name-collision"
-  | "would-be-self"
-  | "attachment-source";
+  "ok" | "cycle" | "no-op-same-parent" | "name-collision" | "would-be-self" | "attachment-source";
 
 export interface DnDNode {
   id: string;

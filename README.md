@@ -2,10 +2,9 @@
 
 <p align="center">
   <a href="https://github.com/doXmind/releases/releases/latest"><img src="https://img.shields.io/github/v/release/doXmind/releases?display_name=tag&style=flat-square&label=latest" alt="Latest release" /></a>
-  <img src="https://img.shields.io/badge/local--first-local%20documents-2ea44f?style=flat-square" alt="Local-first documents" />
+  <img src="https://img.shields.io/badge/local--first-local%20files-2ea44f?style=flat-square" alt="Local-first files" />
   <img src="https://img.shields.io/badge/desktop-Electron-47848f?style=flat-square" alt="Desktop: Electron" />
-  <img src="https://img.shields.io/badge/frontend-Next.js%2015-black?style=flat-square" alt="Frontend: Next.js 15" />
-  <img src="https://img.shields.io/badge/backend-FastAPI-009688?style=flat-square" alt="Backend: FastAPI" />
+  <img src="https://img.shields.io/badge/editor-Markdown%20source-black?style=flat-square" alt="Editor state: Markdown source" />
 </p>
 
 <p align="center">
@@ -15,7 +14,7 @@
 <h3 align="center">A fully local, Markdown-native knowledge workspace.</h3>
 
 <p align="center">
-  Write and organize Markdown Pages with rich blocks, then connect them through local files and a rebuildable knowledge layer. Supported PDF, spreadsheet, and HTML files remain ordinary attachments on disk; images inserted into Pages remain local Markdown assets. There is no account, cloud sync, telemetry, hosted parser, or built-in AI runtime.
+  A Notion-style block workflow over ordinary Markdown files, with local Wiki Link navigation inspired by Obsidian. No account, cloud document store, telemetry, hosted parser, or built-in AI runtime.
 </p>
 
 <p align="center">
@@ -26,50 +25,42 @@
 
 ---
 
-## Why doXmind
+## What is ready
 
-- **Your filesystem is the source of truth.** Documents stay in the folder you choose and remain usable in Finder, Git, VS Code, Obsidian, Acrobat, Excel, and other desktop tools.
-- **Rich editing remains recoverable.** A hidden `.doxmind` sidecar preserves editor-only state without replacing the portable source file.
-- **External edits are expected.** When Markdown changes outside doXmind, the `.md` file wins and the rich editor state is refreshed on the next save.
-- **Knowledge remains portable.** Page properties and links belong in Markdown/frontmatter; search, backlinks, and collection indexes must be rebuildable.
-- **Supported attachments stay ordinary files.** doXmind shows them in a read-only surface and may reference, reveal, open, or explicitly convert them, but never silently rewrites them.
-- **Desktop workflows are first-class.** Mount a folder, drag supported files into a workspace, use multiple tabs, search, and reveal files in the system file manager.
+- **One file is the complete Page.** A Page is exactly one `.md` or `.markdown` file. Normal create, open, edit, and save operations neither require nor create a `.doxmind` companion file.
+- **Markdown is the editor state.** Every Page uses the native source-backed block editor. There is no TipTap or ProseMirror runtime and no hidden HTML document model.
+- **Blocks remain portable.** Paragraphs, headings, lists, tasks, quotes, callouts, dividers, tables, fenced code, math, Mermaid, and collapsible `<details>` Toggles are recognized from Markdown. Unsupported syntax remains directly editable as exact raw source.
+- **Block operations edit source.** Safe whole-Block move, duplicate, delete, and undo work without converting the Page to a private format. Supported text and list Blocks additionally allow split, merge, kind changes, and task toggles; risky transforms stay disabled for raw or complex syntax.
+- **Slash commands insert Markdown.** Type `/` in a paragraph to insert portable headings, lists, tasks, Toggles, callouts, tables, Collection definitions, links, embeds, and other native source forms.
+- **Properties stay in frontmatter.** Page tags, aliases, custom scalar/list fields, and Page relations are edited through revision-guarded minimal YAML patches. Relations are exact `[[Page]]` strings or string arrays, never hidden records; unrelated keys, comments, line endings, and body bytes are preserved.
+- **Local links form a rebuildable knowledge layer.** Resolvable `[[Wiki Links]]` open Markdown Pages in the current workspace. Wiki and relative Markdown links, backlinks, unlinked mentions, ambiguities, and unresolved links rebuild on demand from Page files without writing workspace state. Previewed Page/Folder relocation repairs resolvable targets transactionally. Standalone `![[Page]]`, `![[Page#Heading]]`, and `![[Page#^block-id]]` paragraph Blocks project recursively from the same Markdown sources, while the Page graph is a zero-write projection of resolved links.
+- **Daily Notes and Collections are ordinary Pages.** Today's note is created at `Daily Notes/YYYY-MM-DD.md` using the local calendar date. Strict `doxmind-collection` fenced JSON renders read-only Table, Board, and Calendar views over Page frontmatter. Version 2 can derive relations, safe formula-AST values, and rollups in memory before filtering, sorting, grouping, or scheduling; every row/card/event still opens its Markdown Page.
+- **Local images stay local.** A standalone relative Markdown image previews a workspace image through a size-limited, signature-checked local read and an in-memory Blob URL. In the Electron editor, pasting or dropping a supported raster copies it to `assets/` without overwrite and inserts a portable relative Markdown image reference. Remote, absolute, escaping, and symlinked destinations are not fetched.
+- **Desktop file access is in-process.** The packaged Electron app executes workspace commands inside its desktop process. It does not start or bundle Python/FastAPI.
 
-## Write and connect Pages
+This does not imply full Notion or Obsidian parity. Collection views are derived and read-only, formulas use a strict JSON AST rather than executable code, image handling does not fetch remote content or provide a binary editor, and there is no cloud collaboration or plugin marketplace. See [Product Direction](docs/PRODUCT_DIRECTION.md) for the exact boundary.
 
-Write in a TipTap editor while keeping a normal `.md` file on disk. The editor supports headings, lists, tasks, quotes, callouts, toggles, tables, images, templates, code blocks, KaTeX math, Mermaid diagrams, columns, a table of contents, search, an outline, focus mode, and Markdown/PDF export.
+## Page editing
+
+The user's filesystem is the source of truth. The storage layer reads the complete file, separates YAML frontmatter from the Markdown body, and rebuilds the native block view from that body. Unknown frontmatter and unsupported body syntax remain in the same file and are preserved unless the user invokes a supported edit for that exact source; opening an external Markdown file does not add metadata merely because it lacks an id.
 
 <p align="center">
-  <img src="docs/readme/doxmind-editor.png" width="1200" alt="doXmind Markdown editor with tabs, file tree, tasks, a table, and a code block" />
+  <img src="docs/readme/doxmind-editor.png" width="1200" alt="doXmind source-backed Markdown block editor" />
 </p>
 
-The active roadmap adds frontmatter-backed properties, `[[Wiki Links]]`,
-backlinks, Daily Notes, and Page-based Table/Board/Calendar collections. See
-[Product Direction](docs/PRODUCT_DIRECTION.md) for the boundary and dependency
-order.
+Autosave and explicit save atomically write only the Markdown file. Revision checks stop a stale editor session from silently overwriting an external change.
 
-## Keep attachments local
+Page PDF output also stays local: **Export as PDF** asks for a destination and then generates the PDF directly inside Electron. The live native Block view is the layout authority; no printer, driver, FastAPI service, or second Markdown renderer is involved. Cancelling the Save dialog writes nothing, while success produces a concrete `.pdf` file without modifying the Page or any legacy sidecar.
 
-Supported PDF, spreadsheet, and HTML files remain visible in the workspace as
-Attachments. They open in a shared read-only surface with **Open Externally**
-and **Reveal**. An embedded preview may be added later where practical, but
-Attachments are not separate doXmind editing
-products, and the New menu does not create blank PDFs or workbooks. An unknown
-format may use the shared `other` read-only fallback if it reaches this surface,
-but that fallback does not add the format to workspace scanning or native file
-opening. Images inserted into Pages remain Markdown assets; standalone image
-files are not promised as workspace documents. While legacy recovery evidence
-is still gated, Attachment sidebar actions are limited to **Open Externally**
-and **Reveal**; move, rename, delete, and same-name replacement remain disabled.
+## Attachments and legacy recovery
 
-When a supported legacy PDF/Excel sidecar contains edits, the Attachment
-surface can make an explicit, unverified recovery attempt through an isolated,
-zero-write bridge. Older builds could refresh `parsedCache.sourceHash` without
-rebinding the saved editor state, so that hash is only an early mismatch guard,
-not proof that edits belong to one exact file version. Recovery always creates
-a new copy for comparison; it does not open the old editor or call its readers,
-writers, migration, or caches. Unsupported or uncertain state remains preserved
-for manual recovery.
+The currently surfaced Attachment types are PDF, Excel-family/CSV, and HTML. They open read-only, with actions to use their normal desktop application or reveal them in the file manager. Images and other files remain ordinary local assets/files but are not all surfaced as Attachment cards. doXmind does not create blank PDFs/workbooks or write new attachment sidecars.
+
+The former PDF/Excel editor bundles, attachment create/write/cache commands, and Synthetic Document migration writers have been removed. Only generic zero-write inspection/recovery and legacy-family move/trash behavior remain in the app. Optional CLI/MCP conversion may still parse PDF or workbook input read-only; those parsers are not attachment editors.
+
+The read-only Attachment card has an explicit **Check legacy recovery** action. If it finds old PDF or spreadsheet edits in a hidden sidecar, it offers **Export recovery report**. Normal Attachment open does not inspect the sidecar family. The downloaded Markdown report embeds the exact legacy editor state as lossless, formatted JSON without modifying the source attachment or any sidecar, backup, lock, or corrupt-recovery file. It is a preservation bridge, not a reconstructed PDF or XLSX export.
+
+Keep the source attachment, its legacy recovery-file family, and the exported report together until the old edits have been recovered in the appropriate application.
 
 ## Get started
 
@@ -79,68 +70,64 @@ The public release channel currently provides a macOS package for Apple silicon:
 
 1. Download the `.dmg` from [doXmind Releases](https://github.com/doXmind/releases/releases/latest).
 2. Drag doXmind to Applications and open it.
-3. On the welcome screen, choose **New** for an untitled Markdown Page or **Open Folder** for a workspace. Use **File → Open File…** (`Cmd+O`) for one standalone file.
+3. Choose **Open Folder** for a real-file workspace, **Open File** for one supported document, or create a Markdown Page.
 
-See the [User Guide](docs/USER_GUIDE.md) for the complete workflow, storage behavior, shortcuts, and recovery notes.
+See the [User Guide](docs/USER_GUIDE.md) for storage behavior, importing, shortcuts, local PDF export, and legacy recovery.
+
+### Import existing files
+
+Dragging files into an open workspace copies these external formats without changing the originals:
+
+- `.md`, `.markdown`
+- `.pdf`
+- `.xlsx`
+- `.csv`
+
+Name collisions offer Replace, Keep both, or Skip. An HTML file already inside an opened workspace remains visible as a read-only Attachment, but `.html` is not in the external drag-import whitelist.
 
 ### Run from source
 
-Requirements:
+Core requirement:
 
 - Node.js 22 or newer
-- Python 3.11 or newer
-- Rust toolchain only when using the Tauri development/build path
 
-Install dependencies:
+Install and build the Electron desktop app without Python:
 
 ```bash
 npm ci
+npm run dist:electron
+```
+
+Python 3.11 or newer is optional. It is used only for browser development and standalone CLI or import/conversion tooling; packaged desktop builds do not use it.
+
+```bash
 python3 -m venv server/.venv
 server/.venv/bin/python -m pip install --upgrade pip
 server/.venv/bin/python -m pip install -r server/requirements.txt
-```
-
-Run the browser development surface and local backend:
-
-```bash
 npm run dev:all
 ```
 
-The launcher prints the actual frontend URL. It starts at port `3000` and automatically chooses another free port when needed.
+`npm run dev:all` starts the Next.js browser surface and the localhost FastAPI command mirror because a normal browser cannot invoke desktop filesystem commands.
 
-Desktop build paths:
+## Stable file roles
 
-```bash
-npm run dist:electron   # package the current Electron release shell
-npm run dev:desktop     # macOS Tauri development shell
-npm run build:desktop   # local Tauri compatibility build
-```
+| Format                   | Role                 | Current contract                                                                                                            |
+| ------------------------ | -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `.md`, `.markdown`       | Page                 | Native block edit, YAML properties/relations, links/graph, Collection views, local images, exact copy, and local PDF export |
+| `.pdf`                   | Read-only Attachment | Open externally/reveal; old sidecar state can be exported as a recovery report                                              |
+| `.xlsx`, `.xlsm`, `.csv` | Read-only Attachment | Open externally/reveal; old sidecar state can be exported as a recovery report                                              |
+| `.html`, `.htm`          | Read-only Attachment | Visible when already present in an opened workspace                                                                         |
+| Images and other files   | Local asset/file     | Remain ordinary files; Electron can import supported raster images into `assets/` for Markdown references                   |
 
-## Stable document formats
-
-| Format                   | Product role             | Current contract                                                              |
-| ------------------------ | ------------------------ | ----------------------------------------------------------------------------- |
-| `.md`, `.markdown`       | Page                     | Open, edit, auto-save, and export as Markdown or PDF                          |
-| `.pdf`                   | Attachment               | Read-only surface; open externally or reveal; legacy recovery is transitional |
-| `.xlsx`, `.xlsm`, `.csv` | Attachment               | Read-only surface; open externally or reveal; legacy recovery is transitional |
-| `.html`, `.htm`          | Attachment/import source | Read-only surface; not a first-class editable Page format                     |
-
-Images inserted into Pages remain ordinary local assets referenced by Markdown.
-Standalone image files, DOCX, PPTX, and other extensions are not supported
-workspace documents merely because the shared Attachment view has an `other`
-fallback.
-
-DOCX and PPTX are not Page types. Explicit one-way conversion into Markdown may
-be provided by local import tooling; the source file remains unchanged.
+DOCX and PPTX are not Page types, stable imports, or supported inputs to the current conversion tools. Optional local Python tooling can parse explicitly selected PDF and spreadsheet sources read-only; it does not turn DOCX or PPTX files into Pages.
 
 ## Storage model
 
-doXmind keeps each Markdown Page beside a hidden companion file:
+One Markdown file is a complete Page:
 
 ```text
 ~/Documents/doXmind/
 ├── Project Plan.md
-├── .Project Plan.doxmind
 ├── attachments/
 │   ├── Quarterly Plan.xlsx
 │   └── Research Report.pdf
@@ -148,39 +135,69 @@ doXmind keeps each Markdown Page beside a hidden companion file:
     └── diagram.png
 ```
 
-Page freshness is tracked with a hash of the current Markdown. Page sidecars
-hold lossless editor HTML and replaceable state; user-authored knowledge must
-remain recoverable from Markdown/frontmatter alone.
+Block spans, selection, undo history, previews, and rendered HTML are replaceable in-memory or derived state. Page save atomically writes only `.md`/`.markdown`.
 
-Older versions may have created sidecars next to PDF/XLSX sources. Recovery
-inspects the main sidecar and `<sidecar>.bak` independently and downloads a new
-`recovered.pdf` or `recovered.xlsx` without changing either candidate or the
-source. The bridge does not read `<sidecar>.lock` or `<sidecar>.corrupt-*`; those
-files remain recovery evidence. Keep the source, main sidecar, every
-`<sidecar>.bak`, `<sidecar>.lock`, and `<sidecar>.corrupt-*` together; do not
-delete any of them as cleanup or after an export.
+Older versions may have created hidden `.doxmind` files beside Pages, PDFs, or workbooks. Current Page reads do not use legacy sidecar HTML as Page state, and normal operations never create or rewrite sidecar contents. Rename, move, and deletion may inventory the existing recovery family only to carry its bytes unchanged with the source or send the family to system Trash.
 
-The full wire-format contract is documented in [docs/sidecar-format.md](docs/sidecar-format.md), and migration/recovery semantics are in [ADR-0003](docs/adr/0003-explicit-sidecar-migration.md).
+There is no current Page or Attachment sidecar writer and no legacy Page HTML hydration reader. Normal Page/Attachment open does not inspect legacy sidecars. **Check legacy recovery** invokes a separate read-only recovery path; when an old Page artifact family exists, its explicit export report contains every artifact's byte-exact Base64 payload plus a readable UTF-8 preview when possible. It never feeds that state into the Page editor.
+
+A family may include:
+
+```text
+.Research Report.pdf.doxmind
+.Research Report.pdf.doxmind.bak
+.Research Report.pdf.doxmind.lock
+.Research Report.pdf.doxmind.corrupt-*
+```
+
+Do not manually delete the family while recovery matters. Deletion through doXmind sends the source and its existing recovery artifacts to the operating system Trash/Recycle Bin.
+
+## Desktop architecture
+
+```text
+Next.js + native blocks → Electron IPC → Node file commands → user filesystem
+
+Browser development only: Next.js → localhost FastAPI command mirror → filesystem
+```
+
+Electron owns Page/workspace operations in-process. FastAPI is not a packaged desktop backend or sidecar; it remains an optional browser-development and standalone-tooling surface.
+
+Repository structure:
+
+```text
+src/          Next.js UI, native Markdown block core, stores, and adapters
+electron/     Electron shell and in-process Node filesystem commands
+server/       Optional browser-dev, CLI, import/conversion, and local tooling
+docs/         User, architecture, format, and decision documentation
+```
 
 ## Current product boundary
 
-Included:
+Included now:
 
-- Local Markdown Page editing and real-folder workspaces
-- Rich blocks, templates, search, outline, tabs, and local export
-- Hidden `.doxmind` sidecars with atomic local writes
-- Multi-window and multi-tab desktop workflows
-- Local assets and supported Attachments
-- A rebuildable path toward properties, Wiki Links, backlinks, and Page-based collections
-- Electron packaging and update channel; Tauri remains available as a development/compatibility shell
+- Local Markdown Page editing in real folders
+- Native source-backed block operations, raw-source fallback, undo/redo, autosave, find, outline, and tabs
+- Portable `<details>` Toggles and slash-command insertion into canonical Markdown
+- Frontmatter-backed tags, aliases, scalar/list fields, and exact Wiki-Link relations with lossless, revision-guarded patches
+- Navigable local `[[Wiki Links]]` plus a zero-write Wiki/Markdown link, backlink, unresolved-link, and unlinked-mention rebuild
+- Previewed, revision-checked Page/Folder relocation with transactional link repair and rollback
+- Recursive read-only `![[Page]]`, `![[Page#Heading]]`, and unique `![[Page#^block-id]]` paragraph-Block projections from canonical Markdown
+- Local-date Daily Notes at `Daily Notes/YYYY-MM-DD.md`
+- Read-only `doxmind-collection` Table, Board, and Calendar blocks derived from Page frontmatter, including portable relation/formula/rollup projections
+- A zero-write, navigable Page knowledge graph derived from resolved links
+- Safe relative local Markdown image previews plus Electron paste/drop import into workspace `assets/`
+- Atomic single-file Page writes and external-change conflict detection
+- Read-only Attachments and lossless legacy PDF/Excel recovery reports
+- Byte-exact Markdown source copy and printer-independent Page PDF generation inside Electron
+- Electron packaging without a Python process or second desktop runtime
 
-Intentionally not included:
+Not included now:
 
-- Accounts, OAuth, teams, sharing links, comments, or community publishing
-- Cloud sync, S3, Postgres, Redis, or hosted document storage
-- Billing, quotas, or telemetry
-- Built-in chat, model providers, autocomplete, document review, or knowledge retrieval
-- PDF/Excel/HTML editing stacks, blank Office/PDF creation, DOCX/PPTX editing, or Word export
+- Editable Collection cells/cards/events or a hidden database record store
+- Executable formula strings, relation guessing, or persisted formula/rollup results
+- Remote-image fetching, image resize/crop, or a binary image editor
+- PDF/Excel/HTML editing, blank Office/PDF creation, DOCX/PPTX editing, or Word export
+- Accounts, teams, sharing, cloud sync, billing, telemetry, or built-in AI features
 
 ## Development
 
@@ -192,12 +209,11 @@ npm run lint
 npm run format:check
 npm run test:ci
 npm run test:e2e
-npm run preflight:gui
-npm run preflight:excel
+npm run electron:test-native
 npm run electron:smoke
 ```
 
-Backend checks from `server/`:
+Optional Python tooling checks from `server/`:
 
 ```bash
 pytest
@@ -205,106 +221,45 @@ ruff check .
 ruff format --check .
 ```
 
-`scripts/dev.mjs` resolves Python in this order: `$DOXMIND_PYTHON`, `server/.venv/bin/python`, then `python3` / `python` on `PATH`.
-
-### Environment variables
-
-All are optional:
-
-- `DATA_DIR` — override `~/.doxmind`
-- `DOXMIND_PYTHON` — Python executable used by `npm run dev:all`
-- `DEBUG`, `HOST`, `PORT` — backend configuration
-- `DOXMIND_SIDECAR_MIGRATE` — controls the frozen legacy PDF/Excel migration stack documented in [ADR-0003](docs/adr/0003-explicit-sidecar-migration.md); the current Attachment recovery bridge does not invoke it
-- `DOXMIND_PERF` — opt-in backend performance instrumentation
-- `DOXMIND_DISABLE_DOC_CACHE`, `DOXMIND_DISABLE_PDF_CACHE`, `DOXMIND_DISABLE_XLSX_CACHE` — backend cache kill switches for debugging
-
-There are no API keys or external service credentials.
-
-### Repository structure
-
-```text
-src/                  Next.js UI, editors, stores, and storage adapters
-server/               FastAPI sidecar, local document services, CLI, and MCP server
-electron/             Current release shell and native desktop integration
-src-tauri/            Tauri development/compatibility shell
-crates/               Shared Rust sidecar helpers
-docs/                 User, architecture, format, and decision documentation
-docs/readme/          Current README screenshots
-```
-
-### Architecture
-
-```text
-Electron release shell / Tauri development shell
-                       │
-                       ▼
-                 Next.js editor UI
-                       │ localhost HTTP / native invoke
-                       ▼
-                 FastAPI sidecar
-                       │
-                       ▼
-          local files + hidden .doxmind sidecars
-```
-
-The frontend owns the editing experience. The local backend owns filesystem operations, parsing, export, image storage, and workspace commands. SQLite at `~/.doxmind/doxmind.db` stores only application metadata; documents themselves do not live in SQLite.
+Optional environment variables are documented in [AGENTS.md](AGENTS.md). `DOXMIND_PYTHON` is consulted by `npm run dev:all`; it is not a packaged desktop setting. There are no API keys or external service credentials.
 
 ## Optional CLI and MCP access
 
-The standalone `doxmind` CLI and `doxmind-mcp` server expose the same local workspace to scripts or external agents. They run independently of the desktop app and are not a built-in AI runtime. See [docs/cli-and-mcp.md](docs/cli-and-mcp.md).
+The standalone `doxmind` CLI and `doxmind-mcp` server expose a selected local workspace to scripts or external agents. They run independently of the desktop app and are not a built-in AI runtime. See [CLI & MCP](docs/cli-and-mcp.md).
 
 ## FAQ
 
 <details>
-<summary>Does doXmind require an account?</summary>
+<summary>Does doXmind require an account or Python?</summary>
 
-No. It is a single-user local desktop editor with no login, provider selection, or API key.
-
-</details>
-
-<details>
-<summary>Where are my documents stored?</summary>
-
-Wherever you put them. Opening a folder mounts that folder as the workspace;
-opening a standalone file does not scan its siblings. Rich editor state for a
-Markdown Page stays next to that Page in its hidden sidecar. New Attachments do
-not receive editor sidecars.
+No account is required. The packaged Electron app does not require or launch Python; Python is optional for browser development, CLI/MCP, and import/conversion tooling.
 
 </details>
 
 <details>
 <summary>Can I edit Markdown outside doXmind?</summary>
 
-Yes. If the `.md` hash no longer matches its sidecar, doXmind treats the Markdown file as authoritative and refreshes rich editor state from it.
+Yes. The Markdown file is authoritative. doXmind rebuilds the native block view from that source and detects a stale revision before saving over an external change.
 
 </details>
 
 <details>
-<summary>What happens to PDF and spreadsheet files?</summary>
+<summary>Does doXmind edit PDF, Excel, or HTML files?</summary>
 
-They remain ordinary local Attachments. doXmind does not silently rewrite them.
-If supported legacy evidence is found, doXmind can attempt a new, unverified
-recovery copy without mounting the old editor or changing the source, sidecar,
-backup, lock file, or any `.corrupt-*` evidence. When the main sidecar and backup
-contain different saved states, you choose which one to try. A missing or
-mismatched cache hash blocks the attempt, and strict exporters reject any field
-they cannot apply completely. Compare the new copy with the original before
-using it.
+No. They are read-only Attachments. Open them in their normal desktop application. If an old PDF/Excel sidecar contains unique edits, doXmind can export the exact legacy state in a Markdown recovery report without modifying either file.
 
 </details>
 
 <details>
-<summary>How do I recover a deleted Page?</summary>
+<summary>Are backlinks and Notion-style databases ready?</summary>
 
-doXmind sends a deleted Markdown Page and its sidecar to the operating system
-Trash/Recycle Bin as separate entries. Restore both to their original folder.
-Attachment deletion is not currently offered inside doXmind.
+Backlinks, unresolved links, unlinked mentions, the Page graph, scalar/list and exact Wiki-Link relation properties, Page/heading/block-id transclusion, and read-only Table/Board/Calendar Collections are ready and derived from portable Markdown/YAML. Formula and rollup results are deterministic in-memory projections from a strict Collection v2 JSON definition; they are not executable scripts or a second persisted database.
 
 </details>
 
 <details>
-<summary>Does my data leave my machine?</summary>
+<summary>Does my document content leave the machine?</summary>
 
-Document content, parsing, exports, sidecars, and application metadata stay local; doXmind does not upload documents to a hosted workspace. Packaged builds can contact the release service for update checks, and inserting a web bookmark can request that page and its preview image. Optional CLI/MCP access operates directly on the local filesystem.
+Normal Page editing, search, PDF generation, attachment handling, and recovery reporting stay local. Packaged builds may contact the release service for update checks; doXmind does not fetch Page or Attachment content from a remote service.
 
 </details>

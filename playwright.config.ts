@@ -1,6 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+const frontendPort = process.env.PLAYWRIGHT_FRONTEND_PORT ?? "3210";
+const backendPort = process.env.PLAYWRIGHT_BACKEND_PORT ?? "8210";
+const externalBaseURL = process.env.PLAYWRIGHT_BASE_URL;
+const baseURL = externalBaseURL ?? `http://127.0.0.1:${frontendPort}`;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -20,10 +23,12 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  webServer: {
-    command: "npm run dev:all",
-    url: baseURL,
-    reuseExistingServer: true,
-    timeout: 120_000,
-  },
+  webServer: externalBaseURL
+    ? undefined
+    : {
+        command: `cross-env DOXMIND_FRONTEND_PORT=${frontendPort} DOXMIND_BACKEND_PORT=${backendPort} npm run dev:all`,
+        url: baseURL,
+        reuseExistingServer: false,
+        timeout: 120_000,
+      },
 });

@@ -1,13 +1,15 @@
 # doXmind User Guide
 
-This guide covers doXmind's Markdown Page workflow and the transition of
-supported PDF, spreadsheet, and HTML files into ordinary Attachments. doXmind is
-local-first: Pages and attachments stay in folders you control, and replaceable
-editor state is stored beside Pages in hidden `.doxmind` sidecars.
+doXmind is a fully local, Markdown-native knowledge workspace. A Page is one ordinary `.md` or `.markdown` file, and every Page uses the native source-backed block editor. PDF, spreadsheet, and HTML files are read-only Attachments.
+
+The packaged Electron app executes filesystem commands inside the desktop process. It does not start or bundle Python/FastAPI. Python is optional and limited to browser development, CLI/MCP, and import/conversion tooling.
 
 For source installation and developer commands, see the [project README](../README.md).
-For the 1.8.0 behavior change, upgrade precautions, and fallback-validation
-status, see the [1.8.0 release notes](releases/1.8.0.md).
+
+For the historical 1.8.0 transition, upgrade precautions, and verified fallback
+record, see the [1.8.0 release notes](releases/1.8.0.md). The current product
+boundary and recovery behavior in this guide supersede that transition-state
+implementation where they differ.
 
 ## 1. Install and launch
 
@@ -17,20 +19,18 @@ The public release channel currently provides a macOS package for Apple silicon.
 2. Download the `.dmg` file.
 3. Drag doXmind to Applications, then open it.
 
-Document content, parsing, exports, and sidecars stay local. doXmind also stores application metadata under `~/.doxmind`. It does not require an account, API key, cloud workspace, or hosted parser; update checks and user-requested web bookmark previews can use the internet.
+The desktop app does not require an account, API key, Python runtime, cloud workspace, or hosted parser. Documents remain in folders you control. Replaceable preferences and recent-item state stay in the desktop WebView's local application profile; rebuildable indexes and optional Python-tooling metadata may use app-private data under `~/.doxmind`.
 
-## 2. Choose how to work
-
-doXmind supports two opening modes. Pick the one that matches the task.
+## 2. Open a folder, file, or new Page
 
 ### Open a folder
 
-Use **File → Open Folder…** (`Cmd/Ctrl+Shift+O`) when several related documents belong together.
+Use **File → Open Folder…** (`Cmd/Ctrl+Shift+O`) when related documents belong together.
 
-- The folder becomes the workspace root.
-- The sidebar shows supported documents and subfolders under that root.
-- New Pages are written directly into that folder.
-- Files opened inside the workspace use tabs in the same window.
+- The selected folder becomes the workspace root.
+- The sidebar reflects supported Pages, Attachments, and subfolders under that root.
+- New Pages are written directly into the workspace.
+- Documents open in tabs in the same window.
 
 <p align="center">
   <img src="readme/doxmind-overview.png" width="1200" alt="A doXmind folder workspace with local documents in the sidebar" />
@@ -38,214 +38,302 @@ Use **File → Open Folder…** (`Cmd/Ctrl+Shift+O`) when several related docume
 
 ### Open one file
 
-Use **File → Open File…** (`Cmd/Ctrl+O`), double-click a registered document, or choose **Open With → doXmind** when you want one standalone file.
+Use **File → Open File…** (`Cmd/Ctrl+O`), double-click a registered document, or choose **Open With → doXmind** to work with one standalone supported file.
 
 - doXmind opens that file without scanning or displaying its siblings.
-- Its parent folder is used only for source-file and sidecar access.
 - Closing the standalone document returns to the welcome screen.
+- A Markdown Page is editable. A supported non-Markdown file opens as a read-only Attachment.
 
 ### Start a new Page
 
-Choose **New** on the welcome screen to create an untitled Markdown buffer. The Page stays in memory until its first save, when doXmind asks where to put it.
+Choose **Start writing** on the welcome screen to create an untitled Markdown buffer. It remains in memory until the first save asks for a destination.
 
-When a folder is already open, **File → New Page** (`Cmd/Ctrl+N`) creates a real Markdown file inside that workspace instead.
+When a folder is open, **File → New Page** (`Cmd/Ctrl+N`) creates a real Markdown file inside that workspace. The New menu also offers folders and Markdown templates; it does not create blank PDFs or workbooks.
 
 ### Recent items and drag-and-drop
 
 - The welcome screen lists recent standalone files and workspace folders.
 - Drag a folder onto the welcome screen to mount it as a workspace.
-- Drag a supported document (`.md`, `.markdown`, `.pdf`, `.xlsx`, `.xlsm`, `.csv`, `.html`, or `.htm`) onto the welcome screen to open it.
-- Drag an external `.md`, `.pdf`, or `.xlsx` file into an open workspace to copy it there; the original stays where it was.
-- If a copied Markdown Page has the same name as an existing Page, choose whether to replace it, keep both, or skip it. For an Attachment collision, use **Keep both** or **Skip**; replace is disabled so legacy recovery evidence cannot be stranded.
+- Drag a supported standalone file onto the welcome screen to open it.
+- Drag a supported external file into an open workspace to copy it there.
 
-## 3. Manage a workspace
+## 3. Import files into a workspace
 
-The sidebar shows supported documents in the selected folder's real hierarchy;
-it is not a general-purpose file browser.
+External drag import accepts exactly:
 
-### Create items
+- `.md` and `.markdown`
+- `.pdf`
+- `.xlsx`
+- `.csv`
 
-Use the **+** menu in the workspace header, or right-click a folder/empty area, to create:
+Import copies the file into the chosen workspace folder and leaves the external source unchanged. When the name already exists, choose **Replace**, **Keep both**, or **Skip**.
 
-- A blank Markdown Page
-- A folder
-- A Page from a built-in template such as Meeting Notes, Blog Post, Study Notes, or Journal
+`.html` and `.htm` files already present inside an opened folder are shown as read-only Attachments, but HTML is not in the external drag-import whitelist. `.xlsm` can remain visible as an existing spreadsheet Attachment but is likewise not accepted by that import path.
 
-Supported PDF, spreadsheet, and HTML files already present in the folder appear
-as Attachments. The current in-workspace external drop/import accepts `.pdf` and
-`.xlsx`; doXmind does not create blank PDF or spreadsheet files.
+DOCX and PPTX are not Pages, stable workspace imports, or supported inputs to the current conversion tools. Optional standalone Python tooling can parse explicitly selected PDF and spreadsheet sources read-only; that tooling is separate from the packaged desktop app and never changes the original source implicitly.
 
-### Work with files
+## 4. Manage a workspace
 
-- Click a supported document to open it in a tab.
+The sidebar is a direct view of the selected folder.
+
+- Click a Page or Attachment to open it in a tab.
+- Drag items within the sidebar to move them inside the workspace.
+- Rename from the context menu; doXmind preserves the document extension.
+- Use **File → Reveal in Finder** (`Cmd/Ctrl+Alt+R`) to locate the active source.
 - Use `Cmd/Ctrl+Tab` for the quick file switcher.
-- Drag Pages and folders within the sidebar to move them inside the workspace.
-- Rename Pages and folders from the sidebar context menu; a Page keeps its Markdown extension.
-- Attachments expose **Open Externally** and **Reveal** rather than direct move,
-  rename, or delete. Moving or renaming their parent folder keeps the complete
-  subtree together, including sidecar, `.bak`, `.lock`, and `.corrupt-*`
-  recovery evidence; deleting a folder that contains an Attachment or recovery
-  evidence is blocked. Manage that set outside doXmind only after preserving a
-  complete copy.
-- Use **File → Reveal in Finder** (`Cmd/Ctrl+Alt+R`) to locate the active source file.
 - Use `Cmd/Ctrl+B` to show or hide the sidebar.
 - Use `F11` for focus mode; press `Esc` or `F11` again to leave it.
 
-### Delete and recover
+Page and Folder relocation first scans the complete workspace Page snapshot and
+shows the planned exact link repairs plus any warnings. Approval submits one
+revision-checked transaction that moves the source and unchanged Legacy Sidecar
+family together with the repairs. An external change or write failure aborts or
+rolls back the transaction; ambiguous and unsafe targets are reported rather
+than guessed.
 
-Deleting a Page sends both its Markdown source and sidecar to the operating
-system Trash/Recycle Bin. They appear as separate entries. Attachment deletion
-is not offered in doXmind while legacy recovery evidence may still exist.
+Deleting through doXmind sends the source to the operating system Trash/Recycle Bin. Existing hidden legacy recovery files move to Trash with it; doXmind has no separate in-app Trash.
 
-To recover the complete Page state:
+To recover a deleted item, restore the source and any legacy recovery-file family from the system Trash. On macOS, press `Cmd+Shift+.` in Finder or Trash to show hidden files.
 
-1. Open the system Trash/Recycle Bin.
-2. Restore the source file.
-3. Restore its hidden `.doxmind` companion to the same original folder.
+## 5. Edit a Markdown Page
 
-On macOS, press `Cmd+Shift+.` in Finder or Trash if hidden files are not visible.
-Restore legacy PDF/XLSX sidecars and every recovery artifact together with their
-source. A successful recovery attempt is not a deletion signal: keep the
-evidence until you have independently verified and archived what you need. A
-Markdown Page can be rebuilt from its text if its sidecar is missing, although
-editor-only presentation state may be lost. doXmind does not maintain a separate
-in-app Trash.
-
-## 4. Edit Markdown
-
-Markdown files open in a rich reading surface. Click the document body or start typing to enter editing mode.
+Every `.md` and `.markdown` Page opens in the same native source-backed editor. There is no TipTap compatibility editor or hidden HTML document model.
 
 <p align="center">
-  <img src="readme/doxmind-editor.png" width="1200" alt="The doXmind Markdown editor with tabs, file tree, tasks, a table, and formatted code" />
+  <img src="readme/doxmind-editor.png" width="1200" alt="The doXmind native Markdown block editor" />
 </p>
 
-### Add content
+### Source-backed blocks
 
-Type `/` on an empty line to open the block menu. Available blocks include:
+The editor recognizes these Markdown structures as blocks:
 
-- Paragraphs and headings 1–6
-- Bulleted, numbered, and task lists
-- Quotes, callouts, dividers, and toggles
-- Tables and two-to-five-column layouts
-- Images, web bookmarks, page links, and page mentions
-- Code blocks with syntax highlighting
-- KaTeX math and Mermaid diagrams
-- A table of contents
+- Paragraphs and ATX headings
+- Bulleted, numbered, and task-list items
+- Block quotes and callouts
+- Thematic dividers
+- Tables
+- Fenced code and Mermaid diagrams
+- Block math
+- Portable `<details>` Toggles
+- Read-only `doxmind-collection` Table, Board, and Calendar views
+- Standalone relative local Markdown images
+- Standalone Wiki embed paragraphs
 
-The retired DatabaseBlock is not rendered or offered for insertion. Older
-`extras.databases` payloads are preserved unchanged in sidecars for manual
-recovery; they are not an active collection format.
+Select a Block to edit its canonical Markdown. Safe whole-Block move, duplicate, and delete work for native and raw structures. Use `Alt+ArrowUp/ArrowDown` to move the active Block, `Cmd/Ctrl+Shift+D` to duplicate it, and `Cmd/Ctrl+Shift+Backspace` (or Delete) to remove it. At the beginning or end of an active Block, unmodified Up/Down moves into the neighboring Block. Supported text and list Blocks additionally allow split, merge, common kind changes, and task toggles; controls that could corrupt raw or complex grammar remain disabled. Multi-Block plain-text paste preserves the clipboard's exact line endings and is one undo step. Undo and redo operate on Markdown changes. Tables, code, math, Mermaid, callouts, and other source-only structures remain directly editable without a second document model.
 
-### Navigate and inspect
+If syntax is unfamiliar or too complex for a semantic control, doXmind keeps it as an editable raw Markdown block. It does not discard or normalize that source merely because the UI does not understand it.
 
-- `Cmd/Ctrl+F` searches inside the active document.
-- The outline rail appears when a document has multiple headings; select a heading to jump to it.
-- The status bar reports words, characters, and estimated reading time.
+Type `/` as the complete text of an active paragraph to open the native slash-command menu. It can replace that paragraph with portable Markdown for text, headings, lists, tasks, quotes, Toggles, callouts, dividers, code, tables, Collections, equations, Mermaid, Wiki Links, and Page embeds. Filter by typing after `/`, use the arrow keys to select, and press Enter. The command inserts source; it does not create a hidden Block record.
+
+A Toggle is ordinary portable HTML-with-Markdown source:
+
+```html
+<details>
+  <summary>Toggle title</summary>
+
+  Markdown inside the Toggle.
+</details>
+```
+
+Nested and fenced content is source-parsed without a private Toggle schema. Open/closed state is represented by the standard `open` attribute. Activate the Block to edit its original source.
+
+### Properties
+
+Open **Properties** in the Page context bar to edit tags, aliases, and custom fields. Custom property names start with a letter or underscore and may contain letters, digits, `_`, `.`, or `-`. Values are limited to portable YAML strings, finite numbers, checkboxes/booleans, and string lists. A **Relation** uses that same string-list grammar: selecting other workspace Pages writes exact extension-free Wiki Link targets into frontmatter, for example:
+
+```yaml
+---
+status: active
+owners:
+  - "[[People/Ada]]"
+  - "[[People/Grace]]"
+---
+```
+
+Relation source accepts one exact `[[Page]]` string or an array of them. Labels and heading/block fragments are not relation values. Resolution uses the local Page path, title, or alias; missing or ambiguous targets remain explicit and are never guessed.
+
+The editor saves the Page body first, then applies one revision-checked minimal frontmatter patch. It preserves unrelated keys, comments, BOM, line endings, and body bytes. Identity and other system fields are not editable custom properties; nested objects, mixed arrays, and other YAML shapes remain preserved source but are not projected into the v1 property UI.
+
+### Daily Notes
+
+Choose **Today's Daily Note** from the workspace home or command palette. doXmind uses the machine's local calendar date and opens or creates the ordinary Page `Daily Notes/YYYY-MM-DD.md`. It saves any dirty current Page before navigating. Daily Notes have no private record, journal database, or sidecar.
+
+### Page Collections
+
+A Collection is a strict fenced JSON definition inside any Page. Rows, cards, and events are ordinary Markdown Pages selected from the current workspace catalog. Version 1 Table definitions remain supported; version 2 adds Table, Board, and Calendar views plus optional computed properties. The slash menu can insert a valid starter for each view.
+
+For example, a project may carry only portable source properties:
+
+```yaml
+---
+type: project
+status: active
+tasks:
+  - "[[Tasks/A]]"
+  - "[[Tasks/B]]"
+---
+```
+
+If `Tasks/A.md` and `Tasks/B.md` each have a numeric `points` field, this version 2 Table resolves `tasks`, sums those target values, and derives a label without writing any result back to a Page:
+
+````markdown
+```doxmind-collection
+{
+  "version": 2,
+  "view": "table",
+  "computed": {
+    "version": 1,
+    "properties": {
+      "tasks": { "type": "relation" },
+      "total": {
+        "type": "rollup",
+        "relation": "tasks",
+        "property": "points",
+        "calculate": "sum"
+      },
+      "label": {
+        "type": "formula",
+        "expression": {
+          "type": "concat",
+          "values": [
+            { "type": "literal", "value": "Points: " },
+            { "type": "property", "name": "total" }
+          ]
+        }
+      }
+    }
+  },
+  "filters": [
+    { "property": "type", "operator": "equals", "value": "project" }
+  ],
+  "columns": ["status", "tasks", "total", "label"],
+  "sort": [{ "property": "total", "direction": "desc" }]
+}
+```
+````
+
+Every definition has `filters`, `columns`, and `sort`. Filters use AND semantics and support `equals`, `contains`, and `exists`; sorting is deterministic and keeps missing values last. A version 2 Board additionally requires `"groupBy": "status"`; a Calendar requires `"dateBy": "due"`. Board values become deterministic columns with a final **Missing** column. Calendar accepts real `YYYY-MM-DD` strings and puts missing or invalid dates in **Unscheduled**.
+
+The optional `computed` object has its own strict version 1 grammar:
+
+- `relation` resolves the same-named source frontmatter field, which must contain exact Wiki Link string(s).
+- `formula` is data, not code. Its JSON AST supports `literal`, `property`, arithmetic (`+ - * / %`), comparisons, boolean `and`/`or`/`not`, `concat`, and lazy `if` expressions. No string is evaluated as JavaScript; a definition is capped at 64 levels and 1,000 AST nodes.
+- `rollup` names a declared relation and a target property, then applies `count`, numeric `sum`/`min`/`max`, or string `join`/`unique`.
+
+Derived values can be used by filters, sort, displayed columns, Board `groupBy`, and Calendar `dateBy`. Resolved relation targets are navigable. Unknown schema keys, dependency cycles, type mismatches, unresolved/ambiguous relations, and unsafe operations produce deterministic diagnostics instead of guessed or partially persisted values. The source fence remains directly editable and no Collection result is stored in a sidecar, cache, or Page frontmatter.
+
+### Local images
+
+A standalone image such as `![Diagram](../assets/diagram.png)` previews an existing local image relative to the containing Page. doXmind does not fetch remote, `data:`, `file:`, absolute, query/fragment, workspace-escaping, or symlinked destinations. The desktop/browser-dev read command confines the asset to the workspace, limits it to 20 MiB, checks the raster signature, and returns bytes that the UI displays through a temporary in-memory Blob URL.
+
+In the packaged Electron editor, paste image files from the clipboard or drop them onto an editable text/list Block. doXmind accepts APNG, AVIF, BMP, GIF, ICO, JPEG, PNG, and WebP files between 1 byte and 20 MiB, verifies their bytes, and copies them into the workspace `assets/` folder. It never overwrites an existing asset: a collision becomes `name (2).ext`, then the next available suffix. The editor inserts the shortest URI-encoded relative `![name](path)` reference into the Page, preserving its line-ending style. An unsaved Page must first be saved inside a workspace. Browser development exposes read-only preview but not this Electron asset-import writer.
+
+Resize, crop, deletion, remote-image fetching, and binary image editing are not implemented. An unsupported or unsafe image reference remains editable source rather than triggering a network request.
+
+### Find, outline, and Wiki Links
+
+- `Cmd/Ctrl+F` searches inside the active Page.
+- The outline rail lists headings and jumps to the selected section.
 - `Cmd/Ctrl+K` opens the command palette.
 - `Cmd/Ctrl+Shift+?` opens the shortcut reference.
+- Clicking an unambiguous `[[Wiki Link]]` opens the corresponding local Markdown Page.
+- A standalone `![[Page]]` or `![[Page#Heading]]` paragraph previews that Page or its unique ATX heading section recursively and read-only. Path, title, and alias can resolve a target; `|label` changes only the displayed label.
+- A source Block can end with an Obsidian-compatible anchor such as `Requirements text. ^requirements`. A standalone `![[Spec#^requirements]]` embeds the unique matching Block without rewriting the target Page. Portable ids start with an ASCII letter or digit and continue with letters, digits, `_`, or `-`; anchors inside fenced code, Mermaid, or block math are not candidates. Missing or duplicate ids fail closed.
+- Activate any embed Block to edit its original expression. Ambiguous or missing targets/fragments, cycles, and depth limits stay explicit instead of guessing.
 
-### Save and export
+Backlinks, unresolved outgoing links, and unlinked mentions rebuild from Page files in the Page context. **Graph** rebuilds the same resolved-link index without writing the workspace, centers the active Page, shows a bounded deterministic neighborhood, and opens a Page when you activate its node. Refresh after external file changes when needed.
 
-Autosave is enabled by default and writes after a short pause. `Cmd/Ctrl+S` saves immediately.
+### Save and external edits
 
-Saving Markdown writes two files:
+Autosave writes after a short pause. `Cmd/Ctrl+S` saves immediately.
 
-1. The portable `.md` text.
-2. A hidden `.doxmind` sidecar containing lossless editor HTML and doXmind-only extras.
+Save atomically writes only the Page's `.md`/`.markdown` file. It does not create or update a `.doxmind` sidecar. Authored `^block-id` anchors remain ordinary Markdown source; session block ids, selections, undo history, previews, and rendered HTML are temporary or derived state.
 
-Open **More actions (⋯)** in the document's top bar, then choose an Export format:
+The storage layer reads the complete raw file, separates frontmatter from the Markdown body, and gives the body to the native Block editor. Opening a file does not modify it merely because it lacks a frontmatter id. Unknown frontmatter and untouched body source remain preserved when a supported edit patches another span.
 
-- **Markdown** — creates a portable `.md` copy.
-- **PDF** — renders the current Markdown through the local PDF exporter.
+You can edit the same file in another application. If the on-disk revision changes while doXmind holds an older revision, the app stops the stale write instead of silently overwriting the external change. Reload/reopen the Page, review the external edit, and then continue.
 
-Depending on the format and desktop shell, the system either asks for a destination or puts the exported file in the configured Downloads folder.
+## 6. Copy the complete Markdown source or export a Page to PDF
 
-Word export is not available in the current desktop edition.
+Open **More actions (⋯)** in a Page's top bar:
 
-### External Markdown edits
+- **Copy Markdown Source** saves live edits, asks for a new `.md`/`.markdown` destination, and copies the complete Page bytes—including BOM, frontmatter, comments, original line endings, and trailing newlines. It refuses to overwrite an existing destination.
+- **Export as PDF** asks for a local destination and generates a `.pdf` file directly inside Electron.
 
-You can edit the same `.md` file in another application. When the Markdown hash no longer matches the sidecar, doXmind treats the `.md` file as newer, imports it, and regenerates rich editor state on the next save.
+PDF export waits for recursive embeds, local images, fonts, math, and Mermaid previews to leave their loading state, then uses the native Block view already derived from canonical Markdown. Electron generates the PDF bytes without a printer or driver and atomically writes the destination chosen in the Save dialog. No Markdown, HTML, or PDF bytes are sent to FastAPI or another service, and there is no separate local PDF-export server.
 
-Avoid editing the same document simultaneously in doXmind and another writer: the last save can overwrite the other process's changes.
+Cancelling the Save dialog writes nothing. A successful export has a definite destination and does not modify the Markdown Page or create a sidecar.
 
-## 5. Recover legacy PDF edits
+The Page file itself remains the portable source. Word export is not available.
 
-> PDF editing is no longer a product surface. This recovery flow only exports
-> edits already stored by an older doXmind build.
+## 7. Work with read-only Attachments
 
-Open the PDF from the sidebar or as a standalone file. It opens as a read-only
-Attachment; the old PDF editor is not mounted. doXmind inspects the main legacy
-sidecar and its `.bak` independently without migrating or rewriting either one.
+PDF, Excel-family, CSV, and HTML files are Attachments. Opening one shows a read-only attachment card with:
 
-Historical recovery is always manual and unverified. Older doXmind versions
-could refresh a parsed-cache hash while preserving editor state from an earlier
-file version. Immediately before an attempt, doXmind still hashes the exact PDF
-bytes it will use and refuses a missing or mismatched cache hash, but a match is
-not proof that the edits belong to that exact version.
+- **Open externally** — launches the file in its normal desktop application.
+- **Reveal** — locates the source in Finder or the platform file manager.
 
-If supported recovery evidence is found:
+doXmind does not expose its former PDF annotation editor or spreadsheet grid. It does not save PDF annotations, workbook cells, formulas, or formatting, and it never creates new attachment sidecars.
 
-- When one recovery source is available, select **Attempt PDF recovery**.
-- When the main sidecar and backup both contain different saved states,
-  choose **Attempt main sidecar** or **Attempt backup**. If their recovery state is
-  the same, doXmind recommends the main sidecar automatically.
-- doXmind checks the cache hash, strictly applies the selected editor state to
-  captured source bytes, then downloads `<name> recovered.pdf` as a new,
-  unverified copy. Compare it with the original before using it.
+Those editor bundles and their attachment create/write/cache and migration paths have been removed, not merely hidden. Optional CLI/MCP tools may parse a PDF or workbook read-only for conversion, but they cannot reopen the retired editor or write its state.
 
-Recovery is all-or-nothing. If the selected state cannot be matched safely to
-the source PDF, no partial file is downloaded. The source PDF, main sidecar,
-`.bak`, `.lock`, every `.corrupt-*` artifact, mtimes, and surrounding directory
-contents remain unchanged. Keep all of those files when the recovery status
-says it needs attention; that state still requires a manual recovery path.
+Use Preview/Acrobat for PDFs, Excel/Numbers/LibreOffice for workbooks and CSV files, and a browser or text editor for HTML.
 
-## 6. Recover legacy workbook edits
+## 8. Export old recovery state
 
-> Spreadsheet editing is no longer a product surface. This recovery flow only
-> exports edits already stored by an older doXmind build.
+Older doXmind versions could store PDF annotations or spreadsheet edits only in a hidden `.doxmind` sidecar. Normal Attachment open does not inspect that family. Select **Check legacy recovery** on the read-only Attachment card to invoke the isolated recovery path without entering the old editor.
 
-Open an `.xlsx`, `.xlsm`, or `.csv` workbook from a workspace or as a standalone file.
-It opens as a read-only Attachment; the old workbook editor is not mounted.
-Source selection follows the same main-sidecar/backup rules as PDF recovery.
+When recoverable PDF or spreadsheet state is detected, the Attachment card shows **Export recovery report**. Selecting it downloads a file such as:
 
-Select **Attempt spreadsheet recovery** to create `<name> recovered.xlsx`.
-This is also an unverified, manual attempt: the cache hash catches an obvious
-mismatch but cannot prove historical editor provenance. The isolated exporter
-does not invoke the legacy workbook reader, writer, migration, or cache path.
+```text
+Spec.pdf.doxmind-recovery.md
+Budget.xlsx.doxmind-recovery.md
+```
 
-Recovery stops rather than silently dropping unsupported or unapplied state.
-Missing sheets, malformed targets, a missing or mismatched cache hash, and any
-mutation the exporter cannot account for fail the whole operation. In
-particular, saved `filters`, `filterMode`, structural row/column/merge operations,
-lossy sheet operations, or UI-only metadata may require a compatible older build
-instead. Keep the source, sidecar, `.bak`, `.lock`, and every `.corrupt-*`
-artifact for manual recovery.
-CSV recovery also produces `.xlsx`. For an `.xlsm` source, the recovered output
-is `.xlsx` and does not include macros; doXmind shows this warning before export.
+The report contains:
 
-If an attempt is unavailable or fails, preserve the original folder unchanged.
-Do not guess which older release is compatible. The exact fallback version,
-download, and checksum must first be published as **verified** in the
-[1.8.0 release notes](releases/1.8.0.md). Until that entry exists, stop and keep
-the evidence unchanged.
+- YAML frontmatter identifying the source, document type, export time, and recovery format version
+- A plain-language preservation note
+- The exact legacy editor state as formatted, lossless JSON in a fenced code block
 
-After a fallback build is verified and published:
+This action is strictly read-only:
 
-1. Quit every running doXmind process.
-2. Duplicate the attachment's containing folder into an isolated recovery
-   location. Confirm the copy contains the source, main sidecar, every `.bak`,
-   `.lock`, and `.corrupt-*` file before proceeding.
-3. Download only the exact build and artifact whose checksum appears in the
-   release notes, verify the checksum, and extract it to a temporary location.
-   Do not install it over the current doXmind app or point it at the original
-   workspace.
-4. Run that extracted build against the isolated copy and export recovery
-   output to a new file. Do not allow the older build to migrate or repair the
-   only copy of any evidence.
-5. Compare the exported copy with the original attachment. Keep the untouched
-   evidence set until the result has been independently verified and archived.
+- It does not modify the PDF, workbook, or CSV source.
+- It does not rewrite, migrate, or delete the legacy sidecar.
+- It does not change `.bak`, `.lock`, or `.corrupt-*` recovery files.
+- It does not create a reconstructed PDF or XLSX.
 
-## 7. Settings
+The report preserves unique old state for inspection or a later/manual recovery workflow. Keep it with the original Attachment and the complete legacy recovery-file family. If doXmind reports that recovery status is unknown, preserve all files and investigate before cleanup.
+
+Legacy Page artifacts use a separate, stricter path. Normal Page open does not
+inspect adjacent artifacts. Select the **Check legacy recovery** icon in the
+Page context bar; if a `.doxmind`, `.bak`, `.lock`, or `.corrupt-*` member
+exists, doXmind shows a recovery notice without loading that state into the
+editor. **Export Page recovery report**
+downloads every family member as a byte-exact Base64 payload and adds a readable
+UTF-8 preview when possible. This also preserves malformed or binary artifacts;
+decoding the Base64 recreates the original bytes. The original Markdown Page
+and every artifact remain unchanged.
+
+## 9. Understand legacy recovery files
+
+Current Pages and new Attachments do not need or receive sidecars. Older builds may have left files such as:
+
+| Source document       | Legacy sidecar                 |
+| --------------------- | ------------------------------ |
+| `Project Plan.md`     | `.Project Plan.doxmind`        |
+| `Research Report.pdf` | `.Research Report.pdf.doxmind` |
+| `Quarterly Plan.xlsx` | `.Quarterly Plan.xlsx.doxmind` |
+
+A recovery family may also contain:
+
+- `<sidecar>.bak` — an earlier backup
+- `<sidecar>.lock` — a tiny coordination file that may persist
+- `<sidecar>.corrupt-*` — preserved evidence from a failed/corrupt migration
+
+Do not manually delete any of these while unique old edits may matter. Within a workspace, rename and move operations carry the existing recovery family with the source; deletion sends both to system Trash. Normal Page and Attachment operations preserve these bytes and do not create replacements.
+
+## 10. Settings
 
 Open **doXmind → Settings…** (`Cmd/Ctrl+,`) or select **Settings** at the bottom of the sidebar.
 
@@ -255,119 +343,71 @@ Open **doXmind → Settings…** (`Cmd/Ctrl+,`) or select **Settings** at the bo
 
 The current settings surface contains:
 
-- **Appearance** — Light, Dark, or System mode and the preferred light/dark theme.
-- **Typography** — editor font and reading rhythm preferences.
-- **About** — app version, build/channel information, privacy notes, acknowledgements, and project information.
+- **Appearance** — Light, Dark, or System mode and preferred themes
+- **Typography** — editor font and reading-rhythm preferences
+- **About** — app version, build/channel information, privacy notes, acknowledgements, and project information
 
-Settings are stored locally on the device.
+Settings stay local on the device.
 
-## 8. Understand Pages, Attachments, and sidecars
-
-New Markdown Pages use a companion sidecar. Older builds may also have created
-legacy sidecars for PDF and spreadsheet attachments:
-
-| Source document       | Sidecar                        |
-| --------------------- | ------------------------------ |
-| `Project Plan.md`     | `.Project Plan.doxmind`        |
-| `Research Report.pdf` | `.Research Report.pdf.doxmind` |
-| `Quarterly Plan.xlsx` | `.Quarterly Plan.xlsx.doxmind` |
-
-Keep a source and any existing sidecar together when moving, backing up, or
-restoring it. New Attachments do not need editor sidecars; the PDF/XLSX rows
-above document legacy recovery data only.
-
-### What each file means
-
-- **Markdown Page:** the `.md` text and frontmatter are the portable source. The sidecar preserves lossless editor HTML and replaceable state.
-- **Attachment:** the original file is the source. Normal attachments do not receive new editor state.
-- **Legacy PDF/Excel sidecar:** preserves historical editor state and remains recovery evidence even after an export attempt.
-
-Do not manually delete a legacy sidecar if you still need its PDF annotations or
-spreadsheet edits. Never delete `.bak`, `.lock`, or `.corrupt-*` files as part of
-cleanup.
-
-### Advanced: legacy recovery files
-
-An older doXmind build may have left several recovery artifacts:
-
-- `<sidecar>.bak` is the backup of the original sidecar.
-- `<sidecar>.lock` coordinates the migration and can remain afterward.
-- `<sidecar>.corrupt-*` is a recovery copy created when corrupt data could not be migrated safely.
-
-The current Attachment recovery flow inspects only the main sidecar and `.bak`.
-It does not read `.lock` or `.corrupt-*`, and it does not create, rename,
-overwrite, or delete any recovery evidence. Do not delete these files merely
-because they are small or hidden, and do not move a backup over the main sidecar
-before exporting: the UI can inspect both candidates and asks you to choose when
-their saved states differ.
-
-## 9. Keyboard shortcuts
+## 11. Keyboard shortcuts
 
 The current public desktop release is for macOS, where shortcuts use `Cmd`. Browser development and compatibility builds on other platforms use `Ctrl` unless shown otherwise.
 
-| Action                                   | Shortcut           |
-| ---------------------------------------- | ------------------ |
-| New Page in an open workspace            | `Cmd/Ctrl+N`       |
-| New window                               | `Cmd/Ctrl+Shift+N` |
-| Open file                                | `Cmd/Ctrl+O`       |
-| Open folder                              | `Cmd/Ctrl+Shift+O` |
-| Save                                     | `Cmd/Ctrl+S`       |
-| Find in Page                             | `Cmd/Ctrl+F`       |
-| Command palette                          | `Cmd/Ctrl+K`       |
-| Quick switcher                           | `Cmd/Ctrl+Tab`     |
-| Quick switcher from the native Edit menu | `Cmd/Ctrl+P`       |
-| Toggle sidebar                           | `Cmd/Ctrl+B`       |
-| Focus mode                               | `F11`              |
-| Exit focus mode                          | `Esc`              |
-| Shortcut reference                       | `Cmd/Ctrl+Shift+?` |
-| Reveal active source file                | `Cmd/Ctrl+Alt+R`   |
+| Action                                   | Shortcut                          |
+| ---------------------------------------- | --------------------------------- |
+| New Page in an open workspace            | `Cmd/Ctrl+N`                      |
+| New window                               | `Cmd/Ctrl+Shift+N`                |
+| Open file                                | `Cmd/Ctrl+O`                      |
+| Open folder                              | `Cmd/Ctrl+Shift+O`                |
+| Save                                     | `Cmd/Ctrl+S`                      |
+| Find in Page                             | `Cmd/Ctrl+F`                      |
+| Command palette                          | `Cmd/Ctrl+K`                      |
+| Quick switcher                           | `Cmd/Ctrl+Tab`                    |
+| Quick switcher from the native Edit menu | `Cmd/Ctrl+P`                      |
+| Toggle sidebar                           | `Cmd/Ctrl+B`                      |
+| Focus mode                               | `F11`                             |
+| Exit focus mode                          | `Esc`                             |
+| Shortcut reference                       | `Cmd/Ctrl+Shift+?`                |
+| Reveal active source file                | `Cmd/Ctrl+Alt+R`                  |
+| Move active Block                        | `Alt+ArrowUp/Down`                |
+| Duplicate active Block                   | `Cmd/Ctrl+Shift+D`                |
+| Delete active Block                      | `Cmd/Ctrl+Shift+Backspace/Delete` |
 
-Standard editing shortcuts for undo, redo, cut, copy, paste, and select all also work in the active editor.
+Standard undo, redo, cut, copy, paste, and select-all shortcuts work in the active Markdown block.
 
-## 10. Limits and troubleshooting
+## 12. Limits and troubleshooting
 
 ### A file does not appear in a workspace
 
 - Confirm it is a Markdown Page or a supported local Attachment.
 - Refresh or reopen the folder after changing files outside doXmind.
-- DOCX and PPTX are not supported workspace documents.
+- External drag import accepts only `.md`, `.markdown`, `.pdf`, `.xlsx`, and `.csv`.
+- HTML must already be present in the opened folder; DOCX and PPTX are not stable workspace documents.
 
-PDF, Excel, CSV, and HTML files intentionally open as read-only Attachments.
-Use **Open Externally** for ordinary editing in the file's system application.
-Standalone images, DOCX, PPTX, and arbitrary other extensions are not promised
-to appear as workspace documents. Add images through a Markdown Page so they
-remain local assets referenced by that Page. The internal `other` Attachment
-type is only a safe read-only fallback if an unknown format reaches the shared
-surface; it does not expand workspace scanning or native opening.
+### I cannot edit a PDF, workbook, CSV, or HTML file
 
-### Recovery status needs attention
+That is intentional. These formats are read-only Attachments. Use **Open externally** to edit the source in its normal application. doXmind will not write a new sidecar.
 
-Corrupt JSON, future or invalid versions, mixed legacy/current shapes, and
-unsupported recovery state are reported conservatively instead of being treated
-as empty. doXmind does not rewrite or migrate the evidence. Keep the source,
-main sidecar, every `.bak`, `.lock`, and `.corrupt-*` file together for manual
-recovery. If the app cannot offer a recovery attempt, follow the verified
-fallback status and isolated-copy procedure in the
-[1.8.0 release notes](releases/1.8.0.md); do not try an arbitrary older build.
+### The old PDF/Excel editor is missing
 
-### Changes are missing from a recovered workbook
+It has been physically removed. If a legacy sidecar contains unique edit state, use **Export recovery report**. The output is a Markdown preservation report with exact JSON, not an edited PDF/XLSX file.
 
-- If both the main sidecar and `.bak` are offered, export the other candidate
-  and compare the recovered copies.
-- Recovery refuses saved `filters` or `filterMode` rather than silently losing
-  them.
-- `.xlsm` recovery produces `.xlsx`; macros are not included.
+### Export as PDF did not create a file
 
-### Changes are missing from a recovered PDF
+Choose **Export as PDF**, select a writable destination, and complete the Save dialog. Cancelling creates no file. If generation fails, the app leaves any existing destination intact and reports the failure; no printer configuration is required.
 
-- If both the main sidecar and `.bak` are offered, export the other candidate
-  and compare the recovered copies.
-- Recovery refuses source-text mismatches, unsupported page rotations, or text
-  that would need silent resizing. Keep every recovery file and use the manual
-  compatibility path instead of accepting a partial copy.
+### A Page changed in another editor
 
-## 11. Privacy and optional automation
+doXmind rejects a save based on a stale source revision. Reload/reopen the Page, review the external change, and then continue editing. The app does not use a sidecar hash as a conflict authority.
 
-The desktop editor keeps document content, parsing, exports, sidecars, and application metadata on the machine. doXmind has no built-in cloud account, telemetry, or AI runtime. Packaged builds can check the release service for updates, and inserting a web bookmark can request that page and its preview image.
+### A legacy recovery report is unavailable
 
-Advanced users can separately install the local `doxmind` CLI or `doxmind-mcp` server. Those tools operate directly on a selected local workspace and do not require the desktop app to be running. See [CLI & MCP](cli-and-mcp.md). Avoid editing the same document concurrently in the app and another process.
+Keep the source and all hidden `.doxmind`, `.bak`, `.lock`, and `.corrupt-*` files unchanged. An unavailable or unknown result is not permission to delete recovery evidence.
+
+## 13. Privacy and optional tooling
+
+Normal Page editing, local search, PDF generation, Attachment handling, and recovery-report export remain on the machine. The packaged Electron build uses in-process filesystem commands and does not launch Python/FastAPI.
+
+The app has no built-in cloud account, telemetry, AI runtime, or remote content-unfurl service. Packaged builds may contact the release service for update checks.
+
+Advanced users can separately run the browser-development FastAPI mirror, the local `doxmind` CLI, import/conversion tools, or `doxmind-mcp`. Those optional Python surfaces operate independently of the desktop app. See [CLI & MCP](cli-and-mcp.md). Avoid editing the same Page concurrently from multiple processes.

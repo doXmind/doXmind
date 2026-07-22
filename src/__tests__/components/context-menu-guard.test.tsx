@@ -45,7 +45,7 @@ describe("ContextMenuGuard", () => {
     const div = document.createElement("div");
     document.body.appendChild(div);
     // Simulate an inner custom menu that preventDefaults but does not stop
-    // propagation (as the TipTap editor menu does) — the guard must not
+    // propagation (as an inner custom editor menu may do) — the guard must not
     // re-handle it, but the event stays prevented.
     div.addEventListener("contextmenu", (e) => e.preventDefault());
     expect(rightClick(div)).toBe(true);

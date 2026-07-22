@@ -11,6 +11,46 @@ let mermaidInstance: typeof import("mermaid").default | null = null;
 let lastTheme: string | null = null;
 let renderCounter = 0;
 
+const REMOTE_MERMAID_URL = /\bhttps?:|[\\/]{2}[^\s\\/]/i;
+
+function decodeAsciiEscape(match: string, digits: string, radix: number): string {
+  const codePoint = Number.parseInt(digits, radix);
+  return Number.isFinite(codePoint) && codePoint <= 0x7f ? String.fromCodePoint(codePoint) : match;
+}
+
+function canonicalizeRemoteUrlCandidates(code: string): string {
+  return code
+    .replace(/\\u\{([0-9a-f]{1,6})\}/gi, (match, digits: string) =>
+      decodeAsciiEscape(match, digits, 16)
+    )
+    .replace(/\\u([0-9a-f]{4})/gi, (match, digits: string) => decodeAsciiEscape(match, digits, 16))
+    .replace(/\\x([0-9a-f]{2})/gi, (match, digits: string) => decodeAsciiEscape(match, digits, 16))
+    .replace(/&#x([0-9a-f]+);?/gi, (match, digits: string) => decodeAsciiEscape(match, digits, 16))
+    .replace(/&#([0-9]+);?/g, (match, digits: string) => decodeAsciiEscape(match, digits, 10))
+    .replace(/&(colon|sol|bsol|tab|newline);?/gi, (_match, entity: string) => {
+      switch (entity.toLowerCase()) {
+        case "colon":
+          return ":";
+        case "sol":
+          return "/";
+        case "bsol":
+          return "\\";
+        case "tab":
+          return "\t";
+        default:
+          return "\n";
+      }
+    })
+    .replace(/\\\//g, "/")
+    .replace(/[\u0000-\u0020]/g, "");
+}
+
+function remoteMermaidSourceError(code: string): Error | null {
+  return REMOTE_MERMAID_URL.test(canonicalizeRemoteUrlCandidates(code))
+    ? new Error("Mermaid preview cannot load a remote URL")
+    : null;
+}
+
 // Promise queue: each render waits for the previous one to finish
 let renderQueue: Promise<void> = Promise.resolve();
 
@@ -537,16 +577,7 @@ async function ensureInitialized(): Promise<typeof import("mermaid").default> {
       startOnLoad: false,
       theme: "base",
       themeVariables: isDark ? darkThemeVars : lightThemeVars,
-      // Diagram source comes from the document, i.e. untrusted input
-      // (ADR-0011). "strict" makes mermaid escape label content instead of
-      // trusting it, and htmlLabels:false renders labels as native SVG <text>
-      // rather than HTML inside <foreignObject>. The second flag matters twice
-      // over: it removes the injection surface, and DOMPurify deliberately
-      // strips foreignObject contents as an mXSS vector — so HTML labels would
-      // render as empty boxes once sanitized.
       securityLevel: "strict",
-      htmlLabels: false,
-      flowchart: { htmlLabels: false },
       suppressErrorRendering: true,
     });
     lastTheme = currentTheme;
@@ -579,6 +610,8 @@ async function doRender(code: string): Promise<string> {
  * - Retries once on failure with a short delay.
  */
 export function renderMermaidSvg(code: string): Promise<string> {
+  const localityError = remoteMermaidSourceError(code);
+  if (localityError) return Promise.reject(localityError);
   return new Promise<string>((resolve, reject) => {
     renderQueue = renderQueue.then(async () => {
       try {
@@ -611,6 +644,8 @@ export function renderMermaidSvg(code: string): Promise<string> {
  * and re-initialize back to whichever theme the document is in.
  */
 export function renderMermaidSvgLight(code: string): Promise<string> {
+  const localityError = remoteMermaidSourceError(code);
+  if (localityError) return Promise.reject(localityError);
   return new Promise<string>((resolve, reject) => {
     renderQueue = renderQueue.then(async () => {
       try {
@@ -623,8 +658,6 @@ export function renderMermaidSvgLight(code: string): Promise<string> {
           theme: "base",
           themeVariables: lightThemeVars,
           securityLevel: "strict",
-          htmlLabels: false,
-          flowchart: { htmlLabels: false },
           suppressErrorRendering: true,
         });
         // Invalidate the cached theme so the next normal render path

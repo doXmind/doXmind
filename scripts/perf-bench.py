@@ -1,6 +1,6 @@
 """Direct backend benchmark driver.
 
-Skips the FastAPI / Tauri / browser layers and calls the parse/read services
+Skips the FastAPI / Electron / browser layers and calls the parse/read services
 in-process. Forces DOXMIND_PERF=1 + a sandbox log path so it never pollutes
 the user's real ~/.doxmind/perf.log.
 
@@ -42,10 +42,7 @@ from services.excel_workbook import (  # noqa: E402
     _clear_xlsx_cache,
     parse_workbook_json_bytes,
 )
-from services.markdown_document_state import (  # noqa: E402
-    MarkdownDocumentState,
-    _clear_read_cache,
-)
+from services.markdown_page_store import MarkdownPageStore  # noqa: E402
 from services.pdf_blocks import _clear_pdf_cache, parse_pdf_blocks  # noqa: E402
 
 WARMUP = 1
@@ -53,7 +50,6 @@ RUNS = 5
 
 
 def clear_all_caches() -> None:
-    _clear_read_cache()
     _clear_pdf_cache()
     _clear_xlsx_cache()
 
@@ -83,7 +79,9 @@ def ensure_md_fixtures() -> dict[str, Path]:
     return paths
 
 
-def _build_md(name: str, lines: int, math: int, mermaid: int, db: int, links: int) -> str:
+def _build_md(
+    name: str, lines: int, math: int, mermaid: int, db: int, links: int
+) -> str:
     out = [
         "---",
         f"title: Perf {name}",
@@ -111,16 +109,34 @@ def _build_md(name: str, lines: int, math: int, mermaid: int, db: int, links: in
     mi = mri = dbi = lki = 0
     for i in range(lines):
         if mi < math and i and i % me == 0:
-            out += ["", "$$", f"f_{{{mi}}}(x) = \\sum_{{k=0}}^{{{mi+3}}} \\frac{{x^k}}{{k!}}", "$$", ""]
+            out += [
+                "",
+                "$$",
+                f"f_{{{mi}}}(x) = \\sum_{{k=0}}^{{{mi + 3}}} \\frac{{x^k}}{{k!}}",
+                "$$",
+                "",
+            ]
             mi += 1
             continue
         if mri < mermaid and i and i % mr == 0:
-            out += ["", "```mermaid", "flowchart LR", f"  A{mri} --> B{mri} --> C{mri}", "```", ""]
+            out += [
+                "",
+                "```mermaid",
+                "flowchart LR",
+                f"  A{mri} --> B{mri} --> C{mri}",
+                "```",
+                "",
+            ]
             mri += 1
             continue
         if dbi < db and i and i % dbe == 0:
             id_ = f"db{dbi:03d}-0000-0000-0000-000000000000"
-            out += ["", f"<!-- database:{id_} -->", f'<div data-database-id="{id_}"></div>', ""]
+            out += [
+                "",
+                f"<!-- database:{id_} -->",
+                f'<div data-database-id="{id_}"></div>',
+                "",
+            ]
             dbi += 1
             continue
         if lki < links and i and i % lk == 0:
@@ -147,7 +163,7 @@ def ensure_pdf(name: str, pages: int) -> Path:
         for j in range(8):
             page.insert_text(
                 (50, 60 + j * 80),
-                f"Page {i+1} block {j}: " + " ".join(f"word{k}" for k in range(40)),
+                f"Page {i + 1} block {j}: " + " ".join(f"word{k}" for k in range(40)),
                 fontsize=10,
             )
     doc.save(str(out))
@@ -164,14 +180,18 @@ def ensure_xlsx(name: str, sheets: int, rows: int, cols: int) -> Path:
     wb = Workbook()
     wb.remove(wb.active)
     for s in range(sheets):
-        ws = wb.create_sheet(f"Sheet{s+1}")
+        ws = wb.create_sheet(f"Sheet{s + 1}")
         for r in range(rows):
             for c in range(cols):
                 if c == 0:
                     ws.cell(row=r + 1, column=c + 1, value=f"R{r}")
                 elif c == cols - 1:
                     # Last column is a formula referencing the row sum
-                    ws.cell(row=r + 1, column=c + 1, value=f"=SUM(B{r+1}:{chr(ord('A')+cols-2)}{r+1})")
+                    ws.cell(
+                        row=r + 1,
+                        column=c + 1,
+                        value=f"=SUM(B{r + 1}:{chr(ord('A') + cols - 2)}{r + 1})",
+                    )
                 else:
                     ws.cell(row=r + 1, column=c + 1, value=(r * cols + c) % 997)
     wb.save(str(out))
@@ -188,7 +208,7 @@ def ensure_xlsx_no_formulas(name: str, sheets: int, rows: int, cols: int) -> Pat
     wb = Workbook()
     wb.remove(wb.active)
     for s in range(sheets):
-        ws = wb.create_sheet(f"Sheet{s+1}")
+        ws = wb.create_sheet(f"Sheet{s + 1}")
         for r in range(rows):
             for c in range(cols):
                 ws.cell(row=r + 1, column=c + 1, value=(r * cols + c) % 997)
@@ -237,9 +257,11 @@ def main() -> int:
     medium_pdf = ensure_pdf("medium", 30)
     large_pdf = ensure_pdf("large", 200)
     medium_xlsx = ensure_xlsx("medium", sheets=10, rows=2000, cols=20)
-    medium_flat_xlsx = ensure_xlsx_no_formulas("medium-flat", sheets=5, rows=1000, cols=20)
+    medium_flat_xlsx = ensure_xlsx_no_formulas(
+        "medium-flat", sheets=5, rows=1000, cols=20
+    )
     large_xlsx = ensure_xlsx("large", sheets=10, rows=5000, cols=50)
-    state = MarkdownDocumentState()
+    page_store = MarkdownPageStore()
 
     results: list[dict] = []
 
@@ -255,31 +277,13 @@ def main() -> int:
     _print(f"  xlsx-large  {large_xlsx.stat().st_size / 1024:>8.1f} KB  {large_xlsx}")
     _print("")
 
-    # Markdown: three scenarios per fixture
-    #   * cold-no-cache: clear cache + delete sidecar before each call. This
-    #     is the "first time the user ever opens this never-saved file"
-    #     baseline. The optimization should NOT regress this.
-    #   * repeat-cache-hit: do not clear cache. Models the "user just opened
-    #     this same file again" path. The optimization should make this
-    #     near-zero.
+    # Markdown Pages have no sidecar or process-local document cache. Benchmark
+    # the source-only read path without modifying the fixture or any adjacent
+    # recovery artifact.
     for tag, path in md_paths.items():
-        sidecar = path.parent / f".{path.name.replace('.md', '.doxmind')}"
-
-        def cold_no_cache(p=path, s=sidecar):
-            if s.exists():
-                s.unlink()
-            p.write_text(p.read_text())  # bump mtime to defeat cache key
-            clear_all_caches()
-            state.read(p)
-
-        results.append(time_n(cold_no_cache, label=f"md.{tag}.cold-no-cache"))
-
-        def repeat_hit(p=path):
-            state.read(p)
-
-        # Prime cache once before the timed runs so all 5 hits are warm.
-        state.read(path)
-        results.append(time_n(repeat_hit, label=f"md.{tag}.repeat-cache-hit"))
+        results.append(
+            time_n(lambda p=path: page_store.read(p), label=f"md.{tag}.source-read")
+        )
 
     # PDF: same pattern. Bytes are loaded once outside the runner.
     medium_bytes = medium_pdf.read_bytes()
@@ -298,10 +302,16 @@ def main() -> int:
     parse_pdf_blocks(medium_bytes)
     parse_pdf_blocks(large_bytes)
     results.append(
-        time_n(lambda b=medium_bytes: parse_pdf_blocks(b), label="pdf.medium.repeat-cache-hit")
+        time_n(
+            lambda b=medium_bytes: parse_pdf_blocks(b),
+            label="pdf.medium.repeat-cache-hit",
+        )
     )
     results.append(
-        time_n(lambda b=large_bytes: parse_pdf_blocks(b), label="pdf.large.repeat-cache-hit")
+        time_n(
+            lambda b=large_bytes: parse_pdf_blocks(b),
+            label="pdf.large.repeat-cache-hit",
+        )
     )
 
     # Excel
@@ -322,7 +332,9 @@ def main() -> int:
         parse_workbook_json_bytes(b)
 
     results.append(time_n(excel_cold_medium, label="excel.medium.cold-no-cache", n=3))
-    results.append(time_n(excel_cold_medium_flat, label="excel.medium-flat.cold-no-cache", n=3))
+    results.append(
+        time_n(excel_cold_medium_flat, label="excel.medium-flat.cold-no-cache", n=3)
+    )
     results.append(time_n(excel_cold_large, label="excel.large.cold-no-cache", n=3))
     parse_workbook_json_bytes(medium_xlsx_bytes)
     parse_workbook_json_bytes(medium_flat_xlsx_bytes)

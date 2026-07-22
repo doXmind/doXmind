@@ -1,5 +1,8 @@
 # Wave A Contract — Canonical outline source + shared provider
 
+> **Historical contract:** superseded by ADR-0012 and the native
+> `MarkdownBlockDocument` editor; do not dispatch.
+
 > Written by the Planner BEFORE the Worker is dispatched. This file is the
 > single source of truth the GAN Critic scores against — not the brief.
 > Once dispatched, this file is immutable. If the contract has to change,

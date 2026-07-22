@@ -7,7 +7,6 @@ no fixture-file coupling and runs fast.
 from __future__ import annotations
 
 import io
-from typing import Any
 
 import pymupdf
 import pytest
@@ -143,51 +142,6 @@ def test_parse_blocks_rejects_pdf_exceeding_max_pages() -> None:
     pdf = _build_pdf([[("a", (72, 72))], [("b", (72, 72))], [("c", (72, 72))]])
     with pytest.raises(ValueError):
         parse_pdf_blocks(pdf, limits=ParseBlocksLimits(max_pages=2))
-
-
-def test_endpoint_returns_blocks(sync_client: Any) -> None:
-    pdf = _build_pdf([[("hello sidecar", (72, 72))]])
-    response = sync_client.post(
-        "/api/pdf/parse-blocks",
-        files={"file": ("smoke.pdf", pdf, "application/pdf")},
-    )
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["version"] == 2
-    assert body["pages"][0]["blocks"][0]["lines"][0]["spans"][0]["text"].startswith("hello")
-
-
-def test_endpoint_rejects_non_pdf_content_type(sync_client: Any) -> None:
-    response = sync_client.post(
-        "/api/pdf/parse-blocks",
-        files={"file": ("oops.txt", b"not a pdf", "text/plain")},
-    )
-    assert response.status_code == 415
-
-
-def test_endpoint_rejects_empty_body(sync_client: Any) -> None:
-    response = sync_client.post(
-        "/api/pdf/parse-blocks",
-        files={"file": ("empty.pdf", b"", "application/pdf")},
-    )
-    assert response.status_code == 400
-
-
-def test_endpoint_filters_by_page_indexes(sync_client: Any) -> None:
-    pdf = _build_pdf(
-        [
-            [("Page one", (72, 72))],
-            [("Page two", (72, 72))],
-        ]
-    )
-    response = sync_client.post(
-        "/api/pdf/parse-blocks",
-        files={"file": ("two.pdf", pdf, "application/pdf")},
-        data={"pageIndexes": "1"},
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert [p["pageIndex"] for p in body["pages"]] == [1]
 
 
 # ---------------------------------------------------------------------- cache

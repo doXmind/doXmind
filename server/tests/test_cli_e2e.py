@@ -45,16 +45,24 @@ def test_cli_full_lifecycle_subprocess(tmp_path):
     assert edit.returncode == 0, edit.stderr
     assert "beta body" in _run(["read", "notes/a.md"], tmp_path).stdout
 
-    out = tmp_path / "a.pdf"
-    export = _run(["export", "notes/a.md", "--to", "pdf", "--out", str(out)], tmp_path)
+    out = tmp_path / "a.html"
+    export = _run(["export", "notes/a.md", "--to", "html", "--out", str(out)], tmp_path)
     assert export.returncode == 0, export.stderr
-    assert out.read_bytes().startswith(b"%PDF-")
+    assert b"beta body" in out.read_bytes()
 
-    mv = _run(["mv", "notes/a.md", "notes/b.md", "--yes"], tmp_path)
+    attachment = tmp_path / "notes" / "spec.pdf"
+    attachment.write_bytes(b"%PDF-1.4\n")
+    mv = _run(["mv", "notes/spec.pdf", "notes/report.pdf", "--yes"], tmp_path)
     assert mv.returncode == 0, mv.stderr
-    assert (tmp_path / "notes" / "b.md").exists()
+    assert (tmp_path / "notes" / "report.pdf").exists()
+
+    page_mv = _run(["mv", "notes/a.md", "notes/b.md", "--yes"], tmp_path)
+    assert page_mv.returncode != 0
+    assert "workspace_relocate_page" in page_mv.stderr
+    assert (tmp_path / "notes" / "a.md").exists()
+    assert not (tmp_path / "notes" / "b.md").exists()
 
     # rm without --yes and a "no" answer aborts: nothing is trashed.
-    rm = _run(["rm", "notes/b.md"], tmp_path, input_text="n\n")
+    rm = _run(["rm", "notes/a.md"], tmp_path, input_text="n\n")
     assert rm.returncode != 0
-    assert (tmp_path / "notes" / "b.md").exists()
+    assert (tmp_path / "notes" / "a.md").exists()

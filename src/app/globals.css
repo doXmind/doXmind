@@ -89,37 +89,12 @@
     --status-error-border: rgba(239, 68, 68, 0.3);
     --status-info-bg: rgba(59, 130, 246, 0.1);
     --status-info-border: rgba(59, 130, 246, 0.3);
-    --status-thinking-bg: rgba(168, 85, 247, 0.1);
-    --status-thinking-border: rgba(168, 85, 247, 0.3);
     --status-warning-bg: rgba(251, 191, 36, 0.1);
     --status-warning-border: rgba(251, 191, 36, 0.3);
 
     /* Diff Review — Notion-inspired palette (light): gray deleted, blue inserted */
-    --diff-deleted-bg: rgba(0, 0, 0, 0.04);
-    --diff-deleted-bg-hover: rgba(0, 0, 0, 0.07);
-    --diff-deleted-border: rgba(0, 0, 0, 0.1);
-    --diff-deleted-text: rgba(0, 0, 0, 0.3);
-    --diff-inserted-bg: rgba(35, 131, 226, 0.06);
-    --diff-inserted-bg-hover: rgba(35, 131, 226, 0.1);
-    --diff-inserted-border: rgba(35, 131, 226, 0.15);
-    --diff-inserted-accent: rgba(35, 131, 226, 0.45);
-    --diff-focus-ring: rgba(35, 131, 226, 0.2);
-    --diff-focus-border: rgba(35, 131, 226, 0.35);
-    --diff-toolbar-bg: rgba(255, 255, 255, 0.72);
-    --diff-toolbar-border: rgba(0, 0, 0, 0.06);
-    --diff-toolbar-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
-    --diff-btn-accept-bg: rgba(35, 131, 226, 0.1);
-    --diff-btn-accept-fg: rgb(35, 131, 226);
-    --diff-btn-accept-hover: rgba(35, 131, 226, 0.18);
-    --diff-btn-reject-bg: rgba(0, 0, 0, 0.06);
-    --diff-btn-reject-fg: rgba(0, 0, 0, 0.5);
-    --diff-btn-reject-hover: rgba(0, 0, 0, 0.1);
 
     /* Word-level diff (Notion-style inline) */
-    --diff-word-removed-bg: rgba(0, 0, 0, 0.06);
-    --diff-word-removed-fg: rgba(0, 0, 0, 0.4);
-    --diff-word-added-bg: rgba(35, 131, 226, 0.1);
-    --diff-word-added-fg: rgb(35, 131, 226);
   }
 
   .dark {
@@ -154,7 +129,7 @@
     --sidebar: 0 0% 10%; /* same as --background for unified look */
     /* Low-alpha by default — desktop-only build sits over NSVisualEffectView
        Sidebar material on macOS, so the sidebar is meant to read as glass.
-       In a non-Tauri browser preview the same value yields a translucent
+       In a browser preview the same value yields a translucent
        dark surface over the body color, which is acceptable (no vibrancy
        expected in that mode anyway). */
     --sidebar-translucent-bg: rgba(37, 37, 37, 0.2);
@@ -171,31 +146,8 @@
     --content-surface-bg: hsl(var(--background));
 
     /* Diff Review — Notion-inspired palette (dark): gray deleted, blue inserted */
-    --diff-deleted-bg: rgba(255, 255, 255, 0.04);
-    --diff-deleted-bg-hover: rgba(255, 255, 255, 0.07);
-    --diff-deleted-border: rgba(255, 255, 255, 0.1);
-    --diff-deleted-text: rgba(255, 255, 255, 0.25);
-    --diff-inserted-bg: rgba(56, 152, 236, 0.08);
-    --diff-inserted-bg-hover: rgba(56, 152, 236, 0.13);
-    --diff-inserted-border: rgba(56, 152, 236, 0.18);
-    --diff-inserted-accent: rgba(56, 152, 236, 0.4);
-    --diff-focus-ring: rgba(56, 152, 236, 0.25);
-    --diff-focus-border: rgba(56, 152, 236, 0.35);
-    --diff-toolbar-bg: rgba(26, 26, 26, 0.78);
-    --diff-toolbar-border: rgba(255, 255, 255, 0.08);
-    --diff-toolbar-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 4px 12px rgba(0, 0, 0, 0.15);
-    --diff-btn-accept-bg: rgba(56, 152, 236, 0.15);
-    --diff-btn-accept-fg: rgb(56, 152, 236);
-    --diff-btn-accept-hover: rgba(56, 152, 236, 0.25);
-    --diff-btn-reject-bg: rgba(255, 255, 255, 0.08);
-    --diff-btn-reject-fg: rgba(255, 255, 255, 0.45);
-    --diff-btn-reject-hover: rgba(255, 255, 255, 0.12);
 
     /* Word-level diff (Notion-style inline) */
-    --diff-word-removed-bg: rgba(255, 255, 255, 0.06);
-    --diff-word-removed-fg: rgba(255, 255, 255, 0.35);
-    --diff-word-added-bg: rgba(56, 152, 236, 0.12);
-    --diff-word-added-fg: rgb(56, 152, 236);
   }
 
   /* High Contrast Mode - Light */
@@ -273,7 +225,7 @@
    from --ui-font-size-base so the appearance settings slider rescales
    the whole UI uniformly. `!important` guarantees we win over Tailwind's
    generated `.text-sm { font-size: 0.875rem }` regardless of layer
-   ordering. The .ProseMirror reset below restores native size cascade
+   ordering. The .markdown-page reset below restores native size cascade
    inside the editor so headings/body still size themselves. */
 @layer utilities {
   .text-xs {
@@ -322,7 +274,7 @@
   }
 }
 
-/* Editor content (TipTap / .ProseMirror) keeps its own typography. The
+/* Editor content (.markdown-page) keeps its own typography. The
    chrome's `text-*` utilities don't apply to bare prose tags (h1, p,
    blockquote, etc.) so they don't fight here, and the editor.css rules
    (.editor-font-* / .editor-leading-*) get to size + space content as
@@ -337,8 +289,8 @@ code,
 kbd,
 samp,
 .font-mono,
-.ProseMirror code,
-.ProseMirror pre {
+.markdown-page code,
+.markdown-page pre {
   font-size: var(--ui-code-font-size-base);
   font-family:
     "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
@@ -357,39 +309,37 @@ samp,
 }
 
 @layer base {
-  html.is-tauri-macos,
-  html.is-tauri-macos body {
+  html.is-electron-macos,
+  html.is-electron-macos body {
     background: transparent !important;
   }
 
-  /* `data-tauri-drag-region` is a Tauri-native attribute the WebView honored
-     automatically. Under Electron it is inert, so back it with the Chromium
-     `-webkit-app-region` property to keep the custom titlebar draggable, and
+  /* Chromium's app-region keeps the custom Electron titlebar draggable; opt
      opt interactive children back out so buttons/inputs stay clickable. */
-  [data-tauri-drag-region] {
+  [data-window-drag-region] {
     -webkit-app-region: drag;
   }
-  [data-tauri-drag-region] button,
-  [data-tauri-drag-region] a,
-  [data-tauri-drag-region] input,
-  [data-tauri-drag-region] textarea,
-  [data-tauri-drag-region] select,
-  [data-tauri-drag-region] [role="button"],
-  [data-tauri-drag-region] [role="tab"],
-  [data-tauri-drag-region] [role="tablist"],
-  [data-tauri-drag-region] [data-no-drag] {
+  [data-window-drag-region] button,
+  [data-window-drag-region] a,
+  [data-window-drag-region] input,
+  [data-window-drag-region] textarea,
+  [data-window-drag-region] select,
+  [data-window-drag-region] [role="button"],
+  [data-window-drag-region] [role="tab"],
+  [data-window-drag-region] [role="tablist"],
+  [data-window-drag-region] [data-no-drag] {
     -webkit-app-region: no-drag;
   }
 
-  /* Tauri/macOS-only refinement: when the editor sits over the native
+  /* Electron/macOS-only refinement: when the editor sits over native
      NSVisualEffectView, the content surface becomes slightly translucent
      so the chrome header blends into the vibrancy seam. The sidebar bg
      itself is low-alpha by default (see `.dark` / `:root`), so it doesn't
-     need a separate Tauri-specific override. */
-  html.is-tauri-macos.dark {
+     need a separate desktop-specific override. */
+  html.is-electron-macos.dark {
     --content-surface-bg: hsl(var(--background));
   }
-  html.is-tauri-macos:not(.dark) {
+  html.is-electron-macos:not(.dark) {
     --content-surface-bg: hsl(var(--background));
   }
 
@@ -513,8 +463,8 @@ samp,
   padding-left: 12px;
 }
 
-html.is-tauri-macos .desktop-app-shell,
-html.is-tauri-macos .desktop-window-shell {
+html.is-electron-macos .desktop-app-shell,
+html.is-electron-macos .desktop-window-shell {
   background: transparent;
 }
 
@@ -525,38 +475,38 @@ html.is-tauri-macos .desktop-window-shell {
    font applies here too; font-mono descendants (paths, version) still win via
    their own !important rule. */
 .settings-surface,
-html.is-tauri-macos .settings-surface {
+html.is-electron-macos .settings-surface {
   background: hsl(var(--background));
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
 
-html.is-tauri-macos .desktop-chrome-header,
-html.is-tauri-macos .desktop-chrome-header[data-sidebar-open] {
+html.is-electron-macos .desktop-chrome-header,
+html.is-electron-macos .desktop-chrome-header[data-sidebar-open] {
   background: hsl(var(--background));
 }
 
-html.is-tauri-macos .desktop-chrome-header[data-sidebar-open] {
+html.is-electron-macos .desktop-chrome-header[data-sidebar-open] {
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
 
-html.is-tauri-macos .desktop-chrome-content-panel {
+html.is-electron-macos .desktop-chrome-content-panel {
   background: var(--content-surface-bg);
 }
 
-html.is-tauri-macos .desktop-content-with-sidebar {
+html.is-electron-macos .desktop-content-with-sidebar {
   border-top-left-radius: 0;
 }
 
-html.is-tauri-macos .desktop-chrome-left-controls {
+html.is-electron-macos .desktop-chrome-left-controls {
   /* Traffic lights start at x=12 (aligned with the sidebar's file/title left
      edge); clear the ~52px cluster + a small gap before the toggle. */
   padding-left: 76px;
 }
 
-html.is-tauri-macos .sidebar-glass {
+html.is-electron-macos .sidebar-glass {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -607,85 +557,6 @@ html.is-tauri-macos .sidebar-glass {
 
 ::-webkit-scrollbar-thumb {
   @apply rounded-full bg-border hover:bg-muted-foreground/30;
-}
-
-/* ====================================
-   Avatar Frame Animations
-   Used by premium avatar frame effects
-   ==================================== */
-@keyframes frame-spin {
-  from {
-    rotate: 0deg;
-  }
-  to {
-    rotate: 360deg;
-  }
-}
-
-@keyframes frame-pulse {
-  0%,
-  100% {
-    opacity: 0.7;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-@keyframes frame-shimmer {
-  0% {
-    background-position: 0% 50%;
-  }
-  100% {
-    background-position: 200% 50%;
-  }
-}
-
-@keyframes frame-glow-pulse {
-  0%,
-  100% {
-    opacity: 0.6;
-    filter: brightness(0.8);
-  }
-  50% {
-    opacity: 1;
-    filter: brightness(1.3);
-  }
-}
-
-@keyframes frame-breathe {
-  0%,
-  100% {
-    scale: 0.95;
-  }
-  50% {
-    scale: 1.05;
-  }
-}
-
-@keyframes frame-electric {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  10% {
-    opacity: 0.6;
-  }
-  20% {
-    opacity: 1;
-  }
-  30% {
-    opacity: 0.7;
-  }
-  40% {
-    opacity: 1;
-  }
-  70% {
-    opacity: 0.8;
-  }
-  80% {
-    opacity: 1;
-  }
 }
 
 /* Smooth Scroll */
@@ -743,35 +614,35 @@ html {
 /* ====================================
    Notion-style toggle block
    ==================================== */
-.ProseMirror [data-toggle-summary] {
+.markdown-page [data-toggle-summary] {
   /* The title row: lay it out inline so it sits next to the chevron without
      wrapping under it, and strip any inherited paragraph margin. */
 }
-.ProseMirror [data-toggle-summary] > p,
-.ProseMirror [data-toggle-summary] > h1,
-.ProseMirror [data-toggle-summary] > h2,
-.ProseMirror [data-toggle-summary] > h3,
-.ProseMirror [data-toggle-summary] > h4,
-.ProseMirror [data-toggle-summary] > h5,
-.ProseMirror [data-toggle-summary] > h6 {
+.markdown-page [data-toggle-summary] > p,
+.markdown-page [data-toggle-summary] > h1,
+.markdown-page [data-toggle-summary] > h2,
+.markdown-page [data-toggle-summary] > h3,
+.markdown-page [data-toggle-summary] > h4,
+.markdown-page [data-toggle-summary] > h5,
+.markdown-page [data-toggle-summary] > h6 {
   margin: 0;
 }
 
 /* The body: indent slightly so children visually nest under the title text. */
-.ProseMirror [data-toggle-body] {
+.markdown-page [data-toggle-body] {
   /* The body is a normal block container; no border, no background. */
 }
-.ProseMirror [data-toggle-body] > .notion-toggle-body-content > *:first-child {
+.markdown-page [data-toggle-body] > .notion-toggle-body-content > *:first-child {
   margin-top: 2px;
 }
 
 /* Hide the body entirely when the toggle is closed. */
-.ProseMirror .notion-toggle.is-closed [data-toggle-body] {
+.markdown-page .notion-toggle.is-closed [data-toggle-body] {
   display: none !important;
 }
 
 /* Empty hint shown inside the body when there are no children. */
-.ProseMirror .notion-toggle-empty {
+.markdown-page .notion-toggle-empty {
   padding: 2px 0;
   line-height: 1.5;
 }
@@ -789,119 +660,6 @@ html {
 @supports not (backdrop-filter: blur(20px)) {
   .backdrop-blur-xl {
     background-color: hsl(var(--background) / 0.98);
-  }
-}
-
-/* ====================================
-   Print Styles
-   ==================================== */
-@media print {
-  /* Hide all chrome - sidebar, toolbar, header, status bar */
-  header,
-  aside,
-  nav,
-  .bubble-menu,
-  [role="toolbar"],
-  [data-resize-handle],
-  .status-bar,
-  button[aria-label="Close"],
-  .fixed {
-    display: none !important;
-  }
-
-  /* Make editor content fill the page */
-  body {
-    background: white !important;
-    color: black !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
-  main {
-    width: 100% !important;
-    max-width: none !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
-  /* Editor content optimization */
-  .ProseMirror {
-    max-width: none !important;
-    padding: 0 !important;
-    margin: 0 auto !important;
-    font-size: 12pt !important;
-    line-height: 1.6 !important;
-    color: black !important;
-  }
-
-  /* Headings */
-  .ProseMirror h1 {
-    font-size: 22pt !important;
-    margin-top: 20pt !important;
-    page-break-after: avoid;
-  }
-
-  .ProseMirror h2 {
-    font-size: 18pt !important;
-    margin-top: 16pt !important;
-    page-break-after: avoid;
-  }
-
-  .ProseMirror h3 {
-    font-size: 14pt !important;
-    margin-top: 12pt !important;
-    page-break-after: avoid;
-  }
-
-  /* Prevent orphans and widows */
-  .ProseMirror p {
-    orphans: 3;
-    widows: 3;
-  }
-
-  /* Code blocks */
-  .ProseMirror pre {
-    border: 1px solid #ddd !important;
-    background: #f5f5f5 !important;
-    page-break-inside: avoid;
-    font-size: 10pt !important;
-  }
-
-  /* Tables */
-  .ProseMirror table {
-    page-break-inside: avoid;
-  }
-
-  /* Images */
-  .ProseMirror img {
-    max-width: 100% !important;
-    page-break-inside: avoid;
-  }
-
-  /* Links - show URL */
-  .ProseMirror a[href]::after {
-    content: " (" attr(href) ")";
-    font-size: 9pt;
-    color: #666;
-  }
-
-  /* Blockquotes */
-  .ProseMirror blockquote {
-    border-left: 3px solid #999 !important;
-    color: #333 !important;
-    page-break-inside: avoid;
-  }
-
-  /* Callouts */
-  .ProseMirror [data-callout-type] {
-    border: 1px solid #ccc !important;
-    background: #f9f9f9 !important;
-    page-break-inside: avoid;
-  }
-
-  /* Toggle blocks - always expand for print */
-  .ProseMirror .notion-toggle.is-closed [data-toggle-body] {
-    display: revert !important;
   }
 }
 

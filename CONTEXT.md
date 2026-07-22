@@ -3,43 +3,57 @@
 doXmind 是一个完全本地、Markdown 原生的知识工作区。用户硬盘上的文件是真相
 来源。本文件定义代码与架构讨论中的承重概念；产品边界和路线图见
 [`docs/PRODUCT_DIRECTION.md`](docs/PRODUCT_DIRECTION.md)，不可逆决定见
-[`ADR-0012`](docs/adr/0012-local-markdown-knowledge-workspace.md)。
+[`ADR-0011`](docs/adr/0011-local-markdown-knowledge-workspace.md) 与
+[`ADR-0012`](docs/adr/0012-markdown-source-block-editor.md)；唯一 Electron
+桌面 Runtime 的决定见
+[`ADR-0013`](docs/adr/0013-electron-only-desktop-runtime.md)。
 
 ## Language
 
 **Page**（代码中的 `Document`）：
-用户在 doXmind 中编辑的一级内容。硬盘表达是 `.md` 或 `.markdown` 加同名隐藏
-`.doxmind` Sidecar。UI 文案使用 Page；现有内部类型可以继续使用 Document，避免
-无价值的全仓改名。
+用户在 doXmind 中编辑的一级内容。硬盘表达是一个完整的 `.md` 或 `.markdown`
+文件；正常生命周期没有伴生文件。UI 文案使用 Page；现有内部类型可以继续使用
+Document，避免无价值的全仓改名。
 
 **Attachment**：
-Workspace 当前支持扫描和原生打开的非 Markdown 文档：PDF、XLSX/XLSM/CSV、
-HTML/HTM。Attachment 可以被列出、预览、引用、索引元数据、Reveal 或 Open
-Externally，但不拥有独立的新建、编辑、保存和导出产品栈。原文件始终是唯一权威
-内容。未知格式即使通过兼容路径抵达共享 surface，也只能使用 `other` 安全只读
-fallback；这不代表该格式会被扫描、列出或注册为原生打开类型。插入 Page 的图片是
-Markdown assets，不承诺把独立图片文件列为 workspace document。
+Workspace 内的非 Markdown 文件，例如 PDF、XLSX、CSV、HTML 或图片。Attachment
+可以被列出、预览、引用、索引元数据、Reveal 或 Open Externally，但不拥有独立的
+新建、编辑、保存和导出产品栈。原文件始终是唯一权威内容。
 _Avoid_: PDF Document、Excel Document、Second-class editable file。
 
 **Workspace**：
-用户选择的真实根目录。doXmind 扫描其中的 Page、文件夹和受支持 Attachment，并
-维护可删除、可重建的本地索引。文件树映射受支持文档所在的真实目录，不维护一套
-隐藏的云端层级，也不是通用文件浏览器。
+用户选择的真实根目录。doXmind 扫描其中的 Page、文件夹和 Attachment，并维护
+可删除、可重建的本地索引。文件树映射真实目录，不维护一套隐藏的云端层级。
 
-**Sidecar**：
-和 Page 同目录、同名、隐藏的 `.doxmind` JSON 文件。它保存 lossless editor HTML、
-cache 和可替代的 UI state。Sidecar 不是真相；删除它不能丢失 Page 正文、
-properties、tags、aliases、links 或 collection rows。
-_Avoid_: knowledge database、content store。
+**Desktop Runtime**：
+Electron 是唯一打包桌面 Runtime，通过 preload/IPC 调用进程内 Node Workspace
+commands。Tauri 与 Rust Page core 已退役；Python/FastAPI 仅属于 browser development、
+CLI/MCP 和独立本地工具，不进入打包应用生命周期。
+
+**Legacy Sidecar**：
+旧版本在 Page 或 PDF/Excel Attachment 旁创建的隐藏 `.doxmind` JSON。正常 Page
+open/save 不再读取或写入它；只由 read-only inventory/recovery Adapter 检测和导出。
+已有 Sidecar、`.bak`、`.lock` 与 corrupt copy 在恢复门禁完成前必须保持原 bytes。
+_Avoid_: Page cache、current editor state、knowledge database、content store。
 
 **Block**：
 Page 内的编辑单元，包括段落、标题、列表、任务、代码、表格、图片，以及 math、
-Mermaid、callout、toggle 等富块。Block 必须有可见、可恢复的 Markdown 表达；纯
-编辑器装饰可以只存在 Sidecar。
+Mermaid、callout、toggle 等富块。Block 是 canonical Markdown source 的 span/view；
+其操作直接 patch source，而不是编辑一棵并行 HTML/JSON 文档树。会话 selection 和
+drag id 可以只存在内存。
+
+**Toggle Block**：
+标准 `<details>` / `<summary>` source，内容仍是 Markdown。折叠状态由 portable `open`
+attribute 表达；不得用 editor-only node attrs 保存 Toggle state。
+
+**Slash Command**：
+只在 active paragraph 中提供的 source-command Adapter。它把 `/...` paragraph 替换为
+heading/list/task/toggle/collection 等 canonical Markdown template，不创建隐藏 command
+record、node schema 或第二份 editor state。
 
 **Custom Block**：
-需要专属 Markdown ↔ editor HTML 转换的 Block。新的 Custom Block 默认必须是
-**Self-contained**：用户语义全部在 Markdown 中，Sidecar HTML 只是 lossless cache。
+需要专属 Markdown parser、source command 和 UI Adapter 的 Block。用户语义必须
+全部在 Markdown 中；尚未支持的语法作为 raw block 原样保留。
 
 **Legacy External-reference Block**：
 旧 PDF/Excel 集成留下的兼容结构。Markdown 中使用带稳定 id 和 `src` 的 HTML 注释
@@ -48,30 +62,58 @@ correlation 和恢复保留；不得用于新的 Attachment 编辑功能。
 
 **Properties**：
 Page 的结构化字段，保存在 YAML frontmatter。Tags、aliases、日期和 Collection
-字段都是 Properties。外部工具修改 frontmatter 后，doXmind 必须以文件为准。
+字段都是 Properties。当前 UI/Collection v1 只投影 top-level string、finite number、
+boolean 或 string array；未知/复杂 YAML 仍保留 source。外部工具修改 frontmatter 后，
+doXmind 必须以文件为准。
+
+**Daily Note**：
+以本机 local calendar date 选择的普通 Page：`Daily Notes/YYYY-MM-DD.md`。folder、Page、
+save 和 navigation 都走正常 Workspace Interface；没有 journal database 或 sidecar。
 
 **Page Link**：
-写在 Markdown 正文中的 `[[target]]` 或标准 Markdown link。内部 stable id 可以帮助
-索引和 rename repair，但 link 关系不能只存在 Sidecar 或 TipTap node attribute 中。
+写在 Markdown 正文中的 `[[target]]`、`![[target]]` 或标准 Markdown link。内部 stable id 可以帮助
+索引和 relocation repair，但 link 关系不能只存在 Sidecar 或 TipTap node attribute 中。
+Page/Folder rename 或 move 必须先基于完整 workspace Page snapshot 生成可预览的 exact
+source patch，再由本地 Workspace Adapter 做 revision-checked transaction；歧义或无法
+保真改写的 link 只报告，不猜测。旧 rename/move Interface 只允许 Attachment；无法
+提供同一 preview 的 CLI/MCP 对 Page/Folder 必须 fail closed，不能静默绕过。
+
+**Transclusion**：
+占满一个 paragraph Block 的 `![[Page]]` 或 `![[Page#Heading]]`。表达式保持 canonical
+Markdown；目标 Page 或唯一 ATX heading section 由零写入 source index 递归只读投影。
+歧义、缺失、cycle、depth limit 与 block-id fragment 显式 fail closed，不能生成第二份
+可编辑文档状态。
 
 **Workspace Index**：
-从 Page 和受支持 Attachment 文件派生的搜索、path/id、properties、links、
-backlinks、unresolved links 与 collection membership 索引。它不是事实源；删除
-后全量扫描必须得到等价结果。
+从 Page 和 Attachment 文件派生的搜索、path/id、properties、links、backlinks、
+unresolved links、unlinked mentions、transclusion source-page projection 与 collection
+membership 索引。它不是事实源；删除后全量扫描必须得到等价结果。
 
 **Collection**：
 基于 Page Properties 的 query 和 view。一行/卡片/事件是一篇普通 Page；Table、
-Board 和 Calendar 只是同一批 Page 的不同视图。Saved view 可以是可替代 workspace
-state，但不能保存唯一一份 row 或 property 数据。
+Board 和 Calendar 只能是同一批 Page 的不同视图。当前 v1 是 Page 内 exact
+`doxmind-collection` fenced JSON，只有 read-only Table，ANDed
+`equals`/`contains`/`exists` filters、columns 与 deterministic multi-sort。Board、
+Calendar、relation、formula、rollup 未实现。view 不能保存唯一一份 row 或 property。
+
+**Knowledge Graph**：
+从同一 zero-write Page Catalog 的 resolved links 派生的 bounded deterministic view。
+当前 Page 居中，node 可导航；nodes、edges、layout 都不是持久内容，refresh/rebuild
+不得写 Workspace。
+
+**Local Image Projection**：
+standalone CommonMark image 对已有 workspace-relative raster asset 的只读 preview。
+Workspace Adapter 拒绝 scheme/absolute/query/fragment/escape/symlink path，限制 20 MiB，
+验证 file signature，再把 bytes 交给 UI 建立可撤销 Blob URL。它不表示 paste/drag
+import、asset writer、remote fetch、resize/crop 或 binary editor 已实现。
 
 **Legacy DatabaseBlock**：
 把数据放在 `extras.databases` 的旧实现。它已冻结，未来由 portable Collection
 取代。在迁移或导出完成前不得静默删除已有数据，也不得继续扩建其 schema。
 
 **Stale Sidecar**：
-Sidecar 的 `markdown_hash` 与当前 Page 文件不一致，说明文件被外部工具修改。
-Markdown 永远胜出；旧 HTML cache 失效。只允许 salvage 不改变 Page 语义的 cache
-或 legacy recovery state。
+仅用于 legacy recovery 的历史术语：Sidecar `markdown_hash` 与当前文件不一致。
+正常 Page read 不再做 freshness 协调；Markdown 永远是唯一当前状态。
 
 **Legacy Synthetic Document**：
 旧版本打开 PDF/Excel 时在内存中合成的单-block Document。它的 markdown-shaped
@@ -79,54 +121,54 @@ Sidecar、迁移、`.bak`、`.lock` 和 block correlation 规则继续作为恢�
 但 Synthetic Document 不再是新产品模型。
 
 **Delete**：
-通过操作系统 Trash/Recycle Bin 删除真实文件。Page 和同名 Sidecar 成对移动；带
-legacy sidecar 的 Attachment 必须连同 `.bak`、`.lock` 和 forensic copies 保留成套
-证据，因此当前 Attachment surface 不提供 move、rename 或 delete，只提供 Open
-Externally 和 Reveal。doXmind 不维护第二套软删除库，也绝不把 scope reduction 当作
-删除用户 sidecar 的理由。
+通过操作系统 Trash/Recycle Bin 删除真实文件。Page 本身是唯一当前文件；如果旁边
+已有 Legacy Sidecar，过渡期必须把这个 recovery artifact 一起送入 Trash。doXmind
+不维护第二套软删除库，也绝不把 scope reduction 当作删除旧 Sidecar 的理由。
 
 ## Storage relationships
 
 ```text
 Workspace/
 ├── Project Plan.md                 # Page truth: body + frontmatter + links
-├── .Project Plan.doxmind           # disposable editor cache/UI state
 ├── Research/
 │   └── Notes.md
 ├── attachments/
 │   ├── spec.pdf                    # Attachment truth
 │   └── budget.xlsx
-└── .doxmind/
-    ├── index.json                  # rebuildable derived index
-    └── workspace.json              # replaceable workspace/view UI state
+└── assets/
+    └── diagram.png                 # ordinary local asset; read-only projection
+
+~/.doxmind/workspaces/<workspace-key>/
+├── index.json                      # rebuildable derived index
+└── workspace.json                  # replaceable workspace/view UI state
 ```
 
-- 一个 Page = 一个 Markdown 文件 + 可选 Sidecar。
+- 一个 Page = 一个 Markdown 文件。
 - 一个 Page 由多个 Block 组成。
-- Properties 与 links 属于 Markdown/frontmatter，不属于 Sidecar。
-- Backlinks、search、graph 和 Collection membership 属于 Workspace Index。
+- Properties、links 与 transclusion expressions 属于 Markdown/frontmatter，不属于 Sidecar。
+- Backlinks、unlinked mentions、transclusion projections、search、graph 和 Collection membership 属于 Workspace Index。
+- Toggle 与 Collection definition 属于 Markdown source；graph layout、Collection rows 与 local-image Blob URL 是可删除 projection。
 - 一个 Attachment = 一个普通用户文件；新打开不得产生编辑 sidecar。
-- Legacy PDF/Excel sidecar、`.bak`、`.lock` 与 forensic copy 始终是用户恢复
-  证据；一次成功尝试也不是删除信号。
+- Legacy Page/PDF/Excel Sidecar 是用户恢复数据；显式报告已可导出，但原始 artifact family 仍不得自动删除或重写。
 
 ## Page open/save contract
 
 Open：
 
-1. 读取 `.md`/`.markdown` 并拆分 frontmatter 与 body。
-2. 查找同名隐藏 Sidecar。
-3. Sidecar 不存在时，从 Markdown 生成 editor HTML。
-4. `markdown_hash` 匹配时可复用 Sidecar HTML。
-5. hash 不匹配时外部 Markdown 胜出，旧 HTML 失效。
+1. 读取 `.md`/`.markdown`，保留完整 raw source，并解析 frontmatter/body view。
+2. 从 source 建立 block spans；未支持的语法保持 raw。
+3. 新建 Page 的 stable id 来自 frontmatter；外部无 id 文件使用 path identity，open
+   不写盘。
+4. HTML 只按需派生为 preview/export，不参与 editor hydration。
 
 Save：
 
-1. 把 editor Markdown 写回 Page 文件。
-2. 对刚写入的完整 Markdown 计算 hash。
-3. 写 Sidecar 的 `{ html, markdown_hash, id, extras }`。
-4. 更新或失效化可重建 Workspace Index。
+1. 把 block commands 应用到 canonical Markdown source。
+2. 原子写回一个 Page 文件；未修改 source bytes 与未知 frontmatter 保持不变。
+3. 更新或失效化 app data 中可重建的 Workspace Index。
 
-任何新语义特性都要通过“删除 Sidecar 与 Index 后能否从 Page 恢复”这一测试。
+任何新语义特性都要通过“只复制一个 Page 文件、删除全部 derived cache 后能否恢复”
+这一测试。
 
 ## Product boundary
 
@@ -147,21 +189,26 @@ conversion 必须是用户显式触发的单向导入，不得悄悄修改原文
 ## Legacy compatibility rules
 
 1. 新建入口只创建 Page、Folder 或 Template。
-2. 旧 PDF/Excel editor、endpoint 和 state type 在过渡期只是恢复表面，不是产品 API。
-3. 在统一 Attachment surface 和 legacy export/recovery 完成前，不直接断开旧编辑结果。
+2. 旧 PDF/Excel editor、endpoint 和 state type 已从活动产品删除；现有旧编辑结果只通过
+   明确触发、零写入的恢复报告读取。
+3. 恢复报告必须保留旧状态的完整信息，且不得修改 Attachment、sidecar 或其时间戳。
 4. 普通 Attachment 的最终行为是 read-only preview / reveal / open externally。
-5. 只有当 ADR-0012 的 removal gate 全部通过，才能物理删除 editor、writer、parser
+5. 只有当 ADR-0011 的 removal gate 全部通过，才能物理删除 editor、writer、parser
    cache 和依赖。
 6. `.bak`、`.lock`、corrupt forensic copies 和 sidecar 不得被自动清理。
 
 ## Flagged ambiguities
 
 - `WorkspaceDocumentType` 目前仍叫 Document，是 wire/compatibility 名称；其
-  `pdf | excel | html` 值对应当前受支持 Attachment format；`other` 只是在未知格式
-  已抵达共享 surface 时防止误入 Markdown editor 的只读 fallback，不扩张扫描或
-  原生打开白名单。这些值都不表示可编辑能力。
+  `pdf | excel | html` 值只表示 Attachment format，不表示可编辑能力。
 - UI 使用 Page，内部可以继续使用 `Document`。不要为了术语一致性做全仓机械改名。
-- 冻结的 legacy PDF/Excel editor bundle 与 writer 仍待 removal gate 后删除，但
-  正常路由已经不能挂载它们。
-- 当前 `page-link` 和 `extras.databases` 不满足 portable truth 原则；两者必须按
-  `docs/PRODUCT_DIRECTION.md` 的 LINK/COLL 任务迁移后才能继续扩展。
+- 当前代码不会路由到 legacy PDF/Excel editor；Attachment 只有只读表面和显式恢复。
+- `extras.databases` 已退出活动 Page 模型。Wiki link 已使用可携带 Markdown 语法；
+  Wiki/标准 Markdown link、backlink 与 unresolved occurrence 可从文件零写入重建，
+  unlinked mentions 与 Page/Folder relocation repair 也已由完整 Page snapshot 派生；
+  独立 `![[Page]]` / `![[Page#Heading]]` Block 已从同一零写入 source index 递归投影；
+  同一 Page Catalog 也已提供 v1 Collection Table 和 Page graph。block-id fragment、
+  Board/Calendar 与 relation/rollup 仍须按 `docs/PRODUCT_DIRECTION.md` 深化。
+- 所有 Page 只使用 native `MarkdownBlockDocument`；尚未深化的 syntax 以 exact raw
+  Block 编辑。任何新 Page feature 都必须有 portable Markdown grammar，不得重新增加
+  TipTap/ProseMirror 或第二套 editor schema。

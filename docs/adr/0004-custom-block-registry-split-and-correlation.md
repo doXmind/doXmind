@@ -1,8 +1,9 @@
 # Custom Block 注册表拆分 + Block correlation 自动处理 + 报告
 
-Status: self-contained block rules remain active. PDF/Excel external-reference
-rules are legacy-recovery only after
-[ADR-0012](0012-local-markdown-knowledge-workspace.md).
+Status: historical; implementation fully superseded by
+[ADR-0012](0012-markdown-source-block-editor.md). The TipTap registry,
+ExternalRefBlockRegistry, Block correlation, and Page Extras model described
+below are retired. Portable syntax is now projected directly from Markdown.
 
 doXmind 有两类 **Custom Block**：**Self-contained**（mermaid、callout、math、toggle、page-link——全部状态在 markdown 文本里）和 **External-reference**（PDF 块、Excel 块——markdown 里只有占位符 + 引用外部文件 + 编辑状态住在 Extras）。两类块的复杂度差距巨大，统一注册表会让简单的块支付外部引用块的成本。
 

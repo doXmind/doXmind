@@ -1,7 +1,6 @@
-"""Binary document parsing (PDF / Excel) for the core facade (ADR 0010, S4).
+"""Read-only attachment parsing for the standalone core facade (ADR 0010, S4).
 
-Reads a PDF or spreadsheet from disk and returns the same layout-aware JSON model the
-editor uses, by importing the parse services directly. The ``*_in_root``
+Reads a PDF or spreadsheet into a bounded conversion DTO. The ``*_in_root``
 variants confine an agent-supplied path to the workspace root (S5); the free
 ``convert_*`` helpers back the CLI, where the human owns the path.
 """

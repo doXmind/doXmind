@@ -2,11 +2,12 @@
 
 /**
  * Native macOS application menu bar, Dock menu, and Tray — Electron ports of
- * src-tauri/src/menu_bar.rs, dock_menu.rs, and the tray builder in lib.rs.
+ * Renderer-facing event names are stable so menu actions stay decoupled from
+ * the Electron menu Implementation.
  *
  * Menu clicks emit the same menu:// / dock:// / tray:// events that the
  * frontend's NativeMenuListener (and editor-client) already bridge to store
- * actions. Per Rust semantics, window-scoped actions go to the focused window
+ * actions. Window-scoped actions go to the focused window
  * (emitToFocused); app-scoped actions broadcast to all windows (emitToAll).
  *
  * `deps` provides: recents (OpenTarget[]), emitToAll, emitToFocused,
@@ -81,8 +82,8 @@ function buildAppMenu(deps) {
     {
       label: "Edit",
       submenu: [
-        { role: "undo" },
-        { role: "redo" },
+        { label: "Undo", accelerator: "CmdOrCtrl+Z", click: () => emitToFocused("menu://undo", null) },
+        { label: "Redo", accelerator: "CmdOrCtrl+Shift+Z", click: () => emitToFocused("menu://redo", null) },
         { type: "separator" },
         { role: "cut" },
         { role: "copy" },
@@ -172,7 +173,7 @@ function buildTrayMenu(deps) {
 
 function createTray(iconPath, deps) {
   // The source template is 44x44; the macOS menu bar is ~22px tall. Unlike
-  // Tauri's tray-icon crate, Electron renders the nativeImage at its point
+  // Electron renders the nativeImage at its point
   // size, so we resize to an ~18pt menu-bar icon with a crisp @2x rep.
   const source = nativeImage.createFromPath(iconPath);
   const image = nativeImage.createEmpty();

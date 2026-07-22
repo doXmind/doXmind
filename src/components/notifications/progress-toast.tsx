@@ -42,6 +42,7 @@ export function ProgressToast() {
       role="region"
       aria-label="Progress notifications"
       aria-live="polite"
+      data-native-editor-chrome
       className="pointer-events-none fixed bottom-4 right-4 z-[1000] flex w-[320px] flex-col gap-2"
     >
       <AnimatePresence initial={false}>

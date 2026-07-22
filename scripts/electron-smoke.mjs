@@ -2,10 +2,9 @@
 /**
  * Headless smoke test for the Electron shell's non-GUI plumbing:
  *   - the static server resolves the Next export (incl. SPA deep routes),
- *   - the sidecar spawns and reports /health,
  *   - the native recursive workspace watcher emits a scoped change,
- *   - the workspace proxy reaches the sidecar (scan / doc_read / import_asset),
- *     exercising the Phase 0 additions.
+ *   - the native Node workspace dispatcher scans and reads Markdown Pages,
+ *   - no Python/FastAPI process is started.
  *
  * This deliberately does NOT launch a BrowserWindow (no display needed in CI /
  * agent contexts). Run after `npm run build`:  node scripts/electron-smoke.mjs
@@ -21,8 +20,7 @@ const require = createRequire(import.meta.url);
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const { startStaticServer } = require("../electron/static-server.js");
-const { findFreePort, spawnSidecar, waitForHealth } = require("../electron/sidecar.js");
-const { proxyWorkspace } = require("../electron/workspace-proxy.js");
+const { createNativeWorkspaceDispatcher } = require("../electron/native-workspace.js");
 const { WindowRegistry, normalizeOpenPath } = require("../electron/window-registry.js");
 const { createWorkspaceWatchers } = require("../electron/workspace-watchers.js");
 
@@ -38,6 +36,13 @@ function check(name, cond, extra) {
   }
 }
 
+function filesUnder(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const target = path.join(directory, entry.name);
+    return entry.isDirectory() ? filesUnder(target) : [target];
+  });
+}
+
 async function main() {
   const out = path.join(REPO_ROOT, "out");
   if (!fs.existsSync(path.join(out, "index.html"))) {
@@ -50,9 +55,15 @@ async function main() {
   const folderTarget = { kind: "folder", path: "/Users/x/docs" };
   reg.set(1, folderTarget);
   reg.set(2, { kind: "file", path: "/Users/x/a.md" });
-  check("findId dedupes by exact {kind,path}", reg.findId({ kind: "folder", path: "/Users/x/docs" }) === 1);
+  check(
+    "findId dedupes by exact {kind,path}",
+    reg.findId({ kind: "folder", path: "/Users/x/docs" }) === 1
+  );
   check("findId distinguishes kind", reg.findId({ kind: "file", path: "/Users/x/docs" }) === null);
-  check("findId distinguishes trailing slash (Rust exact-equality)", reg.findId({ kind: "folder", path: "/Users/x/docs/" }) === null);
+  check(
+    "findId distinguishes trailing slash",
+    reg.findId({ kind: "folder", path: "/Users/x/docs/" }) === null
+  );
   reg.clear(1);
   check("clear removes the entry", reg.findId(folderTarget) === null && reg.get(2) !== null);
 
@@ -61,8 +72,14 @@ async function main() {
   fs.writeFileSync(mdPath, "# hi");
   fs.writeFileSync(path.join(regWs, "Note.txt"), "nope");
   check("normalizeOpenPath accepts an existing .md", normalizeOpenPath(mdPath) === mdPath);
-  check("normalizeOpenPath rejects unsupported extension", normalizeOpenPath(path.join(regWs, "Note.txt")) === null);
-  check("normalizeOpenPath rejects a missing file", normalizeOpenPath(path.join(regWs, "Ghost.md")) === null);
+  check(
+    "normalizeOpenPath rejects unsupported extension",
+    normalizeOpenPath(path.join(regWs, "Note.txt")) === null
+  );
+  check(
+    "normalizeOpenPath rejects a missing file",
+    normalizeOpenPath(path.join(regWs, "Ghost.md")) === null
+  );
   fs.rmSync(regWs, { recursive: true, force: true });
 
   console.log("workspace watcher:");
@@ -107,50 +124,51 @@ async function main() {
   if (assetMatch) {
     const asset = await fetch(`${server.url}${assetMatch[0]}`);
     const assetType = asset.headers.get("content-type") || "";
-    check("/_next/*.js asset serves 200 javascript", asset.status === 200 && assetType.includes("javascript"));
+    check(
+      "/_next/*.js asset serves 200 javascript",
+      asset.status === 200 && assetType.includes("javascript")
+    );
   } else {
     check("found a /_next asset reference in index.html", false);
   }
-  check("SPA deep route /editor/<uuid>/ falls back to editor index", (await fetch(`${server.url}/editor/abc-123/`)).status === 200);
+  check(
+    "SPA deep route /editor/<uuid>/ falls back to editor index",
+    (await fetch(`${server.url}/editor/abc-123/`)).status === 200
+  );
+  const rendererJavaScript = filesUnder(path.join(out, "_next", "static"))
+    .filter((file) => file.endsWith(".js"))
+    .map((file) => fs.readFileSync(file, "utf8"))
+    .join("\n");
+  check(
+    "production renderer fails closed when the Electron preload bridge is unavailable",
+    rendererJavaScript.includes("refusing browser HTTP fallback")
+  );
+  check(
+    "production renderer excludes the browser-development workspace transport",
+    !/127\.0\.0\.1:8000|\/api\/workspace\/invoke/.test(rendererJavaScript)
+  );
 
-  console.log("sidecar + workspace proxy:");
-  const port = await findFreePort();
-  const sidecarUrl = `http://127.0.0.1:${port}`;
-  const child = spawnSidecar({ repoRoot: REPO_ROOT, port, packaged: false });
+  console.log("native workspace:");
+  const invokeWorkspace = createNativeWorkspaceDispatcher();
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "doxmind-smoke-"));
   try {
-    await waitForHealth(sidecarUrl, { timeoutMs: 30000 });
-    check("sidecar /health ok", true);
-
-    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "doxmind-smoke-"));
     fs.writeFileSync(path.join(ws, "Hello.md"), "---\nid: smoke-1\ntitle: Hello\n---\n\n# Hi\n");
 
-    const scan = await proxyWorkspace(sidecarUrl, "workspace_scan", { root: ws });
-    check("workspace_scan returns the doc", Array.isArray(scan.documents) && scan.documents.some((d) => d.path === "Hello.md"));
-
-    const read = await proxyWorkspace(sidecarUrl, "doc_read", { path: path.join(ws, "Hello.md") });
-    check("doc_read returns markdown + correlation envelope", typeof read.markdown === "string" && "correlation" in read);
-
-    const pngBytes = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x78];
-    const imported = await proxyWorkspace(sidecarUrl, "workspace_import_asset", {
-      root: ws,
-      documentPath: "Hello.md",
-      filename: "Pic.png",
-      bytes: pngBytes,
-    });
+    const scan = await invokeWorkspace("workspace_scan", { root: ws });
     check(
-      "workspace_import_asset writes ./assets/Pic.png",
-      imported.path === "./assets/Pic.png" && fs.existsSync(path.join(ws, "assets", "Pic.png"))
+      "workspace_scan returns the doc",
+      Array.isArray(scan.documents) && scan.documents.some((d) => d.path === "Hello.md")
     );
 
-    fs.rmSync(ws, { recursive: true, force: true });
+    const read = await invokeWorkspace("doc_read", { root: ws, path: "Hello.md" });
+    check(
+      "doc_read returns source + revision",
+      read.markdown === "# Hi\n" && /^sha256:/.test(read.revision)
+    );
   } catch (err) {
-    check("sidecar boot + proxy", false, err.message);
+    check("native workspace dispatch", false, err.message);
   } finally {
-    try {
-      child.kill();
-    } catch {
-      // already gone
-    }
+    fs.rmSync(ws, { recursive: true, force: true });
     await server.close();
   }
 

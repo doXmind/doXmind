@@ -103,7 +103,7 @@ export function EmojiPicker({
       style={{ top, left }}
       onMouseDown={(e) => {
         // Don't blur the underlying editor selection on emoji clicks — without
-        // this, ProseMirror handles the blur first and a NodeView's
+        // this, the editor surface handles the blur first and the caller's
         // updateAttributes may run against a stale position. The search input
         // is opted-out so it can still receive focus.
         const target = e.target as HTMLElement;

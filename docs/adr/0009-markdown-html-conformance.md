@@ -1,8 +1,15 @@
 # Markdown→HTML 三份实现的一致性基线与收敛路线
 
+Status: superseded and implementation retired by
+[ADR-0012](0012-markdown-source-block-editor.md). The three importer tests and
+`conformance/` snapshots described below have been deleted. The remainder of
+this ADR is a historical record, not current implementation guidance. The
+Rust/Tauri runtime described here is retired by
+[ADR-0013](0013-electron-only-desktop-runtime.md).
+
 doXmind 把同一套 **markdown → 编辑器 HTML** 转换实现了**三遍**，靠人工保持行为一致：
 
-1. **Rust** — `crates/sidecar/src/lib.rs`（`pulldown-cmark`）。Tauri 桌面运行时的**进程内**路径（`doc_read` / `doc_write`），最高频的 markdown 编辑路径走它。
+1. **Rust** — `crates/page-core/src/lib.rs`（`pulldown-cmark`）。Tauri 桌面运行时的**进程内**路径（`doc_read` / `doc_write_workspace`），最高频的 Markdown 编辑路径走它。
 2. **Python** — `server/services/sidecar_io.py`（`markdown` 库）。非 Tauri 的浏览器 / `npm run dev` 后端路径，以及移植到 Rust 后尚未退役的遗留。
 3. **前端 `marked`** — `src/lib/markdown.ts`。侧栏浏览预览导入器，也是块级源保留（#149）的 lexer。
 

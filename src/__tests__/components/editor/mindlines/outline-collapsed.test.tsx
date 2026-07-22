@@ -98,7 +98,6 @@ function markdownFile(): FileItem {
     id: "file-1",
     name: "Test.md",
     content: "",
-    contentMarkdown: "",
     documentType: "markdown",
     isFolder: false,
     parentId: null,

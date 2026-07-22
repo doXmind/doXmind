@@ -1,0 +1,91 @@
+{
+  "safe": [
+    {
+      "name": "flow lists keep surrounding source byte-stable",
+      "filename": "Properties.md",
+      "source": "\ufeff---\r\n# user-owned frontmatter\r\nid: properties-1\r\ntags: [\"alpha\", \"two words\"]  # keep tag note\r\naliases: [\"Project One\", \"P1\"]\r\nstatus : \"idea\"  # keep status note\r\npriority: 1\r\npublished: true\r\ndue: \"2026-07-01\"\r\ntopics: [\"old\"]\r\ncustom: { nested: keep }\r\n---\r\n\r\nBody\r\n\r\n",
+      "body": "Body\r\n\r\n",
+      "tags": ["alpha", "two words"],
+      "aliases": ["Project One", "P1"],
+      "properties": {
+        "status": "idea",
+        "priority": 1,
+        "published": true,
+        "due": "2026-07-01",
+        "topics": ["old"]
+      },
+      "patch": {
+        "tags": ["alpha", "roadmap"],
+        "aliases": null,
+        "status": "doing",
+        "priority": 2,
+        "published": false,
+        "due": "2026-07-31",
+        "topics": ["local", "markdown"],
+        "new_field": "portable"
+      },
+      "expectedProperties": {
+        "status": "doing",
+        "priority": 2,
+        "published": false,
+        "due": "2026-07-31",
+        "topics": ["local", "markdown"],
+        "new_field": "portable"
+      },
+      "expectedSource": "\ufeff---\r\n# user-owned frontmatter\r\nid: properties-1\r\ntags: [\"alpha\",\"roadmap\"]  # keep tag note\r\nstatus : \"doing\"  # keep status note\r\npriority: 2\r\npublished: false\r\ndue: \"2026-07-31\"\r\ntopics: [\"local\",\"markdown\"]\r\ncustom: { nested: keep }\r\nnew_field: \"portable\"\r\n---\r\n\r\nBody\r\n\r\n"
+    }
+  ],
+  "reject": [
+    {
+      "name": "duplicate property keys",
+      "filename": "Duplicate.md",
+      "source": "---\nid: duplicate\ntags: [\"one\"]\ntags: [\"two\"]\n---\n\nBody\n",
+      "patch": { "tags": ["replacement"] }
+    },
+    {
+      "name": "block property values with nested source",
+      "filename": "Block.md",
+      "source": "---\nid: block-list\ntags:\n  - one\n  - two\n---\n\nBody\n",
+      "patch": { "tags": ["replacement"] }
+    },
+    {
+      "name": "duplicate arbitrary property keys",
+      "filename": "Duplicate custom.md",
+      "source": "---\nid: duplicate-custom\nstatus: \"one\"\nstatus: \"two\"\n---\n\nBody\n",
+      "patch": { "status": "replacement" }
+    },
+    {
+      "name": "arbitrary property with nested source",
+      "filename": "Nested custom.md",
+      "source": "---\nid: nested-custom\nworkflow:\n  status: todo\n---\n\nBody\n",
+      "patch": { "workflow": "replacement" }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "tags scalar payload",
+      "patch": { "tags": "one" },
+      "error": "tags must be string[] or null"
+    },
+    {
+      "name": "aliases non-string item payload",
+      "patch": { "aliases": [1] },
+      "error": "aliases must be string[] or null"
+    },
+    {
+      "name": "invalid property key",
+      "patch": { "two words": "no" },
+      "error": "invalid Page property key"
+    },
+    {
+      "name": "object property payload",
+      "patch": { "settings": { "nested": true } },
+      "error": "must be a string, finite number, boolean, string[], or null"
+    },
+    {
+      "name": "mixed array property payload",
+      "patch": { "topics": ["one", 2] },
+      "error": "must be a string, finite number, boolean, string[], or null"
+    }
+  ]
+}

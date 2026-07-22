@@ -1,12 +1,13 @@
 "use client";
 
-import { FilePlus2, FolderOpen } from "lucide-react";
+import { CalendarDays, FilePlus2, FolderOpen } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
 import { useFileStore } from "@/stores/file-store";
 import { notify } from "@/lib/notifications";
+import { openTodayDailyNote } from "@/lib/daily-notes";
 
 const log = storeLogger.child("WorkspaceHome");
 
@@ -29,6 +30,16 @@ export function WorkspaceHome() {
       navigateToEditorFile(newId);
     } catch (error) {
       log.error("Failed to create workspace document", error);
+      const { title, description } = getErrorMessage(error);
+      notify.error(title, { description });
+    }
+  };
+
+  const handleOpenDailyNote = async () => {
+    try {
+      await openTodayDailyNote();
+    } catch (error) {
+      log.error("Failed to open Daily Note", error);
       const { title, description } = getErrorMessage(error);
       notify.error(title, { description });
     }
@@ -76,14 +87,24 @@ export function WorkspaceHome() {
             <h2 className="mb-2 text-[10.5px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
               {t("quickActions")}
             </h2>
-            <button
-              type="button"
-              onClick={handleCreateNew}
-              className="flex h-11 w-full items-center gap-2 rounded-lg border border-border bg-background/35 px-3 text-left text-[13.5px] font-medium text-foreground transition-colors hover:border-foreground/25 hover:bg-muted/35 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            >
-              <FilePlus2 className="h-4 w-4 text-muted-foreground" />
-              {t("newDocument")}
-            </button>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={handleCreateNew}
+                className="flex h-11 w-full items-center gap-2 rounded-lg border border-border bg-background/35 px-3 text-left text-[13.5px] font-medium text-foreground transition-colors hover:border-foreground/25 hover:bg-muted/35 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                <FilePlus2 className="h-4 w-4 text-muted-foreground" />
+                {t("newDocument")}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleOpenDailyNote()}
+                className="flex h-11 w-full items-center gap-2 rounded-lg border border-border bg-background/35 px-3 text-left text-[13.5px] font-medium text-foreground transition-colors hover:border-foreground/25 hover:bg-muted/35 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                {t("dailyNote")}
+              </button>
+            </div>
           </section>
         </div>
       </div>

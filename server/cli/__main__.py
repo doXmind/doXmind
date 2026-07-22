@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import click
@@ -26,7 +25,7 @@ def _workspace_path(root: str, path: str) -> Path:
     A relative path is taken against the workspace root and may not escape it
     (``..`` is rejected), matching the root-relative commands (ls/new/...). An
     absolute path is honored as-is: the CLI is a trusted local tool, so the
-    human may read or write any file they own (e.g. ``--out ~/Desktop/x.pdf``).
+    human may read or write any file they own (e.g. ``--out ~/Desktop/x.html``).
     Path confinement is the MCP/agent guarantee, not the CLI's.
     """
     p = Path(path).expanduser()
@@ -92,16 +91,17 @@ def read(
     path: str = typer.Argument(..., help="Document path (workspace-relative or absolute)."),
     root: str = ROOT_OPTION,
     as_json: bool = typer.Option(False, "--json", help="Print the full read DTO as JSON."),
-    html: bool = typer.Option(False, "--html", help="Print the editor HTML instead of markdown."),
+    html: bool = typer.Option(False, "--html", help="Render and print HTML instead of markdown."),
 ) -> None:
-    """Read a document and print its markdown (default), HTML, or full JSON."""
+    """Read a Page and print its markdown (default), rendered HTML, or JSON."""
     from core.documents import read_document
+    from core.exporting import render_document
 
     doc = read_document(_workspace_path(root, path))
     if as_json:
         typer.echo(json.dumps(doc, ensure_ascii=False, indent=2))
     elif html:
-        typer.echo(doc.get("html", ""))
+        typer.echo(render_document(doc, "html").decode("utf-8"))
     else:
         typer.echo(doc.get("markdown", ""))
 
@@ -113,7 +113,11 @@ def mv(
     root: str = ROOT_OPTION,
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
 ) -> None:
-    """Move or rename a document or folder."""
+    """Move or rename an Attachment.
+
+    Markdown Page and Folder relocation requires the desktop impact preview so
+    links can be repaired transactionally.
+    """
     from core.structure import move_document
 
     if not yes:
@@ -199,12 +203,12 @@ def edit(
 def export(
     path: str = typer.Argument(..., help="Document to export (workspace-relative or absolute)."),
     root: str = ROOT_OPTION,
-    to: str = typer.Option("pdf", "--to", help="Export format: pdf, html, or md."),
+    to: str = typer.Option("html", "--to", help="Export format: html or md."),
     out: str = typer.Option(
-        None, "--out", help="Output file: workspace-relative, or absolute (e.g. ~/Desktop/x.pdf)."
+        None, "--out", help="Output file: workspace-relative, or absolute (e.g. ~/Desktop/x.html)."
     ),
 ) -> None:
-    """Export a document to pdf, html, or md."""
+    """Export a document to html or md."""
     from core.exporting import export_document, suffix_for
 
     source = _workspace_path(root, path)
@@ -213,7 +217,11 @@ def export(
     if target.resolve() == source.resolve():
         raise typer.BadParameter("export would overwrite the source; pass --out")
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(data)
+    try:
+        with target.open("xb") as output:
+            output.write(data)
+    except FileExistsError as err:
+        raise typer.BadParameter(f"export target already exists: {target}") from err
     typer.echo(f"wrote {target} ({len(data)} bytes)")
 
 
@@ -224,7 +232,7 @@ def convert(
     ),
     root: str = ROOT_OPTION,
 ) -> None:
-    """Parse a PDF or Excel file into the editor's JSON model and print it."""
+    """Parse a PDF or spreadsheet read-only and print its conversion DTO as JSON."""
     from core.convert import convert_excel, convert_pdf
 
     source = _workspace_path(root, path)
@@ -240,15 +248,22 @@ def convert(
 
 @app.command()
 def serve(
-    port: int = typer.Option(8000, "--port", help="Port for the FastAPI sidecar."),
-    host: str = typer.Option("127.0.0.1", "--host", help="Host to bind."),
+    port: int = typer.Option(8000, "--port", help="Port for the local tooling service."),
+    host: str = typer.Option("127.0.0.1", "--host", help="Loopback host to bind."),
 ) -> None:
-    """Run the FastAPI sidecar (debugging aid)."""
-    os.environ["HOST"] = host
-    os.environ["PORT"] = str(port)
-    from run_sidecar import main as run_sidecar_main
+    """Run the optional localhost tooling service for browser development."""
+    import uvicorn
 
-    run_sidecar_main()
+    from config import validate_loopback_host
+
+    try:
+        host = validate_loopback_host(host)
+    except ValueError as err:
+        raise typer.BadParameter(str(err), param_hint="--host") from err
+
+    from main import app as local_app
+
+    uvicorn.run(local_app, host=host, port=port, log_level="info", access_log=False)
 
 
 def main() -> None:

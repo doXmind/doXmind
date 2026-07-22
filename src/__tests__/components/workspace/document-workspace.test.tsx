@@ -1,24 +1,20 @@
 import { NextIntlClientProvider } from "next-intl";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { DocumentWorkspace } from "@/components/workspace/document-workspace";
+import {
+  DocumentWorkspace,
+  type PageRecoveryServices,
+} from "@/components/workspace/document-workspace";
 import en from "@/messages/en.json";
 import type { FileItem } from "@/stores/file-store";
 
-vi.mock("@/components/workspace/markdown-runtime", () => ({
-  MarkdownRuntime: () => <div data-testid="markdown-runtime" />,
+vi.mock("@/editor/page-editor-host", () => ({
+  PageEditorHost: () => <div data-testid="native-page-editor" />,
 }));
 
 vi.mock("@/components/workspace/attachment-workspace", () => ({
   AttachmentWorkspace: () => <div data-testid="attachment-workspace" />,
-}));
-
-vi.mock("@/components/pdf-editor/pdf-editor-workspace", () => ({
-  PdfEditorWorkspace: () => <div data-testid="pdf-legacy-recovery" />,
-}));
-
-vi.mock("@/components/excel-editor/excel-editor-workspace", () => ({
-  ExcelEditorWorkspace: () => <div data-testid="excel-legacy-recovery" />,
 }));
 
 const htmlFile: FileItem = {
@@ -72,17 +68,18 @@ const excelFile: FileItem = {
   },
 };
 
-const otherAttachment: FileItem = {
+const markdownFile: FileItem = {
   ...htmlFile,
-  id: "path:reference.docx",
-  name: "reference.docx",
-  documentType: "other",
+  id: "page-1",
+  name: "Page",
+  content: "# Page\n",
+  documentType: "markdown",
   storageHandle: {
     ...htmlFile.storageHandle!,
-    id: "path:reference.docx",
-    documentType: "other",
-    path: "reference.docx",
-    relPath: "reference.docx",
+    id: "page-1",
+    documentType: "markdown",
+    path: "Notes/Page.md",
+    relPath: "Notes/Page.md",
   },
 };
 
@@ -99,21 +96,14 @@ describe("DocumentWorkspace", () => {
     renderWorkspace(htmlFile);
 
     expect(screen.getByTestId("attachment-workspace")).toBeInTheDocument();
-    expect(screen.queryByTestId("markdown-runtime")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("native-page-editor")).not.toBeInTheDocument();
   });
 
   it("routes PDF files through the read-only attachment surface", () => {
     renderWorkspace(pdfFile);
 
     expect(screen.getByTestId("attachment-workspace")).toBeInTheDocument();
-    expect(screen.queryByTestId("markdown-runtime")).not.toBeInTheDocument();
-  });
-
-  it("never mounts the legacy PDF editor", () => {
-    renderWorkspace(pdfFile);
-
-    expect(screen.getByTestId("attachment-workspace")).toBeInTheDocument();
-    expect(screen.queryByTestId("pdf-legacy-recovery")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("native-page-editor")).not.toBeInTheDocument();
   });
 
   it("routes spreadsheets through the read-only attachment surface", () => {
@@ -123,17 +113,149 @@ describe("DocumentWorkspace", () => {
     expect(screen.queryByTestId("excel-legacy-recovery")).not.toBeInTheDocument();
   });
 
-  it("never mounts the legacy spreadsheet editor", () => {
-    renderWorkspace(excelFile);
+  it("never routes an unknown extension into the Page editor", () => {
+    renderWorkspace({
+      ...htmlFile,
+      id: "path:report.docx",
+      name: "Report.docx",
+      documentType: undefined,
+      storageHandle: {
+        ...htmlFile.storageHandle!,
+        id: "path:report.docx",
+        documentType: undefined,
+        path: "Report.docx",
+        relPath: "Report.docx",
+      },
+    });
 
-    expect(screen.getByTestId("attachment-workspace")).toBeInTheDocument();
-    expect(screen.queryByTestId("excel-legacy-recovery")).not.toBeInTheDocument();
+    expect(screen.getByTestId("unsupported-attachment")).toBeInTheDocument();
+    expect(screen.queryByTestId("native-page-editor")).not.toBeInTheDocument();
   });
 
-  it("routes unknown non-Markdown files through the read-only attachment surface", () => {
-    renderWorkspace(otherAttachment);
-
+  it("does not mount legacy attachment editor stacks", () => {
+    const { rerender } = renderWorkspace(pdfFile);
     expect(screen.getByTestId("attachment-workspace")).toBeInTheDocument();
-    expect(screen.queryByTestId("markdown-runtime")).not.toBeInTheDocument();
+
+    rerender(
+      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+        <DocumentWorkspace file={excelFile} />
+      </NextIntlClientProvider>
+    );
+    expect(screen.getByTestId("attachment-workspace")).toBeInTheDocument();
+  });
+
+  it("shows Page recovery artifacts and offers an explicit export", async () => {
+    const user = userEvent.setup();
+    const services: PageRecoveryServices = {
+      inspect: vi.fn().mockResolvedValue({
+        recoveryStatus: "available",
+        artifacts: ["Notes/.Page.doxmind", "Notes/.Page.doxmind.lock"],
+      }),
+      exportRecovery: vi.fn().mockResolvedValue(undefined),
+    };
+
+    render(
+      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+        <DocumentWorkspace file={markdownFile} pageRecoveryServices={services} />
+      </NextIntlClientProvider>
+    );
+
+    expect(services.inspect).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Check legacy recovery" }));
+    expect(await screen.findByText("Legacy Page recovery artifacts found")).toBeInTheDocument();
+    expect(screen.getByText(/Notes\/.Page\.doxmind/)).toBeInTheDocument();
+    expect(screen.getByTestId("native-page-editor")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Export Page recovery report" }));
+    expect(services.exportRecovery).toHaveBeenCalledWith("Notes/Page.md");
+  });
+
+  it("does not re-inspect recovery artifacts when only Page content changes", async () => {
+    const services: PageRecoveryServices = {
+      inspect: vi.fn().mockResolvedValue({ recoveryStatus: "none", artifacts: [] }),
+      exportRecovery: vi.fn().mockResolvedValue(undefined),
+    };
+    const { rerender } = render(
+      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+        <DocumentWorkspace file={markdownFile} pageRecoveryServices={services} />
+      </NextIntlClientProvider>
+    );
+    const user = userEvent.setup();
+    expect(services.inspect).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Check legacy recovery" }));
+    await waitFor(() => expect(services.inspect).toHaveBeenCalledTimes(1));
+
+    rerender(
+      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+        <DocumentWorkspace
+          file={{ ...markdownFile, content: "# Page\n\nAutosaved" }}
+          pageRecoveryServices={services}
+        />
+      </NextIntlClientProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId("native-page-editor")).toBeInTheDocument());
+    expect(services.inspect).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an ordinary Markdown Page free of recovery UI", async () => {
+    const services: PageRecoveryServices = {
+      inspect: vi.fn().mockResolvedValue({ recoveryStatus: "none", artifacts: [] }),
+      exportRecovery: vi.fn().mockResolvedValue(undefined),
+    };
+
+    render(
+      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+        <DocumentWorkspace file={markdownFile} pageRecoveryServices={services} />
+      </NextIntlClientProvider>
+    );
+
+    expect(services.inspect).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("page-legacy-recovery")).not.toBeInTheDocument();
+    expect(screen.getByTestId("native-page-editor")).toBeInTheDocument();
+  });
+
+  it("exposes portable Page properties and backlinks only on Markdown Pages", async () => {
+    const services: PageRecoveryServices = {
+      inspect: vi.fn().mockResolvedValue({ recoveryStatus: "none", artifacts: [] }),
+      exportRecovery: vi.fn().mockResolvedValue(undefined),
+    };
+    const { rerender } = render(
+      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+        <DocumentWorkspace file={markdownFile} pageRecoveryServices={services} />
+      </NextIntlClientProvider>
+    );
+
+    expect(screen.getByRole("button", { name: "Page properties" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Backlinks" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check legacy recovery" })).toBeInTheDocument();
+
+    rerender(
+      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+        <DocumentWorkspace file={pdfFile} pageRecoveryServices={services} />
+      </NextIntlClientProvider>
+    );
+    expect(screen.queryByRole("button", { name: "Page properties" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Backlinks" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Check legacy recovery" })).not.toBeInTheDocument();
+  });
+
+  it("keeps Page editing available when advisory recovery inspection fails", async () => {
+    const user = userEvent.setup();
+    const services: PageRecoveryServices = {
+      inspect: vi.fn().mockRejectedValue(new Error("artifact is unsafe")),
+      exportRecovery: vi.fn().mockResolvedValue(undefined),
+    };
+
+    render(
+      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+        <DocumentWorkspace file={markdownFile} pageRecoveryServices={services} />
+      </NextIntlClientProvider>
+    );
+
+    expect(services.inspect).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Check legacy recovery" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not check legacy recovery");
+    expect(screen.queryByTestId("page-legacy-recovery")).not.toBeInTheDocument();
+    expect(screen.getByTestId("native-page-editor")).toBeInTheDocument();
   });
 });

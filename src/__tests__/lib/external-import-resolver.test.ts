@@ -10,6 +10,7 @@ import {
 describe("extensionOf", () => {
   it("returns lowercase extension with the leading dot", () => {
     expect(extensionOf("Foo.MD")).toBe(".md");
+    expect(extensionOf("Long.MARKDOWN")).toBe(".markdown");
     expect(extensionOf("Bar.PDF")).toBe(".pdf");
     expect(extensionOf("Baz.XLSX")).toBe(".xlsx");
     expect(extensionOf("Data.CSV")).toBe(".csv");
@@ -42,6 +43,7 @@ describe("planExternalImport — whitelist", () => {
     const plan = planExternalImport({
       items: [
         { name: "Plan.md", srcPath: "/tmp/Plan.md" },
+        { name: "Knowledge.markdown", srcPath: "/tmp/Knowledge.markdown" },
         { name: "Spec.pdf", srcPath: "/tmp/Spec.pdf" },
         { name: "Q3.xlsx", srcPath: "/tmp/Q3.xlsx" },
         { name: "Data.csv", srcPath: "/tmp/Data.csv" },
@@ -52,6 +54,7 @@ describe("planExternalImport — whitelist", () => {
 
     expect(plan.accepted.map((entry) => entry.item.name)).toEqual([
       "Plan.md",
+      "Knowledge.markdown",
       "Spec.pdf",
       "Q3.xlsx",
       "Data.csv",
@@ -94,19 +97,18 @@ describe("planExternalImport — whitelist", () => {
     }
   });
 
-  it("rejects .markdown — only .md is whitelisted in this slice", () => {
-    // The PRD pins the whitelist to `.md / .pdf / .xlsx / .csv` literally. `.markdown`
-    // is supported elsewhere but #67's whitelist test calls it out explicitly.
+  it("accepts the long Markdown extension", () => {
     const plan = planExternalImport({
       items: [{ name: "Doc.markdown" }],
       destFolderId: null,
       existingNames: [],
     });
-    expect(plan.rejected[0]?.reason).toBe("bad-extension");
+    expect(plan.accepted[0]?.extension).toBe(".markdown");
+    expect(plan.rejected).toHaveLength(0);
   });
 
   it("exports the canonical whitelist as a readonly tuple", () => {
-    expect(SUPPORTED_EXTENSIONS).toEqual([".md", ".pdf", ".xlsx", ".csv"]);
+    expect(SUPPORTED_EXTENSIONS).toEqual([".md", ".markdown", ".pdf", ".xlsx", ".csv"]);
   });
 });
 
@@ -276,25 +278,6 @@ describe("resolveImportPlan", () => {
     ]);
   });
 
-  it.each(["Spec.pdf", "Forecast.xlsx", "Data.csv"])(
-    "rejects replace for attachment collision %s",
-    (name) => {
-      const plan = planExternalImport({
-        items: [{ name, srcPath: `/tmp/${name}` }],
-        destFolderId: null,
-        existingNames: [name],
-      });
-
-      expect(() =>
-        resolveImportPlan({
-          plan,
-          existingNames: [name],
-          decisions: { [name]: "replace" },
-        })
-      ).toThrow(/replace is only available for Markdown pages/i);
-    }
-  );
-
   it("keep-both renames the file to `Foo (2).md` when the base name clashes", () => {
     const plan = planExternalImport({
       items: [{ name: "Plan.md", srcPath: "/tmp/Plan.md" }],
@@ -354,20 +337,20 @@ describe("resolveImportPlan", () => {
       items: [
         { name: "A.md", srcPath: "/tmp/A.md" }, // accepted
         { name: "B.txt", srcPath: "/tmp/B.txt" }, // rejected
-        { name: "C.md", srcPath: "/tmp/C.md" }, // collision → replace
+        { name: "C.pdf", srcPath: "/tmp/C.pdf" }, // collision → replace
         { name: "D.xlsx", srcPath: "/tmp/D.xlsx" }, // collision → keep-both
         { name: "E.png" }, // rejected
         { name: "F.md", srcPath: "/tmp/F.md" }, // collision → skip
       ],
       destFolderId: "folder-x",
-      existingNames: ["C.md", "D.xlsx", "F.md"],
+      existingNames: ["C.pdf", "D.xlsx", "F.md"],
     });
 
     const resolved = resolveImportPlan({
       plan,
-      existingNames: ["C.md", "D.xlsx", "F.md"],
+      existingNames: ["C.pdf", "D.xlsx", "F.md"],
       decisions: {
-        "C.md": "replace",
+        "C.pdf": "replace",
         "D.xlsx": "keep-both",
         "F.md": "skip",
       },
@@ -378,8 +361,8 @@ describe("resolveImportPlan", () => {
       { item: plan.accepted[0].item, extension: ".md", name: "A.md", mode: "create" },
       {
         item: plan.collisions[0].item,
-        extension: ".md",
-        name: "C.md",
+        extension: ".pdf",
+        name: "C.pdf",
         mode: "replace",
       },
       {

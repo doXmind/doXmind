@@ -4,7 +4,6 @@
  * Usage:
  *   import { eventBus } from "@/lib/events";
  *   eventBus.emit("storage:changed");
- *   const unsub = eventBus.on("storage:changed", () => { ... });
  */
 
 type EventMap = {

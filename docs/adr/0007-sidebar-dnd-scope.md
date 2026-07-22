@@ -1,5 +1,9 @@
 # Sidebar DnD：三条作用域硬边界
 
+Status: accepted; Electron is the sole packaged desktop shell under
+[ADR-0013](0013-electron-only-desktop-runtime.md). Tauri event details below are
+historical constraints, not an active integration path.
+
 ## 背景
 
 Sidebar 的 drag-and-drop 体验从 "只能拖 file 行 / folder 不能拖 / 不接外部 drop" 拉到 VSCode 主流水平的过程中，有几条 "看似可以顺手做" 的功能被显式拒绝。它们之所以单独立 ADR，是因为每一条都对着一个有名有姓的对照系统（Notion、VSCode、Obsidian）说 "我们不那样做"，下次再有 "为什么 doXmind 不像 X 那样" 的提案时，应该回到这条 ADR 重新论证，而不是悄悄把边界推回去。

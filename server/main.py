@@ -1,23 +1,22 @@
-"""doXmind local sidecar backend.
+"""doXmind optional localhost tooling service.
 
 The document source of truth is the user's Markdown workspace on disk. This
-server only handles local conversion, image serving, and future metadata/cache
-needs; it does not expose a SQLite document workspace.
+server only mirrors native workspace commands for browser development and keeps
+a read-only legacy-image recovery route; it does not own Page content.
 """
 
 import logging
 import uuid
-from contextlib import asynccontextmanager
+from ipaddress import ip_address
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from api import excel_editor, export, images, links, pdf_editor, workspace
+from api import images, workspace
 from config import CORS_ORIGIN_REGEX, CORS_ORIGINS, get_cors_headers, get_settings
-from db.database import engine as db_engine
-from db.database import init_db
 from exceptions import AppException
 from lib.timing import timed as perf_timed
 
@@ -27,25 +26,30 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):  # noqa: ARG001
-    logger.info("Starting doXmind local server...")
-    settings = get_settings()
-    settings.ensure_data_dir()
-    await init_db()
-    logger.info(f"Server ready. Data dir: {settings.data_dir}")
-    yield
-    logger.info("Shutting down...")
-    await db_engine.dispose()
-
-
 settings = get_settings()
+
+
+def _is_loopback_address(host: str) -> bool:
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_loopback_host_header(value: str) -> bool:
+    try:
+        hostname = urlsplit(f"//{value}").hostname
+    except ValueError:
+        return False
+    if hostname is None:
+        return False
+    return hostname.casefold().rstrip(".") == "localhost" or _is_loopback_address(hostname)
+
 
 app = FastAPI(
     title="doXmind (Local)",
     description="Local-first document editor backend",
     version="2.0.0-local",
-    lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
@@ -98,6 +102,19 @@ class PerfTimingMiddleware(BaseHTTPMiddleware):
             return response
 
 
+class LoopbackOnlyMiddleware(BaseHTTPMiddleware):
+    """Keep the unauthenticated tooling app unreachable from non-local peers."""
+
+    async def dispatch(self, request: Request, call_next):
+        client_host = request.client.host if request.client else ""
+        # Starlette's in-process TestClient uses this sentinel instead of an IP.
+        if client_host != "testclient" and not _is_loopback_address(client_host):
+            return JSONResponse(status_code=403, content={"detail": "loopback access only"})
+        if not _is_loopback_host_header(request.headers.get("host", "")):
+            return JSONResponse(status_code=403, content={"detail": "loopback access only"})
+        return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -108,15 +125,13 @@ app.add_middleware(
 )
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(PerfTimingMiddleware)
+app.add_middleware(LoopbackOnlyMiddleware)
 
 
-# Routers: document CRUD lives in the Tauri filesystem commands.
+# Routers: current Page/asset writes go through workspace commands. The image
+# route is read-only compatibility for old /api/images Markdown references.
 app.include_router(images.router, prefix="/api/images", tags=["images"])
 app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"])
-app.include_router(export.router, prefix="/api/export", tags=["export"])
-app.include_router(pdf_editor.router, prefix="/api/pdf", tags=["pdf"])
-app.include_router(excel_editor.router, prefix="/api/excel", tags=["excel"])
-app.include_router(links.router, prefix="/api/links", tags=["links"])
 
 
 @app.get("/")

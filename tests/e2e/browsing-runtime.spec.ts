@@ -1,17 +1,29 @@
 import { expect, test, type Page } from "@playwright/test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { homedir } from "node:os";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
-const workspaceDir = join(homedir(), "Documents", "doXmind");
-const smokeMarkdownPath = join(workspaceDir, "smoke.md");
-const smokePdfPath = join(workspaceDir, "smoke.pdf");
-const smokeExcelPath = join(workspaceDir, "smoke.xlsx");
+let workspaceDir: string;
+let smokeMarkdownPath: string;
+let runtimeErrors: string[];
 
 test.beforeAll(async () => {
-  await ensureSmokeFixtures();
+  workspaceDir = await mkdtemp(join(tmpdir(), "doxmind-browsing-runtime-e2e-"));
+  smokeMarkdownPath = join(workspaceDir, "smoke.md");
+  await writeSmokeMarkdown();
+});
+
+test.beforeEach(async ({ page }) => {
+  runtimeErrors = observeRuntimeErrors(page);
+  await writeSmokeMarkdown();
+});
+
+test.afterEach(async () => {
+  expect(runtimeErrors).toEqual([]);
+});
+
+test.afterAll(async () => {
+  await rm(workspaceDir, { recursive: true, force: true });
 });
 
 test("Markdown opens in read mode and promotes to editable on click", async ({ page }) => {
@@ -20,29 +32,72 @@ test("Markdown opens in read mode and promotes to editable on click", async ({ p
 
   await openLooseFile(page, smokeMarkdownPath);
 
-  // Single-renderer model: MarkdownRuntime stays mounted across read↔edit;
-  // only `contenteditable` flips. There is no separate browsing-runtime
-  // surface to swap in and out.
-  const markdownRuntime = page.getByTestId("markdown-runtime");
+  // Inactive Blocks are semantic Markdown previews. Activating one swaps only
+  // that Block to its source textarea; the native runtime stays mounted.
+  const markdownRuntime = page.getByTestId("markdown-block-runtime");
+  const activeEditor = page.locator("[data-native-block-editor]");
   await expect(markdownRuntime).toBeVisible();
-  await expect(page.locator('div.ProseMirror[contenteditable="true"]')).toHaveCount(0);
-  await expect(page.locator('div.ProseMirror[contenteditable="false"]')).toBeVisible();
+  await expect(activeEditor).toHaveCount(0);
 
   await expect(page.getByRole("heading", { name: "doXmind Playwright Smoke" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Deep Section" })).toBeAttached();
-  await expect(page.getByRole("link", { name: "Example link" })).toBeVisible();
+  await expect(
+    page.locator('[data-markdown-link][title="https://example.com"]', {
+      hasText: "Example link",
+    })
+  ).toBeVisible();
+  // Measure activation only after async Mermaid/image projections settle;
+  // otherwise their layout completion can be mistaken for an editor jump.
+  await expect(
+    page.locator('[data-mermaid-print-ready="false"], [data-native-print-ready="false"]')
+  ).toHaveCount(0);
 
-  // Search highlights use the TipTap search extension's `.search-result`
-  // class (src/extensions/search/index.ts). The find bar opens via the
-  // Ctrl/Cmd+F shortcut (use-editor-keyboard-shortcuts.ts), not a toolbar
-  // button — the unified MarkdownRuntime has no standalone Find button.
+  const scroll = page.locator("[data-native-markdown-scroll]");
+  const targetPreview = page.getByText("Spacer paragraph 32 keeps the document scrollable.", {
+    exact: true,
+  });
+  await targetPreview.scrollIntoViewIfNeeded();
+  const beforeEditScroll = await scroll.evaluate((element) => element.scrollTop);
+  expect(beforeEditScroll).toBeGreaterThan(100);
+  await targetPreview.click();
+
+  await expect(activeEditor).toHaveCount(1);
+  await expect(activeEditor).toBeFocused();
+  await expect(markdownRuntime).toBeVisible();
+  await expect
+    .poll(() => scroll.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(beforeEditScroll - 80);
+  await expect
+    .poll(() => scroll.evaluate((element) => element.scrollTop))
+    .toBeLessThan(beforeEditScroll + 80);
+
+  // Find operates on Markdown source and selects the active match inside its
+  // Block while leaving keyboard focus in the Find field.
   await page.keyboard.press("ControlOrMeta+f");
-  await page.getByLabel("Search text").fill("needle");
-  await expect(page.locator(".search-result")).toHaveCount(3);
-  // Still in read mode while searching.
-  await expect(page.locator('div.ProseMirror[contenteditable="true"]')).toHaveCount(0);
+  const searchInput = page.getByLabel("Search text");
+  await searchInput.fill("needle");
+  await expect(page.getByText("1 of 3", { exact: true })).toBeVisible();
+  await expect(searchInput).toBeFocused();
+  await expect(activeEditor).toHaveCount(1);
+  await expect
+    .poll(() =>
+      activeEditor.evaluate((textarea: HTMLTextAreaElement) =>
+        textarea.value.slice(textarea.selectionStart, textarea.selectionEnd).toLowerCase()
+      )
+    )
+    .toBe("needle");
 
-  const scroll = page.locator("[data-editor-scroll]");
+  await page.getByRole("button", { name: "Next result" }).click();
+  await expect(page.getByText("2 of 3", { exact: true })).toBeVisible();
+  await expect
+    .poll(() =>
+      activeEditor.evaluate((textarea: HTMLTextAreaElement) =>
+        textarea.value.slice(textarea.selectionStart, textarea.selectionEnd).toLowerCase()
+      )
+    )
+    .toBe("needle");
+  await page.getByRole("button", { name: "Close search" }).click();
+
   await scroll.evaluate((el) => {
     el.scrollTop = 0;
   });
@@ -55,48 +110,22 @@ test("Markdown opens in read mode and promotes to editable on click", async ({ p
   await expect
     .poll(() => scroll.evaluate((el) => el.scrollTop))
     .toBeGreaterThan(beforeOutlineScroll + 100);
-  await expect(page.getByRole("heading", { name: "Deep Section" })).toBeInViewport();
-
-  await scroll.evaluate((el) => {
-    el.scrollTop = Math.floor(el.scrollHeight * 0.45);
-  });
-  const beforeEditScroll = await scroll.evaluate((el) => el.scrollTop);
-  const scrollBox = await scroll.boundingBox();
-  if (!scrollBox) throw new Error("Editor scroll area was not visible");
-  await page.mouse.click(scrollBox.x + scrollBox.width / 2, scrollBox.y + scrollBox.height / 2);
-
-  // Promotion: same runtime instance, contenteditable flips false → true.
-  await expect(page.locator('div.ProseMirror[contenteditable="true"]')).toBeVisible();
-  await expect(markdownRuntime).toBeVisible();
-  await expect
-    .poll(() => scroll.evaluate((el) => el.scrollTop))
-    .toBeGreaterThan(beforeEditScroll - 80);
-  await expect
-    .poll(() => scroll.evaluate((el) => el.scrollTop))
-    .toBeLessThan(beforeEditScroll + 80);
+  await expect(activeEditor).toHaveValue("## Deep Section");
+  await expect(activeEditor).toBeInViewport();
 });
 
 test("keyboard edit intent promotes Markdown read mode to editable", async ({ page }) => {
   await openLooseFile(page, smokeMarkdownPath);
 
-  const markdownRuntime = page.getByTestId("markdown-runtime");
+  const markdownRuntime = page.getByTestId("markdown-block-runtime");
   await expect(markdownRuntime).toBeVisible();
-  await expect(page.locator('div.ProseMirror[contenteditable="true"]')).toHaveCount(0);
+  await expect(page.locator("[data-native-block-editor]")).toHaveCount(0);
 
   await page.keyboard.type("x");
 
-  await expect(page.locator('div.ProseMirror[contenteditable="true"]')).toBeVisible();
+  await expect(page.locator("[data-native-block-editor]")).toBeVisible();
+  await expect(page.locator("[data-native-block-editor]")).toBeFocused();
   await expect(markdownRuntime).toBeVisible();
-});
-
-test("PDF and Excel loose files use their dedicated runtimes", async ({ page }) => {
-  await openLooseFile(page, smokePdfPath);
-  await expect(page.getByTestId("pdf-runtime")).toBeVisible();
-  await expect(page.getByTestId("markdown-runtime")).toHaveCount(0);
-
-  await openLooseFile(page, smokeExcelPath);
-  await expect(page.getByTestId("excel-runtime")).toBeVisible();
-  await expect(page.getByTestId("markdown-runtime")).toHaveCount(0);
 });
 
 async function openLooseFile(page: Page, absolutePath: string) {
@@ -104,24 +133,12 @@ async function openLooseFile(page: Page, absolutePath: string) {
   await expect(page.locator("text=Loading")).toHaveCount(0);
 }
 
-async function ensureSmokeFixtures() {
-  await mkdir(workspaceDir, { recursive: true });
-  await ensureSmokeMarkdown();
-  await ensureSmokePdf();
-  await ensureSmokeExcel();
-}
-
-async function ensureSmokeMarkdown() {
-  const marker = "<!-- doxmind-playwright-smoke:v2 -->";
-  if (existsSync(smokeMarkdownPath)) {
-    const existing = await readFile(smokeMarkdownPath, "utf8");
-    if (existing.includes(marker)) return;
-  }
-
+async function writeSmokeMarkdown() {
   await writeFile(
     smokeMarkdownPath,
     [
-      marker,
+      "<!-- doxmind-playwright-smoke:v3 -->",
+      "",
       "# doXmind Playwright Smoke",
       "",
       "Intro paragraph with needle and an [Example link](https://example.com).",
@@ -155,26 +172,11 @@ async function ensureSmokeMarkdown() {
   );
 }
 
-async function ensureSmokePdf() {
-  if (existsSync(smokePdfPath)) return;
-
-  const pdf = await PDFDocument.create();
-  const page = pdf.addPage([612, 792]);
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  page.drawText("doXmind PDF smoke fixture", {
-    x: 72,
-    y: 720,
-    size: 18,
-    font,
-    color: rgb(0.1, 0.1, 0.1),
+function observeRuntimeErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(`console: ${message.text()}`);
   });
-  await writeFile(smokePdfPath, await pdf.save());
-}
-
-async function ensureSmokeExcel() {
-  if (existsSync(smokeExcelPath)) return;
-
-  const source = join(process.cwd(), "server", "tests", "fixtures", "budget.xlsx");
-  await mkdir(dirname(smokeExcelPath), { recursive: true });
-  await writeFile(smokeExcelPath, await readFile(source));
+  return errors;
 }

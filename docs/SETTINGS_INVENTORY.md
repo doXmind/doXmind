@@ -4,7 +4,10 @@ Source of truth for the new Settings page redesign.
 
 Product scope follows [`PRODUCT_DIRECTION.md`](PRODUCT_DIRECTION.md): Markdown
 Page is the only editable content type, so PDF/Excel editor settings and a
-default document-type selector are intentionally excluded.
+default document-type selector are intentionally excluded. Page storage follows
+[ADR-0012](adr/0012-markdown-source-block-editor.md): active Pages have no
+sidecar settings; existing `.doxmind` files are byte-preserved legacy recovery
+artifacts.
 
 Status legend:
 
@@ -12,7 +15,7 @@ Status legend:
 - `[partial]` — store/hook exists, UI missing
 - `[new]` — needs to be built from scratch
 - `[mac]` — macOS-only
-- `[tauri]` — desktop shell only
+- `[desktop]` — Electron desktop shell only
 
 Design principles:
 
@@ -47,7 +50,7 @@ General  ·  Appearance  ·  Editor  ·  Workspace  ·  Backup & Privacy  ·  Ab
 | On launch                     | Radio: Last opened workspace / Welcome screen / Empty | Last opened | `[new]` |
 | Restore previously open files | Toggle                                                | on          | `[new]` |
 
-### Windows `[tauri]`
+### Windows `[desktop]`
 
 | Item                         | Control                         | Default     | Status  |
 | ---------------------------- | ------------------------------- | ----------- | ------- |
@@ -138,7 +141,6 @@ General  ·  Appearance  ·  Editor  ·  Workspace  ·  Backup & Privacy  ·  Ab
 | Sort by                       | Segmented: Name / Modified / Created | Name    | `[new]` |
 | Folders first                 | Toggle                               | on      | `[new]` |
 | Show hidden files (dot-files) | Toggle                               | off     | `[new]` |
-| Show `.doxmind` sidecars      | Toggle                               | off     | `[new]` |
 
 ### External edits
 
@@ -146,16 +148,11 @@ General  ·  Appearance  ·  Editor  ·  Workspace  ·  Backup & Privacy  ·  Ab
 | ------------------------- | --------------------------- | ----------- | ------- |
 | When file changes on disk | Radio: Auto-reload / Prompt | Auto-reload | `[new]` |
 
-### Sidecar maintenance
+### Legacy sidecar artifacts
 
-| Item                          | Control                               | Default | Status  |
-| ----------------------------- | ------------------------------------- | ------- | ------- |
-| Clean up orphan Page sidecars | Button (scan + report before removal) | —       | `[new]` |
-
-This maintenance action is limited to same-name Markdown Page sidecars that a
-fresh scan proves are orphaned. It must never delete or offer to delete PDF/XLSX
-sidecars, `.bak`, `.lock`, or corrupt forensic copies; those remain legacy
-recovery evidence.
+Legacy `.doxmind` files are recovery data, not active Page state. Settings must
+not offer automatic recreation or cleanup; generic “Show hidden files” is
+sufficient for inspection.
 
 ### Search
 
@@ -212,11 +209,11 @@ These looked plausible but fail one of the design principles above. Dropped, wit
 
 ### From General
 
-| Dropped                                                    | Why                                                                                                           |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Confirm before deleting > N items (configurable threshold) | Always confirm destructive actions. A configurable threshold is theater.                                      |
-| Confirm before emptying trash (toggle)                     | Emptying trash should always confirm. Not a setting.                                                          |
-| Remember window size & position per workspace              | Tauri already restores last window geometry. Per-workspace memory is a feature without a complaint behind it. |
+| Dropped                                                    | Why                                                                                                              |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Confirm before deleting > N items (configurable threshold) | Always confirm destructive actions. A configurable threshold is theater.                                         |
+| Confirm before emptying trash (toggle)                     | Emptying trash should always confirm. Not a setting.                                                             |
+| Remember window size & position per workspace              | Electron already restores last window geometry. Per-workspace memory is a feature without a complaint behind it. |
 
 ### From Appearance
 
@@ -239,18 +236,18 @@ These looked plausible but fail one of the design principles above. Dropped, wit
 
 ### From Editor — PDF
 
-| Dropped                 | Why                                                                   |
-| ----------------------- | --------------------------------------------------------------------- |
-| Default annotation tool | PDF editing is removed; Attachments do not expose editor preferences. |
-| Default highlight color | PDF editing is removed; Attachments do not expose editor preferences. |
+| Dropped                 | Why                                                                                   |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| Default annotation tool | Tools should be sticky in the editor toolbar (last-used wins). Not an app preference. |
+| Default highlight color | Belongs to the in-editor color picker, not Settings.                                  |
 
 ### From Editor — Excel
 
-| Dropped                   | Why                                                                        |
-| ------------------------- | -------------------------------------------------------------------------- |
-| Show row & column headers | Spreadsheet editing is removed; Attachments have no grid preferences.      |
-| Decimal display precision | Spreadsheet editing is removed; use the system spreadsheet application.    |
-| Default font              | Spreadsheet editing is removed; Attachments do not expose cell formatting. |
+| Dropped                   | Why                                                   |
+| ------------------------- | ----------------------------------------------------- |
+| Show row & column headers | Per-sheet view setting, not an app preference.        |
+| Decimal display precision | Per-cell formatting. Excel itself models it that way. |
+| Default font              | Per-cell formatting.                                  |
 
 ### From Workspace
 
@@ -259,7 +256,8 @@ These looked plausible but fail one of the design principles above. Dropped, wit
 | Default workspace path for new files                      | Muddles the model. New files go in the currently selected folder.                       |
 | Default expand depth on workspace open                    | Premature. Users open folders themselves and the tree state persists.                   |
 | File watcher (toggle)                                     | Either we trust the watcher or we remove the feature. No middle ground worth surfacing. |
-| Recreate sidecar when markdown edited externally (toggle) | Already documented as the design (markdown wins). Not a user-facing choice.             |
+| Recreate sidecar when markdown edited externally (toggle) | Superseded by ADR-0012: active Pages have no sidecar; preserve any legacy artifact.     |
+| Clean up orphan sidecars                                  | Legacy sidecars may contain recoverable data and must not be deleted automatically.     |
 
 ### From Backup & Privacy
 
@@ -272,17 +270,17 @@ These looked plausible but fail one of the design principles above. Dropped, wit
 
 ## Implementation cost (for sequencing)
 
-| Bucket                               | Items                                                                                                                                   | Effort |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| Already done — only needs new layout | All of Appearance                                                                                                                       | 0      |
-| Small (< half day each)              | Language, Startup, file tree sort/hidden/sidecar visibility, smart typography, tab size, code block options, recent workspace removable | small  |
-| Medium (1–2 days each)               | Image paste strategy, external edits behavior, orphan sidecar cleanup, snapshot foundation, line endings, line wrap                     | medium |
-| Large (≥ 3 days)                     | Search excluded folders (touches indexer), sidebar trash panel migration, About scaffolding                                             | large  |
+| Bucket                               | Items                                                                                                                           | Effort |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Already done — only needs new layout | All of Appearance                                                                                                               | 0      |
+| Small (< half day each)              | Language, Startup, file tree sort/hidden visibility, smart typography, tab size, code block options, recent workspace removable | small  |
+| Medium (1–2 days each)               | Image paste strategy, external edits behavior, snapshot foundation, line endings, line wrap                                     | medium |
+| Large (≥ 3 days)                     | Search excluded folders (touches indexer), sidebar trash panel migration, About scaffolding                                     | large  |
 
 Recommended order:
 
 1. **Layout shell + Appearance** — highest visible win, zero new logic
-2. **Workspace tab** (file tree + sidecar visibility + recent management) — daily-touched surface
+2. **Workspace tab** (file tree + recent management) — daily-touched surface
 3. **Markdown editor preferences** — typography, save, image paste
 4. **Trash migration to sidebar panel** — required before settings can drop the Trash tab
 5. **Backup & Privacy + About** — completes the IA

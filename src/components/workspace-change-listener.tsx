@@ -1,52 +1,62 @@
 "use client";
 
 import { useEffect } from "react";
-import { shouldSuppressWorkspaceRefreshForSelfSave, useFileStore } from "@/stores/file-store";
+import { useFileStore } from "@/stores/file-store";
+import { isMarkdownFile } from "@/lib/document-types";
+import { eventBus } from "@/lib/events";
 import { storeLogger } from "@/lib/logger";
 import { debounce } from "@/lib/utils";
+import { hasDesktopBridge, invokeDesktop, listenDesktop } from "@/lib/native-shell";
 
 const log = storeLogger.child("WorkspaceWatch");
 
 // Small debounce to collapse the rare duplicate event into one re-scan. The
-// Rust watcher already coalesces bursts (~400 ms, 800 ms ceiling), so this is
+// Electron watcher already coalesces bursts, so this is
 // only a thin guard against same-tick repeats; keeping it short keeps total
-// latency well under the ~1 s target. The re-scan itself is the source of truth.
+// latency well under the ~1 s target.
 const REFRESH_DEBOUNCE_MS = 50;
 
-// Watches the open workspace folder via the native Tauri watcher and refreshes
+// Watches the open workspace folder via Electron and refreshes
 // the sidebar when its contents change externally (Finder, terminal, another
 // app). Mounted app-wide; the effect only does work while a folder workspace is
-// open under Tauri. The manual right-click → Refresh remains as a fallback, and
-// the window-focus handler that re-reads the *current file* is untouched — tree
-// refresh lives only here.
+// open in the desktop app. The manual right-click → Refresh and window-focus re-read
+// remain as fallbacks.
 export function WorkspaceChangeListener() {
   const openTarget = useFileStore((s) => s.openTarget);
   const rootPath = useFileStore((s) => s.rootPath);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!("__TAURI_BACKEND_URL__" in window)) return;
+    if (!hasDesktopBridge()) return;
     if (openTarget !== "folder" || !rootPath) return;
 
     const root = rootPath;
     let cancelled = false;
     let unlisten: (() => void) | undefined;
 
-    // Re-scan via the same path the Refresh button uses. loadFiles() preserves
-    // selection / expanded state, so a refresh doesn't reset the tree.
+    // Re-scan the tree first, then re-read the active Page so a content-only
+    // external edit reaches the editor even when the scan shape is unchanged.
     const refresh = debounce(() => {
-      if (shouldSuppressWorkspaceRefreshForSelfSave()) return;
-      // Silent: a background re-scan must not toggle the sidebar's loading
-      // state, and loadFiles preserves object identity for unchanged files so
-      // the open editor doesn't re-render on every external change / autosave.
-      void useFileStore.getState().loadFiles({ silent: true });
+      void (async () => {
+        try {
+          await useFileStore.getState().loadFiles({ silent: true });
+          if (cancelled) return;
+          const state = useFileStore.getState();
+          const current = state.currentFileId
+            ? state.files.find((file) => file.id === state.currentFileId)
+            : undefined;
+          if (current && isMarkdownFile(current)) {
+            await state.loadFileContent(current.id, { force: true });
+          }
+        } catch (error) {
+          log.error("workspace refresh failed", error);
+        } finally {
+          if (!cancelled) eventBus.emit("storage:changed");
+        }
+      })();
     }, REFRESH_DEBOUNCE_MS);
 
     void (async () => {
       try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const { listen } = await import("@tauri-apps/api/event");
-
         // The backend scopes delivery to this window via emit_to, so every
         // event we receive is for our own workspace. We deliberately don't
         // string-compare payload.root against rootPath: rootPath holds the raw
@@ -54,7 +64,7 @@ export function WorkspaceChangeListener() {
         // /private/tmp, trailing slash), so an equality check would drop real
         // events. Stale-folder events are handled by re-registering this effect
         // on rootPath change, plus the root-scoped unwatch on teardown.
-        const off = await listen("workspace://changed", () => {
+        const off = listenDesktop("workspace://changed", () => {
           refresh();
         });
 
@@ -64,9 +74,9 @@ export function WorkspaceChangeListener() {
         }
         unlisten = off;
 
-        await invoke("workspace_watch", { root });
+        await invokeDesktop("workspace_watch", { root });
       } catch (error) {
-        // Non-Tauri build, or the watcher failed to start (e.g. OS watch
+        // Browser dev, or the watcher failed to start (e.g. OS watch
         // limits). The manual Refresh remains available either way.
         log.error("workspace watch unavailable", error);
       }
@@ -78,13 +88,12 @@ export function WorkspaceChangeListener() {
       unlisten?.();
       void (async () => {
         try {
-          const { invoke } = await import("@tauri-apps/api/core");
           // Pass the root we installed: on a folder swap this teardown races the
           // next window's workspace_watch across IPC, and a root-scoped unwatch
           // only removes the watcher if it's still ours — never the new one.
-          await invoke("workspace_unwatch", { root });
+          await invokeDesktop("workspace_unwatch", { root });
         } catch {
-          // Nothing to tear down outside Tauri.
+          // Nothing to tear down outside Electron.
         }
       })();
     };

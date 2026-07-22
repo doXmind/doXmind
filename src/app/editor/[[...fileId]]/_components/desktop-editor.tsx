@@ -10,11 +10,9 @@ import { WelcomeScreen } from "@/components/welcome-screen";
 import { WorkspaceHome } from "@/components/workspace/workspace-home";
 import { UnifiedHeader } from "@/components/editor/unified-header";
 import { OutlineCollapsed } from "@/components/editor/mindlines/outline-collapsed";
-import { useHeadings } from "@/components/editor/mindlines/use-headings";
-import { OutlineProvider } from "@/components/editor/mindlines/use-canonical-outline";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
-import { useEditorRefStore } from "@/stores/editor-ref-store";
+import { usePageSessionStore } from "@/stores/page-session-store";
 import { isMarkdownFile } from "@/lib/document-types";
 import { MINDLINES_WIDTH } from "@/lib/constants";
 import { MarkdownSkeleton } from "@/components/workspace/markdown-skeleton";
@@ -45,21 +43,24 @@ export function DesktopEditor() {
   const setFilesSidebarWidth = useLayoutStore((s) => s.setFilesSidebarWidth);
   const resetPanelWidths = useLayoutStore((s) => s.resetPanelWidths);
 
-  const editor = useEditorRefStore((s) => s.editor);
-  const { headings, activeId, navigateTo } = useHeadings(editor);
+  const outlineSession = usePageSessionStore((s) => s.outlineSession);
+  const currentPageOutline =
+    currentFile && isMarkdownFile(currentFile) && outlineSession?.pageId === currentFile.id
+      ? outlineSession
+      : null;
+  const headings = currentPageOutline?.headings ?? [];
+  const activeId = currentPageOutline?.activeId ?? null;
+  const navigateTo = currentPageOutline?.navigateTo ?? (() => undefined);
   const hasLiveHeadings = !!currentFile && isMarkdownFile(currentFile) && headings.length > 0;
-  // The unified Markdown runtime starts read-only, but live heading extraction
-  // still arrives after the TipTap view mounts. Reserve the outline gutter
-  // from the cached read model too, otherwise the page frame shifts when the
-  // live headings become available.
+  // Live heading extraction arrives after the active editor runtime mounts.
+  // Reserve the outline gutter from the cached read model too, otherwise the
+  // page frame shifts when the live headings become available.
   const hasReservedOutline =
     hasLiveHeadings ||
     (!!currentFile && isMarkdownFile(currentFile) && (currentFile.outline?.length ?? 0) >= 2);
 
-  // Do not animate grid-template-columns here. Even optimized grid column
-  // animation forces the heavy TipTap editor to reflow on every frame in the
-  // macOS WebView. The instant column snap is less decorative, but keeps
-  // sidebar toggles responsive.
+  // Do not animate grid-template-columns here. Editor reflow on every frame
+  // makes sidebar toggles visibly lag in the macOS WebView.
   const filesGridTransition = "none";
   const filesSidebarColPx =
     !isFocusMode && hasOpenTarget && isFilesSidebarOpen ? filesSidebarWidth : 0;
@@ -95,142 +96,144 @@ export function DesktopEditor() {
 
   return (
     <AppShell hideHeader>
-      <OutlineProvider editor={editor}>
-        <div className="desktop-window-shell relative flex h-full flex-col" style={shellStyle}>
-          {/* Header floats above the scroll surfaces, but paints an opaque
+      <div className="desktop-window-shell relative flex h-full flex-col" style={shellStyle}>
+        {/* Header floats above the scroll surfaces, but paints an opaque
               backing so editor content never shows through it. Each scroll
               surface reserves the header's height at its top (h-11 spacers)
               so the first line clears the floating controls. */}
-          {!isFocusMode && (
-            <div className="absolute inset-x-0 top-0 z-30">
-              <UnifiedHeader />
+        {!isFocusMode && (
+          <div className="absolute inset-x-0 top-0 z-30">
+            <UnifiedHeader />
+          </div>
+        )}
+
+        <div className="flex min-h-0 flex-1">
+          <div
+            className="desktop-content-canvas grid min-h-0 flex-1"
+            style={{
+              gridTemplateColumns: `${filesSidebarColPx}px ${filesHandleColPx}px minmax(0, 1fr)`,
+              transition: filesGridTransition,
+            }}
+          >
+            <aside data-native-editor-chrome className="min-w-0 overflow-hidden">
+              {!isFocusMode && hasOpenTarget && isFilesSidebarOpen && (
+                <div style={{ minWidth: filesSidebarWidth }} className="h-full">
+                  <FilesSidebar />
+                </div>
+              )}
+            </aside>
+            <div data-native-editor-chrome className="min-w-0 overflow-hidden">
+              {!isFocusMode && hasOpenTarget && isFilesSidebarOpen && (
+                <ResizeHandle
+                  side="left"
+                  showSeparator={false}
+                  onResize={(delta) => setFilesSidebarWidth(filesSidebarWidth + delta)}
+                  onDoubleClick={() => resetPanelWidths()}
+                />
+              )}
             </div>
-          )}
 
-          <div className="flex min-h-0 flex-1">
-            <div
-              className="desktop-content-canvas grid min-h-0 flex-1"
-              style={{
-                gridTemplateColumns: `${filesSidebarColPx}px ${filesHandleColPx}px minmax(0, 1fr)`,
-                transition: filesGridTransition,
-              }}
+            <main
+              id="main-content"
+              className={cn(
+                "desktop-content-surface relative min-h-0 min-w-0 overflow-hidden bg-background",
+                !isFocusMode &&
+                  hasOpenTarget &&
+                  isFilesSidebarOpen &&
+                  "desktop-content-with-sidebar"
+              )}
             >
-              <aside className="min-w-0 overflow-hidden">
-                {!isFocusMode && hasOpenTarget && isFilesSidebarOpen && (
-                  <div style={{ minWidth: filesSidebarWidth }} className="h-full">
-                    <FilesSidebar />
-                  </div>
-                )}
-              </aside>
-              <div className="min-w-0 overflow-hidden">
-                {!isFocusMode && hasOpenTarget && isFilesSidebarOpen && (
-                  <ResizeHandle
-                    side="left"
-                    showSeparator={false}
-                    onResize={(delta) => setFilesSidebarWidth(filesSidebarWidth + delta)}
-                    onDoubleClick={() => resetPanelWidths()}
-                  />
-                )}
-              </div>
-
-              <main
-                id="main-content"
-                className={cn(
-                  "desktop-content-surface relative min-h-0 min-w-0 overflow-hidden bg-background",
-                  !isFocusMode &&
-                    hasOpenTarget &&
-                    isFilesSidebarOpen &&
-                    "desktop-content-with-sidebar"
-                )}
-              >
-                {/* Outline rail — collapsed by default, expands into a floating
+              {/* Outline rail — collapsed by default, expands into a floating
                 outline popover on hover. Keep it close to the scroll edge so
                 the popover reads as part of the document navigation chrome. */}
-                {!isFocusMode && hasLiveHeadings && (
-                  <div
-                    className="pointer-events-none absolute bottom-[14vh] right-2 top-[18vh] z-30 overflow-visible transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] md:right-2"
-                    style={{ width: outlineRailWidth }}
-                  >
-                    {/* `relative` so the OutlineCollapsed root, which is
+              {!isFocusMode && hasLiveHeadings && (
+                <div
+                  data-native-editor-chrome
+                  className="pointer-events-none absolute bottom-[14vh] right-2 top-[18vh] z-30 overflow-visible transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] md:right-2"
+                  style={{ width: outlineRailWidth }}
+                >
+                  {/* `relative` so the OutlineCollapsed root, which is
                       `absolute right-0`, anchors to this 40px-wide column's
                       right edge and grows leftward when expanded. Without
                       relative positioning here, the absolute child would
                       anchor to the outer fixed-width column above and the
                       math would still work — but explicit relative keeps
                       the contract local. */}
-                    <div className="pointer-events-auto relative h-full w-full">
-                      <OutlineCollapsed
-                        headings={headings}
-                        activeId={activeId}
-                        onNavigate={navigateTo}
-                      />
-                    </div>
+                  <div className="pointer-events-auto relative h-full w-full">
+                    <OutlineCollapsed
+                      headings={headings}
+                      activeId={activeId}
+                      onNavigate={navigateTo}
+                    />
                   </div>
-                )}
-
-                <div className="relative flex h-full min-w-0 flex-col overflow-hidden">
-                  <ErrorBoundary>
-                    {currentFile ? (
-                      // Crossfade between the loading skeleton and the editor so
-                      // a first open / file switch fades instead of snapping.
-                      // `mode="wait"` keeps a single element in flow (no layout
-                      // doubling); `initial={false}` skips animating the very
-                      // first mount.
-                      <AnimatePresence mode="wait" initial={false}>
-                        {isCurrentFileLoaded ? (
-                          <motion.div
-                            key="document"
-                            className="h-full"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            transition={{ duration: 0.18, ease: "easeOut" }}
-                          >
-                            <DocumentWorkspace
-                              file={currentFile}
-                              reservedRightInset={outlineContentGutterPx}
-                            />
-                          </motion.div>
-                        ) : (
-                          <motion.div
-                            key="skeleton"
-                            className="h-full"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            transition={{ duration: 0.18, ease: "easeOut" }}
-                          >
-                            <MarkdownSkeleton
-                              file={{ name: currentFile.name, outline: currentFile.outline }}
-                            />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    ) : !isSynced && currentFileId ? (
-                      <MarkdownSkeleton />
-                    ) : openTarget === "folder" ? (
-                      <WorkspaceHome />
-                    ) : (
-                      <WelcomeScreen />
-                    )}
-                  </ErrorBoundary>
                 </div>
-              </main>
-            </div>
-          </div>
+              )}
 
-          {isFocusMode && (
-            <div className="fixed left-1/2 top-0 z-50 -translate-x-1/2 opacity-0 transition-opacity duration-300 hover:opacity-100">
-              <button
-                onClick={() => setFocusMode(false)}
-                className="mt-2 rounded-full border border-border bg-card/80 px-4 py-1.5 text-xs text-muted-foreground shadow-lg backdrop-blur-sm transition-colors hover:text-foreground"
-              >
-                Exit Focus Mode (F11)
-              </button>
-            </div>
-          )}
+              <div className="relative flex h-full min-w-0 flex-col overflow-hidden">
+                <ErrorBoundary>
+                  {currentFile ? (
+                    // Crossfade between the loading skeleton and the editor so
+                    // a first open / file switch fades instead of snapping.
+                    // `mode="wait"` keeps a single element in flow (no layout
+                    // doubling); `initial={false}` skips animating the very
+                    // first mount.
+                    <AnimatePresence mode="wait" initial={false}>
+                      {isCurrentFileLoaded ? (
+                        <motion.div
+                          key="document"
+                          className="h-full"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.18, ease: "easeOut" }}
+                        >
+                          <DocumentWorkspace
+                            file={currentFile}
+                            reservedRightInset={outlineContentGutterPx}
+                          />
+                        </motion.div>
+                      ) : (
+                        <motion.div
+                          key="skeleton"
+                          className="h-full"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.18, ease: "easeOut" }}
+                        >
+                          <MarkdownSkeleton
+                            file={{ name: currentFile.name, outline: currentFile.outline }}
+                          />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  ) : !isSynced && currentFileId ? (
+                    <MarkdownSkeleton />
+                  ) : openTarget === "folder" ? (
+                    <WorkspaceHome />
+                  ) : (
+                    <WelcomeScreen />
+                  )}
+                </ErrorBoundary>
+              </div>
+            </main>
+          </div>
         </div>
-      </OutlineProvider>
+
+        {isFocusMode && (
+          <div
+            data-native-editor-chrome
+            className="fixed left-1/2 top-0 z-50 -translate-x-1/2 opacity-0 transition-opacity duration-300 hover:opacity-100"
+          >
+            <button
+              onClick={() => setFocusMode(false)}
+              className="mt-2 rounded-full border border-border bg-card/80 px-4 py-1.5 text-xs text-muted-foreground shadow-lg backdrop-blur-sm transition-colors hover:text-foreground"
+            >
+              Exit Focus Mode (F11)
+            </button>
+          </div>
+        )}
+      </div>
     </AppShell>
   );
 }

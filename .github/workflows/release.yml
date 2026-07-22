@@ -36,10 +36,6 @@ jobs:
           node-version: 22
           cache: npm
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
       - name: Require main and refuse to replace an existing candidate
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
@@ -54,16 +50,8 @@ jobs:
       - name: Install JS dependencies
         run: npm ci
 
-      - name: Build the PyInstaller sidecar (one-dir)
-        run: |
-          test "$(uname -m)" = "arm64"
-          python3.12 -m venv server/.venv
-          server/.venv/bin/pip install --upgrade pip
-          server/.venv/bin/pip install -r server/requirements.txt pyinstaller
-          npm run build:sidecar:electron
-
       - name: Build the renderer (static export)
-        run: npm run build
+        run: node scripts/build-frontend.mjs
 
       - name: Build, sign, and notarize the candidate
         env:

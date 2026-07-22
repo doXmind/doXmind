@@ -6,7 +6,7 @@ import { notify } from "@/lib/notifications";
 import { useFileStore } from "@/stores/file-store";
 import { getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
-import { useIsTauri } from "@/hooks/use-is-tauri";
+import { useDesktopShell } from "@/hooks/use-desktop-shell";
 import { pickNativeFolder, resolveDroppedFiles } from "@/lib/native-dialog";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { documentTypeFromName } from "@/lib/document-types";
@@ -32,7 +32,7 @@ function workspaceLabel(absolutePath: string): { name: string; parent: string } 
 
 export function WelcomeScreen() {
   const tSidebar = useTranslations("sidebar");
-  const { isTauri: isDesktopShell } = useIsTauri();
+  const { isDesktop: isDesktopShell } = useDesktopShell();
 
   const recentsRaw = useFileStore((s) => s.recents);
   const openTarget = useFileStore((s) => s.openTarget);
@@ -76,21 +76,22 @@ export function WelcomeScreen() {
           entry.kind === "file" && entry.path !== openFilePath && !isInsideWorkspace(entry.path)
       )
       .slice(0, RECENT_FILE_LIMIT)
-      .map((entry) => {
+      .flatMap((entry) => {
         const { name, parent } = workspaceLabel(entry.path);
-        return {
-          absolutePath: entry.path,
-          workspacePath: parent,
-          name,
-          documentType: documentTypeFromName(name),
-          lastOpened: "",
-          editCount: 0,
-          wordCount: 0,
-          // No excerpt available at this layer; leave empty rather than
-          // stuffing the parent path in (the row's subtitle already shows it,
-          // and the preview block renders un-truncated).
-          preview: "",
-        };
+        const documentType = documentTypeFromName(name);
+        if (!documentType) return [];
+        return [
+          {
+            absolutePath: entry.path,
+            workspacePath: parent,
+            name,
+            documentType,
+            lastOpened: "",
+            editCount: 0,
+            wordCount: 0,
+            preview: parent,
+          },
+        ];
       });
   }, [recentsRaw, openFilePath]);
 

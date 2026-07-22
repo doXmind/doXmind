@@ -1,11 +1,11 @@
 "use strict";
 
 /**
- * Per-window open-target registry — the Node port of the Rust `WindowRegistry`
- * + `normalize_open_path` in src-tauri/src/lib.rs.
+ * Per-window open-target registry used by the Electron main process.
+ * shared by file-association and renderer window-opening paths.
  *
  * Targets are `{ kind: 'file' | 'folder', path }`. De-duplication is by EXACT
- * `{kind, path}` equality (mirroring Rust's `t == target`), so the frontend is
+ * `{kind, path}` equality, so the frontend is
  * the source of truth for a window's canonical path: it calls
  * register_window_target after openFolder/openFile resolves, and a window
  * created for a target is pre-registered so a concurrent focus-existing lookup
@@ -22,7 +22,7 @@ const SUPPORTED_EXTS = [".md", ".markdown", ".pdf", ".xlsx", ".xlsm", ".csv", ".
 /**
  * Resolve an argv / file:// path into a canonical absolute path that points at
  * a document type doXmind can open, or null. Absolute paths are taken as-is
- * (matching the Rust behavior); relative paths are realpath-resolved.
+ * while relative paths are realpath-resolved.
  */
 function normalizeOpenPath(input) {
   if (!input || typeof input !== "string") return null;

@@ -7,15 +7,15 @@ import { useEffect } from "react";
 // Reload drops unsaved transient UI state, Back/Forward walk the history stack
 // into routes the app never designed for re-entry.
 //
-// Custom menus (sidebar, TipTap editor, Excel grid, …) already preventDefault
-// per-area. This is the global fallback for everywhere else, with two escape
+// Custom menus (sidebar and Page surfaces) already preventDefault per-area.
+// This is the global fallback for everywhere else, with two escape
 // clauses so it never fights those menus or strips useful native ones:
 //
 //   1. defaultPrevented — an inner custom menu already handled this event.
-//      Some (e.g. the TipTap editor) preventDefault without stopPropagation, so
+//      Some (e.g. the Page editor) preventDefault without stopPropagation, so
 //      their event still reaches document; bailing here lets them win.
-//   2. text-input targets — real inputs / contenteditable surfaces (PDF text
-//      boxes, sidebar & database rename fields) keep the native
+//   2. text-input targets — real inputs / contenteditable surfaces (Page
+//      source Blocks and rename fields) keep the native
 //      Cut/Copy/Paste/spellcheck menu, which is genuinely useful there.
 export function ContextMenuGuard() {
   useEffect(() => {

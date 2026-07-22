@@ -56,3 +56,4 @@ def test_index_rebuild(tmp_path):
     res = runner.invoke(app, ["index", "rebuild", "--root", str(tmp_path)])
     assert res.exit_code == 0, res.output
     assert "rebuilt index" in res.stdout
+    assert not (tmp_path / ".doxmind").exists()

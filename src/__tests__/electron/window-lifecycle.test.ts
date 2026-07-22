@@ -43,7 +43,7 @@ describe("Electron window lifecycle", () => {
     vi.useRealTimers();
   });
 
-  it("treats red-window close like VS Code: close the window, keep the app alive", () => {
+  it("never destroys a window while its save decision is pending or refused", () => {
     const deliver = vi.fn();
     const quit = vi.fn();
     const win = new FakeWindow(1);
@@ -51,7 +51,6 @@ describe("Electron window lifecycle", () => {
       deliver,
       getAllWindows: () => (win.isDestroyed() ? [] : [win]),
       quit,
-      closeTimeoutMs: 50,
     });
 
     lifecycle.attachCloseToSave(win);
@@ -64,8 +63,20 @@ describe("Electron window lifecycle", () => {
 
     vi.advanceTimersByTime(50);
 
-    expect(win.isDestroyed()).toBe(true);
+    expect(win.isDestroyed()).toBe(false);
     expect(quit).not.toHaveBeenCalled();
+
+    const repeatedClose = win.close();
+    expect(repeatedClose.preventDefault).toHaveBeenCalledOnce();
+    expect(deliver).toHaveBeenCalledTimes(1);
+
+    lifecycle.cancelClose(win);
+    win.close();
+    expect(deliver).toHaveBeenCalledTimes(2);
+    expect(win.isDestroyed()).toBe(false);
+
+    lifecycle.closeWindowNow(win);
+    expect(win.isDestroyed()).toBe(true);
   });
 
   it("treats explicit Quit like VS Code: save windows, close them, then quit the app", () => {
@@ -76,7 +87,6 @@ describe("Electron window lifecycle", () => {
       deliver,
       getAllWindows: () => windows.filter((win) => !win.isDestroyed()),
       quit,
-      closeTimeoutMs: 50,
     });
     windows.forEach((win) => lifecycle.attachCloseToSave(win));
 

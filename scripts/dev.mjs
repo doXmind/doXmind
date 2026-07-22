@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * doXmind Mini — local dev launcher.
+ * doXmind — browser-development launcher.
  *
  * Finds a free port for the FastAPI backend and another for Next.js, wires
- * BACKEND_URL through so the frontend rewrites hit the right place, spawns
+ * NEXT_PUBLIC_API_URL through to the browser workspace Adapter, spawns
  * both, labels their output, and shuts them down cleanly on Ctrl-C.
  */
 
@@ -43,9 +43,6 @@ function resolvePython() {
   process.exit(1);
 }
 
-// Check both 0.0.0.0 and 127.0.0.1 — on macOS a process bound to 0.0.0.0
-// doesn't always block a 127.0.0.1 bind, so probing only one host lets stale
-// listeners slip through and the new process ends up racing them.
 function tryListen(port, host) {
   return new Promise((resolve) => {
     const server = net.createServer();
@@ -57,12 +54,19 @@ function tryListen(port, host) {
 
 async function findFreePort(preferred, max = preferred + 100) {
   for (let port = preferred; port <= max; port++) {
-    const okAny = await tryListen(port, "0.0.0.0");
-    if (!okAny) continue;
-    const okLocal = await tryListen(port, "127.0.0.1");
-    if (okLocal) return port;
+    if (await tryListen(port, "127.0.0.1")) return port;
   }
   throw new Error(`No free port found between ${preferred} and ${max}`);
+}
+
+function preferredPort(name, fallback) {
+  const configured = process.env[name];
+  if (configured === undefined) return { port: fallback, exact: false };
+  const port = Number(configured);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`${name} must be an integer between 1 and 65535`);
+  }
+  return { port, exact: true };
 }
 
 function label(name, color) {
@@ -88,13 +92,21 @@ function pipe(child, tag) {
 }
 
 async function main() {
-  const backendPort = await findFreePort(8000);
-  const frontendPort = await findFreePort(3000);
+  const backendPreference = preferredPort("DOXMIND_BACKEND_PORT", 8000);
+  const frontendPreference = preferredPort("DOXMIND_FRONTEND_PORT", 3000);
+  const backendPort = await findFreePort(
+    backendPreference.port,
+    backendPreference.exact ? backendPreference.port : backendPreference.port + 100
+  );
+  const frontendPort = await findFreePort(
+    frontendPreference.port,
+    frontendPreference.exact ? frontendPreference.port : frontendPreference.port + 100
+  );
 
   const backendUrl = `http://127.0.0.1:${backendPort}`;
   const frontendUrl = `http://127.0.0.1:${frontendPort}`;
 
-  console.log(`\n  doXmind Mini (local)`);
+  console.log(`\n  doXmind (browser development)`);
   console.log(`  backend  → ${backendUrl}`);
   console.log(`  frontend → ${frontendUrl}\n`);
 
@@ -114,13 +126,19 @@ async function main() {
 
   const frontend = spawn(
     process.execPath,
-    [path.join(REPO_ROOT, "node_modules", "next", "dist", "bin", "next"), "dev", "-p", String(frontendPort)],
+    [
+      path.join(REPO_ROOT, "node_modules", "next", "dist", "bin", "next"),
+      "dev",
+      "-H",
+      "127.0.0.1",
+      "-p",
+      String(frontendPort),
+    ],
     {
       cwd: REPO_ROOT,
       env: {
         ...process.env,
-        BACKEND_URL: backendUrl,
-        NEXT_PUBLIC_API_URL: "",
+        NEXT_PUBLIC_API_URL: backendUrl,
         PORT: String(frontendPort),
       },
       stdio: ["ignore", "pipe", "pipe"],

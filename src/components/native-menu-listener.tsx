@@ -3,13 +3,17 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { notify } from "@/lib/notifications";
+import { isMarkdownFile } from "@/lib/document-types";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
+import { createPageForContext } from "@/lib/new-page";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { pickNativeFile, pickNativeFolder } from "@/lib/native-dialog";
 import { openNewWindow, openWindowForTarget, syncRecentsToDock } from "@/lib/window";
 import { revealFileInFinder, revealPathInFinder } from "@/lib/storage/reveal";
 import { storeLogger } from "@/lib/logger";
+import { hasDesktopBridge, invokeDesktop, listenDesktop } from "@/lib/native-shell";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
 
 const log = storeLogger.child("NativeMenu");
 
@@ -20,8 +24,7 @@ export const NATIVE_FILE_FILTERS = [
   },
 ];
 
-// Bridges native macOS menu-bar and tray clicks (emitted from
-// src-tauri/src/menu_bar.rs and the tray builder in src-tauri/src/lib.rs)
+// Bridges Electron menu-bar, Dock, and tray clicks
 // to the same store actions the in-app UI uses, so behavior stays in one
 // place. Each handler is intentionally small — anything heavier should
 // move into the relevant store, not balloon this bridge.
@@ -29,34 +32,26 @@ export function NativeMenuListener() {
   const router = useRouter();
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!("__TAURI_BACKEND_URL__" in window)) return;
+    if (!hasDesktopBridge()) return;
 
     const unlisteners: Array<() => void> = [];
     let cancelled = false;
 
-    const nextUntitledName = (): string => {
-      const { files } = useFileStore.getState();
-      const rootFiles = files.filter((f) => !f.isFolder && f.parentId === null);
-      let max = 0;
-      for (const f of rootFiles) {
-        const m = f.name.match(/^Untitled-(\d+)\.md$/);
-        if (m) {
-          const n = parseInt(m[1], 10);
-          if (n > max) max = n;
-        }
+    const createUntitled = async () => {
+      try {
+        const id = await createPageForContext(useFileStore.getState());
+        await navigateToEditorFile(id);
+      } catch (error) {
+        log.error("create Page failed", error);
+        notify.error("Could not create Page");
       }
-      return `Untitled-${max + 1}.md`;
     };
 
-    const createUntitled = async () => {
-      const { createFile } = useFileStore.getState();
-      try {
-        const id = await createFile(nextUntitledName(), "", null);
-        navigateToEditorFile(id);
-      } catch {
-        // The store already surfaces failures via the global toaster.
-      }
+    const activeMarkdownPage = () => {
+      const state = useFileStore.getState();
+      if (!state.currentFileId) return null;
+      const file = state.files.find((candidate) => candidate.id === state.currentFileId);
+      return file && !file.isFolder && isMarkdownFile(file) ? file : null;
     };
 
     const openFilePicker = async () => {
@@ -106,16 +101,42 @@ export function NativeMenuListener() {
       void syncRecentsToDock([]);
     };
 
+    const saveCurrentPage = async () => {
+      if (!activeMarkdownPage()) return;
+      const requestSave = useEditorRefStore.getState().requestSave;
+      if (!requestSave) return;
+      try {
+        await requestSave();
+      } catch (error) {
+        log.error("save failed", error);
+        notify.error("Could not save Page");
+      }
+    };
+
+    const undoCurrentPage = () => {
+      if (!activeMarkdownPage()) return;
+      useEditorRefStore.getState().requestUndo?.();
+    };
+
+    const redoCurrentPage = () => {
+      if (!activeMarkdownPage()) return;
+      useEditorRefStore.getState().requestRedo?.();
+    };
+
+    const findInCurrentPage = () => {
+      if (!activeMarkdownPage()) return;
+      useLayoutStore.getState().setSearchBarOpen(true);
+    };
+
     // Drain any file paths the OS handed us via file association — populated
-    // from CLI args at startup (Windows/Linux) and from RunEvent::Opened
+    // from CLI args at startup (Windows/Linux) and Electron's open-file event
     // (macOS Finder "Open With" / drag-to-dock). Multiple windows may race
-    // here; the Rust queue is drained atomically so only the first caller
+    // here; the main-process queue is drained atomically so only the first caller
     // gets the paths, and openWindowForTarget dedupes by focusing an
     // existing window when one already shows the file.
     const drainPendingOpenPaths = async () => {
       try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const paths = await invoke<string[]>("take_pending_open_paths");
+        const paths = await invokeDesktop<string[]>("take_pending_open_paths");
         for (const path of paths) {
           try {
             await openWindowForTarget({ kind: "file", path });
@@ -130,20 +151,17 @@ export function NativeMenuListener() {
     };
 
     void (async () => {
-      const { listen } = await import("@tauri-apps/api/event");
-
       const subs: Array<{ name: string; fn: () => void | Promise<void> }> = [
         { name: "menu://new-file", fn: () => createUntitled() },
         { name: "menu://new-window", fn: () => openNewWindow() },
         { name: "menu://open-file", fn: () => openFilePicker() },
         { name: "menu://open-folder", fn: () => openFolderPicker() },
         { name: "menu://settings", fn: () => router.push("/settings") },
-        { name: "menu://save", fn: () => window.dispatchEvent(new Event("doxmind:save-now")) },
+        { name: "menu://save", fn: saveCurrentPage },
+        { name: "menu://undo", fn: undoCurrentPage },
+        { name: "menu://redo", fn: redoCurrentPage },
         { name: "menu://reveal", fn: () => revealCurrent() },
-        {
-          name: "menu://find",
-          fn: () => useLayoutStore.getState().setSearchBarOpen(true),
-        },
+        { name: "menu://find", fn: findInCurrentPage },
         {
           name: "menu://command-palette",
           fn: () => useLayoutStore.getState().openCommandPalette(),
@@ -169,7 +187,7 @@ export function NativeMenuListener() {
       ];
 
       for (const sub of subs) {
-        const off = await listen(sub.name, () => {
+        const off = listenDesktop(sub.name, () => {
           void Promise.resolve(sub.fn());
         });
         if (cancelled) {
@@ -180,30 +198,29 @@ export function NativeMenuListener() {
       }
 
       // Open Recent payload comes from native code as { kind, path }.
-      const offRecent = await listen<{ kind: "file" | "folder"; path: string }>(
+      const offRecent = listenDesktop<{ kind: "file" | "folder"; path: string }>(
         "menu://open-recent",
         (event) => {
           void openWindowForTarget(event.payload);
         }
       );
-      const offTrayRecent = await listen<{ kind: "file" | "folder"; path: string }>(
+      const offTrayRecent = listenDesktop<{ kind: "file" | "folder"; path: string }>(
         "tray://open-recent",
         (event) => {
           void openWindowForTarget(event.payload);
         }
       );
-      const offUrl = await listen<string>("menu://open-url", (event) => {
+      const offUrl = listenDesktop<string>("menu://open-url", (event) => {
         void (async () => {
           try {
-            const { openUrl } = await import("@tauri-apps/plugin-opener");
-            await openUrl(event.payload);
+            await invokeDesktop("shell_open_external", { url: event.payload });
           } catch (error) {
             log.error("open url failed", error);
           }
         })();
       });
 
-      const offOsOpen = await listen("os://open-pending", () => {
+      const offOsOpen = listenDesktop("os://open-pending", () => {
         void drainPendingOpenPaths();
       });
 
@@ -217,8 +234,7 @@ export function NativeMenuListener() {
       }
 
       // Pick up anything queued before this listener mounted — covers both
-      // CLI args harvested in setup() and Opened events that fired during
-      // the webview's boot.
+      // CLI args and open-file events that fired during renderer boot.
       void drainPendingOpenPaths();
     })();
 

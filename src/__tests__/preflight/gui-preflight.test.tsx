@@ -3,14 +3,12 @@ import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DesktopEditor } from "@/app/editor/[[...fileId]]/_components/desktop-editor";
-import { CustomBlockExtensions } from "@/extensions/registry";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
+import { usePageSessionStore } from "@/stores/page-session-store";
 
-const { headingState } = vi.hoisted(() => ({
-  headingState: {
-    headings: [] as Array<{ id: string; level: number; text: string }>,
-  },
+vi.mock("next-intl", () => ({
+  useTranslations: () => (key: string) => key,
 }));
 
 vi.mock("@/components/layout/app-shell", () => ({
@@ -31,8 +29,8 @@ vi.mock("@/components/workspace/workspace-home", () => ({
   WorkspaceHome: () => <div data-testid="workspace-home" />,
 }));
 
-vi.mock("@/components/workspace/markdown-runtime", () => ({
-  MarkdownRuntime: ({
+vi.mock("@/editor/page-editor-host", () => ({
+  PageEditorHost: ({
     file,
     reservedRightInset,
   }: {
@@ -79,14 +77,6 @@ vi.mock("@/components/editor/unified-header", () => ({
   UnifiedHeader: () => <div data-testid="unified-header" />,
 }));
 
-vi.mock("@/components/editor/mindlines/use-headings", () => ({
-  useHeadings: () => ({
-    headings: headingState.headings,
-    activeId: headingState.headings[0]?.id ?? null,
-    navigateTo: vi.fn(),
-  }),
-}));
-
 vi.mock("@/components/editor/mindlines/outline-collapsed", () => ({
   OutlineCollapsed: ({ headings }: { headings: Array<{ text: string }> }) => (
     <div data-testid="outline-collapsed">{headings.map((heading) => heading.text).join(", ")}</div>
@@ -101,137 +91,13 @@ vi.mock("@/components/ui/resize-handle", () => ({
   ),
 }));
 
-vi.mock("@/stores/editor-ref-store", () => ({
-  useEditorRefStore: (
-    selector?: (state: { editor: null; setEditor: (editor: unknown) => void }) => unknown
-  ) => {
-    const state = {
-      editor: null,
-      setEditor: vi.fn(),
-    };
-    return selector ? selector(state) : state;
-  },
-}));
-
 const now = "2026-05-06T00:00:00.000Z";
-
-const ALL_GUI_BLOCK_FIXTURES = [
-  { id: "text", customBlockType: null, html: '<p data-preflight-block="text">Text</p>' },
-  { id: "heading-1", customBlockType: null, html: '<h1 data-preflight-block="heading-1">H1</h1>' },
-  { id: "heading-2", customBlockType: null, html: '<h2 data-preflight-block="heading-2">H2</h2>' },
-  { id: "heading-3", customBlockType: null, html: '<h3 data-preflight-block="heading-3">H3</h3>' },
-  { id: "heading-4", customBlockType: null, html: '<h4 data-preflight-block="heading-4">H4</h4>' },
-  { id: "heading-5", customBlockType: null, html: '<h5 data-preflight-block="heading-5">H5</h5>' },
-  { id: "heading-6", customBlockType: null, html: '<h6 data-preflight-block="heading-6">H6</h6>' },
-  {
-    id: "quote",
-    customBlockType: null,
-    html: '<blockquote data-preflight-block="quote"><p>Quote</p></blockquote>',
-  },
-  {
-    id: "bullet-list",
-    customBlockType: null,
-    html: '<ul data-preflight-block="bullet-list"><li><p>Bullet</p></li></ul>',
-  },
-  {
-    id: "ordered-list",
-    customBlockType: null,
-    html: '<ol data-preflight-block="ordered-list"><li><p>Ordered</p></li></ol>',
-  },
-  {
-    id: "task-list",
-    customBlockType: null,
-    html: '<ul data-type="taskList" data-preflight-block="task-list"><li data-type="taskItem" data-checked="true"><p>Task</p></li></ul>',
-  },
-  { id: "divider", customBlockType: null, html: '<hr data-preflight-block="divider">' },
-  {
-    id: "table",
-    customBlockType: null,
-    html: '<table data-preflight-block="table"><tbody><tr><th>Column</th></tr><tr><td>Value</td></tr></tbody></table>',
-  },
-  {
-    id: "image",
-    customBlockType: null,
-    html: '<img data-preflight-block="image" src="assets/diagram.png" alt="Diagram">',
-  },
-  {
-    id: "code-block",
-    customBlockType: null,
-    html: '<pre data-preflight-block="code-block"><code>console.log("preflight")</code></pre>',
-  },
-  {
-    id: "columns-2",
-    customBlockType: null,
-    html: '<div data-columns="2" data-preflight-block="columns-2"><div data-column><p>Left</p></div><div data-column><p>Right</p></div></div>',
-  },
-  {
-    id: "columns-3",
-    customBlockType: null,
-    html: '<div data-columns="3" data-preflight-block="columns-3"><div data-column><p>A</p></div><div data-column><p>B</p></div><div data-column><p>C</p></div></div>',
-  },
-  {
-    id: "columns-4",
-    customBlockType: null,
-    html: '<div data-columns="4" data-preflight-block="columns-4"><div data-column><p>A</p></div><div data-column><p>B</p></div><div data-column><p>C</p></div><div data-column><p>D</p></div></div>',
-  },
-  {
-    id: "toc",
-    customBlockType: null,
-    html: '<div data-type="table-of-contents" data-preflight-block="toc">Table of Contents</div>',
-  },
-  {
-    id: "web-bookmark",
-    customBlockType: null,
-    html: '<div data-type="web-bookmark" data-url="https://example.com" data-title="Example" data-preflight-block="web-bookmark">Example</div>',
-  },
-  {
-    id: "pdf-block",
-    customBlockType: "pdf-block",
-    html: '<div data-type="pdf-block" data-id="pdf-1" data-src="assets/spec.pdf" data-preflight-block="pdf-block">PDF</div>',
-  },
-  {
-    id: "excel-block",
-    customBlockType: "excel-block",
-    html: '<div data-type="excel-block" data-id="excel-1" data-src="assets/budget.xlsx" data-preflight-block="excel-block">Excel</div>',
-  },
-  {
-    id: "mermaid",
-    customBlockType: "mermaid",
-    html: '<div data-type="mermaid-chart" data-code="graph TD; A-->B" data-preflight-block="mermaid"></div>',
-  },
-  {
-    id: "callout",
-    customBlockType: "callout",
-    html: '<div data-callout-type="info" data-preflight-block="callout"><p>Callout</p></div>',
-  },
-  {
-    id: "inline-math",
-    customBlockType: "math",
-    html: '<span data-type="inline-math" data-latex="x^2" data-preflight-block="inline-math">x^2</span>',
-  },
-  {
-    id: "block-math",
-    customBlockType: "math",
-    html: '<div data-type="block-math" data-latex="E = mc^2" data-preflight-block="block-math">E = mc^2</div>',
-  },
-  {
-    id: "toggle",
-    customBlockType: "toggle",
-    html: '<div data-toggle-open="true" data-preflight-block="toggle"><div data-toggle-summary><p>Toggle</p></div><div data-toggle-body><p>Body</p></div></div>',
-  },
-  {
-    id: "page-link",
-    customBlockType: "page-link",
-    html: '<div data-type="page-link" data-page-id="doc-2" data-page-title="Linked Page" data-preflight-block="page-link">Linked Page</div>',
-  },
-] as const;
 
 function file(overrides: Partial<FileItem>): FileItem {
   return {
     id: "doc-1",
     name: "Project.md",
-    content: "<h1>Project</h1><p>Draft</p>",
-    contentMarkdown: "# Project\n\nDraft",
+    content: "# Project\n\nDraft",
     isFolder: false,
     parentId: null,
     position: 0,
@@ -246,12 +112,7 @@ function file(overrides: Partial<FileItem>): FileItem {
   };
 }
 
-function allBlocksHtml() {
-  return ALL_GUI_BLOCK_FIXTURES.map((fixture) => fixture.html).join("\n");
-}
-
 function resetGuiState() {
-  headingState.headings = [];
   useFileStore.setState({
     files: [],
     currentFileId: null,
@@ -269,6 +130,7 @@ function resetGuiState() {
     isFilesSidebarOpen: true,
     filesSidebarWidth: 304,
   });
+  usePageSessionStore.setState({ outlineSession: null });
 }
 
 describe("GUI preflight", () => {
@@ -349,7 +211,6 @@ describe("GUI preflight", () => {
   );
 
   it("reserves right gutter and exposes the collapsed outline for markdown headings", () => {
-    headingState.headings = [{ id: "h-1", level: 1, text: "Project" }];
     useFileStore.setState({
       openTarget: "folder",
       rootPath: "/tmp/notes",
@@ -357,6 +218,14 @@ describe("GUI preflight", () => {
       files: [file({ id: "doc-1", name: "Project.md", documentType: "markdown" })],
       loadedContentIds: new Set(["doc-1"]),
       isSynced: true,
+    });
+    usePageSessionStore.setState({
+      outlineSession: {
+        pageId: "doc-1",
+        headings: [{ id: "h-1", level: 1, text: "Project", pos: 0 }],
+        activeId: "h-1",
+        navigateTo: vi.fn(),
+      },
     });
 
     render(<DesktopEditor />);
@@ -366,43 +235,6 @@ describe("GUI preflight", () => {
       "data-reserved-right-inset",
       expect.stringMatching(/^[1-9]\d*$/)
     );
-  });
-
-  it("loads a markdown document fixture containing every supported block", () => {
-    const expectedCustomBlockTypes = Object.keys(CustomBlockExtensions).sort();
-    const fixtureCustomBlockTypes = Array.from(
-      new Set(
-        ALL_GUI_BLOCK_FIXTURES.flatMap((fixture) =>
-          fixture.customBlockType ? [fixture.customBlockType] : []
-        )
-      )
-    ).sort();
-
-    expect(fixtureCustomBlockTypes).toEqual(expectedCustomBlockTypes);
-
-    useFileStore.setState({
-      openTarget: "folder",
-      rootPath: "/tmp/notes",
-      currentFileId: "all-blocks",
-      files: [
-        file({
-          id: "all-blocks",
-          name: "All Blocks.md",
-          documentType: "markdown",
-          content: allBlocksHtml(),
-        }),
-      ],
-      loadedContentIds: new Set(["all-blocks"]),
-      isSynced: true,
-    });
-
-    render(<DesktopEditor />);
-
-    for (const { id } of ALL_GUI_BLOCK_FIXTURES) {
-      expect(
-        screen.getByTestId("document-blocks").querySelector(`[data-preflight-block="${id}"]`)
-      ).toBeInTheDocument();
-    }
   });
 
   it("opens and reveals an Excel attachment without exposing editing controls", async () => {

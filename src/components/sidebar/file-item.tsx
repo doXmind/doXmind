@@ -23,7 +23,6 @@ import {
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { storeLogger } from "@/lib/logger";
-import { sidecarFilenameFor } from "@/lib/storage/sidecar-name";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { FileActionsMenuItems, getMenuItemCount } from "@/components/sidebar/file-actions-menu";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
@@ -36,7 +35,9 @@ import {
 } from "@/lib/document-types";
 import { openFileExternally, revealFileInFinder } from "@/lib/storage/reveal";
 import { exportMarkdownAsPdf } from "@/lib/markdown-pdf-export";
+import { copyPageMarkdownSource } from "@/lib/markdown-source-copy";
 import { getSidebarTreePaddingLeft } from "./tree-layout";
+import { usePageRelocationConfirmation } from "./use-page-relocation-confirmation";
 
 const log = storeLogger.child("FileItem");
 const getNameWithoutExtension = getDisplayName;
@@ -53,7 +54,6 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   const t = useTranslations("sidebar");
   // Fine-grained selectors — each FileItem only re-renders when its relevant state changes
   const isActive = useFileStore((s) => s.currentFileId === file.id);
-  const setCurrentFile = useFileStore((s) => s.setCurrentFile);
   const deleteFile = useFileStore((s) => s.deleteFile);
   const renameFile = useFileStore((s) => s.renameFile);
   const moveFileToFolder = useFileStore((s) => s.moveFileToFolder);
@@ -71,11 +71,12 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   const [contextMenuReady, setContextMenuReady] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const [newName, setNewName] = useState(getNameWithoutExtension(file.name));
-  // OS Trash is the recovery path (per ADR 0005). Confirm is defense-in-depth
-  // and doubles as the place to tell the user the hidden sidecar moves too.
+  // OS Trash is the recovery path (per ADR 0005). Confirm is defense-in-depth;
+  // older recovery artifacts, when present, travel with the source file.
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const isCurrentFileDirty = useEditorStore((s) => (isActive ? s.isDirty : false));
   const isAttachment = !isMarkdownFile(file);
+  const confirmPageRelocation = usePageRelocationConfirmation();
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -90,7 +91,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const itemCount = getMenuItemCount(!!file.parentId, isAttachment);
-      const exportOffset = file.parentId ? 1 : 0; // Shift export items if "Move to Root" is present
+      const pageActionOffset = file.parentId ? 1 : 0;
       switch (e.key) {
         case "Escape":
           e.preventDefault();
@@ -120,17 +121,33 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
             } else if (contextMenuFocusIndex === 1) {
               setContextMenu(null);
               setContextMenuFocusIndex(-1);
+              setNewName(getNameWithoutExtension(file.name));
+              setIsRenaming(true);
+            } else if (contextMenuFocusIndex === 2) {
+              setContextMenu(null);
+              setContextMenuFocusIndex(-1);
               revealFileInFinder(file).catch((error) => {
                 log.error("Failed to reveal file in Finder", error);
                 const { title, description } = getErrorMessage(error);
                 notify.error(title, { description });
               });
+            } else if (contextMenuFocusIndex === 3 && file.parentId) {
+              setContextMenu(null);
+              setContextMenuFocusIndex(-1);
+              moveFileToFolder(file.id, null, { confirm: confirmPageRelocation }).catch((error) => {
+                log.error("Failed to move file to root", error);
+                notify.error(t("failedToMove"));
+              });
+            } else if (contextMenuFocusIndex === (file.parentId ? 4 : 3)) {
+              setContextMenu(null);
+              setContextMenuFocusIndex(-1);
+              handleDelete();
             }
             break;
           }
           // Execute the action based on focused index
-          // Indices: 0=Rename, 1=Reveal, [2=MoveToRoot], 2+offset..3+offset=Export,
-          // 4+offset=Delete
+          // Indices: 0=Rename, 1=Reveal, [2=MoveToRoot], 2+offset=Copy Source,
+          // 3+offset=Export PDF, 4+offset=Delete.
           if (contextMenuFocusIndex === 0) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
@@ -148,19 +165,19 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
             // Move to Root (only when file is in a folder)
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
-            moveFileToFolder(file.id, null).catch((error) => {
+            moveFileToFolder(file.id, null, { confirm: confirmPageRelocation }).catch((error) => {
               log.error("Failed to move file to root", error);
               notify.error(t("failedToMove"));
             });
-          } else if (contextMenuFocusIndex === 2 + exportOffset) {
+          } else if (contextMenuFocusIndex === 2 + pageActionOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
-            handleExport("markdown");
-          } else if (contextMenuFocusIndex === 3 + exportOffset) {
+            handleCopySource();
+          } else if (contextMenuFocusIndex === 3 + pageActionOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
-            handleExport("pdf");
-          } else if (contextMenuFocusIndex === 4 + exportOffset) {
+            handleExportPdf();
+          } else if (contextMenuFocusIndex === 4 + pageActionOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
             handleDelete();
@@ -183,7 +200,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- file.name and handleExport are stable within render
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Page action handlers are stable within this render
   }, [contextMenu, contextMenuFocusIndex]);
 
   // Handle right-click context menu
@@ -193,7 +210,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
 
     // Calculate position with viewport boundary check
     const menuWidth = 180;
-    const menuHeight = 220;
+    const menuHeight = 260;
     let x = e.clientX;
     let y = e.clientY;
 
@@ -218,31 +235,25 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   const handleClick = (e?: React.MouseEvent) => {
     if (isRenaming) return;
 
-    // Only Pages participate in bulk mutations. Attachment clicks always open
-    // the attachment, even when a selection modifier is held.
-    if (!isAttachment && (e?.ctrlKey || e?.metaKey)) {
+    // Multi-select: Ctrl+click toggles selection, Shift+click selects range
+    if (e?.ctrlKey || e?.metaKey) {
       toggleFileSelection(file.id);
       lastClickedFileId = file.id;
-    } else if (!isAttachment && e?.shiftKey && lastClickedFileId) {
+    } else if (e?.shiftKey && lastClickedFileId) {
       selectFileRange(lastClickedFileId, file.id);
     } else {
-      // Normal click: clear selection if any, then set as current file.
-      // Only call setCurrentFile — useFileUrlSync's Store→URL effect handles
-      // the URL update. Calling both setCurrentFile + router.push caused
-      // duplicate navigations and page remounts.
+      // Normal click: save a dirty Page before switching. The navigation
+      // helper updates the store first, then the static-export-safe URL.
       if (isSelectionMode) {
         clearSelection();
       }
-      setCurrentFile(file.id);
-      if (!isAttachment) {
-        lastClickedFileId = file.id;
-      }
+      void navigateToEditorFile(file.id);
+      lastClickedFileId = file.id;
     }
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isAttachment) return;
     setNewName(getNameWithoutExtension(file.name));
     setIsRenaming(true);
   };
@@ -250,29 +261,19 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   // Auto-enter rename mode for newly created files
   useEffect(() => {
     if (file.id === justCreatedFileId) {
-      if (!isAttachment) {
-        setNewName(getNameWithoutExtension(file.name));
-        setIsRenaming(true);
-      }
+      setNewName(getNameWithoutExtension(file.name));
+      setIsRenaming(true);
       clearJustCreatedFileId();
     }
-  }, [file.id, justCreatedFileId, file.name, clearJustCreatedFileId, isAttachment]);
+  }, [file.id, justCreatedFileId, file.name, clearJustCreatedFileId]);
 
   // Drag handler for moving files to folders
   const handleDragStart = (e: React.DragEvent) => {
-    if (isAttachment) {
-      e.preventDefault();
-      return;
-    }
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", file.id);
   };
 
   const handleRename = async () => {
-    if (isAttachment) {
-      setIsRenaming(false);
-      return;
-    }
     const trimmedName = newName.trim();
     // Bail on empty or unchanged names before any I/O. Compare against the
     // displayed (extension-stripped) name — that's what the input shows.
@@ -280,15 +281,17 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
       setIsRenaming(false);
       return;
     }
-    // Preserve whether the Page uses .md or .markdown when rebuilding the
-    // filename from the extension-stripped display name.
+    // The display name has its extension stripped, so recover the real filename
+    // from the storage handle. Deriving the extension from the stripped display
+    // name would default every type to ".md" and the backend would reject a
+    // .pdf/.xlsx rename.
     const currentFilename =
       file.storageHandle?.relPath?.split("/").pop() ||
       file.storageHandle?.path?.split("/").pop() ||
       file.name;
     const fullName = withOriginalExtension(currentFilename, trimmedName);
     try {
-      await renameFile(file.id, fullName);
+      await renameFile(file.id, fullName, { confirm: confirmPageRelocation });
     } catch (error) {
       log.error("Failed to rename file", error);
       notify.error(t("failedToRename"));
@@ -311,12 +314,10 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
 
   const handleDelete = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (isAttachment) return;
     setIsDeleteConfirmOpen(true);
   };
 
   const handleDeleteConfirmed = async () => {
-    if (isAttachment) return;
     try {
       await deleteFile(file.id);
       const nextId = useFileStore.getState().currentFileId;
@@ -324,7 +325,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
     } catch (error) {
       log.error("Failed to delete file", error);
       // Surface the specific backend message — in particular the
-      // "document moved to Trash but sidecar move failed" partial-fail
+      // "document moved to Trash but a legacy artifact move failed" partial-fail
       // signal — instead of the generic "delete failed" string. The user
       // needs to know whether the .md is already in Trash so they don't
       // re-try and double-delete.
@@ -333,62 +334,37 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
     }
   };
 
-  const handleExport = (format: "markdown" | "pdf") => {
-    const formatLabel = format === "markdown" ? "Markdown" : format.toUpperCase();
-
-    // PDF: route through the PyMuPDF export pipeline. The orchestrator
-    // owns the progress toast (start → step updates → resolve/fail), drives
-    // navigation if this isn't the active file, and restores the user's
-    // previous navigation when done. We just kick it off and surface a
-    // banner if it failed for a non-cancellation reason.
-    if (format === "pdf") {
-      void (async () => {
-        try {
-          const result = await exportMarkdownAsPdf({
-            fileId: file.id,
-            fileName: file.name,
-          });
-          if (!result.ok && result.error && result.error !== "cancelled") {
-            notify.error(t("failedToExport", { format: formatLabel }));
-          }
-        } catch (err) {
-          log.error("Failed to export PDF", err);
-          notify.error(t("failedToExport", { format: formatLabel }));
+  const handleExportPdf = () => {
+    // PDF: navigate to the Page, render and save it locally through Electron,
+    // then restore the user's previous navigation. No printer or server.
+    void (async () => {
+      try {
+        const result = await exportMarkdownAsPdf({
+          fileId: file.id,
+          fileName: file.name,
+        });
+        if (!result.ok && result.error && result.error !== "cancelled") {
+          notify.error(t("failedToExport", { format: "PDF" }));
         }
-      })();
-      return;
-    }
-
-    void notify.promise(
-      (async () => {
-        const store = useFileStore.getState();
-        await store.loadFileContent(file.id, { force: true });
-        const latest = useFileStore.getState().getFile(file.id) ?? file;
-        const markdown = latest.contentMarkdown ?? latest.content ?? "";
-        const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-        const filename = `${getNameWithoutExtension(latest.name)}.md`;
-
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      })(),
-      {
-        loading: t("exportingAs", { format: formatLabel }),
-        success: t("exportedAs", { format: formatLabel }),
-        error: t("failedToExport", { format: formatLabel }),
+      } catch (err) {
+        log.error("Failed to export PDF", err);
+        notify.error(t("failedToExport", { format: "PDF" }));
       }
-    );
+    })();
+  };
+
+  const handleCopySource = () => {
+    void copyPageMarkdownSource(file.id, t("copyMarkdownSource")).catch((error) => {
+      log.error("Failed to copy Markdown source", error);
+      notify.error(t("failedToCopyMarkdownSource"), {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    });
   };
 
   // Context menu action handlers (close menu, then execute)
   const handleContextMenuRename = () => {
     setContextMenu(null);
-    if (isAttachment) return;
     setNewName(getNameWithoutExtension(file.name));
     setIsRenaming(true);
   };
@@ -421,9 +397,8 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
 
   const handleContextMenuMoveToRoot = async () => {
     setContextMenu(null);
-    if (isAttachment) return;
     try {
-      await moveFileToFolder(file.id, null);
+      await moveFileToFolder(file.id, null, { confirm: confirmPageRelocation });
     } catch (error) {
       log.error("Failed to move file to root", error);
       notify.error(t("failedToMove"));
@@ -432,13 +407,17 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
 
   const handleContextMenuDelete = () => {
     setContextMenu(null);
-    if (isAttachment) return;
     handleDelete();
   };
 
-  const handleContextMenuExport = (format: "markdown" | "pdf") => {
+  const handleContextMenuCopySource = () => {
     setContextMenu(null);
-    handleExport(format);
+    handleCopySource();
+  };
+
+  const handleContextMenuExportPdf = () => {
+    setContextMenu(null);
+    handleExportPdf();
   };
 
   // Hover-prefetch: when the cursor settles on a file row for ~100ms (the
@@ -473,10 +452,10 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   return (
     <div
       // Hit-test target for sidebar external DnD (#67) — the FolderTree's
-      // Tauri drag-drop listener resolves a drop on a file row to that
+      // External drag-drop resolves a drop on a file row to that
       // file's parent folder.
       data-drop-target-id={file.id}
-      draggable={!isAttachment && !isRenaming && !isSelectionMode}
+      draggable={!isRenaming && !isSelectionMode}
       onDragStart={handleDragStart}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
@@ -495,7 +474,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
       style={{ paddingLeft: getSidebarTreePaddingLeft(depth) }}
     >
       {/* Checkbox for multi-select */}
-      {!isAttachment && (isSelectionMode || isSelected) && (
+      {(isSelectionMode || isSelected) && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -606,7 +585,6 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
               isAttachment={isAttachment}
               onOpenExternally={handleOpenExternally}
               onRename={() => {
-                if (isAttachment) return;
                 setNewName(getNameWithoutExtension(file.name));
                 setIsRenaming(true);
               }}
@@ -620,15 +598,15 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
                 }
               }}
               onMoveToRoot={async () => {
-                if (isAttachment) return;
                 try {
-                  await moveFileToFolder(file.id, null);
+                  await moveFileToFolder(file.id, null, { confirm: confirmPageRelocation });
                 } catch (error) {
                   log.error("Failed to move file to root", error);
                   notify.error(t("failedToMove"));
                 }
               }}
-              onExport={handleExport}
+              onCopySource={handleCopySource}
+              onExportPdf={handleExportPdf}
               onDelete={handleDelete}
             />
           </DropdownMenuContent>
@@ -660,31 +638,26 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
               onRename={handleContextMenuRename}
               onRevealInFinder={handleContextMenuRevealInFinder}
               onMoveToRoot={handleContextMenuMoveToRoot}
-              onExport={handleContextMenuExport}
+              onCopySource={handleContextMenuCopySource}
+              onExportPdf={handleContextMenuExportPdf}
               onDelete={handleContextMenuDelete}
             />
           </div>,
           document.body
         )}
 
-      {!isAttachment && (
-        <ConfirmModal
-          open={isDeleteConfirmOpen}
-          onClose={() => setIsDeleteConfirmOpen(false)}
-          onConfirm={handleDeleteConfirmed}
-          title={
-            isCurrentFileDirty
-              ? t("moveToTrashTitleUnsaved", { name: file.name })
-              : t("moveToTrashTitleSingle", { name: file.name })
-          }
-          description={
-            isCurrentFileDirty
-              ? t("moveToTrashDescUnsaved")
-              : t("moveToTrashDescSingle", { sidecar: sidecarFilenameFor(file.name) })
-          }
-          confirmLabel={t("moveToTrash")}
-        />
-      )}
+      <ConfirmModal
+        open={isDeleteConfirmOpen}
+        onClose={() => setIsDeleteConfirmOpen(false)}
+        onConfirm={handleDeleteConfirmed}
+        title={
+          isCurrentFileDirty
+            ? t("moveToTrashTitleUnsaved", { name: file.name })
+            : t("moveToTrashTitleSingle", { name: file.name })
+        }
+        description={isCurrentFileDirty ? t("moveToTrashDescUnsaved") : t("moveToTrashDescSingle")}
+        confirmLabel={t("moveToTrash")}
+      />
     </div>
   );
 }
