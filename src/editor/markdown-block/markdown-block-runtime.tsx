@@ -3,6 +3,7 @@
 import {
   type CSSProperties,
   type DragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -16,6 +17,8 @@ import {
   type MarkdownBlockCommand,
   type MarkdownBlockView,
 } from "@/editor/markdown-block/markdown-block-document";
+import { createBlockEditingProjection } from "@/editor/markdown-block/block-editing-projection";
+import { createMarkdownInlineFormatEdit } from "@/editor/markdown-block/markdown-inline-format";
 import { editableMarkdownBlockSource } from "@/editor/markdown-block/markdown-block-source";
 import {
   MarkdownBlockRow,
@@ -123,6 +126,11 @@ export function MarkdownBlockRuntime({
   const [activeBlockId, setActiveBlockId] = useState<string | null>(
     file.id.startsWith(TRANSIENT_ID_PREFIX) ? (snapshot.blocks[0]?.id ?? null) : null
   );
+  const [blockSelection, setBlockSelection] = useState<{
+    anchorId: string;
+    focusId: string;
+  } | null>(null);
+  const [blockDropBeforeId, setBlockDropBeforeId] = useState<string | null | undefined>(undefined);
   const [pendingSelection, setPendingSelection] = useState<{
     blockId: string;
     anchor: number;
@@ -133,7 +141,11 @@ export function MarkdownBlockRuntime({
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const documentElementRef = useRef<HTMLDivElement>(null);
-  const dragSessionRef = useRef<{ pageId: string; blockId: string; token: string } | null>(null);
+  const dragSessionRef = useRef<{
+    pageId: string;
+    blockIds: string[];
+    token: string;
+  } | null>(null);
   const dragSessionCounterRef = useRef(0);
   const composingBlockIdRef = useRef<string | null>(null);
   const compositionHasHistoryRef = useRef(false);
@@ -301,6 +313,18 @@ export function MarkdownBlockRuntime({
     () => findMarkdownSearchMatches(snapshot.blocks, searchTerm),
     [searchTerm, snapshot.blocks]
   );
+  const selectedBlockIdSet = useMemo(
+    () =>
+      new Set(
+        blockSelection
+          ? expandSelectedListSubtrees(
+              snapshot.blocks,
+              selectedBlockIds(snapshot.blocks, blockSelection)
+            )
+          : []
+      ),
+    [blockSelection, snapshot.blocks]
+  );
 
   useEffect(() => {
     if (!isSearchBarOpen) {
@@ -324,6 +348,7 @@ export function MarkdownBlockRuntime({
 
     const match = searchMatches[currentSearchIndex];
     setActiveBlockId(match.blockId);
+    setBlockSelection(null);
     setPendingSelection({
       blockId: match.blockId,
       anchor: match.anchor,
@@ -351,6 +376,7 @@ export function MarkdownBlockRuntime({
       if (!blockExists) return;
 
       setActiveBlockId(heading.id);
+      setBlockSelection(null);
       setPendingSelection(null);
       const element = Array.from(
         documentElementRef.current?.querySelectorAll<HTMLElement>("[data-block-id]") ?? []
@@ -517,12 +543,16 @@ export function MarkdownBlockRuntime({
         const selectedBlock = result.snapshot.blocks.find(
           (block) => block.id === result.selection?.blockId
         );
-        const selectedSource = selectedBlock ? editableMarkdownBlockSource(selectedBlock.raw) : "";
         setActiveBlockId(result.selection.blockId);
+        setBlockSelection(null);
         setPendingSelection({
           blockId: result.selection.blockId,
-          anchor: editorOffsetForSourceOffset(selectedSource, result.selection.anchor),
-          head: editorOffsetForSourceOffset(selectedSource, result.selection.head),
+          anchor: selectedBlock
+            ? editorOffsetForBlockSourceOffset(selectedBlock, result.selection.anchor)
+            : 0,
+          head: selectedBlock
+            ? editorOffsetForBlockSourceOffset(selectedBlock, result.selection.head)
+            : 0,
         });
       }
       setDirty(result.snapshot.markdown !== lastSavedMarkdownRef.current);
@@ -551,8 +581,8 @@ export function MarkdownBlockRuntime({
           .blocks.find((candidate) => candidate.id === blockId);
         if (!initialBlock) return;
         const initialSource = editableMarkdownBlockSource(initialBlock.raw);
-        const initialFrom = sourceOffsetForEditorOffset(initialSource, from);
-        const initialTo = sourceOffsetForEditorOffset(initialSource, to);
+        const initialFrom = blockSourceOffsetForEditorOffset(initialBlock, from);
+        const initialTo = blockSourceOffsetForEditorOffset(initialBlock, to);
         const imported: string[] = [];
         let failure: unknown = null;
 
@@ -608,7 +638,7 @@ export function MarkdownBlockRuntime({
   );
 
   useEffect(() => {
-    if (activeBlockId !== null || isSearchBarOpen) return;
+    if (activeBlockId !== null || blockSelection !== null || isSearchBarOpen) return;
 
     const handleEditIntent = (event: KeyboardEvent) => {
       if (isEventFromEditableElement(event.target)) return;
@@ -631,21 +661,26 @@ export function MarkdownBlockRuntime({
         return;
       }
 
+      const editorSource = normalizeEditorLineEndings(
+        createBlockEditingProjection(block).editorText
+      );
       setActiveBlockId(block.id);
       setPendingSelection({
         blockId: block.id,
-        anchor: source.length,
-        head: source.length,
+        anchor: editorSource.length,
+        head: editorSource.length,
       });
     };
 
     window.addEventListener("keydown", handleEditIntent);
     return () => window.removeEventListener("keydown", handleEditIntent);
-  }, [activeBlockId, apply, isSearchBarOpen]);
+  }, [activeBlockId, apply, blockSelection, isSearchBarOpen]);
 
   const undo = useCallback(() => {
     const next = documentRef.current.undo();
     setSnapshot(next);
+    setBlockSelection(null);
+    setBlockDropBeforeId(undefined);
     setActiveBlockId((current) =>
       current && next.blocks.some((block) => block.id === current)
         ? current
@@ -659,6 +694,8 @@ export function MarkdownBlockRuntime({
   const redo = useCallback(() => {
     const next = documentRef.current.redo();
     setSnapshot(next);
+    setBlockSelection(null);
+    setBlockDropBeforeId(undefined);
     setActiveBlockId((current) =>
       current && next.blocks.some((block) => block.id === current)
         ? current
@@ -749,6 +786,7 @@ export function MarkdownBlockRuntime({
       externalMarkdownRef.current = null;
       setSnapshot(next);
       setActiveBlockId(null);
+      setBlockSelection(null);
       setPendingSelection(null);
       setHasExternalConflict(false);
       setDirty(false);
@@ -765,6 +803,7 @@ export function MarkdownBlockRuntime({
     externalMarkdownRef.current = null;
     setSnapshot(next);
     setActiveBlockId(file.id.startsWith(TRANSIENT_ID_PREFIX) ? (next.blocks[0]?.id ?? null) : null);
+    setBlockSelection(null);
     setPendingSelection(null);
     setHasExternalConflict(false);
     setDirty(false);
@@ -782,20 +821,10 @@ export function MarkdownBlockRuntime({
   const moveBlock = useCallback(
     (blockId: string, direction: -1 | 1): boolean => {
       const blocks = documentRef.current.getSnapshot().blocks;
-      const index = blocks.findIndex((block) => block.id === blockId);
-      if (index < 0) return false;
-      if (direction < 0 && index > 0) {
-        apply({ type: "move", blockId, beforeId: blocks[index - 1].id });
-        return true;
-      } else if (direction > 0 && index < blocks.length - 1) {
-        apply({
-          type: "move",
-          blockId,
-          beforeId: blocks[index + 2]?.id ?? null,
-        });
-        return true;
-      }
-      return false;
+      const move = hierarchySafeBlockMove(blocks, [blockId], direction);
+      if (!move) return false;
+      apply({ type: "moveBlocks", ...move });
+      return true;
     },
     [apply]
   );
@@ -810,26 +839,184 @@ export function MarkdownBlockRuntime({
     }
     const target = blocks[targetIndex];
     if (!target?.editable) return false;
-    const source = normalizeEditorLineEndings(editableMarkdownBlockSource(target.raw));
+    const source = normalizeEditorLineEndings(createBlockEditingProjection(target).editorText);
     const offset = direction < 0 ? source.length : 0;
     setActiveBlockId(target.id);
     setPendingSelection({ blockId: target.id, anchor: offset, head: offset });
     return true;
   }, []);
 
+  const applyBlockSelectionCommand = useCallback(
+    (command: MarkdownBlockCommand, selectedLength = 1) => {
+      const result = documentRef.current.apply(command);
+      publish(result, false);
+      const focusId = result.selection?.blockId ?? result.snapshot.blocks[0]?.id;
+      setActiveBlockId(null);
+      setPendingSelection(null);
+      if (!focusId) {
+        setBlockSelection(null);
+        return;
+      }
+      const firstIndex = result.snapshot.blocks.findIndex((block) => block.id === focusId);
+      const lastId =
+        firstIndex >= 0
+          ? (result.snapshot.blocks[firstIndex + selectedLength - 1]?.id ?? focusId)
+          : focusId;
+      setBlockSelection({ anchorId: focusId, focusId: lastId });
+    },
+    [publish]
+  );
+
+  const handleBlockSelectionKeyDown = useCallback(
+    (blockId: string, event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setBlockSelection(null);
+        return;
+      }
+      if (event.key === "Enter") {
+        const block = documentRef.current
+          .getSnapshot()
+          .blocks.find((candidate) => candidate.id === blockId);
+        if (!block?.editable) return;
+        event.preventDefault();
+        const source = normalizeEditorLineEndings(createBlockEditingProjection(block).editorText);
+        setBlockSelection(null);
+        setActiveBlockId(block.id);
+        setPendingSelection({
+          blockId: block.id,
+          anchor: source.length,
+          head: source.length,
+        });
+        return;
+      }
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === "a"
+      ) {
+        const blocks = documentRef.current.getSnapshot().blocks;
+        const first = blocks[0];
+        const last = blocks.at(-1);
+        if (!first || !last) return;
+        event.preventDefault();
+        setBlockSelection({ anchorId: first.id, focusId: last.id });
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (event.key === "Tab" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        const blocks = documentRef.current.getSnapshot().blocks;
+        const currentSelection = blockSelection ?? { anchorId: blockId, focusId: blockId };
+        const blockIds = selectedBlockIdsWithSubtrees(blocks, currentSelection);
+        if (
+          blockIds.length === 0 ||
+          blockIds.some((selectedId) => {
+            const selected = blocks.find((candidate) => candidate.id === selectedId);
+            return !selected || !isListBlockKind(selected.kind);
+          })
+        ) {
+          return;
+        }
+        event.preventDefault();
+        try {
+          applyBlockSelectionCommand(
+            {
+              type: event.shiftKey ? "outdentBlocks" : "indentBlocks",
+              blockIds,
+            },
+            blockIds.length
+          );
+        } catch {
+          // Invalid structural indentation is a source-preserving no-op.
+        }
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "d") {
+        const currentSelection = blockSelection ?? { anchorId: blockId, focusId: blockId };
+        const blockIds = selectedBlockIdsWithSubtrees(
+          documentRef.current.getSnapshot().blocks,
+          currentSelection
+        );
+        if (blockIds.length === 0) return;
+        event.preventDefault();
+        applyBlockSelectionCommand({ type: "duplicateBlocks", blockIds }, blockIds.length);
+        return;
+      }
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        !event.altKey &&
+        (event.key === "ArrowUp" || event.key === "ArrowDown")
+      ) {
+        const blocks = documentRef.current.getSnapshot().blocks;
+        const currentSelection = blockSelection ?? { anchorId: blockId, focusId: blockId };
+        const blockIds = selectedBlockIdsWithSubtrees(blocks, currentSelection);
+        const move = hierarchySafeBlockMove(blocks, blockIds, event.key === "ArrowUp" ? -1 : 1);
+        if (!move) return;
+        event.preventDefault();
+        applyBlockSelectionCommand({ type: "moveBlocks", ...move }, move.blockIds.length);
+        return;
+      }
+      if (
+        (event.key === "Backspace" || event.key === "Delete") &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey
+      ) {
+        const currentSelection = blockSelection ?? { anchorId: blockId, focusId: blockId };
+        const blockIds = selectedBlockIdsWithSubtrees(
+          documentRef.current.getSnapshot().blocks,
+          currentSelection
+        );
+        if (blockIds.length === 0) return;
+        event.preventDefault();
+        applyBlockSelectionCommand({ type: "deleteBlocks", blockIds });
+        return;
+      }
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const blocks = documentRef.current.getSnapshot().blocks;
+      const index = blocks.findIndex((block) => block.id === blockId);
+      if (index < 0) return;
+      const target = blocks[index + (event.key === "ArrowUp" ? -1 : 1)];
+      if (!target) return;
+      event.preventDefault();
+      setBlockSelection((current) => ({
+        anchorId: event.shiftKey && current ? current.anchorId : target.id,
+        focusId: target.id,
+      }));
+    },
+    [applyBlockSelectionCommand, blockSelection, redo, undo]
+  );
+
   const startBlockDrag = useCallback(
     (blockId: string, event: DragEvent<HTMLButtonElement>) => {
+      const blocks = documentRef.current.getSnapshot().blocks;
+      const selectedIds = blockSelection
+        ? selectedBlockIdsWithSubtrees(blocks, blockSelection)
+        : [];
+      const blockIds = expandSelectedListSubtrees(
+        blocks,
+        selectedIds.includes(blockId) ? selectedIds : [blockId]
+      );
       dragSessionCounterRef.current += 1;
       const token = `${file.id}:${dragSessionCounterRef.current}`;
-      dragSessionRef.current = { pageId: file.id, blockId, token };
+      dragSessionRef.current = { pageId: file.id, blockIds, token };
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData(NATIVE_BLOCK_DRAG_MIME, token);
     },
-    [file.id]
+    [blockSelection, file.id]
   );
 
   const clearBlockDrag = useCallback(() => {
     dragSessionRef.current = null;
+    setBlockDropBeforeId(undefined);
   }, []);
 
   const canDropBlock = useCallback(
@@ -855,12 +1042,27 @@ export function MarkdownBlockRuntime({
       }
 
       dragSessionRef.current = null;
-      if (session.blockId !== beforeId) {
-        apply({ type: "move", blockId: session.blockId, beforeId });
+      setBlockDropBeforeId(undefined);
+      const blocks = documentRef.current.getSnapshot().blocks;
+      const firstIndex = blocks.findIndex((block) => block.id === session.blockIds[0]);
+      const lastIndex = firstIndex + session.blockIds.length - 1;
+      const beforeIndex =
+        beforeId === null ? blocks.length : blocks.findIndex((block) => block.id === beforeId);
+      const noOp =
+        firstIndex < 0 ||
+        beforeIndex < 0 ||
+        session.blockIds.includes(beforeId ?? "") ||
+        beforeIndex === lastIndex + 1 ||
+        (beforeId === null && lastIndex === blocks.length - 1);
+      if (!noOp) {
+        applyBlockSelectionCommand(
+          { type: "moveBlocks", blockIds: session.blockIds, beforeId },
+          session.blockIds.length
+        );
       }
       return true;
     },
-    [apply, canDropBlock, file.id]
+    [applyBlockSelectionCommand, canDropBlock, file.id]
   );
 
   const pageFrameStyle = {
@@ -879,6 +1081,7 @@ export function MarkdownBlockRuntime({
     externalMarkdownRef.current = null;
     setSnapshot(next);
     setActiveBlockId(null);
+    setBlockSelection(null);
     setPendingSelection(null);
     setHasExternalConflict(false);
     setDirty(false);
@@ -1004,6 +1207,50 @@ export function MarkdownBlockRuntime({
             data-native-markdown-document
             data-file-id={file.id}
             data-revision={snapshot.revision}
+            onCopy={(event) => {
+              if (!blockSelection) return;
+              const selectedIds = new Set(
+                selectedBlockIdsWithSubtrees(snapshot.blocks, blockSelection)
+              );
+              if (selectedIds.size === 0) return;
+              event.clipboardData.setData(
+                "text/plain",
+                snapshot.blocks
+                  .filter((block) => selectedIds.has(block.id))
+                  .map((block) => block.raw)
+                  .join("")
+              );
+              event.preventDefault();
+            }}
+            onCut={(event) => {
+              if (!blockSelection) return;
+              const blockIds = selectedBlockIdsWithSubtrees(snapshot.blocks, blockSelection);
+              if (blockIds.length === 0) return;
+              const selectedIds = new Set(blockIds);
+              event.clipboardData.setData(
+                "text/plain",
+                snapshot.blocks
+                  .filter((block) => selectedIds.has(block.id))
+                  .map((block) => block.raw)
+                  .join("")
+              );
+              event.preventDefault();
+              applyBlockSelectionCommand({ type: "deleteBlocks", blockIds });
+            }}
+            onPaste={(event) => {
+              if (!blockSelection) return;
+              const markdown = event.clipboardData.getData("text/plain");
+              if (!markdown) return;
+              const blockIds = selectedBlockIdsWithSubtrees(snapshot.blocks, blockSelection);
+              if (blockIds.length === 0) return;
+              const lineEnding = preferredSourceLineEnding(snapshot.markdown);
+              event.preventDefault();
+              apply({
+                type: "replaceBlocks",
+                blockIds,
+                markdown: normalizeEditorLineEndings(markdown).replace(/\n/g, lineEnding),
+              });
+            }}
           >
             {snapshot.blocks.map((block, index) => (
               <MarkdownBlockRow
@@ -1012,20 +1259,45 @@ export function MarkdownBlockRuntime({
                 index={index}
                 count={snapshot.blocks.length}
                 active={activeBlockId === block.id}
+                keyboardEntry={!activeBlockId && !blockSelection && index === 0}
+                blockSelected={selectedBlockIdSet.has(block.id)}
+                blockSelectionFocus={blockSelection?.focusId === block.id}
+                nextBlockId={snapshot.blocks[index + 1]?.id}
+                dropBefore={blockDropBeforeId === block.id}
                 selection={pendingSelection?.blockId === block.id ? pendingSelection : undefined}
                 onActivate={(blockId) => {
                   setActiveBlockId(blockId);
+                  setBlockSelection(null);
                   setPendingSelection(null);
                 }}
+                onSelectBlock={(blockId, extend = false) => {
+                  setActiveBlockId(null);
+                  setPendingSelection(null);
+                  setBlockSelection((current) => {
+                    if (extend && current) {
+                      return { anchorId: current.anchorId, focusId: blockId };
+                    }
+                    if (
+                      current &&
+                      selectedBlockIdsWithSubtrees(snapshot.blocks, current).includes(blockId)
+                    ) {
+                      return current;
+                    }
+                    return { anchorId: blockId, focusId: blockId };
+                  });
+                }}
+                onBlockSelectionKeyDown={handleBlockSelectionKeyDown}
                 onChange={(blockId, source) => {
                   const current = documentRef.current
                     .getSnapshot()
                     .blocks.find((candidate) => candidate.id === blockId);
                   if (!current) return;
                   const currentSource = editableMarkdownBlockSource(current.raw);
+                  const projection = createBlockEditingProjection(current);
+                  const nextSource = editableMarkdownBlockSource(projection.toSource(source));
                   const patch = minimalEditorPatch(
                     currentSource,
-                    source,
+                    nextSource,
                     preferredSourceLineEnding(current.raw, snapshot.markdown)
                   );
                   if (!patch) return;
@@ -1047,17 +1319,41 @@ export function MarkdownBlockRuntime({
                     .getSnapshot()
                     .blocks.find((candidate) => candidate.id === blockId);
                   if (!current) return;
-                  const currentSource = editableMarkdownBlockSource(current.raw);
                   const lineEnding = preferredSourceLineEnding(current.raw, snapshot.markdown);
                   apply({
                     type: "replaceText",
                     blockId,
                     range: {
-                      from: sourceOffsetForEditorOffset(currentSource, from),
-                      to: sourceOffsetForEditorOffset(currentSource, to),
+                      from: blockSourceOffsetForEditorOffset(current, from),
+                      to: blockSourceOffsetForEditorOffset(current, to),
                     },
                     text: normalizeEditorLineEndings(text).replace(/\n/g, lineEnding),
                   });
+                }}
+                onApplyInlineFormat={(blockId, from, to, format) => {
+                  const current = documentRef.current
+                    .getSnapshot()
+                    .blocks.find((candidate) => candidate.id === blockId);
+                  if (!current) return;
+                  const editorSource = normalizeEditorLineEndings(
+                    createBlockEditingProjection(current).editorText
+                  );
+                  const edit = createMarkdownInlineFormatEdit(editorSource, from, to, format);
+                  if (!edit) return;
+                  const lineEnding = preferredSourceLineEnding(current.raw, snapshot.markdown);
+                  const result = documentRef.current.apply({
+                    type: "replaceText",
+                    blockId,
+                    range: {
+                      from: blockSourceOffsetForEditorOffset(current, edit.from),
+                      to: blockSourceOffsetForEditorOffset(current, edit.to),
+                    },
+                    text: edit.text.replace(/\n/g, lineEnding),
+                  });
+                  publish(result, false);
+                  setActiveBlockId(blockId);
+                  setBlockSelection(null);
+                  setPendingSelection({ blockId, ...edit.selection });
                 }}
                 onImportImages={importImages}
                 onCompositionStart={(blockId) => {
@@ -1076,22 +1372,90 @@ export function MarkdownBlockRuntime({
                     .getSnapshot()
                     .blocks.find((candidate) => candidate.id === blockId);
                   if (!current) return;
-                  const currentSource = editableMarkdownBlockSource(current.raw);
                   apply({
                     type: "split",
                     blockId,
-                    at: sourceOffsetForEditorOffset(currentSource, from),
-                    to: sourceOffsetForEditorOffset(currentSource, to),
+                    at: blockSourceOffsetForEditorOffset(current, from),
+                    to: blockSourceOffsetForEditorOffset(current, to),
                   });
                 }}
                 onMergeBackward={(blockId) => apply({ type: "mergeBackward", blockId })}
                 onInsertAfter={(blockId) => apply({ type: "insertAfter", blockId })}
-                onDuplicate={(blockId) => apply({ type: "duplicate", blockId })}
-                onDelete={(blockId) => apply({ type: "delete", blockId })}
+                onCopyMarkdown={async (blockId) => {
+                  const current = documentRef.current.getSnapshot();
+                  const selectionIds = blockSelection
+                    ? selectedBlockIdsWithSubtrees(current.blocks, blockSelection)
+                    : [];
+                  const selectedIds = expandSelectedListSubtrees(
+                    current.blocks,
+                    selectionIds.includes(blockId) ? selectionIds : [blockId]
+                  );
+                  const selectedSet = new Set(selectedIds);
+                  const markdown = current.blocks
+                    .filter((candidate) => selectedSet.has(candidate.id))
+                    .map((candidate) => candidate.raw)
+                    .join("");
+                  try {
+                    await navigator.clipboard.writeText(markdown);
+                  } catch {
+                    notify.error("Could not copy Markdown");
+                  }
+                }}
+                onDuplicate={(blockId) => {
+                  const current = documentRef.current.getSnapshot();
+                  const selectedIds = blockSelection
+                    ? selectedBlockIdsWithSubtrees(current.blocks, blockSelection)
+                    : [];
+                  if (selectedIds.includes(blockId)) {
+                    applyBlockSelectionCommand(
+                      { type: "duplicateBlocks", blockIds: selectedIds },
+                      selectedIds.length
+                    );
+                    return;
+                  }
+                  apply({ type: "duplicate", blockId });
+                }}
+                onDelete={(blockId) => {
+                  const current = documentRef.current.getSnapshot();
+                  const selectedIds = blockSelection
+                    ? selectedBlockIdsWithSubtrees(current.blocks, blockSelection)
+                    : [];
+                  if (selectedIds.includes(blockId)) {
+                    applyBlockSelectionCommand({ type: "deleteBlocks", blockIds: selectedIds });
+                    return;
+                  }
+                  apply({ type: "delete", blockId });
+                }}
                 onSetTaskChecked={(blockId, checked) =>
                   apply({ type: "setTaskChecked", blockId, checked }, false)
                 }
-                onMove={moveBlock}
+                onMove={(blockId, direction) => {
+                  const blocks = documentRef.current.getSnapshot().blocks;
+                  const selectedIds = blockSelection
+                    ? selectedBlockIdsWithSubtrees(blocks, blockSelection)
+                    : [];
+                  if (!selectedIds.includes(blockId)) return moveBlock(blockId, direction);
+                  const move = hierarchySafeBlockMove(blocks, selectedIds, direction);
+                  if (!move) return false;
+                  applyBlockSelectionCommand({ type: "moveBlocks", ...move }, move.blockIds.length);
+                  return true;
+                }}
+                onIndent={(blockId, direction, selection) => {
+                  try {
+                    const current = documentRef.current.getSnapshot();
+                    const result = documentRef.current.apply({
+                      type: direction < 0 ? "outdentBlocks" : "indentBlocks",
+                      blockIds: expandSelectedListSubtrees(current.blocks, [blockId]),
+                    });
+                    publish(result, false);
+                    setActiveBlockId(blockId);
+                    setBlockSelection(null);
+                    setPendingSelection({ blockId, ...selection });
+                    return true;
+                  } catch {
+                    return false;
+                  }
+                }}
                 onNavigate={navigateBlock}
                 onSetKind={(blockId, kind, level) =>
                   apply({ type: "setKind", blockId, kind, level })
@@ -1101,6 +1465,8 @@ export function MarkdownBlockRuntime({
                 onDragStart={startBlockDrag}
                 onDragEnd={clearBlockDrag}
                 onCanDrop={canDropBlock}
+                onDragIntent={setBlockDropBeforeId}
+                onClearDragIntent={() => setBlockDropBeforeId(undefined)}
                 onDropBefore={(beforeId, dataTransfer) => dropBlockBefore(beforeId, dataTransfer)}
                 onOpenWikiLink={(target) => {
                   const destination = resolveWikiLinkTarget(
@@ -1134,12 +1500,15 @@ export function MarkdownBlockRuntime({
             <div
               aria-hidden
               data-native-block-drop-end
+              data-drop-active={blockDropBeforeId === null ? "true" : undefined}
               className="h-6"
               onDragOver={(event) => {
                 if (!canDropBlock(event.dataTransfer)) return;
                 event.preventDefault();
                 event.dataTransfer.dropEffect = "move";
+                setBlockDropBeforeId(null);
               }}
+              onDragLeave={() => setBlockDropBeforeId(undefined)}
               onDrop={(event) => {
                 if (dropBlockBefore(null, event.dataTransfer)) event.preventDefault();
               }}
@@ -1170,6 +1539,136 @@ function countWords(markdown: string): number {
   return (cjk?.length ?? 0) + nonCjkWords.length;
 }
 
+function selectedBlockIds(
+  blocks: readonly MarkdownBlockView[],
+  selection: { anchorId: string; focusId: string }
+): string[] {
+  const anchorIndex = blocks.findIndex((block) => block.id === selection.anchorId);
+  const focusIndex = blocks.findIndex((block) => block.id === selection.focusId);
+  if (anchorIndex < 0 || focusIndex < 0) return [];
+  const from = Math.min(anchorIndex, focusIndex);
+  const to = Math.max(anchorIndex, focusIndex);
+  return blocks.slice(from, to + 1).map((block) => block.id);
+}
+
+function selectedBlockIdsWithSubtrees(
+  blocks: readonly MarkdownBlockView[],
+  selection: { anchorId: string; focusId: string }
+): string[] {
+  return expandSelectedListSubtrees(blocks, selectedBlockIds(blocks, selection));
+}
+
+function expandSelectedListSubtrees(
+  blocks: readonly MarkdownBlockView[],
+  blockIds: readonly string[]
+): string[] {
+  const selected = new Set(blockIds);
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (!selected.has(block.id) || !isListBlockKind(block.kind)) continue;
+    const depth = block.depth ?? 0;
+    for (let descendantIndex = index + 1; descendantIndex < blocks.length; descendantIndex += 1) {
+      const descendant = blocks[descendantIndex];
+      if (!isListBlockKind(descendant.kind) || (descendant.depth ?? 0) <= depth) break;
+      selected.add(descendant.id);
+    }
+  }
+  return blocks.filter((block) => selected.has(block.id)).map((block) => block.id);
+}
+
+function hierarchySafeBlockMove(
+  blocks: readonly MarkdownBlockView[],
+  requestedBlockIds: readonly string[],
+  direction: -1 | 1
+): { blockIds: string[]; beforeId: string | null } | null {
+  const blockIds = expandSelectedListSubtrees(blocks, requestedBlockIds);
+  if (blockIds.length === 0) return null;
+
+  const firstIndex = blocks.findIndex((block) => block.id === blockIds[0]);
+  const lastIndex = firstIndex + blockIds.length - 1;
+  if (
+    firstIndex < 0 ||
+    blockIds.some((blockId, offset) => blocks[firstIndex + offset]?.id !== blockId)
+  ) {
+    return null;
+  }
+
+  const selectedBlocks = blocks.slice(firstIndex, lastIndex + 1);
+  const listOnly = selectedBlocks.every((block) => isListBlockKind(block.kind));
+  const rootDepth = listOnly ? (selectedBlocks[0].depth ?? 0) : null;
+  if (rootDepth !== null && selectedBlocks.some((block) => (block.depth ?? 0) < rootDepth)) {
+    return null;
+  }
+
+  if (direction < 0) {
+    const previousIndex = firstIndex - 1;
+    if (previousIndex < 0) return null;
+    let previousUnitStart = previousIndex;
+
+    if (rootDepth !== null && rootDepth > 0) {
+      while (
+        previousUnitStart >= 0 &&
+        isListBlockKind(blocks[previousUnitStart].kind) &&
+        (blocks[previousUnitStart].depth ?? 0) > rootDepth
+      ) {
+        previousUnitStart -= 1;
+      }
+      const previousSibling = blocks[previousUnitStart];
+      if (
+        !previousSibling ||
+        !isListBlockKind(previousSibling.kind) ||
+        (previousSibling.depth ?? 0) !== rootDepth
+      ) {
+        return null;
+      }
+    } else if (isListBlockKind(blocks[previousUnitStart].kind)) {
+      while (
+        previousUnitStart > 0 &&
+        isListBlockKind(blocks[previousUnitStart - 1].kind) &&
+        (blocks[previousUnitStart].depth ?? 0) > 0
+      ) {
+        previousUnitStart -= 1;
+      }
+    }
+
+    return { blockIds, beforeId: blocks[previousUnitStart].id };
+  }
+
+  const nextIndex = lastIndex + 1;
+  const next = blocks[nextIndex];
+  if (!next) return null;
+
+  if (rootDepth !== null && rootDepth > 0) {
+    if (!isListBlockKind(next.kind) || (next.depth ?? 0) !== rootDepth) return null;
+    const nextEnd = listSubtreeEndIndex(blocks, nextIndex);
+    return { blockIds, beforeId: blocks[nextEnd]?.id ?? null };
+  }
+
+  const nextEnd = isListBlockKind(next.kind)
+    ? listSubtreeEndIndex(blocks, nextIndex)
+    : nextIndex + 1;
+  return { blockIds, beforeId: blocks[nextEnd]?.id ?? null };
+}
+
+function listSubtreeEndIndex(blocks: readonly MarkdownBlockView[], rootIndex: number): number {
+  const root = blocks[rootIndex];
+  if (!root || !isListBlockKind(root.kind)) return rootIndex + 1;
+  const rootDepth = root.depth ?? 0;
+  let endIndex = rootIndex + 1;
+  while (
+    endIndex < blocks.length &&
+    isListBlockKind(blocks[endIndex].kind) &&
+    (blocks[endIndex].depth ?? 0) > rootDepth
+  ) {
+    endIndex += 1;
+  }
+  return endIndex;
+}
+
+function isListBlockKind(kind: MarkdownBlockView["kind"]): boolean {
+  return kind === "bullet_list_item" || kind === "ordered_list_item" || kind === "task_list_item";
+}
+
 function sameWorkspacePath(left: string, right: string): boolean {
   return normalizeWorkspacePath(left) === normalizeWorkspacePath(right);
 }
@@ -1195,7 +1694,7 @@ function findMarkdownSearchMatches(
 
   for (const block of blocks) {
     if (!block.editable) continue;
-    const source = normalizeEditorLineEndings(editableMarkdownBlockSource(block.raw));
+    const source = normalizeEditorLineEndings(createBlockEditingProjection(block).editorText);
     pattern.lastIndex = 0;
     for (const match of source.matchAll(pattern)) {
       const anchor = match.index;
@@ -1339,6 +1838,21 @@ function preferredSourceLineEnding(...sources: string[]): "\r\n" | "\n" | "\r" {
 
 function normalizeEditorLineEndings(source: string): string {
   return source.replace(/\r\n|\r/g, "\n");
+}
+
+function blockSourceOffsetForEditorOffset(block: MarkdownBlockView, editorOffset: number): number {
+  const projection = createBlockEditingProjection(block);
+  return projection.editorOffsetToSource(
+    sourceOffsetForEditorOffset(projection.editorText, editorOffset)
+  );
+}
+
+function editorOffsetForBlockSourceOffset(block: MarkdownBlockView, sourceOffset: number): number {
+  const projection = createBlockEditingProjection(block);
+  return editorOffsetForSourceOffset(
+    projection.editorText,
+    projection.sourceOffsetToEditor(sourceOffset)
+  );
 }
 
 function sourceOffsetForEditorOffset(source: string, editorOffset: number): number {

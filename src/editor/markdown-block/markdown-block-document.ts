@@ -32,6 +32,7 @@ export interface MarkdownBlockView {
   id: string;
   kind: MarkdownBlockKind;
   level?: 1 | 2 | 3 | 4 | 5 | 6;
+  depth?: number;
   from: number;
   to: number;
   raw: string;
@@ -92,6 +93,19 @@ export type MarkdownBlockCommand =
       beforeId: string | null;
     }
   | {
+      type: "moveBlocks";
+      blockIds: readonly string[];
+      beforeId: string | null;
+    }
+  | {
+      type: "indentBlocks";
+      blockIds: readonly string[];
+    }
+  | {
+      type: "outdentBlocks";
+      blockIds: readonly string[];
+    }
+  | {
       type: "split";
       blockId: string;
       at: number;
@@ -106,8 +120,21 @@ export type MarkdownBlockCommand =
       blockId: string;
     }
   | {
+      type: "duplicateBlocks";
+      blockIds: readonly string[];
+    }
+  | {
       type: "delete";
       blockId: string;
+    }
+  | {
+      type: "deleteBlocks";
+      blockIds: readonly string[];
+    }
+  | {
+      type: "replaceBlocks";
+      blockIds: readonly string[];
+      markdown: string;
     }
   | {
       type: "setKind";
@@ -135,6 +162,7 @@ interface MarkdownBlockSpan {
   id: string;
   kind: MarkdownBlockKind;
   editable: boolean;
+  depth?: number;
   from: number;
   to: number;
 }
@@ -144,6 +172,7 @@ interface MarkdownBlockSource {
   kind: MarkdownBlockKind;
   raw: string;
   editable: boolean;
+  depth?: number;
 }
 
 interface MarkdownBlockState {
@@ -157,6 +186,8 @@ interface ListItemSourceSyntax {
   kind: ListItemBlockKind;
   prefix: string;
   nextPrefix: string;
+  nestingIndent: string;
+  indent: number;
   contentFrom: number;
   checked?: boolean;
   checkboxOffset?: number;
@@ -188,12 +219,12 @@ export class MarkdownBlockDocument {
   }
 
   static fromMarkdown(markdown: string): MarkdownBlockDocument {
-    const sources = scanMarkdownSource(markdown).map((span) => span.raw);
+    const sources = scanMarkdownSource(markdown);
     const sourceBlocks: MarkdownBlockSource[] = [];
     let nextId = 1;
 
-    for (const raw of sources) {
-      sourceBlocks.push(blockFromSource(raw, `block-${nextId}`));
+    for (const source of sources) {
+      sourceBlocks.push(blockFromSource(source.raw, `block-${nextId}`, source.listDepth));
       nextId += 1;
     }
 
@@ -232,6 +263,326 @@ export class MarkdownBlockDocument {
   }
 
   apply(command: MarkdownBlockCommand): MarkdownBlockApplyResult {
+    if (command.type === "outdentBlocks") {
+      if (command.blockIds.length === 0) return { snapshot: this.getSnapshot() };
+      const sourceBlocks = this.sourceBlocks();
+      const { firstIndex, length } = contiguousBlockRange(
+        sourceBlocks,
+        command.blockIds,
+        command.type
+      );
+      const selected = sourceBlocks.slice(firstIndex, firstIndex + length);
+      if (selected.some((block) => listItemFamily(block.kind) === null)) {
+        throw new Error("outdentBlocks only supports list and task Blocks");
+      }
+      const firstDepth = selected[0].depth ?? 0;
+      if (firstDepth === 0) throw new Error("a top-level list Block cannot be outdented");
+
+      let parentIndex = firstIndex - 1;
+      while (parentIndex >= 0) {
+        const candidate = sourceBlocks[parentIndex];
+        if (listItemFamily(candidate.kind) === null) break;
+        if ((candidate.depth ?? 0) === firstDepth - 1) break;
+        parentIndex -= 1;
+      }
+      const parent = sourceBlocks[parentIndex];
+      const firstSyntax = listItemSyntax(selected[0].raw, true);
+      const parentSyntax = parent ? listItemSyntax(parent.raw, true) : null;
+      if (!parent || !firstSyntax || !parentSyntax) {
+        throw new Error("outdentBlocks requires a source-backed list parent");
+      }
+      const indentationWidth = firstSyntax.indent - parentSyntax.indent;
+      if (indentationWidth <= 0) {
+        throw new Error("outdentBlocks cannot determine a safe source indentation");
+      }
+
+      let endIndex = firstIndex + length;
+      const selectedRootDepth = Math.min(...selected.map((block) => block.depth ?? 0));
+      while (
+        endIndex < sourceBlocks.length &&
+        listItemFamily(sourceBlocks[endIndex].kind) !== null &&
+        (sourceBlocks[endIndex].depth ?? 0) > selectedRootDepth
+      ) {
+        endIndex += 1;
+      }
+      const outdented = sourceBlocks
+        .slice(firstIndex, endIndex)
+        .map((candidate) => outdentSourceLines(candidate.raw, indentationWidth));
+      if (outdented.some((raw) => raw === null)) {
+        throw new Error("outdentBlocks cannot preserve a continuation line safely");
+      }
+
+      this.recordHistory();
+      for (let blockIndex = firstIndex; blockIndex < endIndex; blockIndex += 1) {
+        const candidate = sourceBlocks[blockIndex];
+        sourceBlocks[blockIndex] = {
+          ...candidate,
+          raw: outdented[blockIndex - firstIndex] as string,
+          depth: (candidate.depth ?? 0) - 1,
+        };
+      }
+      this.commitSources(sourceBlocks);
+      this.revision += 1;
+      return {
+        snapshot: this.getSnapshot(),
+        selection: { blockId: selected[0].id, anchor: 0, head: 0 },
+      };
+    }
+
+    if (command.type === "indentBlocks") {
+      if (command.blockIds.length === 0) return { snapshot: this.getSnapshot() };
+      const sourceBlocks = this.sourceBlocks();
+      const { firstIndex, length } = contiguousBlockRange(
+        sourceBlocks,
+        command.blockIds,
+        command.type
+      );
+      const selected = sourceBlocks.slice(firstIndex, firstIndex + length);
+      if (selected.some((block) => listItemFamily(block.kind) === null)) {
+        throw new Error("indentBlocks only supports list and task Blocks");
+      }
+      const firstDepth = selected[0].depth ?? 0;
+      let parentIndex = firstIndex - 1;
+      while (parentIndex >= 0) {
+        const candidate = sourceBlocks[parentIndex];
+        if (listItemFamily(candidate.kind) === null) break;
+        const candidateDepth = candidate.depth ?? 0;
+        if (candidateDepth === firstDepth) break;
+        if (candidateDepth < firstDepth) {
+          parentIndex = -1;
+          break;
+        }
+        parentIndex -= 1;
+      }
+      const parent = sourceBlocks[parentIndex];
+      if (!parent || (parent.depth ?? 0) !== firstDepth) {
+        throw new Error("indentBlocks requires a previous sibling");
+      }
+      const parentSyntax = listItemSyntax(parent.raw, true);
+      if (!parentSyntax) throw new Error("indentBlocks requires a source-backed list sibling");
+
+      let endIndex = firstIndex + length;
+      const selectedRootDepth = Math.min(...selected.map((block) => block.depth ?? 0));
+      while (
+        endIndex < sourceBlocks.length &&
+        listItemFamily(sourceBlocks[endIndex].kind) !== null &&
+        (sourceBlocks[endIndex].depth ?? 0) > selectedRootDepth
+      ) {
+        endIndex += 1;
+      }
+
+      this.recordHistory();
+      for (let blockIndex = firstIndex; blockIndex < endIndex; blockIndex += 1) {
+        const candidate = sourceBlocks[blockIndex];
+        sourceBlocks[blockIndex] = {
+          ...candidate,
+          raw: indentSourceLines(candidate.raw, parentSyntax.nestingIndent),
+          depth: (candidate.depth ?? 0) + 1,
+        };
+      }
+      this.commitSources(sourceBlocks);
+      this.revision += 1;
+      return {
+        snapshot: this.getSnapshot(),
+        selection: { blockId: selected[0].id, anchor: 0, head: 0 },
+      };
+    }
+
+    if (command.type === "moveBlocks") {
+      if (command.blockIds.length === 0) return { snapshot: this.getSnapshot() };
+      const sourceBlocks = this.sourceBlocks();
+      const { firstIndex, length } = contiguousBlockRange(
+        sourceBlocks,
+        command.blockIds,
+        command.type
+      );
+      assertListDescendantsSelected(sourceBlocks, firstIndex, length, command.type);
+      const targetIndex =
+        command.beforeId === null
+          ? sourceBlocks.length
+          : sourceBlocks.findIndex((block) => block.id === command.beforeId);
+      if (targetIndex < 0) throw new Error(`unknown before block: ${command.beforeId}`);
+
+      const lastIndex = firstIndex + length - 1;
+      if (
+        (command.beforeId !== null && targetIndex >= firstIndex && targetIndex <= lastIndex) ||
+        targetIndex === lastIndex + 1 ||
+        (command.beforeId === null && lastIndex === sourceBlocks.length - 1)
+      ) {
+        return { snapshot: this.getSnapshot() };
+      }
+
+      const reordered = [...sourceBlocks];
+      const selected = reordered.splice(firstIndex, length);
+      if (firstIndex > 0 && firstIndex < reordered.length) {
+        reordered[firstIndex - 1] = ensureBlockBoundary(
+          reordered[firstIndex - 1],
+          reordered[firstIndex],
+          preferredLineEnding(
+            reordered[firstIndex - 1].raw,
+            reordered[firstIndex].raw,
+            this.markdown
+          )
+        );
+      }
+      const beforeIndex =
+        command.beforeId === null
+          ? reordered.length
+          : reordered.findIndex((block) => block.id === command.beforeId);
+      if (beforeIndex < 0) throw new Error(`unknown before block: ${command.beforeId}`);
+
+      this.recordHistory();
+      reordered.splice(beforeIndex, 0, ...selected);
+      for (const boundaryIndex of [beforeIndex - 1, beforeIndex + selected.length - 1]) {
+        if (boundaryIndex < 0 || boundaryIndex >= reordered.length - 1) continue;
+        reordered[boundaryIndex] = ensureBlockBoundary(
+          reordered[boundaryIndex],
+          reordered[boundaryIndex + 1],
+          preferredLineEnding(
+            reordered[boundaryIndex].raw,
+            reordered[boundaryIndex + 1].raw,
+            this.markdown
+          )
+        );
+      }
+      this.commitSources(reordered);
+      this.revision += 1;
+      return {
+        snapshot: this.getSnapshot(),
+        selection: { blockId: selected[0].id, anchor: 0, head: 0 },
+      };
+    }
+
+    if (command.type === "duplicateBlocks") {
+      if (command.blockIds.length === 0) return { snapshot: this.getSnapshot() };
+      const sourceBlocks = this.sourceBlocks();
+      const { firstIndex, length: requestedLength } = contiguousBlockRange(
+        sourceBlocks,
+        command.blockIds,
+        command.type
+      );
+      const length = listDescendantRangeEnd(sourceBlocks, firstIndex, requestedLength) - firstIndex;
+      const selected = sourceBlocks.slice(firstIndex, firstIndex + length);
+      this.recordHistory();
+      const duplicates = selected.map((block) => {
+        const duplicate = { ...block, id: `block-${this.nextBlockNumber}` };
+        this.nextBlockNumber += 1;
+        return duplicate;
+      });
+      const lastIndex = firstIndex + selected.length - 1;
+      sourceBlocks[lastIndex] = ensureDuplicateInsertionBoundary(
+        sourceBlocks[lastIndex],
+        duplicates[0],
+        sourceBlocks[lastIndex + 1],
+        preferredLineEnding(sourceBlocks[lastIndex].raw, duplicates[0].raw, this.markdown)
+      );
+      sourceBlocks.splice(lastIndex + 1, 0, ...duplicates);
+      this.commitSources(sourceBlocks);
+      this.revision += 1;
+      return {
+        snapshot: this.getSnapshot(),
+        selection: { blockId: duplicates[0].id, anchor: 0, head: 0 },
+      };
+    }
+
+    if (command.type === "deleteBlocks") {
+      if (command.blockIds.length === 0) return { snapshot: this.getSnapshot() };
+      const sourceBlocks = this.sourceBlocks();
+      const { firstIndex, length: requestedLength } = contiguousBlockRange(
+        sourceBlocks,
+        command.blockIds,
+        command.type
+      );
+      const length = listDescendantRangeEnd(sourceBlocks, firstIndex, requestedLength) - firstIndex;
+      const selected = sourceBlocks.slice(firstIndex, firstIndex + length);
+      this.recordHistory();
+      if (selected.length === sourceBlocks.length) {
+        const empty = {
+          ...selected[0],
+          kind: "paragraph" as const,
+          raw: "",
+          editable: true,
+        };
+        this.commitSources([empty]);
+        this.revision += 1;
+        return {
+          snapshot: this.getSnapshot(),
+          selection: { blockId: empty.id, anchor: 0, head: 0 },
+        };
+      }
+
+      sourceBlocks.splice(firstIndex, selected.length);
+      if (firstIndex > 0 && firstIndex < sourceBlocks.length) {
+        sourceBlocks[firstIndex - 1] = ensureDeletionBoundary(
+          sourceBlocks[firstIndex - 1],
+          sourceBlocks[firstIndex],
+          preferredLineEnding(
+            sourceBlocks[firstIndex - 1].raw,
+            sourceBlocks[firstIndex].raw,
+            this.markdown
+          )
+        );
+      }
+      this.commitSources(sourceBlocks);
+      this.revision += 1;
+      const focus = sourceBlocks[Math.min(firstIndex, sourceBlocks.length - 1)];
+      return {
+        snapshot: this.getSnapshot(),
+        selection: { blockId: focus.id, anchor: 0, head: 0 },
+      };
+    }
+
+    if (command.type === "replaceBlocks") {
+      if (command.blockIds.length === 0 || command.markdown.length === 0) {
+        return { snapshot: this.getSnapshot() };
+      }
+      const sourceBlocks = this.sourceBlocks();
+      const { firstIndex, length: requestedLength } = contiguousBlockRange(
+        sourceBlocks,
+        command.blockIds,
+        command.type
+      );
+      const length = listDescendantRangeEnd(sourceBlocks, firstIndex, requestedLength) - firstIndex;
+      const replacementSpans = scanMarkdownSource(command.markdown);
+      if (replacementSpans.length === 0) return { snapshot: this.getSnapshot() };
+
+      const replacements = replacementSpans.map((span, replacementIndex) => {
+        const id =
+          replacementIndex === 0 ? sourceBlocks[firstIndex].id : `block-${this.nextBlockNumber++}`;
+        return blockFromSource(span.raw, id, span.listDepth);
+      });
+      const newline = preferredLineEnding(
+        command.markdown,
+        sourceBlocks[firstIndex - 1]?.raw ?? "",
+        sourceBlocks[firstIndex + length]?.raw ?? "",
+        this.markdown
+      );
+      const previous = sourceBlocks[firstIndex - 1];
+      const following = sourceBlocks[firstIndex + length];
+      if (previous) {
+        sourceBlocks[firstIndex - 1] = ensureDeletionBoundary(previous, replacements[0], newline);
+      }
+      if (following) {
+        const lastReplacementIndex = replacements.length - 1;
+        replacements[lastReplacementIndex] = ensureDeletionBoundary(
+          replacements[lastReplacementIndex],
+          following,
+          newline
+        );
+      }
+
+      this.recordHistory();
+      sourceBlocks.splice(firstIndex, length, ...replacements);
+      this.commitSources(sourceBlocks);
+      this.revision += 1;
+      const focus = replacements.at(-1) as MarkdownBlockSource;
+      const cursor = splitBlockSource(focus.raw).content.length;
+      return {
+        snapshot: this.getSnapshot(),
+        selection: { blockId: focus.id, anchor: cursor, head: cursor },
+      };
+    }
+
     const index = this.blocks.findIndex((block) => block.id === command.blockId);
     if (index < 0) throw new Error(`unknown block: ${command.blockId}`);
 
@@ -254,7 +605,7 @@ export class MarkdownBlockDocument {
       throw new Error(`${block.kind} blocks cannot be split structurally`);
     }
     if (command.type === "setTaskChecked") {
-      const task = listItemSyntax(block.raw);
+      const task = listItemSyntax(block.raw, block.depth !== undefined);
       if (task?.kind !== "task_list_item" || task.checkboxOffset === undefined) {
         throw new Error("only task list items have a checkbox");
       }
@@ -273,6 +624,24 @@ export class MarkdownBlockDocument {
       return { snapshot: this.getSnapshot() };
     }
     if (command.type === "move") {
+      if (listItemFamily(block.kind) !== null) {
+        const blockDepth = block.depth ?? 0;
+        let subtreeEndIndex = index + 1;
+        while (
+          subtreeEndIndex < sourceBlocks.length &&
+          listItemFamily(sourceBlocks[subtreeEndIndex].kind) !== null &&
+          (sourceBlocks[subtreeEndIndex].depth ?? 0) > blockDepth
+        ) {
+          subtreeEndIndex += 1;
+        }
+        if (subtreeEndIndex > index + 1) {
+          return this.apply({
+            type: "moveBlocks",
+            blockIds: sourceBlocks.slice(index, subtreeEndIndex).map((candidate) => candidate.id),
+            beforeId: command.beforeId,
+          });
+        }
+      }
       const targetIndex =
         command.beforeId === null
           ? sourceBlocks.length
@@ -333,7 +702,7 @@ export class MarkdownBlockDocument {
       if (command.at < 0 || splitTo < command.at || splitTo > content.length) {
         throw new RangeError("split position is outside the block");
       }
-      const listItem = listItemSyntax(block.raw);
+      const listItem = listItemSyntax(block.raw, block.depth !== undefined);
       if (listItem && command.at < listItem.contentFrom) {
         throw new RangeError("a list item cannot split inside its source marker");
       }
@@ -383,7 +752,11 @@ export class MarkdownBlockDocument {
       const rightContent = content.slice(splitTo);
       const rightRaw = listItem ? listItem.nextPrefix + rightContent : rightContent;
       let left = reclassifyEditableSource(block, leftContent);
-      const right = blockFromSource(rightRaw + separator, `block-${this.nextBlockNumber}`);
+      const right = blockFromSource(
+        rightRaw + separator,
+        `block-${this.nextBlockNumber}`,
+        listItem ? block.depth : undefined
+      );
       this.nextBlockNumber += 1;
       left = ensureBlockBoundary(left, right, preferredLineEnding(block.raw, this.markdown));
       sourceBlocks.splice(index, 1, left, right);
@@ -400,7 +773,7 @@ export class MarkdownBlockDocument {
     }
 
     if (command.type === "mergeBackward") {
-      const currentListItem = listItemSyntax(block.raw);
+      const currentListItem = listItemSyntax(block.raw, block.depth !== undefined);
       const previousBlock = index > 0 ? sourceBlocks[index - 1] : null;
       const unwrapCurrent =
         block.kind === "blockquote" ||
@@ -452,27 +825,13 @@ export class MarkdownBlockDocument {
     }
 
     if (command.type === "duplicate") {
-      this.recordHistory();
-      const duplicate = {
-        ...block,
-        id: `block-${this.nextBlockNumber}`,
-      };
-      this.nextBlockNumber += 1;
-      const newline = preferredLineEnding(block.raw, this.markdown);
-      const original = ensureBlockBoundary(block, duplicate, newline);
-      const copy = sourceBlocks[index + 1]
-        ? ensureBlockBoundary(duplicate, sourceBlocks[index + 1], newline)
-        : duplicate;
-      sourceBlocks.splice(index, 1, original, copy);
-      this.commitSources(sourceBlocks);
-      this.revision += 1;
-      return {
-        snapshot: this.getSnapshot(),
-        selection: { blockId: duplicate.id, anchor: 0, head: 0 },
-      };
+      return this.apply({ type: "duplicateBlocks", blockIds: [block.id] });
     }
 
     if (command.type === "delete") {
+      if (listItemFamily(block.kind) !== null) {
+        return this.apply({ type: "deleteBlocks", blockIds: [block.id] });
+      }
       this.recordHistory();
       if (sourceBlocks.length === 1) {
         sourceBlocks[0] = { ...block, kind: "paragraph", raw: "", editable: true };
@@ -510,6 +869,61 @@ export class MarkdownBlockDocument {
       }
       const { content, separator } = splitBlockSource(block.raw);
       const plain = plainBlockContent(block, content);
+      const currentListItem = listItemSyntax(block.raw, true);
+      if (currentListItem && !isListItemBlockKind(command.kind)) {
+        const subtreeEndIndex = listDescendantRangeEnd(sourceBlocks, index, 1);
+        if ((block.depth ?? 0) > 0 || subtreeEndIndex > index + 1) {
+          throw new Error("list hierarchy cannot be preserved by this Block kind");
+        }
+      }
+      if (currentListItem && isListItemBlockKind(command.kind)) {
+        if (command.kind === block.kind) return { snapshot: this.getSnapshot() };
+        const indentation = currentListItem.prefix.slice(0, currentListItem.indent);
+        const nextPrefix = `${indentation}${listMarkerForKind(command.kind)}`;
+        const nextListItem = listItemSyntax(`${nextPrefix}${plain}${separator}`, true);
+        if (!nextListItem) throw new Error("the new list kind cannot be represented safely");
+        const indentationDelta =
+          nextListItem.nestingIndent.length - currentListItem.nestingIndent.length;
+        const adjustedPlain = shiftContinuationIndentation(plain, indentationDelta);
+        if (adjustedPlain === null) {
+          throw new Error("the new list kind cannot preserve continuation indentation safely");
+        }
+        const next: MarkdownBlockSource = {
+          ...block,
+          kind: command.kind,
+          raw: `${nextPrefix}${adjustedPlain}${separator}`,
+        };
+        const subtreeEndIndex = listDescendantRangeEnd(sourceBlocks, index, 1);
+        const descendantSources = sourceBlocks
+          .slice(index + 1, subtreeEndIndex)
+          .map((descendant) => {
+            if (indentationDelta > 0) {
+              return indentSourceLines(descendant.raw, " ".repeat(indentationDelta));
+            }
+            if (indentationDelta < 0) {
+              return outdentSourceLines(descendant.raw, -indentationDelta);
+            }
+            return descendant.raw;
+          });
+        if (descendantSources.some((raw) => raw === null)) {
+          throw new Error("the new list kind cannot preserve descendant indentation safely");
+        }
+        this.recordHistory();
+        sourceBlocks[index] = next;
+        for (
+          let descendantIndex = index + 1;
+          descendantIndex < subtreeEndIndex;
+          descendantIndex += 1
+        ) {
+          sourceBlocks[descendantIndex] = {
+            ...sourceBlocks[descendantIndex],
+            raw: descendantSources[descendantIndex - index - 1] as string,
+          };
+        }
+        this.commitSources(sourceBlocks);
+        this.revision += 1;
+        return { snapshot: this.getSnapshot() };
+      }
       let next: MarkdownBlockSource;
       if (command.kind === "heading") {
         if (/\r\n|\n|\r/.test(plain)) {
@@ -650,11 +1064,13 @@ export class MarkdownBlockDocument {
       id: block.id,
       kind: block.kind,
       editable: block.editable,
+      depth: block.depth,
       raw: this.markdown.slice(block.from, block.to),
     }));
   }
 
   private commitSources(blocks: MarkdownBlockSource[]): void {
+    reprojectListDepths(blocks);
     this.markdown = blocks.map((block) => block.raw).join("");
     this.blocks = spansFromSources(blocks);
   }
@@ -674,6 +1090,105 @@ export class MarkdownBlockDocument {
   private recordHistory(): void {
     this.undoStack.push(this.cloneState());
     this.redoStack = [];
+  }
+}
+
+function contiguousBlockRange(
+  blocks: readonly MarkdownBlockSource[],
+  blockIds: readonly string[],
+  commandType:
+    | "deleteBlocks"
+    | "duplicateBlocks"
+    | "indentBlocks"
+    | "moveBlocks"
+    | "outdentBlocks"
+    | "replaceBlocks"
+): { firstIndex: number; length: number } {
+  const indexes = blockIds.map((blockId) => blocks.findIndex((block) => block.id === blockId));
+  if (indexes.some((index) => index < 0)) {
+    throw new Error(`${commandType} contains an unknown block`);
+  }
+  const firstIndex = indexes[0];
+  if (indexes.some((index, offset) => index !== firstIndex + offset)) {
+    throw new Error(`${commandType} requires contiguous Blocks in document order`);
+  }
+  return { firstIndex, length: indexes.length };
+}
+
+function listDescendantRangeEnd(
+  blocks: readonly MarkdownBlockSource[],
+  firstIndex: number,
+  length: number
+): number {
+  let endIndex = firstIndex + length;
+  for (let blockIndex = firstIndex; blockIndex < endIndex; blockIndex += 1) {
+    const block = blocks[blockIndex];
+    if (listItemFamily(block.kind) === null) continue;
+    const depth = block.depth ?? 0;
+    let descendantIndex = blockIndex + 1;
+    while (
+      descendantIndex < blocks.length &&
+      listItemFamily(blocks[descendantIndex].kind) !== null &&
+      (blocks[descendantIndex].depth ?? 0) > depth
+    ) {
+      descendantIndex += 1;
+    }
+    endIndex = Math.max(endIndex, descendantIndex);
+  }
+  return endIndex;
+}
+
+function assertListDescendantsSelected(
+  blocks: readonly MarkdownBlockSource[],
+  firstIndex: number,
+  length: number,
+  commandType: "moveBlocks"
+): void {
+  const lastIndex = firstIndex + length - 1;
+  for (let blockIndex = firstIndex; blockIndex <= lastIndex; blockIndex += 1) {
+    const block = blocks[blockIndex];
+    if (listItemFamily(block.kind) === null) continue;
+    const depth = block.depth ?? 0;
+    let descendantIndex = blockIndex + 1;
+    while (
+      descendantIndex < blocks.length &&
+      listItemFamily(blocks[descendantIndex].kind) !== null &&
+      (blocks[descendantIndex].depth ?? 0) > depth
+    ) {
+      if (descendantIndex > lastIndex) {
+        throw new Error(`${commandType} must include all list descendants`);
+      }
+      descendantIndex += 1;
+    }
+  }
+}
+
+function reprojectListDepths(blocks: MarkdownBlockSource[]): void {
+  const stack: ListItemSourceSyntax[] = [];
+  for (const block of blocks) {
+    if (listItemFamily(block.kind) === null) {
+      stack.length = 0;
+      block.depth = undefined;
+      continue;
+    }
+    const syntax = listItemSyntax(block.raw, true);
+    if (!syntax) {
+      stack.length = 0;
+      block.depth = undefined;
+      continue;
+    }
+    let depth = -1;
+    for (let parentDepth = stack.length - 1; parentDepth >= 0; parentDepth -= 1) {
+      const parent = stack[parentDepth];
+      const parentContentIndent = parent.indent + parent.nestingIndent.length;
+      if (syntax.indent >= parentContentIndent && syntax.indent <= parentContentIndent + 3) {
+        depth = parentDepth + 1;
+        break;
+      }
+    }
+    if (depth < 0) depth = 0;
+    block.depth = depth;
+    stack.splice(depth, stack.length - depth, syntax);
   }
 }
 
@@ -722,6 +1237,36 @@ function ensureBlockBoundary(
   };
 }
 
+function ensureDuplicateInsertionBoundary(
+  left: MarkdownBlockSource,
+  right: MarkdownBlockSource,
+  following: MarkdownBlockSource | undefined,
+  newline: "\r\n" | "\n" | "\r"
+): MarkdownBlockSource {
+  if (listItemFamily(left.kind) !== null && listItemFamily(right.kind) !== null) {
+    const { content, separator } = splitBlockSource(left.raw);
+    if (following && listItemFamily(following.kind) !== null && countLineEndings(separator) >= 1) {
+      return left;
+    }
+    if (countLineEndings(separator) === 1) return left;
+    return { ...left, raw: `${content}${newline}` };
+  }
+  return ensureBlockBoundary(left, right, newline);
+}
+
+function ensureDeletionBoundary(
+  left: MarkdownBlockSource,
+  right: MarkdownBlockSource,
+  newline: "\r\n" | "\n" | "\r"
+): MarkdownBlockSource {
+  if (listItemFamily(left.kind) !== null && listItemFamily(right.kind) !== null) {
+    const { content, separator } = splitBlockSource(left.raw);
+    if (countLineEndings(separator) >= 1) return left;
+    return { ...left, raw: `${content}${newline}` };
+  }
+  return ensureBlockBoundary(left, right, newline);
+}
+
 function listItemsShareContainer(left: MarkdownBlockSource, right: MarkdownBlockSource): boolean {
   const leftFamily = listItemFamily(left.kind);
   return leftFamily !== null && leftFamily === listItemFamily(right.kind);
@@ -733,9 +1278,19 @@ function listItemFamily(kind: MarkdownBlockKind): "bullet" | "ordered" | null {
   return null;
 }
 
+function isListItemBlockKind(kind: MarkdownBlockKind): kind is ListItemBlockKind {
+  return listItemFamily(kind) !== null;
+}
+
+function listMarkerForKind(kind: ListItemBlockKind): string {
+  if (kind === "ordered_list_item") return "1. ";
+  if (kind === "task_list_item") return "- [ ] ";
+  return "- ";
+}
+
 function plainBlockContent(block: MarkdownBlockSource, content: string): string {
   if (block.kind === "heading") return content.replace(/^#{1,6}[ \t]+/, "");
-  const listItem = listItemSyntax(block.raw);
+  const listItem = listItemSyntax(block.raw, block.depth !== undefined);
   if (listItem) return content.slice(listItem.contentFrom);
   if (block.kind === "blockquote") {
     return content.replace(/(^|(?:\r\n|\n|\r)) {0,3}>[ \t]?/g, "$1");
@@ -746,6 +1301,44 @@ function plainBlockContent(block: MarkdownBlockSource, content: string): string 
 function prefixSourceLines(source: string, prefix: string): string {
   if (!source) return prefix;
   return source.replace(/(^|(?:\r\n|\n|\r))/g, `$1${prefix}`);
+}
+
+function indentSourceLines(source: string, indentation: string): string {
+  if (!source) return source;
+  return indentation + source.replace(/(\r\n|\n|\r(?!\n))(?=.)/g, `$1${indentation}`);
+}
+
+function outdentSourceLines(source: string, indentationWidth: number): string | null {
+  const indentation = " ".repeat(indentationWidth);
+  const parts = source.split(/(\r\n|\n|\r)/);
+  for (let partIndex = 0; partIndex < parts.length; partIndex += 2) {
+    const line = parts[partIndex];
+    if (!line) continue;
+    if (/^[ \t]*$/.test(line)) {
+      parts[partIndex] = line.slice(Math.min(indentationWidth, line.match(/^ */)?.[0].length ?? 0));
+      continue;
+    }
+    if (!line.startsWith(indentation)) return null;
+    parts[partIndex] = line.slice(indentationWidth);
+  }
+  return parts.join("");
+}
+
+function shiftContinuationIndentation(source: string, indentationDelta: number): string | null {
+  if (indentationDelta === 0 || !source) return source;
+  const indentation = " ".repeat(Math.abs(indentationDelta));
+  const parts = source.split(/(\r\n|\n|\r)/);
+  for (let partIndex = 2; partIndex < parts.length; partIndex += 2) {
+    const line = parts[partIndex];
+    if (!line || /^[ \t]*$/.test(line)) continue;
+    if (indentationDelta > 0) {
+      parts[partIndex] = indentation + line;
+      continue;
+    }
+    if (!line.startsWith(indentation)) return null;
+    parts[partIndex] = line.slice(indentation.length);
+  }
+  return parts.join("");
 }
 
 function splitBlockSource(raw: string): { content: string; separator: string } {
@@ -775,7 +1368,7 @@ function preferredLineEnding(...sources: string[]): "\r\n" | "\n" | "\r" {
   return "\n";
 }
 
-function blockFromSource(raw: string, id: string): MarkdownBlockSource {
+function blockFromSource(raw: string, id: string, listDepth?: number): MarkdownBlockSource {
   const heading = raw.match(/^(#{1,6})[ \t]+[^\r\n]*(?:(?:\r\n|\n)+)?$/);
   if (heading) {
     return {
@@ -822,13 +1415,14 @@ function blockFromSource(raw: string, id: string): MarkdownBlockSource {
     };
   }
 
-  const listItem = listItemSyntax(raw);
+  const listItem = listItemSyntax(raw, listDepth !== undefined);
   if (listItem) {
     return {
       id,
       kind: listItem.kind,
       raw,
       editable: true,
+      depth: listDepth ?? 0,
     };
   }
 
@@ -903,12 +1497,12 @@ function isUnsupportedBlockSource(raw: string): boolean {
   );
 }
 
-function listItemSyntax(raw: string): ListItemSourceSyntax | null {
+function listItemSyntax(raw: string, allowNested = false): ListItemSourceSyntax | null {
   const { content } = splitBlockSource(raw);
-  if (/\r\n|\n|\r/.test(content)) return null;
 
-  const task = content.match(/^( {0,3})([-+*])([ \t]+)\[([ xX])\]([ \t]+|$)/);
+  const task = content.match(/^( *)([-+*])([ \t]+)\[([ xX])\]([ \t]+|$)/);
   if (task) {
+    if (!allowNested && task[1].length > 3) return null;
     const prefix = task[0];
     const checkboxOffset = task[1].length + task[2].length + task[3].length + 1;
     const uncheckedPrefix =
@@ -917,25 +1511,31 @@ function listItemSyntax(raw: string): ListItemSourceSyntax | null {
       kind: "task_list_item",
       prefix,
       nextPrefix: uncheckedPrefix.endsWith("]") ? `${uncheckedPrefix} ` : uncheckedPrefix,
+      nestingIndent: " ".repeat(task[2].length + task[3].length),
+      indent: task[1].length,
       contentFrom: prefix.length,
       checked: task[4].toLowerCase() === "x",
       checkboxOffset,
     };
   }
 
-  const bullet = content.match(/^( {0,3})([-+*])([ \t]+|$)/);
+  const bullet = content.match(/^( *)([-+*])([ \t]+|$)/);
   if (bullet) {
+    if (!allowNested && bullet[1].length > 3) return null;
     const prefix = bullet[0];
     return {
       kind: "bullet_list_item",
       prefix,
       nextPrefix: bullet[3] ? prefix : `${prefix} `,
+      nestingIndent: " ".repeat(bullet[2].length + bullet[3].length),
+      indent: bullet[1].length,
       contentFrom: prefix.length,
     };
   }
 
-  const ordered = content.match(/^( {0,3})(\d{1,9})([.)])([ \t]+|$)/);
+  const ordered = content.match(/^( *)(\d{1,9})([.)])([ \t]+|$)/);
   if (ordered) {
+    if (!allowNested && ordered[1].length > 3) return null;
     const prefix = ordered[0];
     const ordinal = Number(ordered[2]);
     const nextOrdinal = ordinal < 999_999_999 ? ordinal + 1 : ordinal;
@@ -943,6 +1543,8 @@ function listItemSyntax(raw: string): ListItemSourceSyntax | null {
       kind: "ordered_list_item",
       prefix,
       nextPrefix: `${ordered[1]}${nextOrdinal}${ordered[3]}${ordered[4] || " "}`,
+      nestingIndent: " ".repeat(ordered[2].length + ordered[3].length + ordered[4].length),
+      indent: ordered[1].length,
       contentFrom: prefix.length,
     };
   }
@@ -1016,7 +1618,7 @@ function isNativeParagraphSource(raw: string): boolean {
 }
 
 function reclassifyEditableSource(previous: MarkdownBlockSource, raw: string): MarkdownBlockSource {
-  return blockFromSource(raw, previous.id);
+  return blockFromSource(raw, previous.id, previous.depth);
 }
 
 function spansFromSources(blocks: MarkdownBlockSource[]): MarkdownBlockSpan[] {
@@ -1024,10 +1626,12 @@ function spansFromSources(blocks: MarkdownBlockSource[]): MarkdownBlockSpan[] {
   return blocks.map((block) => {
     const from = offset;
     offset += block.raw.length;
+    const depth = listItemFamily(block.kind) === null ? undefined : (block.depth ?? 0);
     return {
       id: block.id,
       kind: block.kind,
       editable: block.editable,
+      ...(depth === undefined ? {} : { depth }),
       from,
       to: offset,
     };
@@ -1037,7 +1641,7 @@ function spansFromSources(blocks: MarkdownBlockSource[]): MarkdownBlockSpan[] {
 function blockViewFromSpan(markdown: string, block: MarkdownBlockSpan): MarkdownBlockView {
   const raw = markdown.slice(block.from, block.to);
   const heading = block.kind === "heading" ? raw.match(/^(#{1,6})[ \t]+/) : null;
-  const listItem = listItemSyntax(raw);
+  const listItem = listItemSyntax(raw, block.depth !== undefined);
   return {
     ...block,
     level: heading?.[1].length as 1 | 2 | 3 | 4 | 5 | 6 | undefined,

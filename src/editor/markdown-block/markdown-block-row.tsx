@@ -1,18 +1,10 @@
 "use client";
 
-import {
-  ChevronDown,
-  ChevronUp,
-  Copy,
-  FileText,
-  GripVertical,
-  Loader2,
-  Plus,
-  Trash2,
-} from "lucide-react";
+import { FileText, Loader2 } from "lucide-react";
 import {
   type ChangeEvent,
   type ClipboardEvent,
+  type CSSProperties,
   type DragEvent,
   Fragment,
   type KeyboardEvent,
@@ -30,8 +22,23 @@ import {
   type MarkdownBlockView,
   type MarkdownSettableBlockKind,
 } from "@/editor/markdown-block/markdown-block-document";
+import {
+  BlockGutterControls,
+  TURN_INTO_OPTIONS,
+} from "@/editor/markdown-block/block-gutter-controls";
+import { createBlockEditingProjection } from "@/editor/markdown-block/block-editing-projection";
 import { editableMarkdownBlockSource } from "@/editor/markdown-block/markdown-block-source";
 import { isMarkdownSourceOnlyBlockKind } from "@/editor/markdown-block/markdown-block-document";
+import { InlineFormatToolbar } from "@/editor/markdown-block/inline-format-toolbar";
+import {
+  markdownInlineFormatState,
+  type MarkdownInlineFormat,
+} from "@/editor/markdown-block/markdown-inline-format";
+import { projectMarkdownInline } from "@/editor/markdown-block/markdown-inline-projection";
+import {
+  SemanticInlineEditor,
+  type SemanticInlineSelection,
+} from "@/editor/markdown-block/semantic-inline-editor";
 import {
   parseWikiEmbedBlock,
   resolveWikiEmbed,
@@ -73,20 +80,39 @@ interface MarkdownBlockRowProps {
   index: number;
   count: number;
   active: boolean;
+  keyboardEntry?: boolean;
+  blockSelected?: boolean;
+  blockSelectionFocus?: boolean;
+  nextBlockId?: string;
+  dropBefore?: boolean;
   selection?: { anchor: number; head: number };
   onActivate: (blockId: string) => void;
+  onSelectBlock?: (blockId: string, extend?: boolean) => void;
+  onBlockSelectionKeyDown?: (blockId: string, event: KeyboardEvent<HTMLDivElement>) => void;
   onChange: (blockId: string, source: string) => void;
   onPaste: (blockId: string, from: number, to: number, text: string) => void;
+  onApplyInlineFormat?: (
+    blockId: string,
+    from: number,
+    to: number,
+    format: MarkdownInlineFormat
+  ) => void;
   onImportImages?: (blockId: string, from: number, to: number, files: readonly File[]) => void;
   onCompositionStart: (blockId: string) => void;
   onCompositionEnd: (blockId: string) => void;
   onSplit: (blockId: string, from: number, to: number) => void;
   onMergeBackward: (blockId: string) => void;
   onInsertAfter: (blockId: string) => void;
+  onCopyMarkdown?: (blockId: string) => void | Promise<void>;
   onDuplicate: (blockId: string) => void;
   onDelete: (blockId: string) => void;
   onSetTaskChecked: (blockId: string, checked: boolean) => void;
   onMove: (blockId: string, direction: -1 | 1) => boolean | void;
+  onIndent?: (
+    blockId: string,
+    direction: -1 | 1,
+    selection: { anchor: number; head: number }
+  ) => boolean | void;
   onNavigate?: (blockId: string, direction: -1 | 1) => boolean;
   onSetKind: (
     blockId: string,
@@ -98,7 +124,9 @@ interface MarkdownBlockRowProps {
   onDragStart: (blockId: string, event: DragEvent<HTMLButtonElement>) => void;
   onDragEnd: () => void;
   onCanDrop: (dataTransfer: DataTransfer) => boolean;
-  onDropBefore: (blockId: string, dataTransfer: DataTransfer) => boolean;
+  onDragIntent?: (beforeId: string | null) => void;
+  onClearDragIntent?: () => void;
+  onDropBefore: (blockId: string | null, dataTransfer: DataTransfer) => boolean;
   onOpenWikiLink?: (target: string) => void;
   wikiEmbedContext?: MarkdownWikiEmbedContext;
   collectionContext?: MarkdownCollectionContext;
@@ -128,20 +156,30 @@ export function MarkdownBlockRow({
   index,
   count,
   active,
+  keyboardEntry = true,
+  blockSelected = false,
+  blockSelectionFocus = false,
+  nextBlockId,
+  dropBefore = false,
   selection,
   onActivate,
+  onSelectBlock,
+  onBlockSelectionKeyDown,
   onChange,
   onPaste,
+  onApplyInlineFormat,
   onImportImages,
   onCompositionStart,
   onCompositionEnd,
   onSplit,
   onMergeBackward,
   onInsertAfter,
+  onCopyMarkdown,
   onDuplicate,
   onDelete,
   onSetTaskChecked,
   onMove,
+  onIndent,
   onNavigate,
   onSetKind,
   onUndo,
@@ -149,6 +187,8 @@ export function MarkdownBlockRow({
   onDragStart,
   onDragEnd,
   onCanDrop,
+  onDragIntent,
+  onClearDragIntent,
   onDropBefore,
   onOpenWikiLink,
   wikiEmbedContext,
@@ -156,11 +196,20 @@ export function MarkdownBlockRow({
   imageContext,
   onRunSlashCommand,
 }: MarkdownBlockRowProps) {
+  const rowRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editorId = `native-block-editor-${block.id}`;
   const descriptionId = `native-block-description-${block.id}`;
-  const source = editableMarkdownBlockSource(block.raw);
+  const rawSource = editableMarkdownBlockSource(block.raw);
+  const editingProjection = useMemo(() => createBlockEditingProjection(block), [block]);
+  const source = editingProjection.editorText;
   const sourceOnly = isMarkdownSourceOnlyBlockKind(block.kind);
+  const inlineProjection = useMemo(() => projectMarkdownInline(source), [source]);
+  const useSemanticInlineEditor =
+    !sourceOnly &&
+    !/[\r\n]/.test(source) &&
+    parseWikiEmbedBlock(source) === null &&
+    inlineProjection.visibleText !== source;
   const slashQuery =
     active && block.kind === "paragraph" && /^\/[^\r\n]*$/.test(source) && onRunSlashCommand
       ? source.slice(1)
@@ -171,8 +220,20 @@ export function MarkdownBlockRow({
   );
   const [slashIndex, setSlashIndex] = useState(0);
   const [dismissedSlashSource, setDismissedSlashSource] = useState<string | null>(null);
+  const [inlineSelection, setInlineSelection] = useState<{
+    from: number;
+    to: number;
+    position: { top: number; left: number };
+  } | null>(null);
+  const editorSelectionRef = useRef<SemanticInlineSelection>({
+    anchor: source.length,
+    head: source.length,
+  });
+  const sourceLengthRef = useRef(source.length);
+  sourceLengthRef.current = source.length;
   const slashMenuOpen =
     slashQuery !== null && slashCommands.length > 0 && dismissedSlashSource !== source;
+  const activeListItem = listItemPreview(rawSource, block.kind);
 
   useEffect(() => {
     setSlashIndex(0);
@@ -183,6 +244,10 @@ export function MarkdownBlockRow({
 
   useEffect(() => {
     if (!active) return;
+    editorSelectionRef.current = selection ?? {
+      anchor: sourceLengthRef.current,
+      head: sourceLengthRef.current,
+    };
     const textarea = textareaRef.current;
     if (!textarea) return;
     textarea.focus();
@@ -197,13 +262,28 @@ export function MarkdownBlockRow({
     textarea.style.height = `${Math.max(textarea.scrollHeight, 36)}px`;
   }, [active, selection]);
 
+  useEffect(() => {
+    if (blockSelectionFocus) rowRef.current?.focus();
+  }, [blockSelectionFocus]);
+
+  useEffect(() => {
+    if (!active || sourceOnly) setInlineSelection(null);
+  }, [active, sourceOnly]);
+
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setInlineSelection(null);
     onChange(block.id, event.target.value);
     event.target.style.height = "0px";
     event.target.style.height = `${Math.max(event.target.scrollHeight, 36)}px`;
   };
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleEditorKeyDown = (
+    event: KeyboardEvent<HTMLElement>,
+    editorSelection: SemanticInlineSelection,
+    editorLength: number
+  ) => {
+    const from = Math.min(editorSelection.anchor, editorSelection.head);
+    const to = Math.max(editorSelection.anchor, editorSelection.head);
     if (event.nativeEvent.isComposing) return;
     if (slashMenuOpen) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -223,6 +303,30 @@ export function MarkdownBlockRow({
       if (event.key === "Escape") {
         event.preventDefault();
         setDismissedSlashSource(source);
+        return;
+      }
+    }
+    if (
+      event.key === "Escape" &&
+      !event.shiftKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey
+    ) {
+      event.preventDefault();
+      onSelectBlock?.(block.id);
+      return;
+    }
+    if (
+      (event.metaKey || event.ctrlKey) &&
+      !event.shiftKey &&
+      !event.altKey &&
+      event.key.toLowerCase() === "a"
+    ) {
+      const visibleRange = inlineProjection.sourceRangeToVisible({ from, to });
+      if (visibleRange.from === 0 && visibleRange.to === inlineProjection.visibleText.length) {
+        event.preventDefault();
+        onSelectBlock?.(block.id);
         return;
       }
     }
@@ -264,15 +368,31 @@ export function MarkdownBlockRow({
       return;
     }
     if (
+      event.key === "Tab" &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      (block.kind === "bullet_list_item" ||
+        block.kind === "ordered_list_item" ||
+        block.kind === "task_list_item") &&
+      onIndent
+    ) {
+      event.preventDefault();
+      onIndent(block.id, event.shiftKey ? -1 : 1, {
+        anchor: editorSelection.anchor,
+        head: editorSelection.head,
+      });
+      return;
+    }
+    if (
       onNavigate &&
       !event.shiftKey &&
       !event.metaKey &&
       !event.ctrlKey &&
       !event.altKey &&
-      event.currentTarget.selectionStart === event.currentTarget.selectionEnd &&
-      ((event.key === "ArrowUp" && event.currentTarget.selectionStart === 0) ||
-        (event.key === "ArrowDown" &&
-          event.currentTarget.selectionEnd === event.currentTarget.value.length))
+      from === to &&
+      ((event.key === "ArrowUp" && from === 0) ||
+        (event.key === "ArrowDown" && to === editorLength))
     ) {
       const direction = event.key === "ArrowUp" ? -1 : 1;
       if (onNavigate(block.id, direction)) event.preventDefault();
@@ -287,18 +407,45 @@ export function MarkdownBlockRow({
     ) {
       if (sourceOnly) return;
       event.preventDefault();
-      onSplit(block.id, event.currentTarget.selectionStart, event.currentTarget.selectionEnd);
+      if (
+        source.length === 0 &&
+        (block.depth ?? 0) > 0 &&
+        (block.kind === "bullet_list_item" ||
+          block.kind === "ordered_list_item" ||
+          block.kind === "task_list_item") &&
+        onIndent
+      ) {
+        onIndent(block.id, -1, { anchor: 0, head: 0 });
+        return;
+      }
+      onSplit(block.id, from, to);
       return;
     }
-    if (
-      !sourceOnly &&
-      event.key === "Backspace" &&
-      event.currentTarget.selectionStart === editablePayloadStart(block, source) &&
-      event.currentTarget.selectionEnd === editablePayloadStart(block, source)
-    ) {
+    if (!sourceOnly && event.key === "Backspace" && from === 0 && to === 0) {
       event.preventDefault();
+      if (
+        (block.depth ?? 0) > 0 &&
+        (block.kind === "bullet_list_item" ||
+          block.kind === "ordered_list_item" ||
+          block.kind === "task_list_item") &&
+        onIndent
+      ) {
+        onIndent(block.id, -1, { anchor: 0, head: 0 });
+        return;
+      }
       onMergeBackward(block.id);
     }
+  };
+
+  const handleTextareaKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    handleEditorKeyDown(
+      event,
+      {
+        anchor: event.currentTarget.selectionStart,
+        head: event.currentTarget.selectionEnd,
+      },
+      event.currentTarget.value.length
+    );
   };
 
   const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -325,29 +472,89 @@ export function MarkdownBlockRow({
       event.preventDefault();
       event.stopPropagation();
       const textarea = textareaRef.current;
+      const editorSelection = editorSelectionRef.current;
       onImportImages(
         block.id,
-        textarea?.selectionStart ?? source.length,
-        textarea?.selectionEnd ?? source.length,
+        textarea?.selectionStart ?? editorSelection.anchor,
+        textarea?.selectionEnd ?? editorSelection.head,
         images
       );
       return;
     }
-    if (onDropBefore(block.id, event.dataTransfer)) event.preventDefault();
+    const beforeId = blockDropTarget(event.currentTarget, event.clientY, block.id, nextBlockId);
+    if (onDropBefore(beforeId, event.dataTransfer)) event.preventDefault();
+  };
+
+  const updateInlineSelection = (textarea: HTMLTextAreaElement) => {
+    const from = Math.min(textarea.selectionStart, textarea.selectionEnd);
+    const to = Math.max(textarea.selectionStart, textarea.selectionEnd);
+    editorSelectionRef.current = {
+      anchor: textarea.selectionStart,
+      head: textarea.selectionEnd,
+    };
+    if (sourceOnly || !onApplyInlineFormat || from === to) {
+      setInlineSelection(null);
+      return;
+    }
+    setInlineSelection({
+      from,
+      to,
+      position: textareaSelectionToolbarPosition(textarea, from, to),
+    });
+  };
+
+  const updateSemanticInlineSelection = (
+    nextSelection: SemanticInlineSelection,
+    editor: HTMLElement
+  ) => {
+    editorSelectionRef.current = nextSelection;
+    const from = Math.min(nextSelection.anchor, nextSelection.head);
+    const to = Math.max(nextSelection.anchor, nextSelection.head);
+    if (!onApplyInlineFormat || from === to) {
+      setInlineSelection(null);
+      return;
+    }
+    setInlineSelection({
+      from,
+      to,
+      position: domSelectionToolbarPosition(editor),
+    });
+  };
+
+  const openBlockActionsMenu = () => {
+    setInlineSelection(null);
+    rowRef.current?.querySelector<HTMLButtonElement>('button[aria-label="Block actions"]')?.click();
   };
 
   return (
     <div
-      className="group/native-block relative -ml-10 flex min-h-9 items-start gap-1 rounded-md py-0.5 pl-1 pr-1 hover:bg-muted/35"
+      ref={rowRef}
+      className={`group/native-block relative flex min-h-9 items-start gap-1 rounded-md py-0.5 pl-1 pr-1 transition-colors ${
+        blockSelected ? "bg-[rgba(35,131,226,0.09)]" : active ? "" : "hover:bg-muted/25"
+      }`}
       data-block-id={block.id}
+      data-block-kind={block.kind}
+      data-block-level={block.level}
+      data-block-depth={block.depth}
       data-native-block-row
       data-active={active ? "true" : "false"}
+      data-block-selected={blockSelected ? "true" : undefined}
+      data-drop-before={dropBefore ? "true" : undefined}
       role="group"
       aria-label={`Block ${index + 1} of ${count}`}
       aria-describedby={descriptionId}
       aria-current={active ? "true" : undefined}
-      tabIndex={!active && block.editable ? 0 : -1}
+      tabIndex={blockSelectionFocus || (!active && block.editable && keyboardEntry) ? 0 : -1}
+      style={
+        {
+          marginLeft: `calc(-4rem + ${(block.depth ?? 0) * 1.5}rem)`,
+        } satisfies CSSProperties
+      }
       onKeyDown={(event) => {
+        if (event.target === event.currentTarget && blockSelected) {
+          onBlockSelectionKeyDown?.(block.id, event);
+          return;
+        }
         if (
           event.target === event.currentTarget &&
           !active &&
@@ -367,6 +574,12 @@ export function MarkdownBlockRow({
         if (!onCanDrop(event.dataTransfer)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
+        onDragIntent?.(blockDropTarget(event.currentTarget, event.clientY, block.id, nextBlockId));
+      }}
+      onDragLeave={(event) => {
+        const nextTarget = event.relatedTarget;
+        if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+        onClearDragIntent?.();
       }}
       onDrop={handleDrop}
     >
@@ -375,50 +588,209 @@ export function MarkdownBlockRow({
       </span>
       <div
         data-native-block-controls
-        className="flex w-8 shrink-0 items-center justify-end pt-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/native-block:opacity-100"
+        className="flex w-14 shrink-0 items-center justify-end pt-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/native-block:opacity-100"
+        onPointerDownCapture={(event) => {
+          const target = event.target as HTMLElement;
+          if (target.closest('button[aria-label="Block actions"]')) {
+            onSelectBlock?.(block.id);
+          }
+        }}
       >
-        <button
-          type="button"
-          aria-label="Drag block"
-          aria-describedby={descriptionId}
-          aria-controls={active ? editorId : undefined}
-          title="Drag block"
+        <BlockGutterControls
+          currentKind={block.kind}
+          currentLevel={
+            block.level === 1 ||
+            block.level === 2 ||
+            block.level === 3 ||
+            block.level === 4 ||
+            block.level === 5 ||
+            block.level === 6
+              ? block.level
+              : undefined
+          }
+          canMoveUp={index > 0}
+          canMoveDown={index < count - 1}
+          canTurnInto={block.editable && !sourceOnly}
           draggable
-          tabIndex={active ? 0 : -1}
-          data-native-block-drag-handle
-          className="flex h-7 w-7 cursor-grab items-center justify-center rounded text-muted-foreground active:cursor-grabbing"
-          onClick={(event) => event.stopPropagation()}
+          buttonTabIndex={active ? 0 : -1}
+          describedBy={descriptionId}
+          onAdd={() => onInsertAfter(block.id)}
+          onTurnInto={(kind, level) => onSetKind(block.id, kind, level)}
+          onCopyMarkdown={() =>
+            onCopyMarkdown ? onCopyMarkdown(block.id) : navigator.clipboard?.writeText(block.raw)
+          }
+          onDuplicate={() => onDuplicate(block.id)}
+          onMoveUp={() => onMove(block.id, -1)}
+          onMoveDown={() => onMove(block.id, 1)}
+          onDelete={() => onDelete(block.id)}
           onDragStart={(event) => onDragStart(block.id, event)}
           onDragEnd={onDragEnd}
-        >
-          <GripVertical className="h-4 w-4" aria-hidden="true" />
-        </button>
+        />
       </div>
 
       <div
         className="min-w-0 flex-1"
-        onClick={() => !active && block.editable && onActivate(block.id)}
+        onClick={(event) => {
+          if (event.shiftKey) {
+            event.preventDefault();
+            onSelectBlock?.(block.id, true);
+            return;
+          }
+          if (!active && block.editable) onActivate(block.id);
+        }}
       >
         {active && block.editable ? (
           <>
-            <textarea
-              ref={textareaRef}
-              id={editorId}
-              aria-label="Markdown block"
-              aria-describedby={descriptionId}
-              aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Meta+Shift+D Control+Shift+D Meta+Shift+Backspace Control+Shift+Backspace"
-              data-native-block-editor
-              className={`block w-full resize-none overflow-hidden rounded-sm bg-transparent px-1 py-1 leading-7 outline-none ring-1 ring-primary/25 ${
-                sourceOnly ? "font-mono text-sm" : "text-base"
-              }`}
-              value={source}
-              rows={1}
-              spellCheck={false}
-              onChange={handleChange}
-              onPaste={handlePaste}
-              onCompositionStart={() => onCompositionStart(block.id)}
-              onCompositionEnd={() => onCompositionEnd(block.id)}
-              onKeyDown={handleKeyDown}
+            <div
+              data-native-block-edit-surface
+              data-editor-kind={block.kind}
+              data-editor-level={block.level}
+              className={activeEditorSurfaceClass(block)}
+            >
+              {block.kind === "task_list_item" && activeListItem ? (
+                <input
+                  type="checkbox"
+                  aria-label={activeListItem.content || "Empty task"}
+                  className="mt-1.5 h-4 w-4 shrink-0 rounded border-muted-foreground/50"
+                  checked={block.checked ?? false}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(event) => onSetTaskChecked(block.id, event.target.checked)}
+                />
+              ) : activeListItem ? (
+                <span
+                  className="w-5 shrink-0 select-none text-right text-muted-foreground"
+                  aria-hidden
+                >
+                  {activeListItem.marker}
+                </span>
+              ) : null}
+              {useSemanticInlineEditor ? (
+                <SemanticInlineEditor
+                  id={editorId}
+                  describedBy={descriptionId}
+                  source={source}
+                  selection={selection}
+                  autoFocus
+                  className="native-block-textarea block min-w-0 flex-1 whitespace-pre-wrap break-words bg-transparent outline-none"
+                  onSourceChange={(nextSource, nextSelection) => {
+                    editorSelectionRef.current = nextSelection;
+                    setInlineSelection(null);
+                    onChange(block.id, nextSource);
+                  }}
+                  onSelectionChange={(nextSelection) => {
+                    const editor = rowRef.current?.querySelector<HTMLElement>(
+                      "[data-native-semantic-editor]"
+                    );
+                    if (editor) updateSemanticInlineSelection(nextSelection, editor);
+                  }}
+                  onKeyDown={(event, nextSelection) =>
+                    handleEditorKeyDown(event, nextSelection, source.length)
+                  }
+                  onPasteText={(text, nextSelection) => {
+                    if (text) {
+                      onPaste(block.id, nextSelection.anchor, nextSelection.head, text);
+                    }
+                    return true;
+                  }}
+                  onPasteFiles={
+                    onImportImages
+                      ? (files, nextSelection) => {
+                          const images = files.filter(isRasterFile);
+                          if (images.length) {
+                            onImportImages(
+                              block.id,
+                              nextSelection.anchor,
+                              nextSelection.head,
+                              images
+                            );
+                          }
+                        }
+                      : undefined
+                  }
+                  onCompositionStart={() => onCompositionStart(block.id)}
+                  onCompositionEnd={() => onCompositionEnd(block.id)}
+                />
+              ) : (
+                <textarea
+                  ref={textareaRef}
+                  id={editorId}
+                  aria-label="Markdown block"
+                  aria-describedby={descriptionId}
+                  aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Meta+Shift+D Control+Shift+D Meta+Shift+Backspace Control+Shift+Backspace"
+                  data-native-block-editor
+                  className={`native-block-textarea block min-w-0 flex-1 resize-none overflow-hidden bg-transparent outline-none ${
+                    sourceOnly ? "font-mono" : ""
+                  }`}
+                  value={source}
+                  rows={1}
+                  spellCheck
+                  onChange={handleChange}
+                  onPaste={handlePaste}
+                  onCompositionStart={() => onCompositionStart(block.id)}
+                  onCompositionEnd={() => onCompositionEnd(block.id)}
+                  onKeyDown={handleTextareaKeyDown}
+                  onKeyUp={(event) => updateInlineSelection(event.currentTarget)}
+                  onMouseUp={(event) => updateInlineSelection(event.currentTarget)}
+                  onSelect={(event) => updateInlineSelection(event.currentTarget)}
+                />
+              )}
+            </div>
+            <InlineFormatToolbar
+              visible={inlineSelection !== null}
+              position={inlineSelection?.position}
+              typeLabel={blockTypeLabel(block)}
+              blockTypeOptions={TURN_INTO_OPTIONS}
+              activeFormats={
+                inlineSelection
+                  ? markdownInlineFormatState(source, inlineSelection.from, inlineSelection.to)
+                  : undefined
+              }
+              onTurnInto={(option) => {
+                setInlineSelection(null);
+                onSetKind(block.id, option.kind, option.level);
+              }}
+              onBold={() => {
+                if (inlineSelection) {
+                  onApplyInlineFormat?.(block.id, inlineSelection.from, inlineSelection.to, "bold");
+                  setInlineSelection(null);
+                }
+              }}
+              onItalic={() => {
+                if (inlineSelection) {
+                  onApplyInlineFormat?.(
+                    block.id,
+                    inlineSelection.from,
+                    inlineSelection.to,
+                    "italic"
+                  );
+                  setInlineSelection(null);
+                }
+              }}
+              onStrike={() => {
+                if (inlineSelection) {
+                  onApplyInlineFormat?.(
+                    block.id,
+                    inlineSelection.from,
+                    inlineSelection.to,
+                    "strike"
+                  );
+                  setInlineSelection(null);
+                }
+              }}
+              onLink={() => {
+                if (inlineSelection) {
+                  onApplyInlineFormat?.(block.id, inlineSelection.from, inlineSelection.to, "link");
+                  setInlineSelection(null);
+                }
+              }}
+              onCode={() => {
+                if (inlineSelection) {
+                  onApplyInlineFormat?.(block.id, inlineSelection.from, inlineSelection.to, "code");
+                  setInlineSelection(null);
+                }
+              }}
+              onMore={openBlockActionsMenu}
             />
             {slashMenuOpen ? (
               <div
@@ -476,128 +848,122 @@ export function MarkdownBlockRow({
           />
         )}
       </div>
-
-      <div
-        data-native-block-controls
-        role="toolbar"
-        aria-label="Block actions"
-        aria-describedby={descriptionId}
-        className="flex shrink-0 items-center gap-0.5 pt-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/native-block:opacity-100"
-      >
-        <select
-          aria-label="Block type"
-          aria-describedby={descriptionId}
-          tabIndex={active ? 0 : -1}
-          className="h-7 rounded border bg-background px-1 text-xs"
-          value={
-            block.kind === "heading"
-              ? `h${block.level ?? 1}`
-              : block.kind === "bullet_list_item" ||
-                  block.kind === "ordered_list_item" ||
-                  block.kind === "task_list_item" ||
-                  block.kind === "blockquote"
-                ? block.kind
-                : block.kind === "fenced_code"
-                  ? "code"
-                  : block.kind === "unsupported"
-                    ? "raw"
-                    : sourceOnly
-                      ? block.kind
-                      : block.editable
-                        ? "p"
-                        : "raw"
-          }
-          disabled={!block.editable || sourceOnly}
-          onChange={(event) => {
-            const value = event.target.value;
-            if (value === "p") onSetKind(block.id, "paragraph");
-            else if (value.startsWith("h")) {
-              onSetKind(block.id, "heading", Number(value.slice(1)) as 1 | 2 | 3 | 4 | 5 | 6);
-            } else {
-              onSetKind(block.id, value as MarkdownSettableBlockKind);
-            }
-          }}
-        >
-          <option value="p">Text</option>
-          <option value="bullet_list_item">Bulleted list</option>
-          <option value="ordered_list_item">Numbered list</option>
-          <option value="task_list_item">To-do</option>
-          <option value="blockquote">Quote</option>
-          <option value="code">Code</option>
-          <option value="callout">Callout</option>
-          <option value="toggle">Toggle</option>
-          <option value="collection">Collection</option>
-          <option value="image">Image</option>
-          <option value="thematic_break">Divider</option>
-          <option value="table">Table</option>
-          <option value="block_math">Block equation</option>
-          <option value="mermaid">Mermaid diagram</option>
-          <option value="raw">Raw</option>
-          <option value="h1">H1</option>
-          <option value="h2">H2</option>
-          <option value="h3">H3</option>
-          <option value="h4">H4</option>
-          <option value="h5">H5</option>
-          <option value="h6">H6</option>
-        </select>
-        <IconButton
-          label="Add block"
-          tabIndex={active ? 0 : -1}
-          onClick={() => onInsertAfter(block.id)}
-        >
-          <Plus />
-        </IconButton>
-        <IconButton
-          label="Duplicate block"
-          shortcut="Meta+Shift+D Control+Shift+D"
-          shortcutLabel="Mod+Shift+D"
-          tabIndex={active ? 0 : -1}
-          onClick={() => onDuplicate(block.id)}
-        >
-          <Copy />
-        </IconButton>
-        <IconButton
-          label="Move block up"
-          shortcut="Alt+ArrowUp"
-          shortcutLabel="Alt+ArrowUp"
-          disabled={index === 0}
-          tabIndex={active ? 0 : -1}
-          onClick={() => onMove(block.id, -1)}
-        >
-          <ChevronUp />
-        </IconButton>
-        <IconButton
-          label="Move block down"
-          shortcut="Alt+ArrowDown"
-          shortcutLabel="Alt+ArrowDown"
-          disabled={index === count - 1}
-          tabIndex={active ? 0 : -1}
-          onClick={() => onMove(block.id, 1)}
-        >
-          <ChevronDown />
-        </IconButton>
-        <IconButton
-          label="Delete block"
-          shortcut="Meta+Shift+Backspace Control+Shift+Backspace"
-          shortcutLabel="Mod+Shift+Backspace"
-          tabIndex={active ? 0 : -1}
-          onClick={() => onDelete(block.id)}
-        >
-          <Trash2 />
-        </IconButton>
-      </div>
     </div>
   );
 }
 
-function rasterFiles(dataTransfer: DataTransfer): File[] {
-  return Array.from(dataTransfer.files ?? []).filter((file) => {
-    const name = file.name.toLowerCase();
-    return (
-      file.type.startsWith("image/") ||
-      MARKDOWN_IMAGE_EXTENSIONS.some((extension) => name.endsWith(extension))
-    );
+function textareaSelectionToolbarPosition(
+  textarea: HTMLTextAreaElement,
+  from: number,
+  to: number
+): { top: number; left: number } {
+  const textareaRect = textarea.getBoundingClientRect();
+  const midpoint = Math.floor((from + to) / 2);
+  const computed = window.getComputedStyle(textarea);
+  const mirror = document.createElement("div");
+  Object.assign(mirror.style, {
+    position: "fixed",
+    visibility: "hidden",
+    pointerEvents: "none",
+    zIndex: "-1",
+    boxSizing: computed.boxSizing,
+    left: `${textareaRect.left}px`,
+    top: `${textareaRect.top - textarea.scrollTop}px`,
+    width: `${textareaRect.width}px`,
+    minHeight: `${textareaRect.height}px`,
+    padding: computed.padding,
+    border: computed.border,
+    font: computed.font,
+    fontFamily: computed.fontFamily,
+    fontSize: computed.fontSize,
+    fontWeight: computed.fontWeight,
+    fontStyle: computed.fontStyle,
+    lineHeight: computed.lineHeight,
+    letterSpacing: computed.letterSpacing,
+    textTransform: computed.textTransform,
+    textIndent: computed.textIndent,
+    tabSize: computed.tabSize,
+    whiteSpace: "pre-wrap",
+    overflowWrap: "break-word",
+    wordBreak: computed.wordBreak,
   });
+  mirror.append(document.createTextNode(textarea.value.slice(0, midpoint)));
+  const marker = document.createElement("span");
+  marker.textContent = "\u200b";
+  mirror.append(marker, document.createTextNode(textarea.value.slice(midpoint) || "\u200b"));
+  document.body.append(mirror);
+  const markerRect = marker.getBoundingClientRect();
+  mirror.remove();
+
+  const rawLeft = markerRect.left || textareaRect.left + textareaRect.width / 2;
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+  const left =
+    viewportWidth > 320
+      ? Math.max(160, Math.min(viewportWidth - 160, rawLeft))
+      : Math.max(8, rawLeft);
+  return {
+    top: markerRect.top || textareaRect.top,
+    left,
+  };
+}
+
+function domSelectionToolbarPosition(editor: HTMLElement): { top: number; left: number } {
+  const editorRect = editor.getBoundingClientRect();
+  const selection = window.getSelection();
+  const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+  const selectionRect =
+    range && typeof range.getBoundingClientRect === "function"
+      ? range.getBoundingClientRect()
+      : null;
+  const rawLeft =
+    selectionRect && (selectionRect.width > 0 || selectionRect.left > 0)
+      ? selectionRect.left + selectionRect.width / 2
+      : editorRect.left + editorRect.width / 2;
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+  return {
+    top:
+      selectionRect && (selectionRect.height > 0 || selectionRect.top > 0)
+        ? selectionRect.top
+        : editorRect.top,
+    left:
+      viewportWidth > 320
+        ? Math.max(160, Math.min(viewportWidth - 160, rawLeft))
+        : Math.max(8, rawLeft),
+  };
+}
+
+function blockDropTarget(
+  row: HTMLDivElement,
+  clientY: number,
+  blockId: string,
+  nextBlockId: string | undefined
+): string | null {
+  const rect = row.getBoundingClientRect();
+  if (rect.height > 0 && clientY > rect.top + rect.height / 2) return nextBlockId ?? null;
+  return blockId;
+}
+
+function blockTypeLabel(block: MarkdownBlockView): string {
+  if (block.kind === "heading") return `Heading ${block.level ?? 1}`;
+  if (block.kind === "bullet_list_item") return "Bulleted list";
+  if (block.kind === "ordered_list_item") return "Numbered list";
+  if (block.kind === "task_list_item") return "To-do";
+  if (block.kind === "blockquote") return "Quote";
+  if (block.kind === "fenced_code") return "Code";
+  if (block.kind === "paragraph") return "Text";
+  return "Markdown";
+}
+
+function rasterFiles(dataTransfer: DataTransfer): File[] {
+  return Array.from(dataTransfer.files ?? []).filter(isRasterFile);
+}
+
+function isRasterFile(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return (
+    file.type.startsWith("image/") ||
+    MARKDOWN_IMAGE_EXTENSIONS.some((extension) => name.endsWith(extension))
+  );
 }
 
 function BlockPreview({
@@ -1109,18 +1475,33 @@ function listItemPreview(
   kind: MarkdownBlockView["kind"]
 ): { marker: string; content: string } | null {
   if (kind === "task_list_item") {
-    const match = source.match(/^ {0,3}[-+*][ \t]+\[[ xX]\]([ \t]+|$)/);
+    const match = source.match(/^[ \t]*[-+*][ \t]+\[[ xX]\]([ \t]+|$)/);
     return match ? { marker: "", content: source.slice(match[0].length) } : null;
   }
   if (kind === "bullet_list_item") {
-    const match = source.match(/^ {0,3}[-+*]([ \t]+|$)/);
+    const match = source.match(/^[ \t]*[-+*]([ \t]+|$)/);
     return match ? { marker: "•", content: source.slice(match[0].length) } : null;
   }
   if (kind === "ordered_list_item") {
-    const match = source.match(/^ {0,3}(\d{1,9}[.)])([ \t]+|$)/);
+    const match = source.match(/^[ \t]*(\d{1,9}[.)])([ \t]+|$)/);
     return match ? { marker: match[1], content: source.slice(match[0].length) } : null;
   }
   return null;
+}
+
+function activeEditorSurfaceClass(block: MarkdownBlockView): string {
+  const base = "native-block-editor-surface flex min-h-9 min-w-0 items-start";
+  if (
+    block.kind === "bullet_list_item" ||
+    block.kind === "ordered_list_item" ||
+    block.kind === "task_list_item"
+  ) {
+    return `${base} gap-2 px-1 py-1`;
+  }
+  if (block.kind === "blockquote") {
+    return `${base} border-l-[3px] border-foreground px-3 py-1`;
+  }
+  return `${base} px-1 py-1`;
 }
 
 interface TablePreviewCell {
@@ -1419,56 +1800,4 @@ function renderWikiText(
       </span>
     );
   });
-}
-
-function IconButton({
-  label,
-  disabled = false,
-  shortcut,
-  shortcutLabel,
-  tabIndex,
-  onClick,
-  children,
-}: {
-  label: string;
-  disabled?: boolean;
-  shortcut?: string;
-  shortcutLabel?: string;
-  tabIndex?: number;
-  onClick: () => void;
-  children: React.ReactElement<{ className?: string }>;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-keyshortcuts={shortcut}
-      title={shortcutLabel ? `${label} (${shortcutLabel})` : label}
-      disabled={disabled}
-      tabIndex={tabIndex}
-      className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-25"
-      onClick={(event) => {
-        event.stopPropagation();
-        onClick();
-      }}
-    >
-      <span className="[&>svg]:h-3.5 [&>svg]:w-3.5">{children}</span>
-    </button>
-  );
-}
-
-function editablePayloadStart(block: MarkdownBlockView, source: string): number {
-  if (block.kind === "task_list_item") {
-    return source.match(/^ {0,3}[-+*][ \t]+\[[ xX]\]([ \t]+|$)/)?.[0].length ?? 0;
-  }
-  if (block.kind === "bullet_list_item") {
-    return source.match(/^ {0,3}[-+*]([ \t]+|$)/)?.[0].length ?? 0;
-  }
-  if (block.kind === "ordered_list_item") {
-    return source.match(/^ {0,3}\d{1,9}[.)]([ \t]+|$)/)?.[0].length ?? 0;
-  }
-  if (block.kind === "blockquote") {
-    return source.match(/^ {0,3}>[ \t]?/)?.[0].length ?? 0;
-  }
-  return 0;
 }

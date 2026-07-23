@@ -24,6 +24,7 @@ const ARTIFACT_DIR = path.join(REPO_ROOT, "test-results", "electron-gui-acceptan
 const execFileAsync = promisify(execFile);
 const PAGE_NAME = "Acceptance.md";
 const COLLECTION_NAME = "Collection Matrix.md";
+const BLOCK_EDITOR_PAGE_NAME = "Beacon FDE.md";
 const PAGE_SOURCE = [
   "# Electron GUI Acceptance",
   "",
@@ -32,6 +33,28 @@ const PAGE_SOURCE = [
   "Second block.",
   "",
   "Drop target.",
+  "",
+].join("\n");
+const BLOCK_EDITOR_SUBTREE_SOURCE = [
+  "- Markdown is the only source of truth",
+  "  - Blocks remain portable",
+  "    - Nested ideas move with their parent",
+  "",
+].join("\n");
+const BLOCK_EDITOR_SUBTREE_BODY = BLOCK_EDITOR_SUBTREE_SOURCE.trimEnd();
+const BLOCK_EDITOR_PAGE_SOURCE = [
+  "# Beacon FDE — Q&A",
+  "",
+  "---",
+  "",
+  "## 自我介绍",
+  "",
+  "**90 秒**",
+  "",
+  "I'm Wangzhang (Steve) Wu. I graduated from the **University of Toronto** with *High Distinction* and now build `Markdown` tools for a [local-first workspace](https://example.com/local) without ~~cloud sidecars~~.",
+  "",
+  BLOCK_EDITOR_SUBTREE_BODY,
+  "- Independent sibling",
   "",
 ].join("\n");
 const COLLECTION_SOURCE = [
@@ -106,6 +129,7 @@ const workspacePath = path.join(runRoot, "workspace");
 const userDataPath = path.join(runRoot, "user-data");
 const pagePath = path.join(workspacePath, PAGE_NAME);
 const collectionPath = path.join(workspacePath, COLLECTION_NAME);
+const blockEditorPagePath = path.join(workspacePath, BLOCK_EDITOR_PAGE_NAME);
 const attachmentPath = path.join(workspacePath, "Reference.pdf");
 const exportedPdfPath = path.join(runRoot, "Electron GUI Acceptance.pdf");
 const cancelledPdfPath = path.join(runRoot, "Cancelled Electron GUI Acceptance.pdf");
@@ -127,6 +151,7 @@ try {
   await fsp.writeFile(pagePath, PAGE_SOURCE, "utf8");
   await Promise.all([
     fsp.writeFile(collectionPath, COLLECTION_SOURCE, "utf8"),
+    fsp.writeFile(blockEditorPagePath, BLOCK_EDITOR_PAGE_SOURCE, "utf8"),
     fsp.writeFile(
       path.join(workspacePath, "Resolved task.md"),
       pageFixture(
@@ -603,6 +628,244 @@ try {
     }
   );
 
+  await check("matches the polished source-backed Block editor interaction gate", async () => {
+    await openFileInRenderer(blockEditorPagePath);
+    await page.getByTestId("markdown-block-runtime").waitFor({ state: "visible" });
+    await page.getByRole("heading", { name: "Beacon FDE — Q&A" }).waitFor();
+    const initialBlockCount = await page.locator("[data-native-block-row]").count();
+    assert.equal(initialBlockCount, 9);
+    assert.equal(
+      await page.evaluate(() => document.documentElement.classList.contains("dark")),
+      true,
+      "the Block editor evidence must be captured in dark mode"
+    );
+
+    const nestedParentRow = page
+      .locator("[data-native-block-row]")
+      .filter({ hasText: "Markdown is the only source of truth" });
+    assert.equal(await nestedParentRow.count(), 1);
+    await nestedParentRow
+      .getByText("Markdown is the only source of truth", { exact: true })
+      .click();
+    const nestedParentEditor = nestedParentRow.locator("[data-native-block-editor]");
+    await nestedParentEditor.waitFor({ state: "visible" });
+    await nestedParentEditor.press("Escape");
+    await page.waitForFunction(
+      () =>
+        document.activeElement?.matches('[data-native-block-row][data-block-selected="true"]') ??
+        false
+    );
+
+    let selectedRows = page.locator('[data-native-block-row][data-block-selected="true"]');
+    assert.equal(await selectedRows.count(), 3);
+    assert.deepEqual(
+      await selectedRows.evaluateAll((rows) => rows.map((row) => row.dataset.blockDepth)),
+      ["0", "1", "2"]
+    );
+
+    await page.keyboard.press(`${modifier}+Shift+D`);
+    const duplicatedSource = BLOCK_EDITOR_PAGE_SOURCE.replace(
+      BLOCK_EDITOR_SUBTREE_BODY,
+      `${BLOCK_EDITOR_SUBTREE_BODY}\n${BLOCK_EDITOR_SUBTREE_BODY}`
+    );
+    await page.keyboard.press(`${modifier}+s`);
+    await waitForFileSource(blockEditorPagePath, (source) => source === duplicatedSource);
+    assert.equal(await page.locator("[data-native-block-row]").count(), initialBlockCount + 3);
+    selectedRows = page.locator('[data-native-block-row][data-block-selected="true"]');
+    assert.equal(await selectedRows.count(), 3);
+    assert.deepEqual(
+      await selectedRows.evaluateAll((rows) => rows.map((row) => row.dataset.blockDepth)),
+      ["0", "1", "2"]
+    );
+
+    await page.keyboard.press(`${modifier}+z`);
+    await page.keyboard.press(`${modifier}+s`);
+    await waitForFileSource(blockEditorPagePath, (source) => source === BLOCK_EDITOR_PAGE_SOURCE);
+    assert.equal(await fsp.readFile(blockEditorPagePath, "utf8"), BLOCK_EDITOR_PAGE_SOURCE);
+    assert.equal(await page.locator("[data-native-block-row]").count(), initialBlockCount);
+
+    const formattedRow = page
+      .locator("[data-native-block-row]")
+      .filter({ hasText: "University of Toronto" });
+    assert.equal(await formattedRow.count(), 1);
+    await formattedRow.getByText("University of Toronto", { exact: true }).click();
+    let semanticEditor = formattedRow.locator("[data-native-semantic-editor]");
+    await semanticEditor.waitFor({ state: "visible" });
+    const editorFocusChrome = await semanticEditor.evaluate((editor) => {
+      const style = getComputedStyle(editor);
+      return { outlineStyle: style.outlineStyle, boxShadow: style.boxShadow };
+    });
+    assert.equal(editorFocusChrome.outlineStyle, "none");
+    assert.equal(editorFocusChrome.boxShadow, "none");
+    const semanticText = await semanticEditor.innerText();
+    assert.match(semanticText, /University of Toronto/);
+    for (const delimiter of ["**", "*High Distinction*", "`Markdown`", "~~", "]("]) {
+      assert.equal(
+        semanticText.includes(delimiter),
+        false,
+        `active semantic editor leaked Markdown delimiter: ${delimiter}`
+      );
+    }
+    assert.equal(
+      await semanticEditor.locator("strong", { hasText: "University of Toronto" }).count(),
+      1
+    );
+    assert.equal(await semanticEditor.locator("em", { hasText: "High Distinction" }).count(), 1);
+    assert.equal(await semanticEditor.locator("code", { hasText: "Markdown" }).count(), 1);
+    assert.equal(
+      await semanticEditor
+        .locator('a[href="https://example.com/local"]', { hasText: "local-first workspace" })
+        .count(),
+      1
+    );
+    assert.equal(await semanticEditor.locator("del", { hasText: "cloud sidecars" }).count(), 1);
+
+    const selectedStrong = semanticEditor.locator("strong", {
+      hasText: "University of Toronto",
+    });
+    await selectedStrong.selectText();
+    await semanticEditor.dispatchEvent("mouseup");
+    let floatingToolbar = page.getByRole("toolbar", { name: "Text formatting" });
+    await floatingToolbar.waitFor({ state: "visible" });
+    assert.equal(
+      await floatingToolbar.getByRole("button", { name: "Bold" }).getAttribute("aria-pressed"),
+      "true"
+    );
+
+    let typeButton = floatingToolbar.getByRole("button", {
+      name: "Change block type: Text",
+    });
+    await typeButton.focus();
+    await typeButton.press("Enter");
+    let typeMenu = page.getByRole("menu", { name: "Inline block types" });
+    await typeMenu.waitFor({ state: "visible" });
+    await page.keyboard.press("ArrowDown");
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.getAttribute("role")),
+      "menuitem"
+    );
+    await page.keyboard.press("Escape");
+    await typeMenu.waitFor({ state: "hidden" });
+
+    await selectedStrong.selectText();
+    await semanticEditor.dispatchEvent("mouseup");
+    floatingToolbar = page.getByRole("toolbar", { name: "Text formatting" });
+    await floatingToolbar.waitFor({ state: "visible" });
+    typeButton = floatingToolbar.getByRole("button", {
+      name: "Change block type: Text",
+    });
+    await typeButton.click();
+    typeMenu = page.getByRole("menu", { name: "Inline block types" });
+    await typeMenu.waitFor({ state: "visible" });
+    await typeMenu.getByRole("menuitem", { name: "Heading 2" }).waitFor({
+      state: "visible",
+    });
+    await page.keyboard.press("Escape");
+    await typeMenu.waitFor({ state: "hidden" });
+
+    await formattedRow.hover();
+    const gutterControls = formattedRow.locator("[data-native-block-controls]");
+    await waitForHoverControls(gutterControls);
+    await gutterControls.getByRole("button", { name: "Add block" }).waitFor({
+      state: "visible",
+    });
+    const blockActions = gutterControls.getByRole("button", { name: "Block actions" });
+    await blockActions.waitFor({ state: "visible" });
+
+    await blockActions.focus();
+    await blockActions.press("Enter");
+    let blockMenu = page.getByRole("menu", { name: "Block actions menu" });
+    await blockMenu.waitFor({ state: "visible" });
+    assert.equal(
+      await blockMenu.getByRole("menuitem", { name: "Heading 3" }).count(),
+      0,
+      "the default six-dot menu must stay compact"
+    );
+    const turnInto = blockMenu.getByRole("menuitem", { name: "Turn into" });
+    await turnInto.waitFor({ state: "visible" });
+    await turnInto.focus();
+    await turnInto.press("Enter");
+    await blockMenu.getByRole("menuitem", { name: "Back to block actions" }).waitFor({
+      state: "visible",
+    });
+    await blockMenu.getByRole("menuitem", { name: "Heading 3" }).waitFor({
+      state: "visible",
+    });
+    await page.keyboard.press("Escape");
+    await blockMenu.waitFor({ state: "hidden" });
+
+    await formattedRow.hover();
+    await blockActions.click();
+    blockMenu = page.getByRole("menu", { name: "Block actions menu" });
+    await blockMenu.waitFor({ state: "visible" });
+    const blockSearch = blockMenu.getByRole("searchbox", {
+      name: "Search block actions",
+    });
+    await blockSearch.fill("heading 3");
+    await blockMenu.getByRole("menuitem", { name: "Heading 3" }).waitFor({
+      state: "visible",
+    });
+    await page.keyboard.press("Escape");
+    await blockMenu.waitFor({ state: "hidden" });
+
+    await clickApplicationMenu("View", "Toggle Focus Mode");
+    const exitFocus = page.getByRole("button", { name: "Exit focus mode" });
+    await exitFocus.waitFor({ state: "visible" });
+    await formattedRow.getByText("University of Toronto", { exact: true }).click();
+    semanticEditor = formattedRow.locator("[data-native-semantic-editor]");
+    await semanticEditor.waitFor({ state: "visible" });
+    await semanticEditor.locator("strong", { hasText: "University of Toronto" }).selectText();
+    await semanticEditor.dispatchEvent("mouseup");
+    const evidenceToolbar = page.getByRole("toolbar", { name: "Text formatting" });
+    await evidenceToolbar.waitFor({
+      state: "visible",
+    });
+    await formattedRow.hover();
+    await waitForHoverControls(formattedRow.locator("[data-native-block-controls]"));
+    assert.equal(await formattedRow.getAttribute("data-block-selected"), null);
+    await waitForTransparentBackground(formattedRow);
+    const evidenceRowBackground = await formattedRow.evaluate(
+      (row) => getComputedStyle(row).backgroundColor
+    );
+    assert.equal(evidenceRowBackground, "rgba(0, 0, 0, 0)");
+    const [evidenceToolbarBox, selectedTextBox] = await Promise.all([
+      evidenceToolbar.boundingBox(),
+      semanticEditor.locator("strong", { hasText: "University of Toronto" }).boundingBox(),
+    ]);
+    const toolbarGeometry = await evidenceToolbar.evaluate((toolbar) => {
+      const style = getComputedStyle(toolbar);
+      const selection = window.getSelection();
+      const range =
+        selection?.rangeCount === 1 ? selection.getRangeAt(0).getBoundingClientRect() : null;
+      return {
+        inlineStyle: toolbar.getAttribute("style"),
+        computedTop: style.top,
+        computedTransform: style.transform,
+        range: range ? { x: range.x, y: range.y, width: range.width, height: range.height } : null,
+      };
+    });
+    assert.ok(evidenceToolbarBox, "floating toolbar bounding box is missing");
+    assert.ok(selectedTextBox, "selected text bounding box is missing");
+    assert.ok(
+      evidenceToolbarBox.y + evidenceToolbarBox.height + 4 <= selectedTextBox.y,
+      `floating toolbar overlaps selected text: ${JSON.stringify({
+        toolbar: evidenceToolbarBox,
+        selection: selectedTextBox,
+        geometry: toolbarGeometry,
+      })}`
+    );
+    await fsp.mkdir(ARTIFACT_DIR, { recursive: true });
+    await page.screenshot({
+      path: path.join(ARTIFACT_DIR, "block-editor-parity.png"),
+      fullPage: false,
+    });
+    await exitFocus.click();
+
+    await openFileInRenderer(pagePath);
+    await page.getByTestId("markdown-block-runtime").waitFor({ state: "visible" });
+    await page.getByText("First block. autosaved", { exact: true }).waitFor();
+  });
+
   await check("recovers a window that never reaches its first paint", async () => {
     const initialWindowCount = electronApp.windows().length;
     await electronApp.evaluate(({ app }) => {
@@ -899,20 +1162,55 @@ async function assertFocused(locator) {
   assert.equal(await locator.evaluate((element) => element === document.activeElement), true);
 }
 
+async function waitForHoverControls(locator) {
+  const element = await locator.elementHandle();
+  assert.ok(element, "Block gutter controls are missing");
+  try {
+    await page.waitForFunction(
+      (controls) => Number.parseFloat(getComputedStyle(controls).opacity) >= 0.99,
+      element,
+      { timeout: 2_000 }
+    );
+  } finally {
+    await element.dispose();
+  }
+}
+
+async function waitForTransparentBackground(locator) {
+  const element = await locator.elementHandle();
+  assert.ok(element, "Block row is missing");
+  try {
+    await page.waitForFunction(
+      (row) => {
+        const color = getComputedStyle(row).backgroundColor;
+        return color === "transparent" || color === "rgba(0, 0, 0, 0)";
+      },
+      element,
+      { timeout: 2_000 }
+    );
+  } finally {
+    await element.dispose();
+  }
+}
+
 async function saveAndWait(predicate) {
   await page.keyboard.press(`${modifier}+s`);
   await waitForPageSource(predicate);
 }
 
 async function waitForPageSource(predicate, timeout = 10_000) {
+  return waitForFileSource(pagePath, predicate, timeout);
+}
+
+async function waitForFileSource(filePath, predicate, timeout = 10_000) {
   const started = Date.now();
   let source = "";
   while (Date.now() - started < timeout) {
-    source = await fsp.readFile(pagePath, "utf8");
+    source = await fsp.readFile(filePath, "utf8");
     if (predicate(source)) return source;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error(`timed out waiting for Page source\n${source}`);
+  throw new Error(`timed out waiting for Page source: ${filePath}\n${JSON.stringify(source)}`);
 }
 
 async function dispatchImageEvent(locator, eventName, name) {
@@ -1075,6 +1373,7 @@ async function writeSuccessReport() {
           "final-page.png",
           "settings-light.png",
           "settings-dark.png",
+          "block-editor-parity.png",
         ],
         artifacts: [
           "page-export.pdf",
