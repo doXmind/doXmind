@@ -1,15 +1,21 @@
-import { expect, test, type Page } from "@playwright/test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 let workspaceDir: string;
 let smokeMarkdownPath: string;
 let runtimeErrors: string[];
+const smokePng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+  "base64"
+);
 
 test.beforeAll(async () => {
   workspaceDir = await mkdtemp(join(tmpdir(), "doxmind-browsing-runtime-e2e-"));
   smokeMarkdownPath = join(workspaceDir, "smoke.md");
+  await mkdir(join(workspaceDir, "assets"), { recursive: true });
+  await writeFile(join(workspaceDir, "assets", "smoke.png"), smokePng);
   await writeSmokeMarkdown();
 });
 
@@ -79,23 +85,24 @@ test("Markdown opens in read mode and promotes to editable on click", async ({ p
   await expect(page.getByText("1 of 3", { exact: true })).toBeVisible();
   await expect(searchInput).toBeFocused();
   await expect(activeEditor).toHaveCount(1);
-  await expect
-    .poll(() =>
-      activeEditor.evaluate((textarea: HTMLTextAreaElement) =>
-        textarea.value.slice(textarea.selectionStart, textarea.selectionEnd).toLowerCase()
-      )
-    )
-    .toBe("needle");
+  await expect.poll(() => selectedEditorText(activeEditor)).toBe("needle");
 
   await page.getByRole("button", { name: "Next result" }).click();
   await expect(page.getByText("2 of 3", { exact: true })).toBeVisible();
-  await expect
-    .poll(() =>
-      activeEditor.evaluate((textarea: HTMLTextAreaElement) =>
-        textarea.value.slice(textarea.selectionStart, textarea.selectionEnd).toLowerCase()
-      )
-    )
-    .toBe("needle");
+  await expect(searchInput).toBeFocused();
+  await expect.poll(() => selectedEditorText(activeEditor)).toBe("needle");
+
+  await searchInput.fill("definitely-missing");
+  await expect(page.getByText("No matches", { exact: true })).toBeVisible();
+  await expect(page.locator("[data-native-search-selection]")).toHaveCount(0);
+  await expect(searchInput).toBeFocused();
+
+  await searchInput.fill("smoke.png");
+  await expect(page.getByText("1 of 1", { exact: true })).toBeVisible();
+  await expect(
+    activeEditor.locator("[data-markdown-inline-image][data-native-search-selection]")
+  ).toHaveCount(1);
+  await expect(searchInput).toBeFocused();
   await page.getByRole("button", { name: "Close search" }).click();
 
   await scroll.evaluate((el) => {
@@ -110,7 +117,12 @@ test("Markdown opens in read mode and promotes to editable on click", async ({ p
   await expect
     .poll(() => scroll.evaluate((el) => el.scrollTop))
     .toBeGreaterThan(beforeOutlineScroll + 100);
-  await expect(activeEditor).toHaveValue("## Deep Section");
+  await expect(
+    page.locator(
+      '[data-native-block-edit-surface][data-editor-kind="heading"][data-editor-level="2"]'
+    )
+  ).toHaveCount(1);
+  await expect(activeEditor).toHaveValue("Deep Section");
   await expect(activeEditor).toBeInViewport();
 });
 
@@ -133,6 +145,18 @@ async function openLooseFile(page: Page, absolutePath: string) {
   await expect(page.locator("text=Loading")).toHaveCount(0);
 }
 
+async function selectedEditorText(editor: Locator) {
+  return editor.evaluate((element) => {
+    if (element instanceof HTMLTextAreaElement) {
+      return element.value.slice(element.selectionStart, element.selectionEnd).toLowerCase();
+    }
+    return Array.from(element.querySelectorAll("[data-native-search-selection]"))
+      .map((match) => match.textContent ?? "")
+      .join("")
+      .toLowerCase();
+  });
+}
+
 async function writeSmokeMarkdown() {
   await writeFile(
     smokeMarkdownPath,
@@ -143,7 +167,7 @@ async function writeSmokeMarkdown() {
       "",
       "Intro paragraph with needle and an [Example link](https://example.com).",
       "",
-      "![Smoke pixel](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=)",
+      "### Inline image: ![Smoke pixel](assets/smoke.png).",
       "",
       "```mermaid",
       "graph TD",

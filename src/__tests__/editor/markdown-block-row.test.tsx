@@ -35,7 +35,7 @@ describe("MarkdownBlockRow semantic previews", () => {
     renderMermaidSvgLight.mockClear();
   });
 
-  it("exposes an inactive Block as one keyboard entry point before its hidden controls", () => {
+  it("exposes an inactive Block as one keyboard entry point before its hidden gutter controls", () => {
     const [block] = MarkdownBlockDocument.fromMarkdown("Editable\n").getSnapshot().blocks;
     const onActivate = vi.fn();
     const props: ComponentProps<typeof MarkdownBlockRow> = {
@@ -69,14 +69,15 @@ describe("MarkdownBlockRow semantic previews", () => {
     const row = screen.getByRole("group", { name: "Block 1 of 2" });
     expect(row).toHaveAttribute("tabindex", "0");
     expect(row).toHaveAttribute("data-active", "false");
-    expect(screen.getByRole("button", { name: "Drag block" })).toHaveAttribute("tabindex", "-1");
-    expect(screen.getByRole("combobox", { name: "Block type" })).toHaveAttribute("tabindex", "-1");
+    expect(screen.getByRole("button", { name: "Add block" })).toHaveAttribute("tabindex", "-1");
+    expect(screen.getByRole("button", { name: "Block actions" })).toHaveAttribute("tabindex", "-1");
+    expect(screen.queryByRole("combobox", { name: "Block type" })).not.toBeInTheDocument();
 
     fireEvent.keyDown(row, { key: "Enter" });
     expect(onActivate).toHaveBeenCalledWith(block.id);
   });
 
-  it("announces the active Block and follows handle-editor-toolbar focus order", async () => {
+  it("announces the active Block and follows gutter-editor focus order", async () => {
     const user = userEvent.setup();
     const [block] = MarkdownBlockDocument.fromMarkdown("Editable\n").getSnapshot().blocks;
 
@@ -109,9 +110,9 @@ describe("MarkdownBlockRow semantic previews", () => {
     );
 
     const row = screen.getByRole("group", { name: "Block 1 of 2" });
-    const handle = screen.getByRole("button", { name: "Drag block" });
+    const add = screen.getByRole("button", { name: "Add block" });
+    const handle = screen.getByRole("button", { name: "Block actions" });
     const textarea = screen.getByRole("textbox", { name: "Markdown block" });
-    const typeMenu = screen.getByRole("combobox", { name: "Block type" });
     expect(row).toHaveAttribute("aria-current", "true");
     expect(row).toHaveAttribute("data-active", "true");
     expect(textarea).toHaveFocus();
@@ -119,26 +120,63 @@ describe("MarkdownBlockRow semantic previews", () => {
       "aria-keyshortcuts",
       "Alt+ArrowUp Alt+ArrowDown Meta+Shift+D Control+Shift+D Meta+Shift+Backspace Control+Shift+Backspace"
     );
-    expect(screen.getByRole("toolbar", { name: "Block actions" })).toContainElement(typeMenu);
-    expect(screen.getByRole("button", { name: "Move block down" })).toHaveAttribute(
-      "title",
-      "Move block down (Alt+ArrowDown)"
-    );
-    expect(screen.getByRole("button", { name: "Duplicate block" })).toHaveAttribute(
-      "title",
-      "Duplicate block (Mod+Shift+D)"
-    );
-    expect(screen.getByRole("button", { name: "Delete block" })).toHaveAttribute(
-      "title",
-      "Delete block (Mod+Shift+Backspace)"
-    );
-
     await user.tab({ shift: true });
+    expect(handle).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(add).toHaveFocus();
+    await user.tab();
     expect(handle).toHaveFocus();
     await user.tab();
     expect(textarea).toHaveFocus();
-    await user.tab();
-    expect(typeMenu).toHaveFocus();
+
+    await user.click(handle);
+    expect(await screen.findByRole("menu", { name: "Block actions menu" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "Copy Markdown" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "Duplicate" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "Move down" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+  });
+
+  it("edits supported inline Markdown semantically without exposing source delimiters", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown(
+      "Keep **bold**, *clear*, and `local`.\n"
+    ).getSnapshot().blocks;
+
+    const { container } = render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onCanDrop={() => false}
+        onDropBefore={vi.fn()}
+      />
+    );
+
+    const editor = screen.getByRole("textbox", { name: "Markdown block" });
+    expect(editor).toHaveTextContent("Keep bold, clear, and local.");
+    expect(editor).not.toHaveTextContent("**");
+    expect(editor.querySelector("strong")).toHaveTextContent("bold");
+    expect(editor.querySelector("em")).toHaveTextContent("clear");
+    expect(editor.querySelector("code")).toHaveTextContent("local");
+    expect(container.querySelector("[data-native-semantic-editor]")).toBe(editor);
   });
 
   it("projects a Markdown Collection as a read-only navigable table", () => {
@@ -416,13 +454,11 @@ describe("MarkdownBlockRow semantic previews", () => {
       />
     );
 
-    expect(container.querySelector("[data-native-block-editor]")).toHaveValue(
-      "# Printable heading"
-    );
+    expect(container.querySelector("[data-native-block-editor]")).toHaveValue("Printable heading");
     expect(container.querySelector("[data-native-block-print-preview]")).toHaveTextContent(
       "Printable heading"
     );
-    expect(container.querySelectorAll("[data-native-block-controls]")).toHaveLength(2);
+    expect(container.querySelectorAll("[data-native-block-controls]")).toHaveLength(1);
   });
 
   it("opens a wiki-link target without turning the source block into edit mode", () => {

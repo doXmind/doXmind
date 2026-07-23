@@ -144,16 +144,132 @@ describe("MarkdownBlockDocument", () => {
     expect(snapshot.blocks.map((block) => block.raw).join("")).toBe(markdown);
   });
 
-  it("keeps a nested list item raw until nested structural commands are supported", () => {
-    const markdown = "- outer\n  - nested\n- next\n";
+  it("projects nested list items as independent typed Blocks with logical depth", () => {
+    const markdown = "- outer\n  3. ordered\n     * [x] task\n- next\n";
 
     const snapshot = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot();
 
-    expect(snapshot.blocks.map(({ kind, editable }) => ({ kind, editable }))).toEqual([
-      { kind: "unsupported", editable: true },
-      { kind: "bullet_list_item", editable: true },
+    expect(snapshot.blocks.map(({ kind, depth, checked }) => ({ kind, depth, checked }))).toEqual([
+      { kind: "bullet_list_item", depth: 0, checked: undefined },
+      { kind: "ordered_list_item", depth: 1, checked: undefined },
+      { kind: "task_list_item", depth: 2, checked: true },
+      { kind: "bullet_list_item", depth: 0, checked: undefined },
     ]);
     expect(snapshot.blocks.map((block) => block.raw).join("")).toBe(markdown);
+  });
+
+  it("keeps list continuations on their logical item and leaves standalone raw code unlayered", () => {
+    const markdown = "    - literal code\r\n\r\n- item\r\n  continuation  \r\n  - child\r\n";
+
+    const snapshot = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot();
+
+    expect(snapshot.blocks.map(({ kind, depth, raw }) => ({ kind, depth, raw }))).toEqual([
+      { kind: "unsupported", depth: undefined, raw: "    - literal code\r\n\r\n" },
+      {
+        kind: "bullet_list_item",
+        depth: 0,
+        raw: "- item\r\n  continuation  \r\n",
+      },
+      { kind: "bullet_list_item", depth: 1, raw: "  - child\r\n" },
+    ]);
+    expect(snapshot.blocks.map((block) => block.raw).join("")).toBe(markdown);
+  });
+
+  it("indents a list Block under its previous sibling without normalizing its source", () => {
+    const markdown = "- parent\r\n+ child\r\n  continuation  \r\n- after\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "indentBlocks",
+      blockIds: [before.blocks[1].id],
+    });
+
+    expect(result.snapshot.markdown).toBe(
+      "- parent\r\n  + child\r\n    continuation  \r\n- after\r\n"
+    );
+    expect(result.snapshot.blocks.map(({ depth, raw }) => ({ depth, raw }))).toEqual([
+      { depth: 0, raw: "- parent\r\n" },
+      { depth: 1, raw: "  + child\r\n    continuation  \r\n" },
+      { depth: 0, raw: "- after\r\n" },
+    ]);
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
+  });
+
+  it("outdents a list Block with its descendants while preserving markers and CRLF", () => {
+    const markdown =
+      "- parent\r\n  + [X] child\r\n    continuation\r\n    7) grandchild\r\n- after\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "outdentBlocks",
+      blockIds: [before.blocks[1].id],
+    });
+
+    expect(result.snapshot.markdown).toBe(
+      "- parent\r\n+ [X] child\r\n  continuation\r\n  7) grandchild\r\n- after\r\n"
+    );
+    expect(
+      result.snapshot.blocks.map(({ kind, depth, checked }) => ({ kind, depth, checked }))
+    ).toEqual([
+      { kind: "bullet_list_item", depth: 0, checked: undefined },
+      { kind: "task_list_item", depth: 0, checked: true },
+      { kind: "ordered_list_item", depth: 1, checked: undefined },
+      { kind: "bullet_list_item", depth: 0, checked: undefined },
+    ]);
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
+  });
+
+  it("rejects hierarchy commands for non-list, noncontiguous, or parentless selections atomically", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("- one\n- two\n\nParagraph\n\n- three\n");
+    const before = document.getSnapshot();
+
+    expect(() => document.apply({ type: "indentBlocks", blockIds: [before.blocks[0].id] })).toThrow(
+      /previous sibling/i
+    );
+    expect(() =>
+      document.apply({ type: "outdentBlocks", blockIds: [before.blocks[1].id] })
+    ).toThrow(/top-level/i);
+    expect(() => document.apply({ type: "indentBlocks", blockIds: [before.blocks[2].id] })).toThrow(
+      /only supports list/i
+    );
+    expect(() =>
+      document.apply({
+        type: "indentBlocks",
+        blockIds: [before.blocks[1].id, before.blocks[3].id],
+      })
+    ).toThrow(/contiguous/i);
+
+    expect(document.getSnapshot()).toEqual(before);
+    expect(document.undo()).toEqual(before);
+  });
+
+  it("does not borrow an indentation parent from a previous list subtree", () => {
+    const markdown = "- first parent\n  - first child\n- second parent\n  - second child\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    expect(() => document.apply({ type: "indentBlocks", blockIds: [before.blocks[3].id] })).toThrow(
+      /previous sibling/i
+    );
+    expect(document.getSnapshot()).toEqual(before);
+  });
+
+  it("indents the complete subtree when a partial selection includes its parent", () => {
+    const markdown = "- previous\n- parent\n  - first child\n  - second child\n- after\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "indentBlocks",
+      blockIds: [before.blocks[1].id, before.blocks[2].id],
+    });
+
+    expect(result.snapshot.markdown).toBe(
+      "- previous\n  - parent\n    - first child\n    - second child\n- after\n"
+    );
+    expect(result.snapshot.blocks.map((block) => block.depth)).toEqual([0, 1, 2, 2, 0]);
   });
 
   it("projects an explicit multi-line blockquote as one editable source-backed Block", () => {
@@ -183,6 +299,25 @@ describe("MarkdownBlockDocument", () => {
     expect(result.snapshot.markdown).toBe("- [x] todo\r\n- [X] keep uppercase\r\n");
     expect(result.snapshot.blocks[0].checked).toBe(true);
     expect(document.undo().markdown).toBe(markdown);
+  });
+
+  it("checks a deeply nested task without changing its hierarchy or indentation", () => {
+    const markdown = "- parent\r\n  1. child\r\n     + [ ] deep task\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "setTaskChecked",
+      blockId: before.blocks[2].id,
+      checked: true,
+    });
+
+    expect(result.snapshot.markdown).toBe("- parent\r\n  1. child\r\n     + [x] deep task\r\n");
+    expect(result.snapshot.blocks[2]).toMatchObject({
+      kind: "task_list_item",
+      depth: 2,
+      checked: true,
+    });
   });
 
   it("centralizes native classification for soft paragraphs and structural Markdown", () => {
@@ -373,6 +508,114 @@ describe("MarkdownBlockDocument", () => {
     ]);
   });
 
+  it("moves a list parent together with every descendant", () => {
+    const markdown = "- parent\n  - child\n    1. grandchild\n- sibling\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "move",
+      blockId: before.blocks[0].id,
+      beforeId: null,
+    });
+
+    expect(result.snapshot.markdown).toBe("- sibling\n- parent\n  - child\n    1. grandchild\n");
+    expect(result.snapshot.blocks.map((block) => block.id)).toEqual([
+      before.blocks[3].id,
+      before.blocks[0].id,
+      before.blocks[1].id,
+      before.blocks[2].id,
+    ]);
+    expect(result.snapshot.blocks.map((block) => block.depth)).toEqual([0, 0, 1, 2]);
+  });
+
+  it("rejects a grouped move that cuts a list subtree", () => {
+    const markdown = "- parent\n  - child\n- sibling\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    expect(() =>
+      document.apply({
+        type: "moveBlocks",
+        blockIds: [before.blocks[0].id],
+        beforeId: null,
+      })
+    ).toThrow(/descendants/i);
+    expect(document.getSnapshot()).toEqual(before);
+    expect(document.undo()).toEqual(before);
+  });
+
+  it("reprojects hierarchy when a nested item moves outside its former parent", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("- parent\n  - child\n- sibling\n");
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "move",
+      blockId: before.blocks[1].id,
+      beforeId: before.blocks[0].id,
+    });
+    const reopened = MarkdownBlockDocument.fromMarkdown(result.snapshot.markdown).getSnapshot();
+
+    expect(result.snapshot.markdown).toBe("  - child\n- parent\n- sibling\n");
+    expect(result.snapshot.blocks.map((block) => block.depth)).toEqual([0, 0, 0]);
+    expect(result.snapshot.blocks.map(({ kind, depth, raw }) => ({ kind, depth, raw }))).toEqual(
+      reopened.blocks.map(({ kind, depth, raw }) => ({ kind, depth, raw }))
+    );
+  });
+
+  it("moves contiguous Blocks atomically while preserving ids, CRLF, and raw source", () => {
+    const markdown = "Before\r\n\r\n[ref]: /exact\r\n\r\n# Move\r\n\r\nAfter\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "moveBlocks",
+      blockIds: [before.blocks[1].id, before.blocks[2].id],
+      beforeId: before.blocks[0].id,
+    });
+
+    expect(result.snapshot.markdown).toBe(
+      "[ref]: /exact\r\n\r\n# Move\r\n\r\nBefore\r\n\r\nAfter\r\n"
+    );
+    expect(result.snapshot.blocks.map((block) => block.id)).toEqual([
+      before.blocks[1].id,
+      before.blocks[2].id,
+      before.blocks[0].id,
+      before.blocks[3].id,
+    ]);
+    expect(result.selection).toEqual({
+      blockId: before.blocks[1].id,
+      anchor: 0,
+      head: 0,
+    });
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
+  });
+
+  it("moves a mixed raw and list Block group to the end by repairing only new boundaries", () => {
+    const markdown = "Before\r\n\r\n[ref]: /exact\r\n\r\n- one\r\n- two\r\n\r\nAfter\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "moveBlocks",
+      blockIds: [before.blocks[1].id, before.blocks[2].id],
+      beforeId: null,
+    });
+
+    expect(result.snapshot.markdown).toBe(
+      "Before\r\n\r\n- two\r\n\r\nAfter\r\n\r\n[ref]: /exact\r\n\r\n- one\r\n"
+    );
+    expect(result.snapshot.blocks.map((block) => block.id)).toEqual([
+      before.blocks[0].id,
+      before.blocks[3].id,
+      before.blocks[4].id,
+      before.blocks[1].id,
+      before.blocks[2].id,
+    ]);
+    expect(result.selection?.blockId).toBe(before.blocks[1].id);
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
+  });
+
   it("does not record or revise a move when the block is already at the target", () => {
     const document = MarkdownBlockDocument.fromMarkdown("Alpha\n\nBeta\n");
     const initial = document.getSnapshot();
@@ -397,6 +640,81 @@ describe("MarkdownBlockDocument", () => {
     expect(beforeNext).toEqual(changed);
     expect(lastAtEnd).toEqual(changed);
     expect(document.undo().markdown).toBe(initial.markdown);
+  });
+
+  it("treats empty multi-Block selections as exact no-ops", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("Alpha\r\n\r\nBeta\r\n");
+    const before = document.getSnapshot();
+
+    const results = [
+      document.apply({ type: "deleteBlocks", blockIds: [] }),
+      document.apply({ type: "duplicateBlocks", blockIds: [] }),
+      document.apply({ type: "moveBlocks", blockIds: [], beforeId: "missing" }),
+    ];
+
+    for (const result of results) {
+      expect(result).toEqual({ snapshot: before });
+    }
+    expect(document.undo()).toEqual(before);
+  });
+
+  it("rejects invalid multi-Block selections without changing source or history", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("Alpha\n\nBeta\n\nGamma\n");
+    const before = document.getSnapshot();
+    const noncontiguous = [before.blocks[0].id, before.blocks[2].id];
+
+    expect(() => document.apply({ type: "deleteBlocks", blockIds: noncontiguous })).toThrow(
+      /contiguous Blocks in document order/i
+    );
+    expect(() => document.apply({ type: "duplicateBlocks", blockIds: noncontiguous })).toThrow(
+      /contiguous Blocks in document order/i
+    );
+    expect(() =>
+      document.apply({
+        type: "moveBlocks",
+        blockIds: noncontiguous,
+        beforeId: before.blocks[1].id,
+      })
+    ).toThrow(/contiguous Blocks in document order/i);
+    expect(() => document.apply({ type: "deleteBlocks", blockIds: ["missing"] })).toThrow(
+      /unknown block/i
+    );
+    expect(() =>
+      document.apply({
+        type: "moveBlocks",
+        blockIds: [before.blocks[0].id],
+        beforeId: "missing",
+      })
+    ).toThrow(/unknown before block/i);
+
+    expect(document.getSnapshot()).toEqual(before);
+    expect(document.undo()).toEqual(before);
+  });
+
+  it("does not revise or record history when a Block group is already at its target", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("Alpha\n\nBeta\n\nGamma\n");
+    const before = document.getSnapshot();
+
+    const inside = document.apply({
+      type: "moveBlocks",
+      blockIds: [before.blocks[0].id, before.blocks[1].id],
+      beforeId: before.blocks[1].id,
+    });
+    const beforeNext = document.apply({
+      type: "moveBlocks",
+      blockIds: [before.blocks[0].id, before.blocks[1].id],
+      beforeId: before.blocks[2].id,
+    });
+    const alreadyAtEnd = document.apply({
+      type: "moveBlocks",
+      blockIds: [before.blocks[1].id, before.blocks[2].id],
+      beforeId: null,
+    });
+
+    expect(inside).toEqual({ snapshot: before });
+    expect(beforeNext).toEqual({ snapshot: before });
+    expect(alreadyAtEnd).toEqual({ snapshot: before });
+    expect(document.undo()).toEqual(before);
   });
 
   it("moves a tight list item without rewriting the list as loose Markdown", () => {
@@ -470,6 +788,28 @@ describe("MarkdownBlockDocument", () => {
       blockId: result.snapshot.blocks[1].id,
       anchor: 2,
       head: 2,
+    });
+  });
+
+  it("splits a nested list item into a same-depth source-backed sibling", () => {
+    const document = MarkdownBlockDocument.fromMarkdown(
+      "- Parent\r\n  - Child\r\n    - one two\r\n"
+    );
+    const before = document.getSnapshot();
+
+    const result = document.apply({ type: "split", blockId: before.blocks[2].id, at: 10 });
+
+    expect(result.snapshot.markdown).toBe("- Parent\r\n  - Child\r\n    - one \r\n    - two\r\n");
+    expect(result.snapshot.blocks.map((block) => [block.kind, block.depth])).toEqual([
+      ["bullet_list_item", 0],
+      ["bullet_list_item", 1],
+      ["bullet_list_item", 2],
+      ["bullet_list_item", 2],
+    ]);
+    expect(result.selection).toEqual({
+      blockId: result.snapshot.blocks[3].id,
+      anchor: 6,
+      head: 6,
     });
   });
 
@@ -640,6 +980,84 @@ describe("MarkdownBlockDocument", () => {
     expect(result.snapshot.blocks[1].kind).toBe("paragraph");
   });
 
+  it("duplicates a list parent with its complete descendant subtree in one undo step", () => {
+    const markdown = "- parent\r\n  + child\r\n    3) grandchild\r\n- sibling\r\n\r\nAfter\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({ type: "duplicate", blockId: before.blocks[0].id });
+
+    expect(result.snapshot.markdown).toBe(
+      "- parent\r\n  + child\r\n    3) grandchild\r\n" +
+        "- parent\r\n  + child\r\n    3) grandchild\r\n" +
+        "- sibling\r\n\r\nAfter\r\n"
+    );
+    expect(result.snapshot.blocks.map((block) => block.depth)).toEqual([
+      0,
+      1,
+      2,
+      0,
+      1,
+      2,
+      0,
+      undefined,
+    ]);
+    expect(result.snapshot.blocks.slice(0, 3).map((block) => block.raw)).toEqual(
+      before.blocks.slice(0, 3).map((block) => block.raw)
+    );
+    expect(new Set(result.snapshot.blocks.map((block) => block.id)).size).toBe(
+      result.snapshot.blocks.length
+    );
+    expect(result.selection?.blockId).toBe(result.snapshot.blocks[3].id);
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
+  });
+
+  it("duplicates contiguous Blocks atomically with exact CRLF and raw source", () => {
+    const markdown = "[ref]: /exact\r\n\r\n# Two\r\n\r\nAfter\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "duplicateBlocks",
+      blockIds: [before.blocks[0].id, before.blocks[1].id],
+    });
+
+    expect(result.snapshot.markdown).toBe(
+      "[ref]: /exact\r\n\r\n# Two\r\n\r\n[ref]: /exact\r\n\r\n# Two\r\n\r\nAfter\r\n"
+    );
+    const ids = result.snapshot.blocks.map((block) => block.id);
+    expect(ids.slice(0, 2)).toEqual(before.blocks.slice(0, 2).map((block) => block.id));
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(result.selection).toEqual({
+      blockId: result.snapshot.blocks[2].id,
+      anchor: 0,
+      head: 0,
+    });
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
+  });
+
+  it("expands a partial batch duplication through the selected parent's last descendant", () => {
+    const markdown =
+      "- root\r\n  - parent\r\n    + child\r\n      7) leaf\r\n  - after\r\n- outside\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "duplicateBlocks",
+      blockIds: [before.blocks[1].id, before.blocks[2].id],
+    });
+
+    expect(result.snapshot.markdown).toBe(
+      "- root\r\n" +
+        "  - parent\r\n    + child\r\n      7) leaf\r\n" +
+        "  - parent\r\n    + child\r\n      7) leaf\r\n" +
+        "  - after\r\n- outside\r\n"
+    );
+    expect(result.snapshot.blocks.map((block) => block.depth)).toEqual([0, 1, 2, 3, 1, 2, 3, 1, 0]);
+    expect(result.selection?.blockId).toBe(result.snapshot.blocks[4].id);
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
+  });
+
   it("duplicates a tight list item without turning the list loose", () => {
     const document = MarkdownBlockDocument.fromMarkdown("- one\n- two\n");
     const before = document.getSnapshot();
@@ -663,6 +1081,20 @@ describe("MarkdownBlockDocument", () => {
     expect(result.snapshot.markdown).toBe("- one\n- two\n- two\n\nAfter\n");
   });
 
+  it("preserves an intentional loose-list CRLF boundary when duplicating a subtree", () => {
+    const markdown = "- parent\r\n  + child\r\n\r\n- sibling\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({ type: "duplicate", blockId: before.blocks[0].id });
+
+    expect(result.snapshot.markdown).toBe(
+      "- parent\r\n  + child\r\n\r\n- parent\r\n  + child\r\n\r\n- sibling\r\n"
+    );
+    expect(result.snapshot.blocks.map((block) => block.depth)).toEqual([0, 1, 0, 1, 0]);
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
+  });
+
   it("deletes a block without rewriting its neighbors", () => {
     const document = MarkdownBlockDocument.fromMarkdown("Alpha\n\n# Remove\n\nGamma\n");
     const before = document.getSnapshot();
@@ -674,6 +1106,162 @@ describe("MarkdownBlockDocument", () => {
       before.blocks[0].id,
       before.blocks[2].id,
     ]);
+  });
+
+  it("deletes a list parent with its complete descendant subtree in one undo step", () => {
+    const markdown =
+      "Before\r\n\r\n- parent\r\n  + child\r\n    3) grandchild\r\n- sibling\r\n\r\nAfter\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({ type: "delete", blockId: before.blocks[1].id });
+
+    expect(result.snapshot.markdown).toBe("Before\r\n\r\n- sibling\r\n\r\nAfter\r\n");
+    expect(result.snapshot.blocks.map((block) => block.id)).toEqual([
+      before.blocks[0].id,
+      before.blocks[4].id,
+      before.blocks[5].id,
+    ]);
+    expect(result.snapshot.blocks.map((block) => block.raw).join("")).toBe(
+      result.snapshot.markdown
+    );
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
+  });
+
+  it("deletes contiguous Blocks atomically without rewriting untouched CRLF source", () => {
+    const markdown = "Before\r\n\r\n[ref]: /exact\r\n\r\n# Remove\r\n\r\nAfter\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "deleteBlocks",
+      blockIds: [before.blocks[1].id, before.blocks[2].id],
+    });
+
+    expect(result.snapshot.markdown).toBe("Before\r\n\r\nAfter\r\n");
+    expect(result.snapshot.blocks.map((block) => block.id)).toEqual([
+      before.blocks[0].id,
+      before.blocks[3].id,
+    ]);
+    expect(result.selection).toEqual({
+      blockId: before.blocks[3].id,
+      anchor: 0,
+      head: 0,
+    });
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
+  });
+
+  it("replaces contiguous Blocks with parsed Markdown in one revision and undo checkpoint", () => {
+    const markdown = "Before\n\nRemove one\n\nRemove two\n\nAfter\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "replaceBlocks",
+      blockIds: [before.blocks[1].id, before.blocks[2].id],
+      markdown: "## Inserted\n\n- first\n- second",
+    });
+
+    expect(result.snapshot.markdown).toBe("Before\n\n## Inserted\n\n- first\n- second\n\nAfter\n");
+    expect(result.snapshot.revision).toBe(1);
+    expect(result.snapshot.blocks.map((block) => block.kind)).toEqual([
+      "paragraph",
+      "heading",
+      "bullet_list_item",
+      "bullet_list_item",
+      "paragraph",
+    ]);
+    expect(result.selection).toEqual({
+      blockId: result.snapshot.blocks[3].id,
+      anchor: "- second".length,
+      head: "- second".length,
+    });
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
+  });
+
+  it("replaces a selected list parent together with its complete descendant subtree", () => {
+    const markdown = "- Parent\r\n  - Child\r\n    1. Grandchild\r\n- Sibling\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "replaceBlocks",
+      blockIds: [before.blocks[0].id],
+      markdown: "Replacement",
+    });
+
+    expect(result.snapshot.markdown).toBe("Replacement\r\n\r\n- Sibling\r\n");
+    expect(result.snapshot.blocks.map((block) => block.kind)).toEqual([
+      "paragraph",
+      "bullet_list_item",
+    ]);
+    expect(result.snapshot.blocks[1].id).toBe(before.blocks[3].id);
+    expect(result.selection).toEqual({
+      blockId: before.blocks[0].id,
+      anchor: "Replacement".length,
+      head: "Replacement".length,
+    });
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
+  });
+
+  it("expands a partial batch deletion through the selected parent's last descendant", () => {
+    const markdown =
+      "- root\r\n  - parent\r\n    + child\r\n      7) leaf\r\n  - after\r\n- outside\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "deleteBlocks",
+      blockIds: [before.blocks[1].id, before.blocks[2].id],
+    });
+
+    expect(result.snapshot.markdown).toBe("- root\r\n  - after\r\n- outside\r\n");
+    expect(result.snapshot.blocks.map((block) => block.id)).toEqual([
+      before.blocks[0].id,
+      before.blocks[4].id,
+      before.blocks[5].id,
+    ]);
+    expect(result.snapshot.blocks.map((block) => block.depth)).toEqual([0, 1, 0]);
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
+  });
+
+  it("preserves the untouched loose-list CRLF boundary around a deleted subtree", () => {
+    const markdown = "- root\r\n  - before\r\n\r\n  + parent\r\n    1. child\r\n\r\n  - after\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({ type: "delete", blockId: before.blocks[2].id });
+
+    expect(result.snapshot.markdown).toBe("- root\r\n  - before\r\n\r\n  - after\r\n");
+    expect(result.snapshot.blocks.map((block) => block.depth)).toEqual([0, 1, 1]);
+    expect(result.snapshot.blocks[1].raw).toBe("  - before\r\n\r\n");
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
+  });
+
+  it("keeps one empty source-backed Block when deleting the entire selection", () => {
+    const markdown = "[ref]: /exact\r\n\r\n# Remove\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "deleteBlocks",
+      blockIds: before.blocks.map((block) => block.id),
+    });
+
+    expect(result.snapshot.markdown).toBe("");
+    expect(result.snapshot.blocks).toHaveLength(1);
+    expect(result.snapshot.blocks[0]).toMatchObject({
+      id: before.blocks[0].id,
+      kind: "paragraph",
+      raw: "",
+      editable: true,
+    });
+    expect(result.selection).toEqual({
+      blockId: before.blocks[0].id,
+      anchor: 0,
+      head: 0,
+    });
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
   });
 
   it("repairs the Page boundary when deleting the last item in a list", () => {
@@ -716,6 +1304,171 @@ describe("MarkdownBlockDocument", () => {
 
     const paragraph = document.apply({ type: "setKind", blockId, kind: "paragraph" });
     expect(paragraph.snapshot.markdown).toBe("Alpha\r\n\r\n");
+  });
+
+  it("changes a nested list kind without flattening its indentation or logical depth", () => {
+    const markdown = "- root\r\n  + nested\r\n- after\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "setKind",
+      blockId: before.blocks[1].id,
+      kind: "ordered_list_item",
+    });
+    const reopened = MarkdownBlockDocument.fromMarkdown(result.snapshot.markdown).getSnapshot();
+
+    expect(result.snapshot.markdown).toBe("- root\r\n  1. nested\r\n- after\r\n");
+    expect(result.snapshot.blocks.map(({ kind, depth, raw }) => ({ kind, depth, raw }))).toEqual(
+      reopened.blocks.map(({ kind, depth, raw }) => ({ kind, depth, raw }))
+    );
+    expect(result.snapshot.blocks[1]).toMatchObject({
+      id: before.blocks[1].id,
+      kind: "ordered_list_item",
+      depth: 1,
+      raw: "  1. nested\r\n",
+    });
+    expect(document.undo()).toEqual({ ...before, revision: 2 });
+  });
+
+  it("keeps a nested item's exact indentation across bullet, task, and ordered kinds", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("- root\r\n  + nested\r\n- after\r\n");
+    const blockId = document.getSnapshot().blocks[1].id;
+
+    const task = document.apply({
+      type: "setKind",
+      blockId,
+      kind: "task_list_item",
+    }).snapshot;
+    expect(task.markdown).toBe("- root\r\n  - [ ] nested\r\n- after\r\n");
+    expect(task.blocks[1]).toMatchObject({ kind: "task_list_item", depth: 1, checked: false });
+
+    const ordered = document.apply({
+      type: "setKind",
+      blockId,
+      kind: "ordered_list_item",
+    }).snapshot;
+    expect(ordered.markdown).toBe("- root\r\n  1. nested\r\n- after\r\n");
+    expect(ordered.blocks[1]).toMatchObject({ kind: "ordered_list_item", depth: 1 });
+
+    const bullet = document.apply({
+      type: "setKind",
+      blockId,
+      kind: "bullet_list_item",
+    }).snapshot;
+    const reopened = MarkdownBlockDocument.fromMarkdown(bullet.markdown).getSnapshot();
+    expect(bullet.markdown).toBe("- root\r\n  - nested\r\n- after\r\n");
+    expect(bullet.blocks[1]).toMatchObject({ kind: "bullet_list_item", depth: 1 });
+    expect(bullet.blocks.map(({ kind, depth, raw }) => ({ kind, depth, raw }))).toEqual(
+      reopened.blocks.map(({ kind, depth, raw }) => ({ kind, depth, raw }))
+    );
+  });
+
+  it("treats an identical nested list kind as a byte-exact no-op", () => {
+    const markdown = "- root\r\n  + nested\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "setKind",
+      blockId: before.blocks[1].id,
+      kind: "bullet_list_item",
+    });
+
+    expect(result).toEqual({ snapshot: before });
+    expect(document.undo()).toEqual(before);
+  });
+
+  it("adjusts only descendant indentation required by a new list marker and round-trips exactly", () => {
+    const markdown = "- before\r\n- parent\r\n  + child\r\n    * grandchild\r\n- after\r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+    const parentId = before.blocks[1].id;
+
+    const ordered = document.apply({
+      type: "setKind",
+      blockId: parentId,
+      kind: "ordered_list_item",
+    }).snapshot;
+    const reopenedOrdered = MarkdownBlockDocument.fromMarkdown(ordered.markdown).getSnapshot();
+
+    expect(ordered.markdown).toBe(
+      "- before\r\n1. parent\r\n   + child\r\n     * grandchild\r\n- after\r\n"
+    );
+    expect(ordered.blocks.map((block) => block.depth)).toEqual([0, 0, 1, 2, 0]);
+    expect(ordered.blocks.map(({ kind, depth, raw }) => ({ kind, depth, raw }))).toEqual(
+      reopenedOrdered.blocks.map(({ kind, depth, raw }) => ({ kind, depth, raw }))
+    );
+
+    const bullet = document.apply({
+      type: "setKind",
+      blockId: parentId,
+      kind: "bullet_list_item",
+    }).snapshot;
+    expect(bullet.markdown).toBe(markdown);
+    expect(bullet.blocks.map((block) => block.depth)).toEqual([0, 0, 1, 2, 0]);
+  });
+
+  it("adjusts a list parent's continuation and descendants together without losing bytes", () => {
+    const markdown =
+      "- parent\r\n  continuation with spaces  \r\n  + child\r\n    child continuation  \r\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+    const parentId = before.blocks[0].id;
+
+    const ordered = document.apply({
+      type: "setKind",
+      blockId: parentId,
+      kind: "ordered_list_item",
+    }).snapshot;
+    const reopened = MarkdownBlockDocument.fromMarkdown(ordered.markdown).getSnapshot();
+
+    expect(ordered.markdown).toBe(
+      "1. parent\r\n   continuation with spaces  \r\n" +
+        "   + child\r\n     child continuation  \r\n"
+    );
+    expect(ordered.blocks.map(({ kind, depth, raw }) => ({ kind, depth, raw }))).toEqual(
+      reopened.blocks.map(({ kind, depth, raw }) => ({ kind, depth, raw }))
+    );
+
+    const restored = document.apply({
+      type: "setKind",
+      blockId: parentId,
+      kind: "bullet_list_item",
+    }).snapshot;
+    expect(restored.markdown).toBe(markdown);
+    expect(restored.blocks.map((block) => block.id)).toEqual(
+      before.blocks.map((block) => block.id)
+    );
+  });
+
+  it("rejects list-to-text conversions that would orphan hierarchy before recording history", () => {
+    const cases = [
+      { markdown: "- root\r\n  + nested\r\n- after\r\n", blockIndex: 1 },
+      { markdown: "- parent\r\n  + child\r\n- after\r\n", blockIndex: 0 },
+    ] as const;
+    const targets = [
+      { kind: "paragraph" as const },
+      { kind: "heading" as const, level: 2 as const },
+      { kind: "blockquote" as const },
+    ];
+
+    for (const { markdown, blockIndex } of cases) {
+      for (const target of targets) {
+        const document = MarkdownBlockDocument.fromMarkdown(markdown);
+        const before = document.getSnapshot();
+
+        expect(() =>
+          document.apply({
+            type: "setKind",
+            blockId: before.blocks[blockIndex].id,
+            ...target,
+          })
+        ).toThrow(/list hierarchy cannot be preserved/i);
+        expect(document.getSnapshot()).toEqual(before);
+        expect(document.undo()).toEqual(before);
+      }
+    }
   });
 
   it("does not flatten a soft-wrapped paragraph into a false single heading", () => {

@@ -2,6 +2,7 @@ export interface MarkdownSourceSpan {
   from: number;
   to: number;
   raw: string;
+  listDepth?: number;
 }
 
 interface SourceLine {
@@ -17,6 +18,7 @@ interface FenceOpening {
 
 interface ListOpening {
   indent: number;
+  contentIndent: number;
   ordered: boolean;
   start: number | null;
 }
@@ -39,9 +41,9 @@ const COMPLETE_HTML_TAG = /^ {0,3}(?:<\/?[A-Za-z][A-Za-z0-9-]*(?:[ \t]+[^<>]*)?\
  *
  * The returned `raw` values are views over the input source. No normalization
  * or Markdown rendering occurs in this layer. Fence recognition is
- * intentionally top-level. Top-level list items are separate Block spans;
- * their indented continuation and nested source stays attached to the owning
- * item.
+ * intentionally top-level. Every safely recognized logical list item is a
+ * separate Block span; continuation source stays attached to its owning item,
+ * while fenced and code-indented list-shaped literals fail closed as source.
  */
 export function scanMarkdownSource(markdown: string): MarkdownSourceSpan[] {
   if (!markdown) return [];
@@ -51,6 +53,8 @@ export function scanMarkdownSource(markdown: string): MarkdownSourceSpan[] {
   let spanFrom = 0;
   let hasContent = false;
   let hasBoundary = false;
+  let continuesList = false;
+  let listStack: ListOpening[] = [];
 
   let lineIndex = 0;
   while (lineIndex < lines.length) {
@@ -69,6 +73,27 @@ export function scanMarkdownSource(markdown: string): MarkdownSourceSpan[] {
       lineIndex = raw.nextLineIndex;
       continue;
     }
+
+    const list = listOpening(line, continuesList);
+    const listCanInterruptParagraph = !list?.ordered || list.start === 1;
+    if (list && (!hasContent || hasBoundary || listCanInterruptParagraph)) {
+      if (line.from > spanFrom) {
+        spans.push(sourceSpan(markdown, spanFrom, line.from));
+      }
+
+      const item = listItemEnd(lines, lineIndex, list);
+      const listDepth = updateListStack(listStack, list);
+      spans.push(sourceSpan(markdown, line.from, item.to, listDepth));
+      spanFrom = item.to;
+      hasContent = false;
+      hasBoundary = false;
+      continuesList = item.continuesList;
+      if (!continuesList) listStack = [];
+      lineIndex = item.nextLineIndex;
+      continue;
+    }
+    continuesList = false;
+    listStack = [];
 
     if (!isBlankLine(line) && isIndentedCodeLine(line) && (!hasContent || hasBoundary)) {
       if (line.from > spanFrom) {
@@ -107,22 +132,6 @@ export function scanMarkdownSource(markdown: string): MarkdownSourceSpan[] {
       hasContent = false;
       hasBoundary = false;
       lineIndex = fenceLastLine + 1;
-      continue;
-    }
-
-    const list = listOpening(line);
-    const listCanInterruptParagraph = !list?.ordered || list.start === 1;
-    if (list && (!hasContent || hasBoundary || listCanInterruptParagraph)) {
-      if (line.from > spanFrom) {
-        spans.push(sourceSpan(markdown, spanFrom, line.from));
-      }
-
-      const item = listItemEnd(lines, lineIndex, list);
-      spans.push(sourceSpan(markdown, line.from, item.to));
-      spanFrom = item.to;
-      hasContent = false;
-      hasBoundary = false;
-      lineIndex = item.nextLineIndex;
       continue;
     }
 
@@ -192,8 +201,28 @@ export function isMarkdownLinkOpaqueBlockSource(source: string): boolean {
   );
 }
 
-function sourceSpan(markdown: string, from: number, to: number): MarkdownSourceSpan {
-  return { from, to, raw: markdown.slice(from, to) };
+function sourceSpan(
+  markdown: string,
+  from: number,
+  to: number,
+  listDepth?: number
+): MarkdownSourceSpan {
+  const span = { from, to, raw: markdown.slice(from, to) };
+  return listDepth === undefined ? span : { ...span, listDepth };
+}
+
+function updateListStack(stack: ListOpening[], opening: ListOpening): number {
+  let depth = -1;
+  for (let parentDepth = stack.length - 1; parentDepth >= 0; parentDepth -= 1) {
+    const parent = stack[parentDepth];
+    if (opening.indent >= parent.contentIndent && opening.indent <= parent.contentIndent + 3) {
+      depth = parentDepth + 1;
+      break;
+    }
+  }
+  if (depth < 0) depth = 0;
+  stack.splice(depth, stack.length - depth, opening);
+  return depth;
 }
 
 function isBlankLine(line: SourceLine): boolean {
@@ -334,11 +363,13 @@ function indentedCodeBlockEnd(
   };
 }
 
-function listOpening(line: SourceLine): ListOpening | null {
-  const match = line.body.match(/^( {0,3})([-+*]|(\d{1,9})[.)])(?:[ \t]+|$)/);
+function listOpening(line: SourceLine, allowNested = false): ListOpening | null {
+  const match = line.body.match(/^( *)([-+*]|(\d{1,9})[.)])([ \t]+|$)/);
   if (!match) return null;
+  if (!allowNested && match[1].length > 3) return null;
   return {
     indent: match[1].length,
+    contentIndent: match[1].length + match[2].length + match[4].length,
     ordered: match[3] !== undefined,
     start: match[3] === undefined ? null : Number(match[3]),
   };
@@ -348,13 +379,27 @@ function listItemEnd(
   lines: SourceLine[],
   openingLineIndex: number,
   opening: ListOpening
-): { to: number; nextLineIndex: number } {
+): { to: number; nextLineIndex: number; continuesList: boolean } {
   let sawBlank = false;
+  let fence: FenceOpening | null = null;
   for (let lineIndex = openingLineIndex + 1; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex];
-    const candidate = listOpening(line);
-    if (candidate && candidate.indent <= opening.indent) {
-      return { to: line.from, nextLineIndex: lineIndex };
+    const relativeLine = {
+      ...line,
+      body: line.body.slice(Math.min(opening.indent, leadingIndent(line.body))),
+    };
+    if (fence) {
+      if (isClosingFence(relativeLine, fence)) fence = null;
+      continue;
+    }
+    const nextFence = fenceOpening(relativeLine);
+    if (nextFence) {
+      fence = nextFence;
+      continue;
+    }
+    const candidate = listOpening(line, true);
+    if (candidate && candidate.indent <= opening.contentIndent + 3) {
+      return { to: line.from, nextLineIndex: lineIndex, continuesList: true };
     }
 
     if (isBlankLine(line)) {
@@ -362,11 +407,11 @@ function listItemEnd(
       continue;
     }
     if (sawBlank && leadingIndent(line.body) <= opening.indent) {
-      return { to: line.from, nextLineIndex: lineIndex };
+      return { to: line.from, nextLineIndex: lineIndex, continuesList: false };
     }
     sawBlank = false;
   }
-  return { to: lines.at(-1)?.to ?? 0, nextLineIndex: lines.length };
+  return { to: lines.at(-1)?.to ?? 0, nextLineIndex: lines.length, continuesList: false };
 }
 
 function leadingIndent(source: string): number {

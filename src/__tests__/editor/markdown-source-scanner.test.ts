@@ -142,15 +142,59 @@ describe("scanMarkdownSource", () => {
     expect(spans.map((span) => span.raw).join("")).toBe(markdown);
   });
 
-  it("keeps an indented nested list attached to its top-level owning item", () => {
+  it("projects a nested list item separately while preserving its owner's continuation bytes", () => {
     const markdown = "- outer\n  continuation\n  - nested\n- next\n";
 
     const spans = scanMarkdownSource(markdown);
 
     expect(spans.map((span) => span.raw)).toEqual([
-      "- outer\n  continuation\n  - nested\n",
+      "- outer\n  continuation\n",
+      "  - nested\n",
       "- next\n",
     ]);
+    expect(spans.map((span) => span.raw).join("")).toBe(markdown);
+  });
+
+  it("projects deeply indented ordered and task items without mistaking standalone code for a list", () => {
+    const markdown =
+      "    - standalone code\r\n\r\n- root\r\n    7) ordered\r\n        * [x] task\r\n- next\r\n";
+
+    const spans = scanMarkdownSource(markdown);
+
+    expect(spans.map((span) => span.raw)).toEqual([
+      "    - standalone code\r\n\r\n",
+      "- root\r\n",
+      "    7) ordered\r\n",
+      "        * [x] task\r\n",
+      "- next\r\n",
+    ]);
+    expect(spans.map((span) => span.raw).join("")).toBe(markdown);
+  });
+
+  it("does not project list-shaped literal text inside an item fence as hierarchy", () => {
+    const markdown = "- parent\n  ```md\n  - literal\n  ```\n  - child\n- next\n";
+
+    const spans = scanMarkdownSource(markdown);
+
+    expect(spans.map((span) => span.raw)).toEqual([
+      "- parent\n  ```md\n  - literal\n  ```\n",
+      "  - child\n",
+      "- next\n",
+    ]);
+    expect(spans.map((span) => span.raw).join("")).toBe(markdown);
+  });
+
+  it("keeps a code-indented list marker in its owning item instead of inventing a child", () => {
+    const markdown = "- parent\n      - literal code\n  - child\n- next\n";
+
+    const spans = scanMarkdownSource(markdown);
+
+    expect(spans.map((span) => span.raw)).toEqual([
+      "- parent\n      - literal code\n",
+      "  - child\n",
+      "- next\n",
+    ]);
+    expect(spans.map((span) => span.listDepth)).toEqual([0, 1, 0]);
     expect(spans.map((span) => span.raw).join("")).toBe(markdown);
   });
 

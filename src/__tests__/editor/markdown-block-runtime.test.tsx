@@ -50,6 +50,16 @@ function dragTransfer(initial: Record<string, string> = {}) {
   } as unknown as DataTransfer;
 }
 
+function setCollapsedDomSelection(node: Node, offset: number) {
+  const selection = window.getSelection();
+  if (!selection) throw new Error("Selection API unavailable");
+  const range = document.createRange();
+  range.setStart(node, offset);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
 const file: FileItem = {
   id: "page-1",
   name: "Page",
@@ -656,6 +666,13 @@ describe("MarkdownBlockRuntime", () => {
     expect(screen.getByText("old").tagName).toBe("DEL");
   });
 
+  it("keeps only one inactive Block in the document tab order", () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />);
+
+    const rows = screen.getAllByRole("group", { name: /Block \d of 3/ });
+    expect(rows.map((row) => row.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
+  });
+
   it("renders list items semantically and persists task checkbox changes in Markdown", async () => {
     render(
       <MarkdownBlockRuntime file={{ ...file, content: "- bullet\n- [ ] todo\n1. ordered\n" }} />
@@ -677,19 +694,123 @@ describe("MarkdownBlockRuntime", () => {
     );
   });
 
+  it("indents and outdents a list Block with Tab without exposing its Markdown marker", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "- Parent\r\n- Child\r\n" }} />
+    );
+    fireEvent.click(screen.getByText("Child"));
+    let textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    textarea.setSelectionRange(2, 2);
+
+    expect(fireEvent.keyDown(textarea, { key: "Tab" })).toBe(false);
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("Child");
+    expect(container.querySelector('[data-block-id="block-2"]')).toHaveAttribute(
+      "data-block-depth",
+      "1"
+    );
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "- Parent\r\n  - Child\r\n" })
+    );
+
+    textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    expect(textarea.selectionStart).toBe(2);
+    expect(fireEvent.keyDown(textarea, { key: "Tab", shiftKey: true })).toBe(false);
+    expect(container.querySelector('[data-block-id="block-2"]')).toHaveAttribute(
+      "data-block-depth",
+      "0"
+    );
+  });
+
+  it("outdents a nested list Block on Backspace at its payload boundary", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "- Parent\r\n  - Child\r\n" }} />
+    );
+    fireEvent.click(screen.getByText("Child"));
+    const textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    textarea.setSelectionRange(0, 0);
+
+    expect(fireEvent.keyDown(textarea, { key: "Backspace" })).toBe(false);
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("Child");
+    expect(container.querySelector('[data-block-id="block-2"]')).toHaveAttribute(
+      "data-block-depth",
+      "0"
+    );
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "- Parent\r\n- Child\r\n" })
+    );
+  });
+
+  it("outdents an empty nested list Block on Enter before exiting the list", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "- Parent\r\n  - \r\n" }} />
+    );
+    let rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[1], { key: "Enter" });
+    const textarea = screen.getByLabelText("Markdown block");
+
+    expect(fireEvent.keyDown(textarea, { key: "Enter" })).toBe(false);
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(rows[1]).toHaveAttribute("data-block-kind", "bullet_list_item");
+    expect(rows[1]).toHaveAttribute("data-block-depth", "0");
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "- Parent\r\n- \r\n" })
+    );
+  });
+
+  it("indents a selected list range atomically and keeps a parentless Tab source-safe", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "- Parent\r\n- Child\r\n- Third\r\n" }} />
+    );
+    fireEvent.click(screen.getByText("Child"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    let rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[1], { key: "ArrowDown", shiftKey: true });
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+
+    expect(fireEvent.keyDown(rows[2], { key: "Tab" })).toBe(false);
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(rows[1]).toHaveAttribute("data-block-depth", "1");
+    expect(rows[2]).toHaveAttribute("data-block-depth", "1");
+    expect(container.querySelector("[data-native-markdown-document]")).toHaveAttribute(
+      "data-revision",
+      "1"
+    );
+
+    fireEvent.keyDown(rows[1], { key: "Escape" });
+    fireEvent.keyDown(rows[0], { key: "Enter" });
+    const first = screen.getByLabelText("Markdown block");
+    expect(fireEvent.keyDown(first, { key: "Tab" })).toBe(false);
+    expect(container.querySelector("[data-native-markdown-document]")).toHaveAttribute(
+      "data-revision",
+      "1"
+    );
+  });
+
   it("continues a list item on Enter without pulling the caret back during the next edit", async () => {
     render(<MarkdownBlockRuntime file={{ ...file, content: "- one two\n- keep\n" }} />);
 
     fireEvent.click(screen.getByText("one two"));
     const first = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
-    first.setSelectionRange(6, 6);
+    first.setSelectionRange(4, 4);
     fireEvent.keyDown(first, { key: "Enter" });
 
     const second = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
-    expect(second).toHaveValue("- two");
-    expect(second.selectionStart).toBe(2);
-    fireEvent.change(second, { target: { value: "- typed" } });
-    expect(second.selectionStart).toBe(7);
+    expect(second).toHaveValue("two");
+    expect(second.selectionStart).toBe(0);
+    fireEvent.change(second, { target: { value: "typed" } });
+    expect(second.selectionStart).toBe(5);
 
     await act(async () => {
       await useEditorRefStore.getState().requestSave?.();
@@ -705,7 +826,7 @@ describe("MarkdownBlockRuntime", () => {
 
     fireEvent.click(screen.getByText("item"));
     const textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
-    textarea.setSelectionRange(2, 2);
+    textarea.setSelectionRange(0, 0);
     fireEvent.keyDown(textarea, { key: "Backspace" });
 
     expect(screen.getByLabelText("Markdown block")).toHaveValue("item");
@@ -724,12 +845,12 @@ describe("MarkdownBlockRuntime", () => {
     expect(screen.getByText("quoted text").tagName).toBe("BLOCKQUOTE");
   });
 
-  it("finds source text and moves the textarea selection between matching Blocks", () => {
+  it("finds source text without moving focus away from Search", () => {
     render(
       <MarkdownBlockRuntime
         file={{
           ...file,
-          content: "First Needle\r\n\r\nSecond needle\r\n",
+          content: "First **Needle**\r\n\r\nSecond needle\r\n",
         }}
       />
     );
@@ -742,21 +863,72 @@ describe("MarkdownBlockRuntime", () => {
 
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
     expect(searchInput).toHaveFocus();
-    let textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
-    expect(textarea).toHaveValue("First Needle");
-    expect(textarea.selectionStart).toBe(6);
-    expect(textarea.selectionEnd).toBe(12);
+    expect(screen.getByLabelText("Markdown block")).toHaveAttribute("data-native-semantic-editor");
+    expect(document.querySelector("[data-native-search-selection]")).toHaveTextContent("Needle");
+
+    fireEvent.change(searchInput, { target: { value: "missing" } });
+    expect(screen.getByText("No matches")).toBeInTheDocument();
+    expect(document.querySelector("[data-native-search-selection]")).not.toBeInTheDocument();
+    expect(searchInput).toHaveFocus();
+
+    fireEvent.change(searchInput, { target: { value: "needle" } });
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+    expect(document.querySelector("[data-native-search-selection]")).toHaveTextContent("Needle");
 
     fireEvent.click(screen.getByRole("button", { name: "Next result" }));
     expect(screen.getByText("2 of 2")).toBeInTheDocument();
-    textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    expect(searchInput).toHaveFocus();
+    const textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
     expect(textarea).toHaveValue("Second needle");
     expect(textarea.selectionStart).toBe(7);
     expect(textarea.selectionEnd).toBe(13);
 
     fireEvent.click(screen.getByRole("button", { name: "Previous result" }));
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
-    expect(screen.getByLabelText("Markdown block")).toHaveValue("First Needle");
+    expect(searchInput).toHaveFocus();
+    expect(screen.getByLabelText("Markdown block")).toHaveAttribute("data-native-semantic-editor");
+    expect(document.querySelector("[data-native-search-selection]")).toHaveTextContent("Needle");
+  });
+
+  it("closes Search and focuses a Block activated explicitly", () => {
+    render(
+      <MarkdownBlockRuntime
+        file={{ ...file, content: "First **needle**\r\n\r\nOther block\r\n" }}
+      />
+    );
+
+    act(() => useLayoutStore.getState().setSearchBarOpen(true));
+    const searchInput = screen.getByLabelText("Search text");
+    fireEvent.change(searchInput, { target: { value: "needle" } });
+    expect(searchInput).toHaveFocus();
+
+    fireEvent.click(screen.getByText("Other block"));
+
+    expect(screen.queryByRole("search", { name: "Find in Page" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("Other block");
+    expect(screen.getByLabelText("Markdown block")).toHaveFocus();
+  });
+
+  it("restores an editing selection after opening and closing empty Search", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "## Hello world\r\n" }} />
+    );
+
+    fireEvent.click(screen.getByRole("heading", { name: "Hello world" }));
+    const textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    textarea.setSelectionRange(0, 5);
+    fireEvent.select(textarea);
+    fireEvent.click(screen.getByRole("button", { name: "Bold" }));
+
+    act(() => useLayoutStore.getState().setSearchBarOpen(true));
+    expect(screen.getByLabelText("Search text")).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+
+    expect(screen.getByLabelText("Markdown block")).toHaveFocus();
+    expect(container.querySelector("[data-native-semantic-editor] strong")).toHaveTextContent(
+      "Hello"
+    );
+    expect(window.getSelection()?.toString()).toBe("Hello");
   });
 
   it("maps a search match after CRLF to normalized textarea offsets", () => {
@@ -825,7 +997,7 @@ describe("MarkdownBlockRuntime", () => {
     act(() => session.navigateTo(session.headings[1]));
 
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
-    expect(screen.getByLabelText("Markdown block")).toHaveValue("## Next steps");
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("Next steps");
     expect(usePageSessionStore.getState().outlineSession?.activeId).toBe("block-2");
   });
 
@@ -1272,6 +1444,669 @@ describe("MarkdownBlockRuntime", () => {
     expect(screen.getByLabelText("Markdown block")).toHaveValue("Third");
   });
 
+  it("uses Escape to leave text editing and select the current Block without changing source", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
+    );
+
+    fireEvent.click(screen.getByText("First"));
+    const textarea = screen.getByLabelText("Markdown block");
+    expect(fireEvent.keyDown(textarea, { key: "Escape" })).toBe(false);
+
+    expect(screen.queryByLabelText("Markdown block")).not.toBeInTheDocument();
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(rows[0]).toHaveAttribute("data-block-selected", "true");
+    expect(rows[0]).toHaveFocus();
+    expect(rows[1]).not.toHaveAttribute("data-block-selected", "true");
+    expect(container.querySelector("[data-native-markdown-document]")).toHaveAttribute(
+      "data-revision",
+      "0"
+    );
+  });
+
+  it("extends a contiguous Block selection with Shift+Arrow and returns to text with Enter", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />
+    );
+
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    let rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(rows[0]).toHaveAttribute("data-block-selected", "true");
+    expect(rows[1]).toHaveAttribute("data-block-selected", "true");
+    expect(rows[1]).toHaveFocus();
+    expect(rows[2]).not.toHaveAttribute("data-block-selected", "true");
+
+    expect(fireEvent.keyDown(rows[1], { key: "Enter" })).toBe(false);
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("Second");
+    expect(screen.getByLabelText("Markdown block")).toHaveFocus();
+    expect(
+      container.querySelector("[data-native-block-row][data-block-selected='true']")
+    ).not.toBeInTheDocument();
+  });
+
+  it("promotes a full text selection to one Block and then selects the document", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />
+    );
+    fireEvent.click(screen.getByText("Second"));
+    const editor = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    editor.setSelectionRange(0, editor.value.length);
+
+    expect(fireEvent.keyDown(editor, { key: "a", metaKey: true })).toBe(false);
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(1);
+
+    const selectedRow = container.querySelector<HTMLElement>('[data-block-selected="true"]')!;
+    expect(fireEvent.keyDown(selectedRow, { key: "a", metaKey: true })).toBe(false);
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(3);
+  });
+
+  it("extends a contiguous Block selection with Shift+click", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />
+    );
+
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    fireEvent.click(screen.getByText("Third"), { shiftKey: true });
+
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(3);
+    expect(container.querySelector('[data-block-id="block-1"]')).toHaveAttribute(
+      "data-block-selected",
+      "true"
+    );
+    expect(container.querySelector('[data-block-id="block-3"]')).toHaveAttribute(
+      "data-block-selected",
+      "true"
+    );
+  });
+
+  it("deletes a multi-Block selection atomically and keeps the next Block selected", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />
+    );
+
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    let rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(fireEvent.keyDown(rows[1], { key: "Backspace" })).toBe(false);
+
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveAttribute("data-block-selected", "true");
+    expect(rows[0]).toHaveTextContent("Third");
+    expect(screen.queryByLabelText("Markdown block")).not.toBeInTheDocument();
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "Third\n" })
+    );
+  });
+
+  it("duplicates a multi-Block selection as one selected group", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />
+    );
+
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    let rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(fireEvent.keyDown(rows[1], { key: "d", metaKey: true })).toBe(false);
+
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(rows).toHaveLength(5);
+    expect([...rows].map((row) => row.textContent)).toEqual([
+      expect.stringContaining("First"),
+      expect.stringContaining("Second"),
+      expect.stringContaining("First"),
+      expect.stringContaining("Second"),
+      expect.stringContaining("Third"),
+    ]);
+    expect(rows[2]).toHaveAttribute("data-block-selected", "true");
+    expect(rows[3]).toHaveAttribute("data-block-selected", "true");
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "First\n\nSecond\n\nFirst\n\nSecond\n\nThird\n" })
+    );
+  });
+
+  it("clears stale Block selection state across undo and redo", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />
+    );
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    let rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[1], { key: "d", metaKey: true });
+
+    act(() => useEditorRefStore.getState().requestUndo?.());
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(0);
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("First");
+
+    act(() => useEditorRefStore.getState().requestRedo?.());
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(0);
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("First");
+  });
+
+  it("moves a selected Block group with Mod+Shift+Arrow as one operation", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />
+    );
+
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    let rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(
+      fireEvent.keyDown(rows[1], {
+        key: "ArrowDown",
+        metaKey: true,
+        shiftKey: true,
+      })
+    ).toBe(false);
+
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect([...rows].map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Third"),
+      expect.stringContaining("First"),
+      expect.stringContaining("Second"),
+    ]);
+    expect(rows[1]).toHaveAttribute("data-block-selected", "true");
+    expect(rows[2]).toHaveAttribute("data-block-selected", "true");
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "Third\n\nFirst\n\nSecond\n\n" })
+    );
+  });
+
+  it("copies the exact Markdown source for a selected Block range", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\r\n\r\nSecond\r\n\r\nThird\r\n" }} />
+    );
+
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+    const setData = vi.fn();
+
+    expect(
+      fireEvent.copy(container.querySelector("[data-native-markdown-document]")!, {
+        clipboardData: { setData },
+      })
+    ).toBe(false);
+    expect(setData).toHaveBeenCalledWith("text/plain", "First\r\n\r\nSecond\r\n\r\n");
+    expect(container.querySelector("[data-native-markdown-document]")).toHaveAttribute(
+      "data-revision",
+      "0"
+    );
+  });
+
+  it("cuts the exact Markdown source for a selected Block range in one revision", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\r\n\r\nSecond\r\n\r\nThird\r\n" }} />
+    );
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+    const setData = vi.fn();
+
+    expect(
+      fireEvent.cut(container.querySelector("[data-native-markdown-document]")!, {
+        clipboardData: { setData },
+      })
+    ).toBe(false);
+    expect(setData).toHaveBeenCalledWith("text/plain", "First\r\n\r\nSecond\r\n\r\n");
+    expect(container.querySelectorAll("[data-native-block-row]")).toHaveLength(1);
+    expect(screen.getByText("Third")).toBeVisible();
+    expect(container.querySelector("[data-native-markdown-document]")).toHaveAttribute(
+      "data-revision",
+      "1"
+    );
+  });
+
+  it("copies and pastes an exact Block range atomically, then undoes the replacement", async () => {
+    const original = "First\r\n\r\nSecond\r\n\r\nRemove one\r\n\r\nRemove two\r\n";
+    const { container } = render(<MarkdownBlockRuntime file={{ ...file, content: original }} />);
+    const documentElement = container.querySelector<HTMLElement>(
+      "[data-native-markdown-document]"
+    )!;
+
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    let rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+    let copied = "";
+    expect(
+      fireEvent.copy(documentElement, {
+        clipboardData: {
+          setData: (_type: string, value: string) => {
+            copied = value;
+          },
+        },
+      })
+    ).toBe(false);
+    expect(copied).toBe("First\r\n\r\nSecond\r\n\r\n");
+
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[1], { key: "Escape" });
+    fireEvent.click(screen.getByText("Remove one"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[2], { key: "ArrowDown", shiftKey: true });
+
+    expect(
+      fireEvent.paste(documentElement, {
+        clipboardData: { getData: (type: string) => (type === "text/plain" ? copied : "") },
+      })
+    ).toBe(false);
+    expect(documentElement).toHaveAttribute("data-revision", "1");
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("Second");
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith("page-1", {
+      content: "First\r\n\r\nSecond\r\n\r\nFirst\r\n\r\nSecond\r\n\r\n",
+    });
+
+    act(() => useEditorRefStore.getState().requestUndo?.());
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith("page-1", { content: original });
+  });
+
+  it("keeps an empty clipboard paste over a Block selection as an exact no-op", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
+    );
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    const documentElement = container.querySelector<HTMLElement>(
+      "[data-native-markdown-document]"
+    )!;
+
+    expect(
+      fireEvent.paste(documentElement, {
+        clipboardData: { getData: () => "" },
+      })
+    ).toBe(true);
+    expect(documentElement).toHaveAttribute("data-revision", "0");
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(1);
+    expect(useEditorStore.getState().isDirty).toBe(false);
+  });
+
+  it("selects, copies, and cuts a list root with its complete nested subtree", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime
+        file={{
+          ...file,
+          content: "- Parent\r\n  - Child\r\n    - Grandchild\r\n- Sibling\r\n",
+        }}
+      />
+    );
+    fireEvent.click(screen.getByText("Parent"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(3);
+    const documentElement = container.querySelector("[data-native-markdown-document]")!;
+    const copySetData = vi.fn();
+    expect(fireEvent.copy(documentElement, { clipboardData: { setData: copySetData } })).toBe(
+      false
+    );
+    expect(copySetData).toHaveBeenCalledWith(
+      "text/plain",
+      "- Parent\r\n  - Child\r\n    - Grandchild\r\n"
+    );
+
+    const cutSetData = vi.fn();
+    expect(fireEvent.cut(documentElement, { clipboardData: { setData: cutSetData } })).toBe(false);
+    expect(cutSetData).toHaveBeenCalledWith(
+      "text/plain",
+      "- Parent\r\n  - Child\r\n    - Grandchild\r\n"
+    );
+    expect(container.querySelectorAll("[data-native-block-row]")).toHaveLength(1);
+    expect(screen.getByText("Sibling")).toBeVisible();
+    expect(documentElement).toHaveAttribute("data-revision", "1");
+  });
+
+  it("pastes over a selected list subtree with Page-native CRLF boundaries", async () => {
+    const original = "- Parent\r\n  - Child\r\n    - Grandchild\r\n- Sibling\r\n";
+    const { container } = render(<MarkdownBlockRuntime file={{ ...file, content: original }} />);
+    fireEvent.click(screen.getByText("Parent"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    const documentElement = container.querySelector<HTMLElement>(
+      "[data-native-markdown-document]"
+    )!;
+
+    expect(
+      fireEvent.paste(documentElement, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === "text/plain" ? "Replacement\n\n- one\r\n  - nested" : "",
+        },
+      })
+    ).toBe(false);
+    expect(documentElement).toHaveAttribute("data-revision", "1");
+    expect(container.querySelectorAll("[data-native-block-row]")).toHaveLength(4);
+    expect(screen.queryByText("Child")).not.toBeInTheDocument();
+    expect(screen.queryByText("Grandchild")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("nested");
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith("page-1", {
+      content: "Replacement\r\n\r\n- one\r\n  - nested\r\n- Sibling\r\n",
+    });
+  });
+
+  it("duplicates a selected list root with descendants and selects the duplicate subtree", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "- Parent\n  - Child\n- Sibling\n" }} />
+    );
+    fireEvent.click(screen.getByText("Parent"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    let rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(fireEvent.keyDown(rows[0], { key: "d", metaKey: true })).toBe(false);
+
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect([...rows].map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Parent"),
+      expect.stringContaining("Child"),
+      expect.stringContaining("Parent"),
+      expect.stringContaining("Child"),
+      expect.stringContaining("Sibling"),
+    ]);
+    expect(rows[2]).toHaveAttribute("data-block-selected", "true");
+    expect(rows[3]).toHaveAttribute("data-block-selected", "true");
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({
+        content: "- Parent\n  - Child\n- Parent\n  - Child\n- Sibling\n",
+      })
+    );
+
+    expect(fireEvent.keyDown(rows[2], { key: "z", metaKey: true })).toBe(false);
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect([...rows].map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Parent"),
+      expect.stringContaining("Child"),
+      expect.stringContaining("Sibling"),
+    ]);
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(0);
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({
+        content: "- Parent\n  - Child\n- Sibling\n",
+      })
+    );
+  });
+
+  it("moves a nested list subtree across its sibling and keeps it inside the parent", async () => {
+    const initial = "- Parent\n  - First\n    - Detail\n  - Second\n    - Other\n- Outside\n";
+    const moved = "- Parent\n  - Second\n    - Other\n  - First\n    - Detail\n- Outside\n";
+    const { container } = render(<MarkdownBlockRuntime file={{ ...file, content: initial }} />);
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    let rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+    expect(
+      fireEvent.keyDown(rows[1], {
+        key: "ArrowDown",
+        metaKey: true,
+        shiftKey: true,
+      })
+    ).toBe(false);
+
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect([...rows].map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Parent"),
+      expect.stringContaining("Second"),
+      expect.stringContaining("Other"),
+      expect.stringContaining("First"),
+      expect.stringContaining("Detail"),
+      expect.stringContaining("Outside"),
+    ]);
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+    expect(container.querySelector("[data-native-markdown-document]")).toHaveAttribute(
+      "data-revision",
+      "1"
+    );
+
+    expect(
+      fireEvent.keyDown(rows[4], {
+        key: "ArrowDown",
+        metaKey: true,
+        shiftKey: true,
+      })
+    ).toBe(true);
+    expect(container.querySelector("[data-native-markdown-document]")).toHaveAttribute(
+      "data-revision",
+      "1"
+    );
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: moved })
+    );
+  });
+
+  it("copies and moves a selected list subtree through the six-dot menu", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const { container } = render(
+      <MarkdownBlockRuntime
+        file={{
+          ...file,
+          content: "- Parent\r\n  - Child\r\n- Sibling\r\n  - Sibling child\r\n",
+        }}
+      />
+    );
+    fireEvent.click(screen.getByText("Parent"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+
+    let handle = screen.getAllByRole("button", { name: "Block actions" })[0];
+    fireEvent.pointerDown(handle);
+    fireEvent.click(handle);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy Markdown" }));
+    expect(writeText).toHaveBeenCalledWith("- Parent\r\n  - Child\r\n");
+
+    handle = screen.getAllByRole("button", { name: "Block actions" })[0];
+    fireEvent.pointerDown(handle);
+    fireEvent.click(handle);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move down" }));
+
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect([...rows].map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Sibling"),
+      expect.stringContaining("Sibling child"),
+      expect.stringContaining("Parent"),
+      expect.stringContaining("Child"),
+    ]);
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({
+        content: "- Sibling\r\n  - Sibling child\r\n- Parent\r\n  - Child\r\n",
+      })
+    );
+  });
+
+  it("indents and outdents a selected list root with all descendants", async () => {
+    const initial = "- Alpha\n- Beta\n  - Child\n";
+    const { container } = render(<MarkdownBlockRuntime file={{ ...file, content: initial }} />);
+    fireEvent.click(screen.getByText("Beta"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    let rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+    expect(fireEvent.keyDown(rows[1], { key: "Tab" })).toBe(false);
+
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(rows[1]).toHaveAttribute("data-block-depth", "1");
+    expect(rows[2]).toHaveAttribute("data-block-depth", "2");
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "- Alpha\n  - Beta\n    - Child\n" })
+    );
+
+    expect(fireEvent.keyDown(rows[2], { key: "Tab", shiftKey: true })).toBe(false);
+
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(rows[1]).toHaveAttribute("data-block-depth", "0");
+    expect(rows[2]).toHaveAttribute("data-block-depth", "1");
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: initial })
+    );
+  });
+
+  it("applies the six-dot menu to the complete selected Block range", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\r\n\r\nSecond\r\n\r\nThird\r\n" }} />
+    );
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    let rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+
+    let handle = screen.getAllByRole("button", { name: "Block actions" })[0];
+    fireEvent.pointerDown(handle);
+    fireEvent.click(handle);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy Markdown" }));
+    expect(writeText).toHaveBeenCalledWith("First\r\n\r\nSecond\r\n\r\n");
+    expect(container.querySelector("[data-native-markdown-document]")).toHaveAttribute(
+      "data-revision",
+      "0"
+    );
+
+    handle = screen.getAllByRole("button", { name: "Block actions" })[0];
+    fireEvent.pointerDown(handle);
+    fireEvent.click(handle);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate" }));
+
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(rows).toHaveLength(5);
+    expect(rows[2]).toHaveAttribute("data-block-selected", "true");
+    expect(rows[3]).toHaveAttribute("data-block-selected", "true");
+    expect(container.querySelector("[data-native-markdown-document]")).toHaveAttribute(
+      "data-revision",
+      "1"
+    );
+  });
+
+  it("formats only the selected semantic text through the floating Markdown toolbar", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "## Hello world\r\n" }} />
+    );
+
+    fireEvent.click(screen.getByRole("heading", { name: "Hello world" }));
+    const textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    textarea.setSelectionRange(0, 5);
+    fireEvent.select(textarea);
+
+    expect(screen.getByRole("toolbar", { name: "Text formatting" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Change block type: Heading 2" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Bold" }));
+
+    const semanticEditor = screen.getByLabelText("Markdown block");
+    expect(semanticEditor).toHaveTextContent("Hello world");
+    expect(semanticEditor).not.toHaveTextContent("**");
+    expect(container.querySelector("[data-native-semantic-editor] strong")).toHaveTextContent(
+      "Hello"
+    );
+    expect(container.querySelector("[data-native-markdown-document]")).toHaveAttribute(
+      "data-revision",
+      "1"
+    );
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "## **Hello** world\r\n" })
+    );
+  });
+
+  it("persists semantic inline edits back to canonical Markdown source", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "Keep **bold** text\n" }} />
+    );
+
+    fireEvent.click(screen.getByText("bold"));
+    const editor = screen.getByLabelText("Markdown block");
+    const strongText = container.querySelector("[data-native-semantic-editor] strong")?.firstChild;
+    expect(strongText).toBeInstanceOf(Text);
+    if (!strongText) throw new Error("Expected semantic bold text");
+
+    strongText.nodeValue = "bolder";
+    setCollapsedDomSelection(strongText, "bolder".length);
+    fireEvent.input(editor, { inputType: "insertText", data: "er" });
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "Keep **bolder** text\n" })
+    );
+  });
+
   it("moves the active Block with Alt+Arrow and undoes the move in one step", async () => {
     render(<MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />);
 
@@ -1431,7 +2266,7 @@ describe("MarkdownBlockRuntime", () => {
       <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
     );
     const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
-    const grips = screen.getAllByRole("button", { name: "Drag block" });
+    const grips = screen.getAllByRole("button", { name: "Block actions" });
     const endTarget = container.querySelector<HTMLElement>("[data-native-block-drop-end]");
     const transfer = dragTransfer();
 
@@ -1443,6 +2278,7 @@ describe("MarkdownBlockRuntime", () => {
     fireEvent.dragStart(grips[0], { dataTransfer: transfer });
     expect(transfer.types).toContain("application/x-doxmind-markdown-block");
     expect(fireEvent.dragOver(endTarget, { dataTransfer: transfer })).toBe(false);
+    expect(endTarget).toHaveAttribute("data-drop-active", "true");
     expect(fireEvent.drop(endTarget, { dataTransfer: transfer })).toBe(false);
 
     await act(async () => {
@@ -1454,12 +2290,85 @@ describe("MarkdownBlockRuntime", () => {
     );
   });
 
+  it("drags a contiguous Block selection as one atomic group with a precise drop guide", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n\nFourth\n" }} />
+    );
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    let rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+
+    const grips = screen.getAllByRole("button", { name: "Block actions" });
+    const transfer = dragTransfer();
+    fireEvent.pointerDown(grips[0]);
+    fireEvent.dragStart(grips[0], { dataTransfer: transfer });
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    vi.spyOn(rows[3], "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 100,
+      top: 100,
+      left: 0,
+      right: 600,
+      bottom: 140,
+      width: 600,
+      height: 40,
+      toJSON: () => ({}),
+    });
+
+    expect(fireEvent.dragOver(rows[3], { dataTransfer: transfer, clientY: 101 })).toBe(false);
+    expect(rows[3]).toHaveAttribute("data-drop-before", "true");
+    expect(fireEvent.drop(rows[3], { dataTransfer: transfer, clientY: 101 })).toBe(false);
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "Third\n\nFirst\n\nSecond\n\nFourth\n" })
+    );
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+  });
+
+  it("drags a selected list root with every descendant in one session", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "- Parent\n  - Child\n\nParagraph\n" }} />
+    );
+    fireEvent.click(screen.getByText("Parent"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+
+    const handle = screen.getAllByRole("button", { name: "Block actions" })[0];
+    const endTarget = container.querySelector<HTMLElement>("[data-native-block-drop-end]")!;
+    const transfer = dragTransfer();
+    fireEvent.pointerDown(handle);
+    fireEvent.dragStart(handle, { dataTransfer: transfer });
+    expect(fireEvent.dragOver(endTarget, { dataTransfer: transfer })).toBe(false);
+    expect(fireEvent.drop(endTarget, { dataTransfer: transfer })).toBe(false);
+
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect([...rows].map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Paragraph"),
+      expect.stringContaining("Parent"),
+      expect.stringContaining("Child"),
+    ]);
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "Paragraph\n\n- Parent\n  - Child\n\n" })
+    );
+  });
+
   it("ignores text and external drops and clears the internal drag session on dragend", () => {
     const { container } = render(
       <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
     );
     const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
-    const grip = screen.getAllByRole("button", { name: "Drag block" })[0];
+    const grip = screen.getAllByRole("button", { name: "Block actions" })[0];
     const text = dragTransfer({ "text/plain": "block-1" });
     const external = dragTransfer();
     Object.defineProperty(external, "files", {

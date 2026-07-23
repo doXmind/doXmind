@@ -8,6 +8,7 @@ let collectionPath: string;
 let embedPath: string;
 let keyboardPath: string;
 let tightBoundaryPath: string;
+let blockUxPath: string;
 let runtimeErrors: string[];
 
 const keyboardSource = "First\n\nSecond\n\nThird\n";
@@ -20,6 +21,7 @@ test.beforeEach(async ({ page }) => {
   embedPath = join(workspaceDir, "Embed Matrix.md");
   keyboardPath = join(workspaceDir, "Keyboard Matrix.md");
   tightBoundaryPath = join(workspaceDir, "Tight Boundaries.md");
+  blockUxPath = join(workspaceDir, "Block UX Matrix.md");
   await seedWorkspace();
 });
 
@@ -184,6 +186,119 @@ test("edits adjacent headings and paragraphs as four source-backed Blocks", asyn
   await expect(page.locator("[data-native-block-row]")).toHaveCount(4);
 });
 
+test("operates source-backed Blocks through direct manipulation", async ({ page }) => {
+  await openWorkspacePage(page, "Block UX Matrix");
+  await expectSource(blockUxPath, blockUxFixture());
+
+  const rows = page.locator("[data-native-block-row]");
+  const selectedRows = page.locator("[data-native-block-row][data-block-selected='true']");
+  const headingRow = blockRow(page, "Block UX Acceptance");
+  const formattedRow = blockRow(page, "formatted text");
+
+  await expect(page.getByRole("heading", { name: "Block UX Acceptance" })).toBeVisible();
+  await expect(formattedRow.locator("strong")).toHaveText("formatted text");
+  await expect(formattedRow).not.toContainText("**");
+  await expect(blockRow(page, "Parent")).toHaveAttribute("data-block-depth", "0");
+  await expect(blockRow(page, "Child")).toHaveAttribute("data-block-depth", "1");
+  await expect(blockRow(page, "Grandchild")).toHaveAttribute("data-block-depth", "2");
+
+  const gutter = headingRow.locator("[data-native-block-controls]");
+  await expect(gutter).toHaveCSS("opacity", "0");
+  await headingRow.hover();
+  await expect(gutter).toHaveCSS("opacity", "1");
+  await expect(gutter.getByRole("button", { name: "Add block" })).toBeVisible();
+  await gutter.getByRole("button", { name: "Block actions" }).click();
+
+  const actionsMenu = page.getByRole("menu", { name: "Block actions menu" });
+  await expect(actionsMenu).toBeVisible();
+  await expect(actionsMenu.getByRole("menuitem", { name: "Turn into" })).toBeVisible();
+  await expect(actionsMenu.getByRole("menuitem", { name: "Heading 3" })).toHaveCount(0);
+
+  await actionsMenu.getByRole("menuitem", { name: "Turn into" }).click();
+  await expect(actionsMenu.getByRole("menuitem", { name: "Back to block actions" })).toBeVisible();
+  await expect(actionsMenu.getByRole("menuitem", { name: "Heading 3" })).toBeVisible();
+
+  const actionSearch = actionsMenu.getByRole("searchbox", {
+    name: "Search block actions",
+  });
+  await actionSearch.fill("heading 4");
+  await expect(actionsMenu.getByRole("menuitem", { name: "Heading 4" })).toBeVisible();
+  await expect(actionsMenu.getByRole("menuitem", { name: "Heading 3" })).toHaveCount(0);
+  await actionSearch.press("Escape");
+  await expect(actionsMenu).toBeHidden();
+  await expectSource(blockUxPath, blockUxFixture());
+
+  await formattedRow.click();
+  const semanticEditor = page.locator("[data-native-block-editor][data-native-semantic-editor]");
+  await expect(semanticEditor).toBeFocused();
+  await expect(semanticEditor).not.toContainText("**");
+  await expect(semanticEditor.locator("strong")).toHaveText("formatted text");
+
+  await selectVisibleText(semanticEditor, "plain words");
+  const inlineToolbar = page.getByRole("toolbar", { name: "Text formatting" });
+  await expect(inlineToolbar).toBeVisible();
+  await inlineToolbar.getByRole("button", { name: "Bold" }).click();
+
+  await expect(semanticEditor).not.toContainText("**");
+  await expect(semanticEditor.locator("strong")).toHaveCount(2);
+  await expect(semanticEditor.locator("strong").nth(1)).toHaveText("plain words");
+  await expectSource(blockUxPath, blockUxFormattedFixture());
+
+  await page.getByText("Alpha paragraph.", { exact: true }).click();
+  await expect(page.locator("[data-native-block-editor]")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(blockRow(page, "Alpha paragraph.")).toHaveAttribute("data-block-selected", "true");
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect(selectedRows).toHaveCount(2);
+  await expect(blockRow(page, "Beta paragraph.")).toHaveAttribute("data-block-selected", "true");
+  await page.keyboard.press("Enter");
+  await expect(selectedRows).toHaveCount(0);
+
+  await page.getByText("Parent", { exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(selectedRows).toHaveCount(3);
+  await expect(selectedRows.nth(0)).toHaveAttribute("data-block-depth", "0");
+  await expect(selectedRows.nth(1)).toHaveAttribute("data-block-depth", "1");
+  await expect(selectedRows.nth(2)).toHaveAttribute("data-block-depth", "2");
+
+  await page.keyboard.press("ControlOrMeta+Shift+d");
+  await expect(selectedRows).toHaveCount(3);
+  await expect(page.getByText("Parent", { exact: true })).toHaveCount(2);
+  await expectSource(blockUxPath, blockUxDuplicatedFixture());
+
+  await selectedRows.first().focus();
+  await page.keyboard.press("ControlOrMeta+Shift+ArrowDown");
+  await expect(selectedRows).toHaveCount(3);
+  await expectSource(blockUxPath, blockUxMovedFixture());
+
+  await selectedRows.first().focus();
+  await page.keyboard.press("Backspace");
+  await expect(page.getByText("Parent", { exact: true })).toHaveCount(1);
+  await expectSource(blockUxPath, blockUxFormattedFixture());
+
+  await selectedRows.first().press("Enter");
+  await expect(page.locator("[data-native-block-editor]")).toBeFocused();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.getByText("Parent", { exact: true })).toHaveCount(2);
+  await expectSource(blockUxPath, blockUxMovedFixture());
+
+  await page.getByText("Sibling", { exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(selectedRows).toHaveCount(2);
+  await page.keyboard.press("Tab");
+  await expect(selectedRows.nth(0)).toHaveAttribute("data-block-depth", "1");
+  await expect(selectedRows.nth(1)).toHaveAttribute("data-block-depth", "2");
+  await expectSource(blockUxPath, blockUxIndentedFixture());
+
+  await page.keyboard.press("Shift+Tab");
+  await expect(selectedRows.nth(0)).toHaveAttribute("data-block-depth", "0");
+  await expect(selectedRows.nth(1)).toHaveAttribute("data-block-depth", "1");
+  await expectSource(blockUxPath, blockUxMovedFixture());
+
+  await expect(rows).toHaveCount(12);
+  expect(runtimeErrors).toEqual([]);
+});
+
 async function openWorkspacePage(page: Page, pageName: string) {
   await page.goto(`/editor?folder=${encodeURIComponent(workspaceDir)}`);
   const entry = page.getByText(pageName, { exact: true }).first();
@@ -203,6 +318,33 @@ async function expectSource(path: string, source: string) {
   await expect.poll(() => readFile(path, "utf8")).toBe(source);
 }
 
+function blockRow(page: Page, text: string): Locator {
+  return page.locator("[data-native-block-row]").filter({ hasText: text }).first();
+}
+
+async function selectVisibleText(editor: Locator, text: string) {
+  await editor.evaluate((element, selectedText) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node) {
+      const value = node.nodeValue ?? "";
+      const from = value.indexOf(selectedText);
+      if (from >= 0) {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.setStart(node, from);
+        range.setEnd(node, from + selectedText.length);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+        return;
+      }
+      node = walker.nextNode();
+    }
+    throw new Error(`Could not select visible text: ${selectedText}`);
+  }, text);
+}
+
 function observeRuntimeErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
@@ -218,6 +360,7 @@ async function seedWorkspace() {
     writeFile(embedPath, embedFixture(), "utf8"),
     writeFile(keyboardPath, keyboardSource, "utf8"),
     writeFile(tightBoundaryPath, tightBoundarySource, "utf8"),
+    writeFile(blockUxPath, blockUxFixture(), "utf8"),
     writeFile(
       join(workspaceDir, "Resolved task.md"),
       pageFixture(
@@ -284,6 +427,83 @@ async function seedWorkspace() {
       "utf8"
     ),
   ]);
+}
+
+function blockUxFixture(): string {
+  return blockUxSource({
+    paragraph: "Paragraph with **formatted text** and plain words.",
+    list: ["- Parent", "  - Child", "    - Grandchild", "- Sibling", "  - Sibling child"],
+  });
+}
+
+function blockUxFormattedFixture(): string {
+  return blockUxSource({
+    paragraph: "Paragraph with **formatted text** and **plain words**.",
+    list: ["- Parent", "  - Child", "    - Grandchild", "- Sibling", "  - Sibling child"],
+  });
+}
+
+function blockUxDuplicatedFixture(): string {
+  return blockUxSource({
+    paragraph: "Paragraph with **formatted text** and **plain words**.",
+    list: [
+      "- Parent",
+      "  - Child",
+      "    - Grandchild",
+      "- Parent",
+      "  - Child",
+      "    - Grandchild",
+      "- Sibling",
+      "  - Sibling child",
+    ],
+  });
+}
+
+function blockUxMovedFixture(): string {
+  return blockUxSource({
+    paragraph: "Paragraph with **formatted text** and **plain words**.",
+    list: [
+      "- Parent",
+      "  - Child",
+      "    - Grandchild",
+      "- Sibling",
+      "  - Sibling child",
+      "- Parent",
+      "  - Child",
+      "    - Grandchild",
+    ],
+  });
+}
+
+function blockUxIndentedFixture(): string {
+  return blockUxSource({
+    paragraph: "Paragraph with **formatted text** and **plain words**.",
+    list: [
+      "- Parent",
+      "  - Child",
+      "    - Grandchild",
+      "  - Sibling",
+      "    - Sibling child",
+      "- Parent",
+      "  - Child",
+      "    - Grandchild",
+    ],
+  });
+}
+
+function blockUxSource({ paragraph, list }: { paragraph: string; list: string[] }): string {
+  return [
+    "# Block UX Acceptance",
+    "",
+    paragraph,
+    "",
+    ...list,
+    "",
+    "Alpha paragraph.",
+    "",
+    "Beta paragraph.",
+    "",
+  ].join("\n");
 }
 
 function collectionFixture(): string {
