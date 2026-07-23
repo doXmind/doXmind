@@ -7,19 +7,35 @@ const { createWindowLifecycle } = require("../../../electron/window-lifecycle.js
   createWindowLifecycle: typeof import("../../../electron/window-lifecycle.js").createWindowLifecycle;
 };
 
+class FakeWebContents extends EventEmitter {
+  constructor(readonly id: number) {
+    super();
+  }
+
+  isDestroyed() {
+    return false;
+  }
+}
+
 class FakeWindow extends EventEmitter {
   _doxmindClosing = false;
-  readonly webContents: { id: number };
+  readonly webContents: FakeWebContents;
   private destroyed = false;
 
   constructor(id: number) {
     super();
-    this.webContents = { id };
+    this.webContents = new FakeWebContents(id);
   }
 
   close() {
-    const event = { preventDefault: vi.fn() };
+    let prevented = false;
+    const event = {
+      preventDefault: vi.fn(() => {
+        prevented = true;
+      }),
+    };
     this.emit("close", event);
+    if (!prevented) this.destroy();
     return event;
   }
 
@@ -111,5 +127,82 @@ describe("Electron window lifecycle", () => {
     const finalQuitEvent = { preventDefault: vi.fn() };
     lifecycle.requestQuit(finalQuitEvent);
     expect(finalQuitEvent.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("quits immediately when the renderer is already gone", () => {
+    const deliver = vi.fn();
+    const quit = vi.fn();
+    const win = new FakeWindow(1);
+    const lifecycle = createWindowLifecycle({
+      deliver,
+      getAllWindows: () => (win.isDestroyed() ? [] : [win]),
+      quit,
+    });
+
+    lifecycle.attachCloseToSave(win);
+    win.webContents.emit("render-process-gone", {}, { reason: "killed", exitCode: 9 });
+    const quitEvent = { preventDefault: vi.fn() };
+    lifecycle.requestQuit(quitEvent);
+
+    expect(deliver).not.toHaveBeenCalled();
+    expect(win.isDestroyed()).toBe(true);
+    expect(quit).toHaveBeenCalledOnce();
+  });
+
+  it("closes immediately from the window controls when the renderer is gone", () => {
+    const deliver = vi.fn();
+    const win = new FakeWindow(1);
+    const lifecycle = createWindowLifecycle({
+      deliver,
+      getAllWindows: () => (win.isDestroyed() ? [] : [win]),
+      quit: vi.fn(),
+    });
+
+    lifecycle.attachCloseToSave(win);
+    win.webContents.emit("render-process-gone", {}, { reason: "killed", exitCode: 9 });
+    const closeEvent = win.close();
+
+    expect(closeEvent.preventDefault).not.toHaveBeenCalled();
+    expect(deliver).not.toHaveBeenCalled();
+    expect(win.isDestroyed()).toBe(true);
+  });
+
+  it("closes immediately when webContents was destroyed without a crash event", () => {
+    const deliver = vi.fn();
+    const win = new FakeWindow(1);
+    const lifecycle = createWindowLifecycle({
+      deliver,
+      getAllWindows: () => (win.isDestroyed() ? [] : [win]),
+      quit: vi.fn(),
+    });
+
+    lifecycle.attachCloseToSave(win);
+    win.webContents.emit("destroyed");
+    const closeEvent = win.close();
+
+    expect(closeEvent.preventDefault).not.toHaveBeenCalled();
+    expect(deliver).not.toHaveBeenCalled();
+    expect(win.isDestroyed()).toBe(true);
+  });
+
+  it("finishes a pending close if the renderer disappears before replying", () => {
+    const deliver = vi.fn();
+    const quit = vi.fn();
+    const win = new FakeWindow(1);
+    const lifecycle = createWindowLifecycle({
+      deliver,
+      getAllWindows: () => (win.isDestroyed() ? [] : [win]),
+      quit,
+    });
+
+    lifecycle.attachCloseToSave(win);
+    win.close();
+    expect(deliver).toHaveBeenCalledOnce();
+    expect(win.isDestroyed()).toBe(false);
+
+    win.webContents.emit("render-process-gone", {}, { reason: "killed", exitCode: 9 });
+
+    expect(win.isDestroyed()).toBe(true);
+    expect(quit).not.toHaveBeenCalled();
   });
 });

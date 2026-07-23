@@ -36,6 +36,7 @@ const {
 } = require("./renderer-boundary");
 const { WindowRegistry, normalizeOpenPath } = require("./window-registry");
 const menus = require("./menus");
+const { attachRendererRecovery } = require("./renderer-recovery");
 const { createWindowLifecycle } = require("./window-lifecycle");
 const { createWorkspaceWatchers } = require("./workspace-watchers");
 const { exportPagePdf } = require("./local-pdf-export");
@@ -87,7 +88,67 @@ function urlForTarget(target) {
   return base;
 }
 
-function createWindow(target) {
+function targetForRecovery(win, fallback) {
+  if (win.isDestroyed()) return fallback;
+  return registry.get(win.webContents.id) ?? fallback;
+}
+
+function logRendererFailure(failure) {
+  console.error(`[doxmind] renderer failure (${failure.kind})`, {
+    reason: failure.reason,
+    exitCode: failure.exitCode,
+    errorCode: failure.errorCode,
+  });
+}
+
+function replaceFailedWindow(win, target, recoveryAttempt) {
+  const replacement = createWindow(targetForRecovery(win, target), recoveryAttempt);
+  windowLifecycle.closeWindowNow(win);
+  return replacement;
+}
+
+function recoverRendererWindow({ win, target, recoveryAttempt, failure }) {
+  logRendererFailure(failure);
+  replaceFailedWindow(win, target, recoveryAttempt);
+}
+
+function failRendererWindow({ win, target, failure }) {
+  logRendererFailure(failure);
+  const failedTarget = targetForRecovery(win, target);
+  void dialog
+    .showMessageBox({
+      type: "error",
+      title: "doXmind couldn't open",
+      message: "The editor process could not start.",
+      detail:
+        "doXmind retried once, but the editor is still unavailable. Your Markdown files were not modified.",
+      buttons: ["Retry", "Quit"],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    })
+    .then(({ response }) => {
+      if (win.isDestroyed()) return;
+      if (response === 0) {
+        replaceFailedWindow(win, failedTarget, 0);
+        return;
+      }
+      windowLifecycle.closeWindowNow(win);
+      app.quit();
+    })
+    .catch((error) => {
+      if (win.isDestroyed()) return;
+      console.error("[doxmind] renderer failure dialog failed:", error);
+      dialog.showErrorBox(
+        "doXmind couldn't open",
+        "The editor process could not start. Your Markdown files were not modified."
+      );
+      if (!win.isDestroyed()) windowLifecycle.closeWindowNow(win);
+      app.quit();
+    });
+}
+
+function createWindow(target, recoveryAttempt = 0) {
   const isMac = process.platform === "darwin";
   // macOS gets the frameless/vibrancy chrome the frontend's Electron CSS
   // expects; other platforms use a normal native frame (title bar + min/max/
@@ -151,8 +212,16 @@ function createWindow(target) {
     workspaceWatchers.remove(wcId);
   });
   windowLifecycle.attachCloseToSave(win);
+  const rendererRecovery = attachRendererRecovery({
+    win,
+    target,
+    recoveryAttempt,
+    recover: recoverRendererWindow,
+    fail: failRendererWindow,
+    close: (failedWindow) => windowLifecycle.closeWindowNow(failedWindow),
+  });
   win.once("ready-to-show", () => win.show());
-  win.loadURL(urlForTarget(target));
+  void win.loadURL(urlForTarget(target)).catch(rendererRecovery.handleLoadFailure);
   return win;
 }
 

@@ -23,9 +23,20 @@ function createWindowLifecycle({ deliver, getAllWindows, quit }) {
   }
 
   function attachCloseToSave(win) {
+    const markRendererGone = () => {
+      win._doxmindRendererGone = true;
+      if (win._doxmindClosing) return;
+      if (win._doxmindClosePending || quitAfterWindowsClose) closeWindowNow(win);
+    };
+    win.webContents.on("render-process-gone", markRendererGone);
+    win.webContents.on("destroyed", markRendererGone);
     win.on("closed", maybeQuitAfterWindowsClose);
     win.on("close", (event) => {
       if (win._doxmindClosing) return;
+      if (win._doxmindRendererGone || win.webContents.isDestroyed()) {
+        win._doxmindClosing = true;
+        return;
+      }
       event.preventDefault();
       if (win._doxmindClosePending) return;
       win._doxmindClosePending = true;
