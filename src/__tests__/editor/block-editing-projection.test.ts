@@ -37,6 +37,15 @@ describe("BlockEditingProjection", () => {
     expect(projection.toSource("Changed")).toBe("  - [x] Changed\r\n");
   });
 
+  it("keeps an inline image semantic inside a list payload", () => {
+    const projection = createBlockEditingProjection(
+      firstBlock("- Inline image: ![Smoke pixel](assets/smoke.png).\n\n")
+    );
+
+    expect(projection.editorText).toBe("Inline image: ![Smoke pixel](assets/smoke.png).");
+    expect(projection.sourcePrefix).toBe("- ");
+  });
+
   it.each([
     {
       source: "  +\tBullet\n",

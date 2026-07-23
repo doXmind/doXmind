@@ -34,6 +34,7 @@ export interface SemanticInlineEditorProps {
   readonly className?: string;
   readonly selection?: SemanticInlineSelection;
   readonly autoFocus?: boolean;
+  readonly highlightSelection?: boolean;
   readonly onSourceChange: (source: string, selection: SemanticInlineSelection) => void;
   readonly onSelectionChange?: (selection: SemanticInlineSelection, event?: Event) => void;
   readonly onKeyDown?: (
@@ -67,6 +68,7 @@ export function SemanticInlineEditor({
   className,
   selection,
   autoFocus = false,
+  highlightSelection = false,
   onSourceChange,
   onSelectionChange,
   onKeyDown,
@@ -81,6 +83,17 @@ export function SemanticInlineEditor({
   const pendingSelectionRef = useRef<SemanticInlineSelection | null>(null);
   const [restoreRevision, setRestoreRevision] = useState(0);
   const projection = useMemo(() => projectMarkdownInline(source), [source]);
+  const sourceSelection = useMemo(() => {
+    if (!highlightSelection || !selection) return null;
+    return {
+      from: Math.min(selection.anchor, selection.head),
+      to: Math.max(selection.anchor, selection.head),
+    };
+  }, [highlightSelection, selection]);
+  const visualSelection = useMemo(() => {
+    if (!sourceSelection || sourceSelection.from === sourceSelection.to) return null;
+    return projection.sourceRangeToVisible(sourceSelection);
+  }, [projection, sourceSelection]);
 
   const currentSourceSelection = useCallback(() => {
     const editor = editorRef.current;
@@ -272,6 +285,8 @@ export function SemanticInlineEditor({
           <SemanticSegment
             key={`${segment.sourceFrom}:${segment.sourceTo}:${segment.kind}`}
             segment={segment}
+            sourceSelection={sourceSelection}
+            visualSelection={visualSelection}
           />
         ))}
       </span>
@@ -279,8 +294,20 @@ export function SemanticInlineEditor({
   );
 }
 
-function SemanticSegment({ segment }: { segment: MarkdownInlineSegment }) {
+function SemanticSegment({
+  segment,
+  sourceSelection,
+  visualSelection,
+}: {
+  segment: MarkdownInlineSegment;
+  sourceSelection: { from: number; to: number } | null;
+  visualSelection: { from: number; to: number } | null;
+}) {
   if (segment.kind === "image") {
+    const selected =
+      sourceSelection !== null &&
+      sourceSelection.from < segment.sourceTo &&
+      sourceSelection.to > segment.sourceFrom;
     return (
       <span
         role="img"
@@ -292,8 +319,11 @@ function SemanticSegment({ segment }: { segment: MarkdownInlineSegment }) {
         data-source-to={segment.sourceTo}
         data-visible-from={segment.visibleFrom}
         data-visible-to={segment.visibleTo}
+        data-native-search-selection={selected ? "" : undefined}
         contentEditable={false}
-        className="mx-0.5 inline-flex h-6 w-6 select-all items-center justify-center rounded bg-muted text-muted-foreground"
+        className={`mx-0.5 inline-flex h-6 w-6 select-all items-center justify-center rounded text-muted-foreground ${
+          selected ? "bg-primary/20 ring-2 ring-primary/40" : "bg-muted"
+        }`}
       >
         <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
         <span className="sr-only">{"\uFFFC"}</span>
@@ -301,7 +331,26 @@ function SemanticSegment({ segment }: { segment: MarkdownInlineSegment }) {
     );
   }
 
-  let content: ReactNode = segment.text;
+  const selectedFrom = visualSelection
+    ? Math.max(segment.visibleFrom, visualSelection.from)
+    : segment.visibleTo;
+  const selectedTo = visualSelection
+    ? Math.min(segment.visibleTo, visualSelection.to)
+    : segment.visibleFrom;
+  const localFrom = Math.max(0, selectedFrom - segment.visibleFrom);
+  const localTo = Math.min(segment.text.length, selectedTo - segment.visibleFrom);
+  let content: ReactNode =
+    localFrom < localTo ? (
+      <>
+        {segment.text.slice(0, localFrom)}
+        <mark data-native-search-selection="" className="rounded-sm bg-primary/20 text-inherit">
+          {segment.text.slice(localFrom, localTo)}
+        </mark>
+        {segment.text.slice(localTo)}
+      </>
+    ) : (
+      segment.text
+    );
   if (segment.marks.code) content = <code>{content}</code>;
   if (segment.marks.bold) content = <strong>{content}</strong>;
   if (segment.marks.italic) content = <em>{content}</em>;

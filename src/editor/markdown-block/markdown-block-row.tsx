@@ -80,6 +80,8 @@ interface MarkdownBlockRowProps {
   index: number;
   count: number;
   active: boolean;
+  autoFocusEditor?: boolean;
+  highlightSelection?: boolean;
   keyboardEntry?: boolean;
   blockSelected?: boolean;
   blockSelectionFocus?: boolean;
@@ -156,6 +158,8 @@ export function MarkdownBlockRow({
   index,
   count,
   active,
+  autoFocusEditor = true,
+  highlightSelection = false,
   keyboardEntry = true,
   blockSelected = false,
   blockSelectionFocus = false,
@@ -250,7 +254,7 @@ export function MarkdownBlockRow({
     };
     const textarea = textareaRef.current;
     if (!textarea) return;
-    textarea.focus();
+    if (autoFocusEditor) textarea.focus();
     if (selection) {
       const anchor = Math.min(selection.anchor, textarea.value.length);
       const head = Math.min(selection.head, textarea.value.length);
@@ -260,7 +264,7 @@ export function MarkdownBlockRow({
     }
     textarea.style.height = "0px";
     textarea.style.height = `${Math.max(textarea.scrollHeight, 36)}px`;
-  }, [active, selection]);
+  }, [active, autoFocusEditor, selection]);
 
   useEffect(() => {
     if (blockSelectionFocus) rowRef.current?.focus();
@@ -671,7 +675,8 @@ export function MarkdownBlockRow({
                   describedBy={descriptionId}
                   source={source}
                   selection={selection}
-                  autoFocus
+                  autoFocus={autoFocusEditor}
+                  highlightSelection={highlightSelection}
                   className="native-block-textarea block min-w-0 flex-1 whitespace-pre-wrap break-words bg-transparent outline-none"
                   onSourceChange={(nextSource, nextSelection) => {
                     editorSelectionRef.current = nextSelection;

@@ -78,6 +78,12 @@ interface TransclusionIndexState {
   index: KnowledgeSourceCatalog | null;
 }
 
+interface MarkdownBlockSelectionRange {
+  blockId: string;
+  anchor: number;
+  head: number;
+}
+
 const defaultTransclusionServices: MarkdownTransclusionServices = {
   rebuild: async (root) => buildKnowledgeSourceCatalog(createStorageAdapter({ disk: { root } })),
 };
@@ -131,15 +137,14 @@ export function MarkdownBlockRuntime({
     focusId: string;
   } | null>(null);
   const [blockDropBeforeId, setBlockDropBeforeId] = useState<string | null | undefined>(undefined);
-  const [pendingSelection, setPendingSelection] = useState<{
-    blockId: string;
-    anchor: number;
-    head: number;
-  } | null>(null);
+  const [pendingSelection, setPendingSelection] = useState<MarkdownBlockSelectionRange | null>(
+    null
+  );
   const [hasExternalConflict, setHasExternalConflict] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchSelectionRef = useRef<MarkdownBlockSelectionRange | null>(null);
   const documentElementRef = useRef<HTMLDivElement>(null);
   const dragSessionRef = useRef<{
     pageId: string;
@@ -337,8 +342,20 @@ export function MarkdownBlockRuntime({
   }, [isSearchBarOpen]);
 
   useEffect(() => {
-    if (!isSearchBarOpen || searchMatches.length === 0) {
+    if (!isSearchBarOpen) {
+      searchSelectionRef.current = null;
       if (currentSearchIndex !== 0) setCurrentSearchIndex(0);
+      return;
+    }
+    if (searchMatches.length === 0) {
+      if (currentSearchIndex !== 0) setCurrentSearchIndex(0);
+      const searchSelection = searchSelectionRef.current;
+      searchSelectionRef.current = null;
+      if (searchSelection) {
+        setPendingSelection((current) =>
+          sameBlockSelectionRange(current, searchSelection) ? null : current
+        );
+      }
       return;
     }
     if (currentSearchIndex >= searchMatches.length) {
@@ -349,11 +366,13 @@ export function MarkdownBlockRuntime({
     const match = searchMatches[currentSearchIndex];
     setActiveBlockId(match.blockId);
     setBlockSelection(null);
-    setPendingSelection({
+    const nextSelection = {
       blockId: match.blockId,
       anchor: match.anchor,
       head: match.head,
-    });
+    };
+    searchSelectionRef.current = nextSelection;
+    setPendingSelection(nextSelection);
     const frame = requestAnimationFrame(() => {
       const element = Array.from(
         documentElementRef.current?.querySelectorAll<HTMLElement>("[data-block-id]") ?? []
@@ -1069,6 +1088,13 @@ export function MarkdownBlockRuntime({
     "--editor-outline-gutter": `${reservedRightInset}px`,
   } as CSSProperties;
   const wordCount = countWords(snapshot.markdown);
+  const currentSearchMatch = searchMatches[currentSearchIndex];
+  const searchSelectionBlockId =
+    isSearchBarOpen &&
+    currentSearchMatch &&
+    sameBlockSelectionRange(pendingSelection, currentSearchMatch)
+      ? currentSearchMatch.blockId
+      : null;
 
   const reloadExternalMarkdown = () => {
     const markdown = externalMarkdownRef.current;
@@ -1259,6 +1285,8 @@ export function MarkdownBlockRuntime({
                 index={index}
                 count={snapshot.blocks.length}
                 active={activeBlockId === block.id}
+                autoFocusEditor={!isSearchBarOpen}
+                highlightSelection={searchSelectionBlockId === block.id}
                 keyboardEntry={!activeBlockId && !blockSelection && index === 0}
                 blockSelected={selectedBlockIdSet.has(block.id)}
                 blockSelectionFocus={blockSelection?.focusId === block.id}
@@ -1266,6 +1294,7 @@ export function MarkdownBlockRuntime({
                 dropBefore={blockDropBeforeId === block.id}
                 selection={pendingSelection?.blockId === block.id ? pendingSelection : undefined}
                 onActivate={(blockId) => {
+                  if (isSearchBarOpen) setSearchBarOpen(false);
                   setActiveBlockId(blockId);
                   setBlockSelection(null);
                   setPendingSelection(null);
@@ -1677,10 +1706,21 @@ function normalizeWorkspacePath(path: string): string {
   return path.replaceAll("\\", "/").replace(/^\.\//, "").normalize("NFC").toLowerCase();
 }
 
-interface MarkdownSearchMatch {
-  blockId: string;
-  anchor: number;
-  head: number;
+type MarkdownSearchMatch = MarkdownBlockSelectionRange;
+
+function sameBlockSelectionRange(
+  left: MarkdownBlockSelectionRange | null | undefined,
+  right: MarkdownBlockSelectionRange | null | undefined
+): boolean {
+  return (
+    left !== null &&
+    left !== undefined &&
+    right !== null &&
+    right !== undefined &&
+    left.blockId === right.blockId &&
+    left.anchor === right.anchor &&
+    left.head === right.head
+  );
 }
 
 function findMarkdownSearchMatches(

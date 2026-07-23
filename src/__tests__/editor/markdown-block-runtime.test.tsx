@@ -845,12 +845,12 @@ describe("MarkdownBlockRuntime", () => {
     expect(screen.getByText("quoted text").tagName).toBe("BLOCKQUOTE");
   });
 
-  it("finds source text and moves the textarea selection between matching Blocks", () => {
+  it("finds source text without moving focus away from Search", () => {
     render(
       <MarkdownBlockRuntime
         file={{
           ...file,
-          content: "First Needle\r\n\r\nSecond needle\r\n",
+          content: "First **Needle**\r\n\r\nSecond needle\r\n",
         }}
       />
     );
@@ -863,21 +863,72 @@ describe("MarkdownBlockRuntime", () => {
 
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
     expect(searchInput).toHaveFocus();
-    let textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
-    expect(textarea).toHaveValue("First Needle");
-    expect(textarea.selectionStart).toBe(6);
-    expect(textarea.selectionEnd).toBe(12);
+    expect(screen.getByLabelText("Markdown block")).toHaveAttribute("data-native-semantic-editor");
+    expect(document.querySelector("[data-native-search-selection]")).toHaveTextContent("Needle");
+
+    fireEvent.change(searchInput, { target: { value: "missing" } });
+    expect(screen.getByText("No matches")).toBeInTheDocument();
+    expect(document.querySelector("[data-native-search-selection]")).not.toBeInTheDocument();
+    expect(searchInput).toHaveFocus();
+
+    fireEvent.change(searchInput, { target: { value: "needle" } });
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+    expect(document.querySelector("[data-native-search-selection]")).toHaveTextContent("Needle");
 
     fireEvent.click(screen.getByRole("button", { name: "Next result" }));
     expect(screen.getByText("2 of 2")).toBeInTheDocument();
-    textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    expect(searchInput).toHaveFocus();
+    const textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
     expect(textarea).toHaveValue("Second needle");
     expect(textarea.selectionStart).toBe(7);
     expect(textarea.selectionEnd).toBe(13);
 
     fireEvent.click(screen.getByRole("button", { name: "Previous result" }));
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
-    expect(screen.getByLabelText("Markdown block")).toHaveValue("First Needle");
+    expect(searchInput).toHaveFocus();
+    expect(screen.getByLabelText("Markdown block")).toHaveAttribute("data-native-semantic-editor");
+    expect(document.querySelector("[data-native-search-selection]")).toHaveTextContent("Needle");
+  });
+
+  it("closes Search and focuses a Block activated explicitly", () => {
+    render(
+      <MarkdownBlockRuntime
+        file={{ ...file, content: "First **needle**\r\n\r\nOther block\r\n" }}
+      />
+    );
+
+    act(() => useLayoutStore.getState().setSearchBarOpen(true));
+    const searchInput = screen.getByLabelText("Search text");
+    fireEvent.change(searchInput, { target: { value: "needle" } });
+    expect(searchInput).toHaveFocus();
+
+    fireEvent.click(screen.getByText("Other block"));
+
+    expect(screen.queryByRole("search", { name: "Find in Page" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("Other block");
+    expect(screen.getByLabelText("Markdown block")).toHaveFocus();
+  });
+
+  it("restores an editing selection after opening and closing empty Search", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "## Hello world\r\n" }} />
+    );
+
+    fireEvent.click(screen.getByRole("heading", { name: "Hello world" }));
+    const textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    textarea.setSelectionRange(0, 5);
+    fireEvent.select(textarea);
+    fireEvent.click(screen.getByRole("button", { name: "Bold" }));
+
+    act(() => useLayoutStore.getState().setSearchBarOpen(true));
+    expect(screen.getByLabelText("Search text")).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+
+    expect(screen.getByLabelText("Markdown block")).toHaveFocus();
+    expect(container.querySelector("[data-native-semantic-editor] strong")).toHaveTextContent(
+      "Hello"
+    );
+    expect(window.getSelection()?.toString()).toBe("Hello");
   });
 
   it("maps a search match after CRLF to normalized textarea offsets", () => {

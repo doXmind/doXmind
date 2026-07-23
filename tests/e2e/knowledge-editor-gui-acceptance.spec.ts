@@ -64,8 +64,10 @@ test("filters and drives the Slash menu entirely from the keyboard", async ({ pa
   await screenshot(page, "slash-menu-keyboard.png");
   await page.keyboard.press("Enter");
   editor = page.locator("[data-native-block-editor]");
-  await expect(editor).toHaveValue("## ");
-  await editor.type("Acceptance heading");
+  await expectSource(slashPath, "## \n\nBeta\n\nGamma\n");
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveValue("");
+  await page.keyboard.type("Acceptance heading");
   await expectSource(slashPath, "## Acceptance heading\n\nBeta\n\nGamma\n");
 
   await page.getByText("Beta", { exact: true }).click();

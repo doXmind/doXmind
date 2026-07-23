@@ -114,6 +114,51 @@ describe("SemanticInlineEditor", () => {
     expect(onSelectionChange).toHaveBeenLastCalledWith(selectedSource, expect.any(Event));
   });
 
+  it("highlights an explicit selection without stealing focus from an external control", () => {
+    const onSourceChange = vi.fn();
+    const { rerender } = render(
+      <>
+        <input aria-label="Search text" />
+        <SemanticInlineEditor source="A **bold** Z" onSourceChange={onSourceChange} />
+      </>
+    );
+    const search = screen.getByRole("textbox", { name: "Search text" });
+    search.focus();
+
+    rerender(
+      <>
+        <input aria-label="Search text" />
+        <SemanticInlineEditor
+          source="A **bold** Z"
+          selection={{ anchor: "A **b".length, head: "A **bol".length }}
+          highlightSelection
+          onSourceChange={onSourceChange}
+        />
+      </>
+    );
+
+    expect(search).toHaveFocus();
+    expect(document.querySelector("[data-native-search-selection]")).toHaveTextContent("ol");
+    expect(search).toHaveFocus();
+  });
+
+  it("highlights an atomic image when a source-only target match is active", () => {
+    const source = "Before ![Map](assets/campus.png) after";
+    const from = source.indexOf("campus");
+    render(
+      <SemanticInlineEditor
+        source={source}
+        selection={{ anchor: from, head: from + "campus".length }}
+        highlightSelection
+        onSourceChange={vi.fn()}
+      />
+    );
+
+    expect(document.querySelector("[data-markdown-inline-image]")).toHaveAttribute(
+      "data-native-search-selection"
+    );
+  });
+
   it("defers source commits during IME composition and emits lifecycle callbacks", () => {
     const onSourceChange = vi.fn();
     const onCompositionStart = vi.fn();
