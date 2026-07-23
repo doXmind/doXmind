@@ -603,6 +603,197 @@ try {
     }
   );
 
+  await check("recovers a window that never reaches its first paint", async () => {
+    const initialWindowCount = electronApp.windows().length;
+    await electronApp.evaluate(({ app }) => {
+      globalThis.__DOXMIND_GUI_STARTUP_FAILURE__ = { ids: [], fired: 0 };
+      app.once("browser-window-created", (_event, win) => {
+        globalThis.__DOXMIND_GUI_STARTUP_FAILURE__.ids.push(win.webContents.id);
+        const originalEmit = win.emit;
+        win.emit = function (eventName, ...args) {
+          if (eventName === "ready-to-show") return false;
+          return originalEmit.call(this, eventName, ...args);
+        };
+        win.loadURL = () => {
+          globalThis.__DOXMIND_GUI_STARTUP_FAILURE__.fired += 1;
+          return new Promise(() => undefined);
+        };
+      });
+    });
+
+    let recoveredWindow;
+    try {
+      recoveredWindow = await waitForNewInteractiveWindow(
+        () => page.evaluate(() => window.__DOXMIND_DESKTOP__.invoke("open_new_window")),
+        (candidate) =>
+          candidate.waitForFunction(
+            () =>
+              typeof window.__DOXMIND_DESKTOP__?.invoke === "function" &&
+              Boolean(document.body?.innerText.trim()),
+            undefined,
+            { timeout: 30_000 }
+          )
+      );
+    } catch (error) {
+      const evidence = await electronApp.evaluate(({ BrowserWindow }) => ({
+        failure: globalThis.__DOXMIND_GUI_STARTUP_FAILURE__,
+        windows: BrowserWindow.getAllWindows().map((win) => ({
+          id: win.webContents.id,
+          url: win.webContents.getURL(),
+          visible: win.isVisible(),
+          destroyed: win.isDestroyed(),
+          loading: win.webContents.isLoading(),
+        })),
+      }));
+      throw new Error(`${error.message}\n${JSON.stringify(evidence)}`);
+    }
+    const recoveredControl = recoveredWindow.locator("button:visible").first();
+    await recoveredControl.waitFor({ state: "visible" });
+    await recoveredControl.focus();
+    assert.equal(
+      await recoveredControl.evaluate((element) => element === document.activeElement),
+      true
+    );
+    assert.equal(
+      await recoveredWindow.evaluate(() =>
+        window.__DOXMIND_DESKTOP__.invoke("current_window_open_target")
+      ),
+      null
+    );
+    const startupEvidence = await electronApp.evaluate(({ BrowserWindow }) => ({
+      failure: globalThis.__DOXMIND_GUI_STARTUP_FAILURE__,
+      liveIds: BrowserWindow.getAllWindows().map((win) => win.webContents.id),
+    }));
+    assert.equal(startupEvidence.failure.fired, 1);
+    assert.equal(startupEvidence.failure.ids.length, 1);
+    assert.equal(startupEvidence.liveIds.includes(startupEvidence.failure.ids[0]), false);
+    await electronApp.evaluate(() => {
+      delete globalThis.__DOXMIND_GUI_STARTUP_FAILURE__;
+    });
+    await waitForWindowCount(initialWindowCount + 1, 30_000);
+    await recoveredWindow.close();
+    await waitForWindowCount(initialWindowCount);
+  });
+
+  await check("shows Retry or Quit when the automatic startup rebuild also dies", async () => {
+    const initialWindowCount = electronApp.windows().length;
+    await electronApp.evaluate(({ app, dialog }) => {
+      globalThis.__DOXMIND_GUI_ORIGINAL_FAILURE_DIALOG__ = dialog.showMessageBox;
+      globalThis.__DOXMIND_GUI_FAILURE_DIALOG_CALLS__ = [];
+      globalThis.__DOXMIND_GUI_STARTUP_FAILURE__ = { ids: [], fired: 0 };
+      dialog.showMessageBox = async (options) => {
+        globalThis.__DOXMIND_GUI_FAILURE_DIALOG_CALLS__.push(options);
+        return { response: 0, checkboxChecked: false };
+      };
+
+      let failuresRemaining = 2;
+      const failBeforeFirstPaint = (_event, win) => {
+        failuresRemaining -= 1;
+        globalThis.__DOXMIND_GUI_STARTUP_FAILURE__.ids.push(win.webContents.id);
+        win.loadURL = async () => {
+          globalThis.__DOXMIND_GUI_STARTUP_FAILURE__.fired += 1;
+          throw new Error("injected startup failure");
+        };
+        if (failuresRemaining === 0) {
+          app.removeListener("browser-window-created", failBeforeFirstPaint);
+        }
+      };
+      globalThis.__DOXMIND_GUI_FAILURE_LISTENER__ = failBeforeFirstPaint;
+      app.on("browser-window-created", failBeforeFirstPaint);
+    });
+
+    try {
+      const recoveredWindow = await waitForNewInteractiveWindow(
+        () => page.evaluate(() => window.__DOXMIND_DESKTOP__.invoke("open_new_window")),
+        (candidate) =>
+          candidate.waitForFunction(
+            () =>
+              typeof window.__DOXMIND_DESKTOP__?.invoke === "function" &&
+              Boolean(document.body?.innerText.trim()),
+            undefined,
+            { timeout: 30_000 }
+          )
+      );
+      const failureEvidence = await electronApp.evaluate(({ BrowserWindow }) => ({
+        startup: globalThis.__DOXMIND_GUI_STARTUP_FAILURE__,
+        dialogCalls: globalThis.__DOXMIND_GUI_FAILURE_DIALOG_CALLS__,
+        liveIds: BrowserWindow.getAllWindows().map((win) => win.webContents.id),
+      }));
+      const dialogCalls = failureEvidence.dialogCalls;
+      assert.equal(failureEvidence.startup.fired, 2);
+      assert.equal(failureEvidence.startup.ids.length, 2);
+      for (const failedId of failureEvidence.startup.ids) {
+        assert.equal(failureEvidence.liveIds.includes(failedId), false);
+      }
+      assert.equal(dialogCalls.length, 1);
+      assert.deepEqual(dialogCalls[0].buttons, ["Retry", "Quit"]);
+      assert.equal(dialogCalls[0].type, "error");
+      assert.equal(dialogCalls[0].defaultId, 0);
+      assert.equal(dialogCalls[0].cancelId, 1);
+      assert.equal(dialogCalls[0].noLink, true);
+      assert.match(dialogCalls[0].detail, /Markdown files were not modified/);
+      await waitForWindowCount(initialWindowCount + 1, 30_000);
+      await recoveredWindow.close();
+      await waitForWindowCount(initialWindowCount);
+    } finally {
+      await electronApp.evaluate(({ app, dialog }) => {
+        if (globalThis.__DOXMIND_GUI_FAILURE_LISTENER__) {
+          app.removeListener("browser-window-created", globalThis.__DOXMIND_GUI_FAILURE_LISTENER__);
+        }
+        if (globalThis.__DOXMIND_GUI_ORIGINAL_FAILURE_DIALOG__) {
+          dialog.showMessageBox = globalThis.__DOXMIND_GUI_ORIGINAL_FAILURE_DIALOG__;
+        }
+        delete globalThis.__DOXMIND_GUI_FAILURE_LISTENER__;
+        delete globalThis.__DOXMIND_GUI_ORIGINAL_FAILURE_DIALOG__;
+        delete globalThis.__DOXMIND_GUI_FAILURE_DIALOG_CALLS__;
+        delete globalThis.__DOXMIND_GUI_STARTUP_FAILURE__;
+      });
+    }
+  });
+
+  await check("recovers a force-crashed Renderer into an interactive Page window", async () => {
+    const crashedPage = page;
+    const expectedWindowCount = electronApp.windows().length;
+    assert.equal(expectedWindowCount, 1);
+    const crashedWebContentsId = await electronApp.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      if (!win || win.isDestroyed()) throw new Error("no live BrowserWindow to crash");
+      return win.webContents.id;
+    });
+    const replacementPromise = electronApp.waitForEvent("window", { timeout: 30_000 });
+    const crashedPromise = crashedPage.waitForEvent("crash", { timeout: 30_000 });
+
+    await electronApp.evaluate(({ BrowserWindow }, id) => {
+      const win = BrowserWindow.getAllWindows().find(
+        (candidate) => candidate.webContents.id === id
+      );
+      if (!win) throw new Error(`BrowserWindow ${id} disappeared before crash injection`);
+      win.webContents.forcefullyCrashRenderer();
+    }, crashedWebContentsId);
+
+    page = await replacementPromise;
+    page.setDefaultTimeout(10_000);
+    page.on("pageerror", (error) => pageErrors.push(error.stack ?? error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    await crashedPromise;
+    await page.waitForLoadState("domcontentloaded");
+    await page.getByTestId("markdown-block-runtime").waitFor({ state: "visible", timeout: 30_000 });
+    await page.getByText("First block. autosaved", { exact: true }).click();
+    await page.locator("[data-native-block-editor]").waitFor({ state: "visible" });
+    const recoveredTarget = await page.evaluate(() =>
+      window.__DOXMIND_DESKTOP__.invoke("current_window_open_target")
+    );
+    assert.deepEqual(recoveredTarget, { kind: "file", path: pagePath });
+    await waitForWindowCount(expectedWindowCount, 30_000);
+    const recoveredWebContentsId = await electronApp.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      return win?.webContents.id ?? null;
+    });
+    assert.notEqual(recoveredWebContentsId, crashedWebContentsId);
+  });
+
   assert.deepEqual(pageErrors, [], pageErrors.join("\n"));
   assert.deepEqual(consoleErrors, [], consoleErrors.join("\n"));
   await writeSuccessReport();
@@ -646,6 +837,38 @@ async function waitForWindowCount(expected, timeout = 10_000) {
   throw new Error(
     `timed out waiting for ${expected} Electron window(s); found ${electronApp.windows().length}`
   );
+}
+
+async function waitForNewInteractiveWindow(action, ready, timeout = 30_000) {
+  let timer;
+  let onWindow;
+  let candidates = 0;
+  const observed = new Promise((resolve, reject) => {
+    onWindow = (candidate) => {
+      candidates += 1;
+      void ready(candidate)
+        .then(() => resolve(candidate))
+        .catch(() => undefined);
+    };
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `timed out waiting for an interactive replacement window; observed ${candidates} candidate(s)`
+          )
+        ),
+      timeout
+    );
+    electronApp.on("window", onWindow);
+  });
+
+  try {
+    await action();
+    return await observed;
+  } finally {
+    clearTimeout(timer);
+    electronApp.off("window", onWindow);
+  }
 }
 
 async function waitForThemeMode(expected) {
