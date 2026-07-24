@@ -146,6 +146,8 @@ export type MarkdownBlockCommand =
       type: "insertAfter";
       blockId: string;
       raw?: string;
+      /** Insert above the anchor instead of below it (Notion's ⌥-click on the gutter `+`). */
+      before?: boolean;
     }
   | {
       type: "setTaskChecked";
@@ -698,18 +700,20 @@ export class MarkdownBlockDocument {
 
     if (command.type === "split") {
       const { content, separator } = splitBlockSource(block.raw);
-      const splitTo = command.to ?? command.at;
-      if (command.at < 0 || splitTo < command.at || splitTo > content.length) {
+      if (command.at < 0 || (command.to ?? command.at) < command.at) {
         throw new RangeError("split position is outside the block");
       }
       const listItem = listItemSyntax(block.raw, block.depth !== undefined);
-      if (listItem && command.at < listItem.contentFrom) {
-        throw new RangeError("a list item cannot split inside its source marker");
-      }
+      // A caret can legitimately sit before a Block's source marker: the marker is hidden
+      // from the visible projection, so visible offset 0 maps to source offset 0. Clamp into
+      // the content region instead of rejecting the split.
+      const contentFloor = listItem?.contentFrom ?? blockquoteSyntax(block.raw)?.contentFrom ?? 0;
+      const at = Math.min(Math.max(command.at, contentFloor), content.length);
+      const splitTo = Math.min(Math.max(command.to ?? command.at, at), content.length);
       if (
         listItem &&
         content.slice(listItem.contentFrom).length === 0 &&
-        command.at === listItem.contentFrom &&
+        at === listItem.contentFrom &&
         splitTo === listItem.contentFrom
       ) {
         this.recordHistory();
@@ -728,27 +732,24 @@ export class MarkdownBlockDocument {
         };
       }
       const blockquote = blockquoteSyntax(block.raw);
-      if (blockquote && command.at < blockquote.contentFrom) {
-        throw new RangeError("a blockquote cannot split inside its source marker");
-      }
-      if (blockquote && command.at < content.length) {
+      if (blockquote && at < content.length) {
         this.recordHistory();
         const newline = preferredLineEnding(block.raw, this.markdown);
         const inserted = newline + blockquote.prefix;
         sourceBlocks[index] = blockFromSource(
-          content.slice(0, command.at) + inserted + content.slice(splitTo) + separator,
+          content.slice(0, at) + inserted + content.slice(splitTo) + separator,
           block.id
         );
         this.commitSources(sourceBlocks);
         this.revision += 1;
-        const cursor = command.at + inserted.length;
+        const cursor = at + inserted.length;
         return {
           snapshot: this.getSnapshot(),
           selection: { blockId: block.id, anchor: cursor, head: cursor },
         };
       }
       this.recordHistory();
-      const leftContent = content.slice(0, command.at);
+      const leftContent = content.slice(0, at);
       const rightContent = content.slice(splitTo);
       const rightRaw = listItem ? listItem.nextPrefix + rightContent : rightContent;
       let left = reclassifyEditableSource(block, leftContent);
@@ -803,7 +804,11 @@ export class MarkdownBlockDocument {
         isMarkdownSourceOnlyBlockKind(previous.kind) ||
         isMarkdownSourceOnlyBlockKind(block.kind)
       ) {
-        throw new Error("unsupported blocks cannot be merged as text");
+        // Backspace at the start of a Block whose neighbour has no text representation is a
+        // no-op, not an error: a divider, image, table or diagram cannot absorb text. Returning
+        // the snapshot unchanged keeps the keystroke inert instead of throwing out of a key
+        // handler and tearing down the editing surface.
+        return { snapshot: this.getSnapshot() };
       }
       this.recordHistory();
       const previousParts = splitBlockSource(previous.raw);
@@ -976,26 +981,40 @@ export class MarkdownBlockDocument {
 
     if (command.type === "insertAfter") {
       this.recordHistory();
-      const raw = command.raw ?? "";
-      const inserted: MarkdownBlockSource = {
-        id: `block-${this.nextBlockNumber}`,
-        kind: "paragraph",
-        raw,
-        editable: true,
-      };
-      this.nextBlockNumber += 1;
       const newline = preferredLineEnding(
         block.raw,
         sourceBlocks[index + 1]?.raw ?? "",
         this.markdown
       );
-      sourceBlocks[index] = ensureBlockSeparator(block, newline);
-      const normalized =
-        index < sourceBlocks.length - 1 ? ensureBlockSeparator(inserted, newline) : inserted;
-      sourceBlocks.splice(index + 1, 0, normalized);
+      // Inserting next to a list item continues the list at the anchor's own depth. Emitting a
+      // bare paragraph instead used to reflow every following sibling: the plain line ended the
+      // list, so `  - c` reparsed at depth 0 and the whole subtree jumped 24px left.
+      const listItem = listItemSyntax(block.raw, block.depth !== undefined);
+      const raw = command.raw ?? (listItem ? listItem.nextPrefix : "");
+      const inserted = blockFromSource(
+        raw,
+        `block-${this.nextBlockNumber}`,
+        listItem ? block.depth : undefined
+      );
+      this.nextBlockNumber += 1;
+      if (command.before) {
+        const previous = index > 0 ? sourceBlocks[index - 1] : null;
+        const joined = ensureBlockBoundary(inserted, block, newline);
+        sourceBlocks.splice(index, 1, joined, block);
+        if (previous) sourceBlocks[index - 1] = ensureBlockBoundary(previous, joined, newline);
+      } else {
+        // Land after the anchor's whole subtree so a new sibling never wedges itself between a
+        // parent list item and its own children.
+        const subtreeEnd = listDescendantRangeEnd(sourceBlocks, index, 1);
+        const previous = sourceBlocks[subtreeEnd - 1];
+        const next = sourceBlocks[subtreeEnd] ?? null;
+        const joined = next ? ensureBlockBoundary(inserted, next, newline) : inserted;
+        sourceBlocks[subtreeEnd - 1] = ensureBlockBoundary(previous, joined, newline);
+        sourceBlocks.splice(subtreeEnd, 0, joined);
+      }
       this.commitSources(sourceBlocks);
       this.revision += 1;
-      const cursor = splitBlockSource(raw).content.length;
+      const cursor = splitBlockSource(inserted.raw).content.length;
       return {
         snapshot: this.getSnapshot(),
         selection: { blockId: inserted.id, anchor: cursor, head: cursor },
@@ -1190,18 +1209,6 @@ function reprojectListDepths(blocks: MarkdownBlockSource[]): void {
     block.depth = depth;
     stack.splice(depth, stack.length - depth, syntax);
   }
-}
-
-function ensureBlockSeparator(
-  block: MarkdownBlockSource,
-  newline: "\r\n" | "\n" | "\r"
-): MarkdownBlockSource {
-  const { content, separator } = splitBlockSource(block.raw);
-  if (countLineEndings(separator) >= 2) return block;
-  return {
-    ...block,
-    raw: `${content}${newline}${newline}`,
-  };
 }
 
 function normalizeNeighborBoundaries(

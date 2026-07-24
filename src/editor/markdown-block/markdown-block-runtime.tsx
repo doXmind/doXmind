@@ -4,6 +4,7 @@ import {
   type CSSProperties,
   type DragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -22,12 +23,15 @@ import { createMarkdownInlineFormatEdit } from "@/editor/markdown-block/markdown
 import { editableMarkdownBlockSource } from "@/editor/markdown-block/markdown-block-source";
 import {
   MarkdownBlockRow,
+  sourceOffsetAtPoint,
   type MarkdownCollectionContext,
   type MarkdownImageContext,
   type MarkdownWikiEmbedContext,
 } from "@/editor/markdown-block/markdown-block-row";
+import { projectMarkdownInline } from "@/editor/markdown-block/markdown-inline-projection";
 import { parseWikiEmbedBlock, wikiEmbedIdentity } from "@/editor/markdown-block/wiki-embed";
 import {
+  markdownSlashCommandCaret,
   markdownSlashCommandSource,
   type MarkdownSlashCommandId,
 } from "@/editor/markdown-block/slash-commands";
@@ -848,22 +852,83 @@ export function MarkdownBlockRuntime({
     [apply]
   );
 
-  const navigateBlock = useCallback((blockId: string, direction: -1 | 1): boolean => {
-    const blocks = documentRef.current.getSnapshot().blocks;
-    const index = blocks.findIndex((block) => block.id === blockId);
-    if (index < 0) return false;
-    let targetIndex = index + direction;
-    while (targetIndex >= 0 && targetIndex < blocks.length && !blocks[targetIndex].editable) {
-      targetIndex += direction;
-    }
-    const target = blocks[targetIndex];
-    if (!target?.editable) return false;
-    const source = normalizeEditorLineEndings(createBlockEditingProjection(target).editorText);
-    const offset = direction < 0 ? source.length : 0;
-    setActiveBlockId(target.id);
-    setPendingSelection({ blockId: target.id, anchor: offset, head: offset });
-    return true;
-  }, []);
+  const navigateBlock = useCallback(
+    (blockId: string, direction: -1 | 1, caretX?: number): boolean => {
+      const blocks = documentRef.current.getSnapshot().blocks;
+      const index = blocks.findIndex((block) => block.id === blockId);
+      if (index < 0) return false;
+      let targetIndex = index + direction;
+      while (targetIndex >= 0 && targetIndex < blocks.length && !blocks[targetIndex].editable) {
+        targetIndex += direction;
+      }
+      const target = blocks[targetIndex];
+      if (!target?.editable) return false;
+      const source = normalizeEditorLineEndings(createBlockEditingProjection(target).editorText);
+      // A vertical crossing keeps the caret's column. The destination Block is still rendered as a
+      // preview at this point, so its glyph geometry can be hit-tested directly to find the offset
+      // nearest the column the caret left from — which is how a crossing feels in one long field.
+      // Horizontal crossings pass no x and land on the Block's source edge.
+      const goalOffset =
+        caretX === undefined
+          ? null
+          : caretOffsetOnBlockEdge(target.id, caretX, direction < 0 ? "last" : "first", source);
+      const offset = goalOffset ?? (direction < 0 ? source.length : 0);
+      setActiveBlockId(target.id);
+      setPendingSelection({ blockId: target.id, anchor: offset, head: offset });
+      return true;
+    },
+    []
+  );
+
+  const mergeForward = useCallback(
+    (blockId: string) => {
+      const blocks = documentRef.current.getSnapshot().blocks;
+      const index = blocks.findIndex((block) => block.id === blockId);
+      if (index < 0) return;
+      let nextIndex = index + 1;
+      while (nextIndex < blocks.length && !blocks[nextIndex].editable) nextIndex += 1;
+      const next = blocks[nextIndex];
+      if (!next?.editable) return;
+      // Forward Delete at the end of a Block is backward merge measured from the *next* Block, so
+      // both directions share one command and one undo entry.
+      apply({ type: "mergeBackward", blockId: next.id });
+    },
+    [apply]
+  );
+
+  /**
+   * Clicks that land on the Page but not on a Block.
+   *
+   * Notion and Feishu both treat the empty space below the last Block as a click-to-append target,
+   * and both clear a stale Block selection when you click away. Without either, a click in the
+   * margin left the selection highlighted and the keyboard dead.
+   */
+  const handleDocumentPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-block-id]")) return;
+      setBlockSelection(null);
+      const blocks = documentRef.current.getSnapshot().blocks;
+      const last = blocks[blocks.length - 1];
+      if (!last) return;
+      const lastRow = event.currentTarget.querySelector<HTMLElement>(
+        `[data-block-id="${CSS.escape(last.id)}"]`
+      );
+      if (!lastRow || event.clientY <= lastRow.getBoundingClientRect().bottom) return;
+      event.preventDefault();
+      const lastIsEmptyParagraph =
+        last.kind === "paragraph" &&
+        createBlockEditingProjection(last).editorText.trim().length === 0;
+      if (lastIsEmptyParagraph) {
+        setActiveBlockId(last.id);
+        setPendingSelection({ blockId: last.id, anchor: 0, head: 0 });
+        return;
+      }
+      apply({ type: "insertAfter", blockId: last.id });
+    },
+    [apply]
+  );
 
   const applyBlockSelectionCommand = useCallback(
     (command: MarkdownBlockCommand, selectedLength = 1) => {
@@ -1233,6 +1298,7 @@ export function MarkdownBlockRuntime({
             data-native-markdown-document
             data-file-id={file.id}
             data-revision={snapshot.revision}
+            onPointerDown={handleDocumentPointerDown}
             onCopy={(event) => {
               if (!blockSelection) return;
               const selectedIds = new Set(
@@ -1293,11 +1359,11 @@ export function MarkdownBlockRuntime({
                 nextBlockId={snapshot.blocks[index + 1]?.id}
                 dropBefore={blockDropBeforeId === block.id}
                 selection={pendingSelection?.blockId === block.id ? pendingSelection : undefined}
-                onActivate={(blockId) => {
+                onActivate={(blockId, clickedSelection) => {
                   if (isSearchBarOpen) setSearchBarOpen(false);
                   setActiveBlockId(blockId);
                   setBlockSelection(null);
-                  setPendingSelection(null);
+                  setPendingSelection(clickedSelection ? { blockId, ...clickedSelection } : null);
                 }}
                 onSelectBlock={(blockId, extend = false) => {
                   setActiveBlockId(null);
@@ -1409,7 +1475,10 @@ export function MarkdownBlockRuntime({
                   });
                 }}
                 onMergeBackward={(blockId) => apply({ type: "mergeBackward", blockId })}
-                onInsertAfter={(blockId) => apply({ type: "insertAfter", blockId })}
+                onMergeForward={mergeForward}
+                onInsertAfter={(blockId, placement) =>
+                  apply({ type: "insertAfter", blockId, before: placement === "above" })
+                }
                 onCopyMarkdown={async (blockId) => {
                   const current = documentRef.current.getSnapshot();
                   const selectionIds = blockSelection
@@ -1505,21 +1574,42 @@ export function MarkdownBlockRuntime({
                   );
                   if (destination) void navigateToEditorFile(destination.id);
                 }}
-                onRunSlashCommand={(blockId, commandId: MarkdownSlashCommandId) => {
+                onRunSlashCommand={(blockId, commandId: MarkdownSlashCommandId, run) => {
                   const current = documentRef.current
                     .getSnapshot()
                     .blocks.find((candidate) => candidate.id === blockId);
                   if (!current) return;
-                  const currentSource = editableMarkdownBlockSource(current.raw);
-                  apply({
+                  const lineEnding = preferredSourceLineEnding(current.raw, snapshot.markdown);
+                  const template = markdownSlashCommandSource(commandId, lineEnding);
+                  // Replace only the `/query` the user typed, mapped from editor offsets to source
+                  // offsets. Overwriting the whole Block discarded any text typed before the
+                  // trigger, which is why `/` used to be usable only on an otherwise empty Block.
+                  const from = blockSourceOffsetForEditorOffset(current, run.start);
+                  const to = blockSourceOffsetForEditorOffset(current, run.end);
+                  const result = documentRef.current.apply({
                     type: "replaceText",
                     blockId,
-                    range: { from: 0, to: currentSource.length },
-                    text: markdownSlashCommandSource(
-                      commandId,
-                      preferredSourceLineEnding(current.raw, snapshot.markdown)
-                    ),
+                    range: { from, to },
+                    text: template,
                   });
+                  publish(result, false);
+                  // Land the caret inside the template — on a code fence's body line, in a table's
+                  // first cell — instead of after its closing delimiter.
+                  const caret = from + markdownSlashCommandCaret(commandId, lineEnding);
+                  const insertedBlock = result.snapshot.blocks.find(
+                    (candidate) => candidate.from <= caret && caret <= candidate.to
+                  );
+                  const targetBlock =
+                    insertedBlock ??
+                    result.snapshot.blocks.find((candidate) => candidate.id === blockId);
+                  if (!targetBlock) return;
+                  const offset = editorOffsetForBlockSourceOffset(
+                    targetBlock,
+                    caret - targetBlock.from
+                  );
+                  setActiveBlockId(targetBlock.id);
+                  setBlockSelection(null);
+                  setPendingSelection({ blockId: targetBlock.id, anchor: offset, head: offset });
                 }}
                 wikiEmbedContext={wikiEmbedContext}
                 collectionContext={collectionContext}
@@ -1721,6 +1811,31 @@ function sameBlockSelectionRange(
     left.anchor === right.anchor &&
     left.head === right.head
   );
+}
+
+/**
+ * Offset in `source` nearest the viewport column `caretX` on the first or last visual line of a
+ * Block that is currently rendered as a preview. Returns null when the Block is not on screen or
+ * the platform cannot hit-test text, in which case the caller falls back to a source edge.
+ */
+function caretOffsetOnBlockEdge(
+  blockId: string,
+  caretX: number,
+  edge: "first" | "last",
+  source: string
+): number | null {
+  if (typeof document === "undefined" || typeof CSS === "undefined") return null;
+  const row = document.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`);
+  const content = row?.querySelector<HTMLElement>("[data-native-block-content]") ?? null;
+  if (!content) return null;
+  const range = document.createRange();
+  range.selectNodeContents(content);
+  const lines = Array.from(range.getClientRects()).filter((line) => line.height > 0);
+  const rect = edge === "first" ? lines[0] : lines[lines.length - 1];
+  if (!rect) return null;
+  const y = rect.top + rect.height / 2;
+  const x = Math.min(Math.max(caretX, rect.left + 1), Math.max(rect.right - 1, rect.left + 1));
+  return sourceOffsetAtPoint(x, y, content, source, projectMarkdownInline(source));
 }
 
 function findMarkdownSearchMatches(
