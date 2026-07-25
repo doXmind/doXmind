@@ -1527,3 +1527,101 @@ describe("MarkdownBlockDocument", () => {
     expect(redone.revision).toBe(3);
   });
 });
+
+describe("typing-run history granularity", () => {
+  const typeInto = (document: MarkdownBlockDocument, blockId: string, text: string) => {
+    for (const char of text) {
+      const block = document.getSnapshot().blocks.find((candidate) => candidate.id === blockId);
+      if (!block) throw new Error("block went away");
+      // Type at the end of the content, before any trailing blank line.
+      const end = block.raw.replace(/(\r\n|\n|\r)+$/, "").length;
+      document.apply({ type: "replaceText", blockId, range: { from: end, to: end }, text: char });
+    }
+  };
+
+  it("folds a word into one undo entry and checkpoints at whitespace", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("");
+    const blockId = document.getSnapshot().blocks[0].id;
+    typeInto(document, blockId, "hello world");
+    expect(document.getSnapshot().markdown).toBe("hello world");
+
+    // One step per word, not one per character: the space is the checkpoint, so the entry recorded
+    // before it holds the first word alone.
+    expect(document.undo().markdown).toBe("hello");
+    expect(document.undo().markdown).toBe("");
+  });
+
+  it("never folds an autoformat into the typing around it", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("");
+    const blockId = document.getSnapshot().blocks[0].id;
+    typeInto(document, blockId, "#");
+    // The space is what turns the Block into a heading; it must stand alone in history.
+    typeInto(document, blockId, " ");
+    const headingId = document.getSnapshot().blocks[0].id;
+    typeInto(document, headingId, "Title");
+    expect(document.getSnapshot().blocks[0].kind).toBe("heading");
+
+    expect(document.undo().blocks[0].raw).toBe("# ");
+    // A second undo reaches the state before the space, i.e. the bare marker. Its kind is
+    // `unsupported` today — a lone `#` classifying as raw is tracked separately.
+    expect(document.undo().blocks[0].raw).toBe("#");
+  });
+
+  it("starts a new entry after an explicit flush", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("");
+    const blockId = document.getSnapshot().blocks[0].id;
+    typeInto(document, blockId, "ab");
+    document.flushHistory();
+    typeInto(document, blockId, "cd");
+
+    expect(document.undo().markdown).toBe("ab");
+    expect(document.undo().markdown).toBe("");
+  });
+
+  it("does not fold a structural command into a typing run", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("one\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+    typeInto(document, blockId, "X");
+    document.apply({ type: "split", blockId, at: 4 });
+    expect(document.getSnapshot().blocks).toHaveLength(2);
+
+    // The split is its own step, so one undo rejoins the Block with the typed character intact.
+    const rejoined = document.undo();
+    expect(rejoined.blocks).toHaveLength(1);
+    expect(rejoined.blocks[0].raw.startsWith("oneX")).toBe(true);
+  });
+
+  it("folds a backspace run and stops at a word boundary", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("abcd\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+    for (let remaining = 4; remaining > 1; remaining -= 1) {
+      document.apply({
+        type: "replaceText",
+        blockId,
+        range: { from: remaining - 1, to: remaining },
+        text: "",
+      });
+    }
+    expect(document.getSnapshot().blocks[0].raw.startsWith("a")).toBe(true);
+    expect(document.undo().blocks[0].raw.startsWith("abcd")).toBe(true);
+  });
+
+  it("caps the undo stack", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("seed\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+    for (let index = 0; index < 260; index += 1) {
+      const end = document.getSnapshot().blocks[0].raw.length;
+      document.apply({ type: "replaceText", blockId, range: { from: end, to: end }, text: " x" });
+    }
+    let steps = 0;
+    let previous = document.getSnapshot().markdown;
+    while (steps < 400) {
+      const next = document.undo().markdown;
+      if (next === previous) break;
+      previous = next;
+      steps += 1;
+    }
+    expect(steps).toBeLessThanOrEqual(200);
+    expect(steps).toBeGreaterThan(150);
+  });
+});

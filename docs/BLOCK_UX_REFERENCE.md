@@ -112,12 +112,46 @@ editable kinds: **17 report zero change on every axis.** The one exception is `b
 (16px→12px), which is intentional: the content itself changes from rendered KaTeX to LaTeX source,
 and both Notion and Feishu also switch to a small mono input there.
 
+### Code Blocks and inline code
+
+Measured, then closed:
+
+- A fenced Block's ``` delimiter lines are projected out of both the preview and the editing
+  surface, so the Block reads as code the way it does in Notion and Feishu. The delimiters are
+  reassembled verbatim on every write, and the split fails closed whenever it would be ambiguous —
+  more than one candidate closing line, or content after it.
+- The info string moved into a language chip on the Block, since projecting the fence away would
+  otherwise make it unreachable. A free-text field rather than a menu, because a Markdown info
+  string is arbitrary and a closed list would silently drop whatever a file already says.
+- `block_math` keeps its `$$` visible on purpose. A fence tolerates an empty payload
+  (` ```ts\n\n``` ` is still one code Block) but `$$\n\n$$` is a blank line between two
+  paragraphs, so projecting it would let deleting an equation's contents disintegrate the Block.
+- Inline code renders at **ratio 1.0** against its paragraph. Measured in Feishu Doc: inline code is
+  the same size as body text, with the mono family and the tint carrying the distinction. Ours had
+  been 12px inside 16px prose because `globals.css` routes `.markdown-page code` to the chrome
+  code-font slider. Fenced Blocks still follow that slider — a code Block genuinely is a code
+  surface — but inline code is prose.
+
+### History and IME
+
+- A typing run folds into one undo entry, keyed on position rather than a clock: the run continues
+  only while the next edit starts exactly where the last one ended, in the same Block, without
+  crossing whitespace and without changing the Block's kind. That gives word-level Mod+Z. Whitespace,
+  any structural command, a Markdown autoformat, moving to another Block, an IME composition
+  boundary, and a 600ms pause all checkpoint. Undo and redo stacks are capped at 200 entries.
+- An IME composition issues **exactly one** command, at `compositionend`. The textarea holds its own
+  DOM value for the duration, so React never writes a derived string back over in-flight pinyin —
+  which is what used to close the candidate window. Verified in Chrome: zero document revisions
+  across four composition updates, the DOM still holding `nihao` after a React commit, then one
+  revision for the settled `你好`. The contenteditable surface additionally refuses to move the DOM
+  selection while composing.
+- The slash menu filters on the live composing text, so `/` followed by pinyin narrows as you type —
+  Feishu's behaviour. Safe because Enter belongs to the IME until the composition commits, so the
+  offsets used to execute a command always come from committed text.
+
 ### Known gaps, measured not guessed
 
-- Fenced code previews still print their ``` delimiter lines, and there is no syntax highlighting or
-  language picker. Notion and Feishu show neither delimiter.
-- Inline `code` renders at 12px inside 16px text because `globals.css` routes `.markdown-page code`
-  to the chrome code-font slider. Deliberate product wiring, but it reads as shrunken next to body
-  text; revisit as a product decision, not a bug fix.
+- No syntax highlighting in code Blocks. Both references highlight; adding it means taking on a
+  highlighter dependency, which is a product decision rather than a fix.
 - Callouts render a `CALLOUT` text label rather than a type icon and accent colour.
 - Tables are read-only; no cell navigation or row/column controls.

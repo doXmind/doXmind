@@ -649,6 +649,50 @@ describe("MarkdownBlockRow semantic previews", () => {
     expect(onMergeForward).toHaveBeenCalledWith(block.id);
   });
 
+  it("renders a fenced Block without its delimiters and exposes the language", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("```ts\nconst a = 1;\n```\n").getSnapshot()
+      .blocks;
+    const onSetCodeLanguage = vi.fn();
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active={false}
+        {...slashHandlers()}
+        onSetCodeLanguage={onSetCodeLanguage}
+      />
+    );
+
+    const pre = screen.getByTestId("fenced-code-block");
+    expect(pre).toHaveTextContent("const a = 1;");
+    expect(pre.textContent).not.toContain("```");
+    expect(screen.getByRole("button", { name: "Code language: ts" })).toBeInTheDocument();
+  });
+
+  it("commits a new code language without touching the payload", async () => {
+    const user = userEvent.setup();
+    const [block] = MarkdownBlockDocument.fromMarkdown("```ts\nconst a = 1;\n```\n").getSnapshot()
+      .blocks;
+    const onSetCodeLanguage = vi.fn();
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active={false}
+        {...slashHandlers()}
+        onSetCodeLanguage={onSetCodeLanguage}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Code language: ts" }));
+    const field = screen.getByRole("textbox", { name: "Code language" });
+    await user.clear(field);
+    await user.type(field, "python{Enter}");
+    expect(onSetCodeLanguage).toHaveBeenCalledWith(block.id, "python");
+  });
+
   it("keeps a semantic print preview beside the active source control", () => {
     const [block] =
       MarkdownBlockDocument.fromMarkdown("# Printable heading\n").getSnapshot().blocks;
@@ -977,7 +1021,10 @@ describe("MarkdownBlockRow semantic previews", () => {
     await waitFor(() =>
       expect(renderMermaidSvg).toHaveBeenCalledWith(expect.stringContaining("https://"))
     );
-    expect(screen.getByRole("textbox", { name: "Markdown block" })).toHaveValue(markdown.trimEnd());
+    // The editing surface shows the diagram payload; the ``` delimiters are projected out.
+    expect(screen.getByRole("textbox", { name: "Markdown block" })).toHaveValue(
+      'flowchart LR\nA@{ img: "https://example.com/private.png" }'
+    );
     expect(screen.queryByRole("img", { name: "Mermaid diagram" })).not.toBeInTheDocument();
     expect(screen.getByTestId("mermaid-block")).toHaveTextContent(
       "https://example.com/private.png"

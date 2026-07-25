@@ -18,7 +18,10 @@ import {
   type MarkdownBlockCommand,
   type MarkdownBlockView,
 } from "@/editor/markdown-block/markdown-block-document";
-import { createBlockEditingProjection } from "@/editor/markdown-block/block-editing-projection";
+import {
+  createBlockEditingProjection,
+  splitDelimitedBlockSource,
+} from "@/editor/markdown-block/block-editing-projection";
 import { createMarkdownInlineFormatEdit } from "@/editor/markdown-block/markdown-inline-format";
 import { editableMarkdownBlockSource } from "@/editor/markdown-block/markdown-block-source";
 import {
@@ -158,6 +161,7 @@ export function MarkdownBlockRuntime({
   const dragSessionCounterRef = useRef(0);
   const composingBlockIdRef = useRef<string | null>(null);
   const compositionHasHistoryRef = useRef(false);
+  const typingIdleTimerRef = useRef<number | null>(null);
   const fileIdRef = useRef(file.id);
   const lastSavedMarkdownRef = useRef(initialMarkdown);
   const externalMarkdownRef = useRef<string | null>(null);
@@ -559,6 +563,11 @@ export function MarkdownBlockRuntime({
     if (!autosaveEnabled && !isTransient) debouncedSave.cancel();
   }, [autosaveEnabled, debouncedSave, isTransient]);
 
+  // Leaving a Block ends its typing run: undo should never merge words typed in two Blocks.
+  useEffect(() => {
+    documentRef.current.flushHistory();
+  }, [activeBlockId]);
+
   const publish = useCallback(
     (result: MarkdownBlockApplyResult, applySelection = true) => {
       setSnapshot(result.snapshot);
@@ -590,6 +599,28 @@ export function MarkdownBlockRuntime({
     (command: MarkdownBlockCommand, applySelection = true) =>
       publish(documentRef.current.apply(command), applySelection),
     [publish]
+  );
+
+  /**
+   * Close the current typing run after a pause.
+   *
+   * The document folds a run by position, which cannot see the user stopping to think. 600ms is the
+   * familiar checkpoint interval from desktop editors: long enough that ordinary typing stays one
+   * step, short enough that a pause reliably starts a new one.
+   */
+  const scheduleTypingCheckpoint = useCallback(() => {
+    if (typingIdleTimerRef.current !== null) window.clearTimeout(typingIdleTimerRef.current);
+    typingIdleTimerRef.current = window.setTimeout(() => {
+      typingIdleTimerRef.current = null;
+      documentRef.current.flushHistory();
+    }, 600);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (typingIdleTimerRef.current !== null) window.clearTimeout(typingIdleTimerRef.current);
+    },
+    []
   );
 
   const importImages = useCallback(
@@ -878,6 +909,38 @@ export function MarkdownBlockRuntime({
       return true;
     },
     []
+  );
+
+  /**
+   * Rewrite only the info string on a fenced Block's opening delimiter line.
+   *
+   * The delimiter lines are projected out of the editing surface, so this is the one route to the
+   * language. Writing just that span keeps it a single command, a single undo entry, and leaves the
+   * payload bytes untouched.
+   */
+  const setCodeLanguage = useCallback(
+    (blockId: string, language: string) => {
+      const block = documentRef.current
+        .getSnapshot()
+        .blocks.find((candidate) => candidate.id === blockId);
+      if (!block) return;
+      const fence = splitDelimitedBlockSource(block.kind, editableMarkdownBlockSource(block.raw));
+      if (!fence) return;
+      // An info string cannot carry whitespace or fence characters without changing what the line
+      // means, so normalise rather than trust the field.
+      const next = language.trim().replace(/[\s`~]+/g, "");
+      if (next === fence.infoString) return;
+      apply(
+        {
+          type: "replaceText",
+          blockId,
+          range: { from: fence.infoStringFrom, to: fence.infoStringTo },
+          text: next,
+        },
+        false
+      );
+    },
+    [apply]
   );
 
   const mergeForward = useCallback(
@@ -1408,6 +1471,7 @@ export function MarkdownBlockRuntime({
                     false
                   );
                   if (composing) compositionHasHistoryRef.current = true;
+                  else scheduleTypingCheckpoint();
                 }}
                 onPaste={(blockId, from, to, text) => {
                   const current = documentRef.current
@@ -1454,12 +1518,17 @@ export function MarkdownBlockRuntime({
                 onCompositionStart={(blockId) => {
                   composingBlockIdRef.current = blockId;
                   compositionHasHistoryRef.current = false;
+                  // A composition is one authored unit: end the surrounding typing run so undo
+                  // takes back the whole committed word rather than half of it plus a few Latin
+                  // characters typed before the IME opened.
+                  documentRef.current.flushHistory();
                   debouncedSave.cancel();
                 }}
                 onCompositionEnd={(blockId) => {
                   if (composingBlockIdRef.current !== blockId) return;
                   composingBlockIdRef.current = null;
                   compositionHasHistoryRef.current = false;
+                  documentRef.current.flushHistory();
                   scheduleAutosave(documentRef.current.getSnapshot().markdown);
                 }}
                 onSplit={(blockId, from, to) => {
@@ -1476,6 +1545,7 @@ export function MarkdownBlockRuntime({
                 }}
                 onMergeBackward={(blockId) => apply({ type: "mergeBackward", blockId })}
                 onMergeForward={mergeForward}
+                onSetCodeLanguage={setCodeLanguage}
                 onInsertAfter={(blockId, placement) =>
                   apply({ type: "insertAfter", blockId, before: placement === "above" })
                 }

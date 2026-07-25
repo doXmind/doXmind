@@ -1,8 +1,9 @@
 /* Local PDF layout for the live native Markdown Block DOM. */
 
 @media print {
-  /* Placeholders are editing affordances, never exported content. */
-  [data-block-placeholder] {
+  /* Placeholders and the language chip are editing affordances, never exported content. */
+  [data-block-placeholder],
+  [data-code-language] {
     display: none !important;
   }
 

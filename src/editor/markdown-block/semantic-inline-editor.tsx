@@ -168,6 +168,9 @@ export function SemanticInlineEditor({
   useLayoutEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
+    // `setBaseAndExtent` during an IME composition closes the candidate window and drops the
+    // in-flight text, so the caret restore waits for the composition to settle.
+    if (composingRef.current) return;
 
     if (autoFocus && document.activeElement !== editor) editor.focus();
 
@@ -187,7 +190,7 @@ export function SemanticInlineEditor({
     if (!editor || !onSelectionChange) return;
 
     const handleSelectionChange = (event: Event) => {
-      if (restoringSelectionRef.current) return;
+      if (restoringSelectionRef.current || composingRef.current) return;
       const nextSelection = readSourceSelection(editor, projection);
       if (nextSelection) onSelectionChange(nextSelection, event);
     };
@@ -264,12 +267,12 @@ export function SemanticInlineEditor({
         onKeyDown?.(event, currentSourceSelection());
       }}
       onKeyUp={(event) => {
-        if (restoringSelectionRef.current) return;
+        if (restoringSelectionRef.current || composingRef.current) return;
         const nextSelection = readSourceSelection(event.currentTarget, projection);
         if (nextSelection) onSelectionChange?.(nextSelection, event.nativeEvent);
       }}
       onMouseUp={(event: MouseEvent<HTMLDivElement>) => {
-        if (restoringSelectionRef.current) return;
+        if (restoringSelectionRef.current || composingRef.current) return;
         const nextSelection = readSourceSelection(event.currentTarget, projection);
         if (nextSelection) onSelectionChange?.(nextSelection, event.nativeEvent);
       }}

@@ -629,12 +629,15 @@ describe("MarkdownBlockRuntime", () => {
     render(<MarkdownBlockRuntime file={{ ...file, content: markdown }} />);
 
     fireEvent.click(screen.getByTestId("fenced-code-block"));
+    // The editor shows the payload only — the ``` delimiter lines are projected out, the way both
+    // Notion and Feishu present a code Block — so the typed value carries no fences.
     const textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
-    textarea.setSelectionRange(22, 22);
+    expect(textarea.value).toBe("const first = 1;\n\nconst second = 2;");
+    textarea.setSelectionRange(16, 16);
 
     expect(fireEvent.keyDown(textarea, { key: "Enter" })).toBe(true);
     fireEvent.change(textarea, {
-      target: { value: "```ts\nconst first = 1;\n// inserted\n\nconst second = 2;\n```" },
+      target: { value: "const first = 1;\n// inserted\n\nconst second = 2;" },
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
@@ -2232,6 +2235,48 @@ describe("MarkdownBlockRuntime", () => {
     fireEvent.keyDown(textarea, { key: "z", metaKey: true });
 
     expect(screen.getByLabelText("Markdown block")).toHaveValue("Hello");
+  });
+
+  it("writes no command while an IME composition is open", async () => {
+    render(<MarkdownBlockRuntime file={file} />);
+    fireEvent.click(screen.getByText("Hello"));
+    const textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    const documentElement = document.querySelector("[data-native-markdown-document]");
+    const revisionBefore = documentElement?.getAttribute("data-revision");
+
+    fireEvent.compositionStart(textarea);
+    fireEvent.compositionUpdate(textarea, { data: "n" });
+    fireEvent.change(textarea, { target: { value: "ni" } });
+    fireEvent.change(textarea, { target: { value: "niha" } });
+
+    // The DOM keeps the in-flight pinyin — React must not write the model's value back over it —
+    // while the document itself is untouched until the composition settles.
+    expect(textarea).toHaveValue("niha");
+    expect(documentElement?.getAttribute("data-revision")).toBe(revisionBefore);
+
+    fireEvent.compositionEnd(textarea, { target: { value: "你好" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("你好");
+    expect(updateFile).toHaveBeenCalledTimes(1);
+    expect(updateFile).toHaveBeenCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "你好\n" })
+    );
+  });
+
+  it("keeps a typed word as one undo step and breaks the run at a Block change", async () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "one\n\ntwo\n" }} />);
+    fireEvent.click(screen.getByText("one"));
+    const first = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    for (const value of ["oneA", "oneAB", "oneABC"]) {
+      fireEvent.change(first, { target: { value } });
+    }
+
+    // One Mod+Z takes back the whole run, not one character.
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "z", metaKey: true });
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("one");
   });
 
   it("exposes native menu Undo and Redo through canonical Markdown history", () => {

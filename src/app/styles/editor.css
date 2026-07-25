@@ -221,9 +221,22 @@
   @apply overflow-x-auto rounded-lg bg-muted p-4 font-mono text-sm;
 }
 
+/*
+ * Inline code tracks the text around it.
+ *
+ * globals.css routes every `.markdown-page code` to the chrome code-font slider (12px), which left
+ * inline code visibly shrunken inside 16px prose. Measured in Feishu Doc, inline code renders at
+ * ratio 1.0 against its paragraph — the mono family and the tint carry the distinction, not a
+ * smaller size. `1em` keeps that true at any editor font size, and `!important` is needed to beat
+ * the chrome rule. Fenced Blocks below keep the slider: a code Block genuinely is a code surface,
+ * so a user's code-font preference belongs there.
+ */
 .markdown-page code {
-  @apply rounded bg-muted px-1 py-0.5 font-mono text-sm;
+  @apply rounded bg-muted px-1 py-0.5 font-mono;
   color: #eb5757;
+  font-size: 1em !important;
+  /* Mono glyphs run optically large at the same px, so hold the line box to the prose leading. */
+  line-height: inherit !important;
 }
 
 .markdown-page pre code {

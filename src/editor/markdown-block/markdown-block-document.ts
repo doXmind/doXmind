@@ -207,12 +207,27 @@ interface BlockquoteSourceSyntax {
  * their ids never cross the storage boundary.
  */
 export class MarkdownBlockDocument {
+  /**
+   * How many states the undo and redo stacks hold. Each entry keeps a whole Markdown string, so an
+   * unbounded stack grows with the Page for as long as the session lives.
+   */
+  private static readonly HISTORY_LIMIT = 200;
+
   private revision = 0;
   private markdown: string;
   private blocks: MarkdownBlockSpan[];
   private nextBlockNumber: number;
   private undoStack: MarkdownBlockState[] = [];
   private redoStack: MarkdownBlockState[] = [];
+  /**
+   * End of the last typed edit, used to fold a typing run into one history entry.
+   *
+   * Without this every keystroke was its own undo step, so Mod+Z walked back one character at a
+   * time and felt broken. Deliberately keyed on position rather than on a clock: a run continues
+   * only while the next edit starts exactly where the previous one ended, which is deterministic
+   * and needs no timer to reason about or to test.
+   */
+  private lastTypedEdit: { blockId: string; sourceEnd: number } | null = null;
 
   private constructor(markdown: string, blocks: MarkdownBlockSpan[], nextBlockNumber: number) {
     this.markdown = markdown;
@@ -246,25 +261,40 @@ export class MarkdownBlockDocument {
     };
   }
 
+  /**
+   * End the current typing run, so the next keystroke starts a fresh undo entry.
+   *
+   * The caller owns the events a position test cannot see: moving to another Block, finishing an IME
+   * composition, blurring the editor, or simply pausing.
+   */
+  flushHistory(): void {
+    this.lastTypedEdit = null;
+  }
+
   undo(): MarkdownBlockSnapshot {
+    this.lastTypedEdit = null;
     const previous = this.undoStack.pop();
     if (!previous) return this.getSnapshot();
-    this.redoStack.push(this.cloneState());
+    this.pushRedo(this.cloneState());
     this.restoreState(previous);
     this.revision += 1;
     return this.getSnapshot();
   }
 
   redo(): MarkdownBlockSnapshot {
+    this.lastTypedEdit = null;
     const next = this.redoStack.pop();
     if (!next) return this.getSnapshot();
-    this.undoStack.push(this.cloneState());
+    this.pushUndo(this.cloneState());
     this.restoreState(next);
     this.revision += 1;
     return this.getSnapshot();
   }
 
   apply(command: MarkdownBlockCommand): MarkdownBlockApplyResult {
+    // Only typing can extend a run. Every structural command is its own undo step, so a split, a
+    // move or an indent can never be swallowed into the keystrokes around it.
+    if (command.type !== "replaceText") this.lastTypedEdit = null;
     if (command.type === "outdentBlocks") {
       if (command.blockIds.length === 0) return { snapshot: this.getSnapshot() };
       const sourceBlocks = this.sourceBlocks();
@@ -1032,8 +1062,23 @@ export class MarkdownBlockDocument {
     const raw =
       block.raw.slice(0, command.range.from) + command.text + block.raw.slice(command.range.to);
     if (raw === block.raw) return { snapshot: this.getSnapshot() };
-    if (command.recordHistory !== false) this.recordHistory();
     const rescanned = scanMarkdownSource(raw).map((span) => span.raw);
+    // Reclassification is pure, so the resulting kind can be known before anything is mutated. A
+    // Markdown autoformat (`# ` becoming a heading) has to be its own undo step, or one Mod+Z would
+    // take back both the transform and the words typed after it.
+    const structureUnchanged =
+      rescanned.length <= 1 &&
+      reclassifyEditableSource(block, rescanned[0] ?? raw).kind === block.kind;
+    const continuesRun = this.continuesTypingRun(
+      block.id,
+      command.range,
+      command.text,
+      structureUnchanged
+    );
+    if (command.recordHistory !== false && !continuesRun) this.recordHistory();
+    this.lastTypedEdit = structureUnchanged
+      ? { blockId: block.id, sourceEnd: command.range.from + command.text.length }
+      : null;
     const replacementSources = (rescanned.length > 0 ? rescanned : [raw]).map(
       (source, replacementIndex) => {
         if (replacementIndex === 0) return reclassifyEditableSource(block, source);
@@ -1107,8 +1152,41 @@ export class MarkdownBlockDocument {
   }
 
   private recordHistory(): void {
-    this.undoStack.push(this.cloneState());
+    this.pushUndo(this.cloneState());
     this.redoStack = [];
+  }
+
+  private pushUndo(state: MarkdownBlockState): void {
+    this.undoStack.push(state);
+    if (this.undoStack.length > MarkdownBlockDocument.HISTORY_LIMIT) this.undoStack.shift();
+  }
+
+  private pushRedo(state: MarkdownBlockState): void {
+    this.redoStack.push(state);
+    if (this.redoStack.length > MarkdownBlockDocument.HISTORY_LIMIT) this.redoStack.shift();
+  }
+
+  /**
+   * Whether this edit continues the current typing run and so needs no new history entry.
+   *
+   * A run continues while the user keeps typing forward from where they were, or keeps deleting
+   * backwards from where they were, within one Block, without crossing a word or line boundary and
+   * without changing what kind of Block it is. Whitespace ends a run, which gives Mod+Z word-level
+   * granularity rather than either one-character-at-a-time or one-giant-step.
+   */
+  private continuesTypingRun(
+    blockId: string,
+    range: Utf16Range,
+    text: string,
+    structureUnchanged: boolean
+  ): boolean {
+    const run = this.lastTypedEdit;
+    if (!run || run.blockId !== blockId || !structureUnchanged) return false;
+    if (/[\s\r\n]/.test(text)) return false;
+    const isInsertion = range.from === range.to && text.length > 0;
+    if (isInsertion) return run.sourceEnd === range.from;
+    const isDeletion = text.length === 0 && range.to > range.from;
+    return isDeletion && run.sourceEnd === range.to;
   }
 }
 

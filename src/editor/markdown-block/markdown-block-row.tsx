@@ -28,7 +28,10 @@ import {
   BlockGutterControls,
   TURN_INTO_OPTIONS,
 } from "@/editor/markdown-block/block-gutter-controls";
-import { createBlockEditingProjection } from "@/editor/markdown-block/block-editing-projection";
+import {
+  createBlockEditingProjection,
+  splitDelimitedBlockSource,
+} from "@/editor/markdown-block/block-editing-projection";
 import { editableMarkdownBlockSource } from "@/editor/markdown-block/markdown-block-source";
 import { isMarkdownSourceOnlyBlockKind } from "@/editor/markdown-block/markdown-block-document";
 import { InlineFormatToolbar } from "@/editor/markdown-block/inline-format-toolbar";
@@ -112,6 +115,8 @@ interface MarkdownBlockRowProps {
   onDuplicate: (blockId: string) => void;
   onDelete: (blockId: string) => void;
   onSetTaskChecked: (blockId: string, checked: boolean) => void;
+  /** Rewrites just the info string on a fenced Block's opening delimiter line. */
+  onSetCodeLanguage?: (blockId: string, language: string) => void;
   onMove: (blockId: string, direction: -1 | 1) => boolean | void;
   onIndent?: (
     blockId: string,
@@ -190,6 +195,7 @@ export function MarkdownBlockRow({
   onDuplicate,
   onDelete,
   onSetTaskChecked,
+  onSetCodeLanguage,
   onMove,
   onIndent,
   onNavigate,
@@ -243,6 +249,16 @@ export function MarkdownBlockRow({
   const sourceLengthRef = useRef(source.length);
   sourceLengthRef.current = source.length;
   const pendingClickOffsetRef = useRef<number | null>(null);
+  const composingRef = useRef(false);
+  /**
+   * The textarea's own value while an IME composition is open.
+   *
+   * A controlled `value={source}` fights the IME: every mid-composition keystroke round-trips
+   * through the document, React writes the derived string back into the element, and Chromium
+   * cancels the candidate window. Holding the DOM value locally until `compositionend` means React
+   * never reassigns it mid-composition, and exactly one command is issued for the settled text.
+   */
+  const [composingValue, setComposingValue] = useState<string | null>(null);
   // The slash menu is anchored to the caret, not to the whole Block. Deriving the trigger from
   // `/^\/.*$/` over the entire source meant the menu only ever opened on a paragraph whose *only*
   // content was the query — you could not type `Next steps: /table`, and no list item, heading or
@@ -253,9 +269,19 @@ export function MarkdownBlockRow({
     // every arrow key; `null` short-circuits to React's bail-out when no trigger char is present.
     setCaretOffset(SLASH_TRIGGER_PATTERN.test(source) ? offset : null);
   };
+  // While an IME composition is open the model deliberately lags the DOM, so the menu filters on the
+  // live text. That is what makes `/` + pinyin narrow as you type, the way Feishu's insert panel
+  // does — and it is safe because Enter belongs to the IME until the composition commits, so the
+  // offsets used to execute a command always come from committed text.
+  const liveSource = composingValue ?? source;
   const slashRun =
     active && block.editable && !sourceOnly && onRunSlashCommand
-      ? slashRunAt(source, caretOffset ?? editorSelectionRef.current.head)
+      ? slashRunAt(
+          liveSource,
+          composingValue === null
+            ? (caretOffset ?? editorSelectionRef.current.head)
+            : liveSource.length
+        )
       : null;
   const slashQuery = slashRun?.query ?? null;
   const slashStart = slashRun?.start ?? null;
@@ -350,6 +376,13 @@ export function MarkdownBlockRow({
   }, [active, sourceOnly]);
 
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    if (composingRef.current) {
+      // Track the DOM value so React's controlled value keeps matching it, but issue no command:
+      // an IME composition is one edit, committed once at `compositionend`.
+      setComposingValue(event.target.value);
+      autosizeTextarea(event.target);
+      return;
+    }
     setInlineSelection(null);
     // Mirror the post-input caret before the source change can swap the editing surface.
     editorSelectionRef.current = {
@@ -815,8 +848,14 @@ export function MarkdownBlockRow({
               data-native-block-edit-surface
               data-editor-kind={block.kind}
               data-editor-level={block.level}
-              className={activeEditorSurfaceClass(block)}
+              className={`relative ${activeEditorSurfaceClass(block)}`}
             >
+              {block.kind === "fenced_code" && onSetCodeLanguage ? (
+                <CodeLanguageChip
+                  language={splitDelimitedBlockSource("fenced_code", rawSource)?.infoString ?? ""}
+                  onCommit={(language) => onSetCodeLanguage(block.id, language)}
+                />
+              ) : null}
               {block.kind === "task_list_item" && activeListItem ? (
                 <input
                   type="checkbox"
@@ -895,19 +934,37 @@ export function MarkdownBlockRow({
                   className={`native-block-textarea block min-w-0 flex-1 resize-none overflow-hidden bg-transparent outline-none ${
                     sourceOnly ? "font-mono" : ""
                   }`}
-                  value={source}
+                  value={composingValue ?? source}
                   rows={1}
                   placeholder={source.length === 0 ? blockPlaceholder(block) : undefined}
                   // Browser spellcheck squiggles under code, LaTeX and diagram source are noise.
                   spellCheck={!sourceOnly}
                   onChange={handleChange}
                   onPaste={handlePaste}
-                  onCompositionStart={() => onCompositionStart(block.id)}
-                  onCompositionEnd={() => onCompositionEnd(block.id)}
+                  onCompositionStart={(event) => {
+                    composingRef.current = true;
+                    setInlineSelection(null);
+                    setComposingValue(event.currentTarget.value);
+                    onCompositionStart(block.id);
+                  }}
+                  onCompositionUpdate={(event) => setComposingValue(event.currentTarget.value)}
+                  onCompositionEnd={(event) => {
+                    composingRef.current = false;
+                    const settled = event.currentTarget.value;
+                    setComposingValue(null);
+                    onCompositionEnd(block.id);
+                    if (settled !== source) onChange(block.id, settled);
+                  }}
                   onKeyDown={handleTextareaKeyDown}
-                  onKeyUp={(event) => updateInlineSelection(event.currentTarget)}
+                  onKeyUp={(event) => {
+                    if (event.nativeEvent.isComposing) return;
+                    updateInlineSelection(event.currentTarget);
+                  }}
                   onMouseUp={(event) => updateInlineSelection(event.currentTarget)}
-                  onSelect={(event) => updateInlineSelection(event.currentTarget)}
+                  onSelect={(event) => {
+                    if (composingRef.current) return;
+                    updateInlineSelection(event.currentTarget);
+                  }}
                 />
               )}
             </div>
@@ -1034,6 +1091,7 @@ export function MarkdownBlockRow({
               <BlockPreview
                 block={block}
                 onSetTaskChecked={onSetTaskChecked}
+                onSetCodeLanguage={onSetCodeLanguage}
                 onOpenWikiLink={onOpenWikiLink}
                 wikiEmbedContext={wikiEmbedContext}
                 collectionContext={collectionContext}
@@ -1045,6 +1103,7 @@ export function MarkdownBlockRow({
           <BlockPreview
             block={block}
             onSetTaskChecked={onSetTaskChecked}
+            onSetCodeLanguage={onSetCodeLanguage}
             onOpenWikiLink={onOpenWikiLink}
             wikiEmbedContext={wikiEmbedContext}
             collectionContext={collectionContext}
@@ -1214,6 +1273,79 @@ function autosizeTextarea(textarea: HTMLTextAreaElement): void {
   textarea.style.height = "auto";
   const next = `${Math.max(textarea.scrollHeight, 36)}px`;
   if (textarea.style.height !== next) textarea.style.height = next;
+}
+
+/**
+ * The code Block's language, as an editable chip.
+ *
+ * Projecting the ``` line out of the editing surface would otherwise make the info string
+ * unreachable, so it gets its own control. A free-text field rather than a fixed menu, because the
+ * info string is arbitrary in Markdown and a closed list would silently drop whatever the file
+ * already says.
+ */
+function CodeLanguageChip({
+  language,
+  onCommit,
+}: {
+  language: string;
+  onCommit: (language: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(language);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const next = draft.trim();
+    if (next !== language) onCommit(next);
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        aria-label="Code language"
+        value={draft}
+        placeholder="language"
+        spellCheck={false}
+        className="absolute right-2 top-1.5 z-10 w-24 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        onChange={(event) => setDraft(event.target.value)}
+        onClick={(event) => event.stopPropagation()}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            setDraft(language);
+            setEditing(false);
+          }
+        }}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      data-code-language
+      aria-label={language ? `Code language: ${language}` : "Set code language"}
+      className="absolute right-2 top-1.5 rounded px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground opacity-0 transition-opacity duration-[20ms] hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover/native-block:opacity-100"
+      onClick={(event) => {
+        event.stopPropagation();
+        setDraft(language);
+        setEditing(true);
+      }}
+    >
+      {language || "plain text"}
+    </button>
+  );
 }
 
 function isListBlockKind(kind: MarkdownBlockView["kind"]): boolean {
@@ -1459,6 +1591,7 @@ function isRasterFile(file: File): boolean {
 function BlockPreview({
   block,
   onSetTaskChecked,
+  onSetCodeLanguage,
   onOpenWikiLink,
   wikiEmbedContext,
   collectionContext,
@@ -1467,6 +1600,7 @@ function BlockPreview({
 }: {
   block: MarkdownBlockView;
   onSetTaskChecked: (blockId: string, checked: boolean) => void;
+  onSetCodeLanguage?: (blockId: string, language: string) => void;
   onOpenWikiLink?: (target: string) => void;
   wikiEmbedContext?: MarkdownWikiEmbedContext;
   collectionContext?: MarkdownCollectionContext;
@@ -1606,13 +1740,31 @@ function BlockPreview({
     }
   }
   if (block.kind === "fenced_code") {
+    // Show the code, not the syntax that delimits it. Notion and Feishu both render a code Block
+    // with no visible fence and put the language in a control instead.
+    const fence = splitDelimitedBlockSource("fenced_code", source);
     return (
-      <pre
-        data-testid="fenced-code-block"
-        className="min-h-9 overflow-x-auto whitespace-pre-wrap rounded-md bg-muted px-3 py-2 font-mono text-sm leading-6"
-      >
-        <code>{source || " "}</code>
-      </pre>
+      <div className="relative">
+        <pre
+          data-testid="fenced-code-block"
+          className="min-h-9 overflow-x-auto whitespace-pre-wrap rounded-md bg-muted px-3 py-2 font-mono text-sm leading-6"
+        >
+          <code>{fence ? fence.payload : source}</code>
+        </pre>
+        {onSetCodeLanguage ? (
+          <CodeLanguageChip
+            language={fence?.infoString ?? ""}
+            onCommit={(language) => onSetCodeLanguage(block.id, language)}
+          />
+        ) : fence?.infoString ? (
+          <span
+            data-code-language
+            className="pointer-events-none absolute right-2 top-1.5 select-none font-mono text-[11px] text-muted-foreground"
+          >
+            {fence.infoString}
+          </span>
+        ) : null}
+      </div>
     );
   }
   if (block.kind === "unsupported") {

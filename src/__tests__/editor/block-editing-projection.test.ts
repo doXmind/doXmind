@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { createBlockEditingProjection } from "@/editor/markdown-block/block-editing-projection";
-import { MarkdownBlockDocument } from "@/editor/markdown-block/markdown-block-document";
+import {
+  createBlockEditingProjection,
+  splitDelimitedBlockSource,
+} from "@/editor/markdown-block/block-editing-projection";
+import {
+  MarkdownBlockDocument,
+  type MarkdownBlockView,
+} from "@/editor/markdown-block/markdown-block-document";
 
 function firstBlock(markdown: string) {
   return MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot().blocks[0];
@@ -77,22 +83,21 @@ describe("BlockEditingProjection", () => {
     expect(projection.toSource("Changed")).toBe(`${prefix}Changed${suffix}`);
   });
 
-  it.each([
-    "[reference]: /target\r\n\r\n",
-    "> first line\r\n> second line\r\n\r\n",
-    "```ts\r\nconst value = 1;\r\n```\r\n\r\n",
-  ])("keeps a raw or structurally complex Page separator outside its editor", (source) => {
-    const projection = createBlockEditingProjection(firstBlock(source));
-    const separator = source.match(/(?:\r\n|\n|\r){2}$/)?.[0] ?? "";
-    const editableSource = source.slice(0, -separator.length);
+  it.each(["[reference]: /target\r\n\r\n", "> first line\r\n> second line\r\n\r\n"])(
+    "keeps a raw or structurally complex Page separator outside its editor",
+    (source) => {
+      const projection = createBlockEditingProjection(firstBlock(source));
+      const separator = source.match(/(?:\r\n|\n|\r){2}$/)?.[0] ?? "";
+      const editableSource = source.slice(0, -separator.length);
 
-    expect(projection.editorText).toBe(editableSource);
-    expect(projection.sourcePrefix).toBe("");
-    expect(projection.sourceSuffix).toBe(separator);
-    expect(projection.toSource("exact replacement")).toBe(`exact replacement${separator}`);
-    expect(projection.editorOffsetToSource(source.length)).toBe(editableSource.length);
-    expect(projection.sourceOffsetToEditor(source.length)).toBe(editableSource.length);
-  });
+      expect(projection.editorText).toBe(editableSource);
+      expect(projection.sourcePrefix).toBe("");
+      expect(projection.sourceSuffix).toBe(separator);
+      expect(projection.toSource("exact replacement")).toBe(`exact replacement${separator}`);
+      expect(projection.editorOffsetToSource(source.length)).toBe(editableSource.length);
+      expect(projection.sourceOffsetToEditor(source.length)).toBe(editableSource.length);
+    }
+  );
 
   it("maps emoji and selection ranges with UTF-16 offsets across prefix and CRLF suffix", () => {
     const source = "## 🚀 launch\r\n\r\n";
@@ -133,5 +138,92 @@ describe("BlockEditingProjection", () => {
     const projection = createBlockEditingProjection(block);
 
     expect(projection.toSource(projection.editorText)).toBe(block.raw);
+  });
+});
+
+describe("delimited Block payload projection", () => {
+  const cases: ReadonlyArray<[string, string, string, string, string]> = [
+    [
+      "fenced code with an info string",
+      "fenced_code",
+      "```ts\nconst a = 1;\n```\n\n",
+      "const a = 1;",
+      "ts",
+    ],
+    ["bare fenced code", "fenced_code", "```\nplain\n```\n", "plain", ""],
+    ["tilde fence", "fenced_code", "~~~py\nx = 1\n~~~\n", "x = 1", "py"],
+    ["multi-line payload", "fenced_code", "```js\na\n\nb\n```\n", "a\n\nb", "js"],
+    ["empty payload", "fenced_code", "```\n\n```\n", "", ""],
+    ["unterminated fence", "fenced_code", "```ts\nconst a = 1;\n", "const a = 1;", "ts"],
+    [
+      "mermaid",
+      "mermaid",
+      "```mermaid\nflowchart LR\n  A --> B\n```\n",
+      "flowchart LR\n  A --> B",
+      "mermaid",
+    ],
+    ["CRLF fence", "fenced_code", "```ts\r\nconst a = 1;\r\n```\r\n", "const a = 1;", "ts"],
+  ];
+
+  it.each(cases)("projects %s to its payload and back", (_label, kind, raw, payload) => {
+    const projection = createBlockEditingProjection({
+      kind: kind as MarkdownBlockView["kind"],
+      raw,
+    });
+    expect(projection.editorText).toBe(payload);
+    // The delimiters must survive byte-for-byte, or an edit would re-cut the Block.
+    expect(projection.toSource(projection.editorText)).toBe(raw);
+  });
+
+  it.each(cases)("exposes the info string of %s", (_label, kind, raw, _payload, info) => {
+    expect(
+      splitDelimitedBlockSource(kind as MarkdownBlockView["kind"], raw.trimEnd())?.infoString
+    ).toBe(info);
+  });
+
+  it("rewrites only the payload", () => {
+    const projection = createBlockEditingProjection({
+      kind: "fenced_code",
+      raw: "```ts\nold\n```\n\n",
+    });
+    expect(projection.toSource("new\nlines")).toBe("```ts\nnew\nlines\n```\n\n");
+  });
+
+  it("fails closed when a payload line could pass for the closing fence", () => {
+    // Two candidate closing lines: projecting would let an edit move where the Block ends.
+    const raw = "````\n```\ninner\n````\n";
+    expect(splitDelimitedBlockSource("fenced_code", raw.trimEnd())).not.toBeNull();
+    const ambiguous = "```\n```\n```\n";
+    expect(splitDelimitedBlockSource("fenced_code", ambiguous.trimEnd())).toBeNull();
+    const projection = createBlockEditingProjection({ kind: "fenced_code", raw: ambiguous });
+    expect(projection.editorText).toBe(ambiguous.trimEnd());
+  });
+
+  it("leaves non-delimited kinds alone", () => {
+    expect(splitDelimitedBlockSource("paragraph", "text")).toBeNull();
+    expect(splitDelimitedBlockSource("table", "| a |")).toBeNull();
+  });
+});
+
+describe("delimited Block payload projection survives deletion", () => {
+  it.each([
+    ["fenced_code", "```ts\nconst a = 1;\n```\n"],
+    ["mermaid", "```mermaid\nflowchart LR\n  A --> B\n```\n"],
+  ])("keeps %s one Block after its payload is deleted", (kind, markdown) => {
+    const [block] = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot().blocks;
+    const emptied = createBlockEditingProjection(block).toSource("");
+    expect(
+      MarkdownBlockDocument.fromMarkdown(emptied)
+        .getSnapshot()
+        .blocks.map((b) => b.kind)
+    ).toEqual([kind]);
+  });
+
+  it("leaves block math delimited, because an empty $$ payload splits the Block", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("$$\nE = mc^2\n$$\n").getSnapshot().blocks;
+    // Projecting `$$` out would let a delete produce "$$\n\n$$" — a blank line between two
+    // paragraphs — so the delimiters stay part of the editor text.
+    expect(splitDelimitedBlockSource("block_math", "$$\nE = mc^2\n$$")).toBeNull();
+    expect(createBlockEditingProjection(block).editorText).toBe("$$\nE = mc^2\n$$");
   });
 });
