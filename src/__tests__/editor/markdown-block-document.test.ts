@@ -1625,3 +1625,70 @@ describe("typing-run history granularity", () => {
     expect(steps).toBeGreaterThan(150);
   });
 });
+
+describe("moveBlocks re-indents what it moves", () => {
+  const move = (markdown: string, movedText: string, beforeText: string | null) => {
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const blocks = document.getSnapshot().blocks;
+    const moved = blocks.find((block) => block.raw.includes(movedText));
+    if (!moved) throw new Error(`no Block contains ${movedText}`);
+    const beforeId =
+      beforeText === null
+        ? null
+        : (blocks.find((block) => block.raw.includes(beforeText))?.id ?? null);
+    const result = document.apply({ type: "moveBlocks", blockIds: [moved.id], beforeId });
+    return {
+      markdown: result.snapshot.markdown,
+      kinds: MarkdownBlockDocument.fromMarkdown(result.snapshot.markdown)
+        .getSnapshot()
+        .blocks.map((block) => `${block.kind}@${block.depth ?? "-"}`),
+    };
+  };
+
+  it("keeps a deeply nested item a list item when it moves to the top", () => {
+    // Four leading spaces at the start of a Page is an indented code block, so without re-indenting
+    // this drag silently turned a list item into raw code.
+    const result = move("- a\n  - b\n    - c\n\nTail\n", "- c", "- a");
+    expect(result.markdown).toBe("- c\n- a\n  - b\n\nTail\n");
+    expect(result.kinds).toEqual([
+      "bullet_list_item@0",
+      "bullet_list_item@0",
+      "bullet_list_item@1",
+      "paragraph@-",
+    ]);
+  });
+
+  it("clamps to one level deeper than the item it lands under", () => {
+    const result = move("- a\n\n- x\n  - y\n    - z\n", "- z", "- y");
+    expect(MarkdownBlockDocument.fromMarkdown(result.markdown).getSnapshot().blocks[3].depth).toBe(
+      1
+    );
+  });
+
+  it("preserves nesting inside the moved range", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("- p\n  - q\n    - r\n\nTail\n");
+    const blocks = document.getSnapshot().blocks;
+    const q = blocks.find((block) => block.raw.includes("- q"))!;
+    const r = blocks.find((block) => block.raw.includes("- r"))!;
+    const p = blocks.find((block) => block.raw.startsWith("- p"))!;
+    const result = document.apply({
+      type: "moveBlocks",
+      blockIds: [q.id, r.id],
+      beforeId: p.id,
+    });
+    // The range flattens by one so `q` is valid at top level, and `r` stays one level under it.
+    expect(
+      MarkdownBlockDocument.fromMarkdown(result.snapshot.markdown)
+        .getSnapshot()
+        .blocks.map((block) => `${block.kind}@${block.depth ?? "-"}`)
+    ).toEqual(["bullet_list_item@0", "bullet_list_item@1", "bullet_list_item@0", "paragraph@-"]);
+  });
+
+  it("leaves a paragraph move's own bytes untouched", () => {
+    const result = move("one\n\ntwo\n\nthree\n", "three", "one");
+    // The trailing blank line is `ensureBlockBoundary` normalising the new last Block, unrelated to
+    // re-indenting; what matters is that no indentation was added or removed.
+    expect(result.markdown).toBe("three\n\none\n\ntwo\n\n");
+    expect(result.kinds).toEqual(["paragraph@-", "paragraph@-", "paragraph@-"]);
+  });
+});

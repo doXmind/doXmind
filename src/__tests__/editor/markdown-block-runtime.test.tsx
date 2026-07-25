@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -46,8 +46,41 @@ function dragTransfer(initial: Record<string, string> = {}) {
     setData(type: string, value: string) {
       data.set(type, value);
     },
-    setDragImage() {},
+    setDragImage: vi.fn(),
   } as unknown as DataTransfer;
+}
+
+/**
+ * jsdom has no `DragEvent`, so Testing Library falls back to a plain `Event` and silently drops
+ * `clientY`. Define it explicitly, or every coordinate-based assertion is vacuous.
+ */
+function fireDragAt(
+  target: HTMLElement,
+  type: "dragOver" | "drop",
+  dataTransfer: DataTransfer,
+  clientY: number
+) {
+  const event = createEvent[type](target, { dataTransfer });
+  Object.defineProperty(event, "clientY", { value: clientY, configurable: true });
+  return fireEvent(target, event);
+}
+
+/** Stack rows vertically so the drop-boundary table has real geometry to pick from. */
+function stackRowRects(rows: ArrayLike<HTMLElement>, height = 40, top = 100) {
+  for (let index = 0; index < rows.length; index += 1) {
+    const rowTop = top + index * height;
+    vi.spyOn(rows[index], "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: rowTop,
+      top: rowTop,
+      left: 0,
+      right: 600,
+      bottom: rowTop + height,
+      width: 600,
+      height,
+      toJSON: () => ({}),
+    });
+  }
 }
 
 function setCollapsedDomSelection(node: Node, offset: number) {
@@ -2373,6 +2406,70 @@ describe("MarkdownBlockRuntime", () => {
       expect.objectContaining({ content: "Third\n\nFirst\n\nSecond\n\nFourth\n" })
     );
     expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+  });
+
+  it("picks the nearest drop boundary wherever the pointer is", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n\nFourth\n" }} />
+    );
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    stackRowRects(rows);
+    const grips = screen.getAllByRole("button", { name: "Block actions" });
+    const transfer = dragTransfer();
+    fireEvent.dragStart(grips[0], { dataTransfer: transfer });
+
+    const scroller = container.querySelector<HTMLElement>("[data-native-markdown-scroll]")!;
+    // Rows sit at y=100,140,180,220. Dragging "First" makes the boundary before "Second" a no-op,
+    // so the nearest useful boundaries are "Third" at 180 and "Fourth" at 220.
+    fireDragAt(scroller, "dragOver", transfer, 185);
+    expect(rows[2]).toHaveAttribute("data-drop-before", "true");
+
+    // Nearest wins even when the pointer is nowhere near a row's own box — the page margin is live.
+    fireDragAt(scroller, "dragOver", transfer, 214);
+    expect(rows[3]).toHaveAttribute("data-drop-before", "true");
+    expect(container.querySelectorAll("[data-drop-before]")).toHaveLength(1);
+  });
+
+  it("shows no insertion line for a drop that would not move anything", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
+    );
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    stackRowRects(rows);
+    // Drag the last Block: dropping it before itself, and dropping it at the tail, are both no-ops,
+    // so the only useful boundary is before "First" at y=100.
+    const grips = screen.getAllByRole("button", { name: "Block actions" });
+    const transfer = dragTransfer();
+    fireEvent.dragStart(grips[1], { dataTransfer: transfer });
+
+    const scroller = container.querySelector<HTMLElement>("[data-native-markdown-scroll]")!;
+    fireDragAt(scroller, "dragOver", transfer, 900);
+    expect(container.querySelectorAll("[data-drop-before]")).toHaveLength(0);
+    expect(
+      container.querySelector<HTMLElement>("[data-native-block-drop-end]")
+    ).not.toHaveAttribute("data-drop-active");
+    expect(transfer.dropEffect).toBe("none");
+
+    // Close in, the one real boundary does light up.
+    fireDragAt(scroller, "dragOver", transfer, 104);
+    expect(rows[0]).toHaveAttribute("data-drop-before", "true");
+    expect(transfer.dropEffect).toBe("move");
+  });
+
+  it("drags a translucent snapshot of the Block and dims the source", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
+    );
+    const grip = screen.getAllByRole("button", { name: "Block actions" })[0];
+    const transfer = dragTransfer();
+    fireEvent.dragStart(grip, { dataTransfer: transfer });
+
+    expect(transfer.setDragImage).toHaveBeenCalled();
+    expect(container.querySelectorAll('[data-block-dragging="true"]')).toHaveLength(1);
+
+    fireEvent.dragEnd(grip, { dataTransfer: transfer });
+    expect(container.querySelectorAll("[data-block-dragging]")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-drop-before]")).toHaveLength(0);
   });
 
   it("drags a selected list root with every descendant in one session", async () => {

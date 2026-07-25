@@ -159,6 +159,33 @@ export function MarkdownBlockRuntime({
     token: string;
   } | null>(null);
   const dragSessionCounterRef = useRef(0);
+  const scrollElementRef = useRef<HTMLDivElement>(null);
+  /**
+   * Drop boundaries for the current drag, in document order, measured once at dragstart.
+   *
+   * Computing the target from `dragover` on each row made the insertion line jump: a row only sees
+   * pointer events inside its own box, so the boundary flipped on whichever row happened to receive
+   * the event rather than on which edge the pointer is actually nearest. One table, and the target is
+   * the nearest boundary — the same answer wherever the pointer is, including over the page margins.
+   * Boundaries that would not move anything are filtered out at dragstart, so a no-op drop can never
+   * paint a line.
+   */
+  const dragBoundariesRef = useRef<{ beforeId: string | null; y: number; depth: number }[]>([]);
+  const dropTargetRef = useRef<{ beforeId: string | null } | null>(null);
+  const dragAutoScrollRef = useRef<{ frame: number | null; clientY: number }>({
+    frame: null,
+    clientY: 0,
+  });
+  const dragGhostRef = useRef<HTMLElement | null>(null);
+  // The drag image lives in `document.body` because Chromium will not snapshot a detached node, so
+  // it has to be torn down explicitly — including when the editor unmounts mid-drag.
+  useEffect(
+    () => () => {
+      dragGhostRef.current?.remove();
+      dragGhostRef.current = null;
+    },
+    []
+  );
   const composingBlockIdRef = useRef<string | null>(null);
   const compositionHasHistoryRef = useRef(false);
   const typingIdleTimerRef = useRef<number | null>(null);
@@ -1142,6 +1169,111 @@ export function MarkdownBlockRuntime({
     [applyBlockSelectionCommand, blockSelection, redo, undo]
   );
 
+  /** Would moving the dragged Blocks before `beforeId` change the document at all? */
+  const blockDropWouldMove = useCallback((beforeId: string | null): boolean => {
+    const session = dragSessionRef.current;
+    if (!session) return false;
+    const blocks = documentRef.current.getSnapshot().blocks;
+    const firstIndex = blocks.findIndex((block) => block.id === session.blockIds[0]);
+    const lastIndex = firstIndex + session.blockIds.length - 1;
+    const beforeIndex =
+      beforeId === null ? blocks.length : blocks.findIndex((block) => block.id === beforeId);
+    if (firstIndex < 0 || beforeIndex < 0) return false;
+    if (session.blockIds.includes(beforeId ?? "")) return false;
+    if (beforeIndex === lastIndex + 1) return false;
+    if (beforeId === null && lastIndex === blocks.length - 1) return false;
+    return true;
+  }, []);
+
+  const rebuildDragBoundaries = useCallback(() => {
+    const host = documentElementRef.current;
+    if (!host) return;
+    const rows = Array.from(host.querySelectorAll<HTMLElement>("[data-native-block-row]"));
+    const table: { beforeId: string | null; y: number; depth: number }[] = [];
+    for (const row of rows) {
+      const id = row.dataset.blockId ?? null;
+      if (!id) continue;
+      table.push({
+        beforeId: id,
+        y: row.getBoundingClientRect().top,
+        depth: Number(row.dataset.blockDepth ?? 0),
+      });
+    }
+    const last = rows[rows.length - 1];
+    if (last) {
+      table.push({
+        beforeId: null,
+        y: last.getBoundingClientRect().bottom,
+        depth: Number(last.dataset.blockDepth ?? 0),
+      });
+    }
+    dragBoundariesRef.current = table.filter((boundary) => blockDropWouldMove(boundary.beforeId));
+  }, [blockDropWouldMove]);
+
+  /**
+   * Paint the insertion line straight onto the DOM.
+   *
+   * `dragover` fires continuously, and routing it through React state re-rendered every row on every
+   * pointer move. The CSS already keys off these attributes, so setting them directly keeps the line
+   * exact and costs nothing.
+   */
+  const paintDropIndicator = useCallback((beforeId: string | null | undefined) => {
+    const host = documentElementRef.current;
+    if (!host) return;
+    for (const marked of Array.from(host.querySelectorAll("[data-drop-before]"))) {
+      marked.removeAttribute("data-drop-before");
+    }
+    const tail = host.querySelector("[data-native-block-drop-end]");
+    tail?.removeAttribute("data-drop-active");
+    if (beforeId === undefined) return;
+    if (beforeId === null) {
+      tail?.setAttribute("data-drop-active", "true");
+      return;
+    }
+    if (typeof CSS === "undefined") return;
+    host
+      .querySelector(`[data-block-id="${CSS.escape(beforeId)}"]`)
+      ?.setAttribute("data-drop-before", "true");
+  }, []);
+
+  const stopDragAutoScroll = useCallback(() => {
+    const state = dragAutoScrollRef.current;
+    if (state.frame !== null) window.cancelAnimationFrame(state.frame);
+    state.frame = null;
+  }, []);
+
+  /**
+   * Scroll the Page while a Block is held near the top or bottom edge.
+   *
+   * HTML drag-and-drop suppresses wheel scrolling, so without this a Block can only be dropped
+   * somewhere already on screen. Speed ramps with proximity, from ~240px/s at the threshold to
+   * ~1440px/s at the very edge, which is what makes a long reorder feel controllable.
+   */
+  const startDragAutoScroll = useCallback(() => {
+    const state = dragAutoScrollRef.current;
+    if (state.frame !== null) return;
+    const step = () => {
+      const scroller = scrollElementRef.current;
+      if (!scroller || !dragSessionRef.current) {
+        state.frame = null;
+        return;
+      }
+      const rect = scroller.getBoundingClientRect();
+      const threshold = 72;
+      const fromTop = state.clientY - rect.top;
+      const fromBottom = rect.bottom - state.clientY;
+      let delta = 0;
+      if (fromTop < threshold) delta = -(4 + 20 * (1 - Math.max(fromTop, 0) / threshold));
+      else if (fromBottom < threshold) delta = 4 + 20 * (1 - Math.max(fromBottom, 0) / threshold);
+      if (delta !== 0) {
+        scroller.scrollTop += Math.round(delta);
+        rebuildDragBoundaries();
+      }
+      state.frame = window.requestAnimationFrame(step);
+    };
+    state.frame = window.requestAnimationFrame(step);
+  }, [rebuildDragBoundaries]);
+
   const startBlockDrag = useCallback(
     (blockId: string, event: DragEvent<HTMLButtonElement>) => {
       const blocks = documentRef.current.getSnapshot().blocks;
@@ -1157,14 +1289,51 @@ export function MarkdownBlockRuntime({
       dragSessionRef.current = { pageId: file.id, blockIds, token };
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData(NATIVE_BLOCK_DRAG_MIME, token);
+
+      // Drag what the user grabbed, not the grip. Chromium snapshots the drag image synchronously,
+      // so the clone has to be laid out — off-screen, never `display: none`.
+      dragGhostRef.current?.remove();
+      const ghost = buildBlockDragGhost(documentElementRef.current, blockIds);
+      if (ghost) {
+        dragGhostRef.current = ghost;
+        event.dataTransfer.setDragImage(ghost, 16, 14);
+        const dropGhost = () => {
+          ghost.remove();
+          if (dragGhostRef.current === ghost) dragGhostRef.current = null;
+        };
+        // The browser snapshots the image before either of these runs. Both are scheduled because a
+        // backgrounded window may never run an animation frame, and a leaked clone would sit in the
+        // body forever.
+        window.requestAnimationFrame(dropGhost);
+        window.setTimeout(dropGhost, 0);
+      }
+      for (const id of blockIds) {
+        if (typeof CSS === "undefined") break;
+        documentElementRef.current
+          ?.querySelector(`[data-block-id="${CSS.escape(id)}"]`)
+          ?.setAttribute("data-block-dragging", "true");
+      }
+      rebuildDragBoundaries();
+      startDragAutoScroll();
     },
-    [blockSelection, file.id]
+    [blockSelection, file.id, rebuildDragBoundaries, startDragAutoScroll]
   );
 
   const clearBlockDrag = useCallback(() => {
     dragSessionRef.current = null;
+    dropTargetRef.current = null;
+    dragBoundariesRef.current = [];
+    stopDragAutoScroll();
+    paintDropIndicator(undefined);
+    dragGhostRef.current?.remove();
+    dragGhostRef.current = null;
+    for (const dragging of Array.from(
+      documentElementRef.current?.querySelectorAll("[data-block-dragging]") ?? []
+    )) {
+      dragging.removeAttribute("data-block-dragging");
+    }
     setBlockDropBeforeId(undefined);
-  }, []);
+  }, [paintDropIndicator, stopDragAutoScroll]);
 
   const canDropBlock = useCallback(
     (dataTransfer: DataTransfer) => {
@@ -1189,6 +1358,17 @@ export function MarkdownBlockRuntime({
       }
 
       dragSessionRef.current = null;
+      dropTargetRef.current = null;
+      dragBoundariesRef.current = [];
+      stopDragAutoScroll();
+      paintDropIndicator(undefined);
+      dragGhostRef.current?.remove();
+      dragGhostRef.current = null;
+      for (const dragging of Array.from(
+        documentElementRef.current?.querySelectorAll("[data-block-dragging]") ?? []
+      )) {
+        dragging.removeAttribute("data-block-dragging");
+      }
       setBlockDropBeforeId(undefined);
       const blocks = documentRef.current.getSnapshot().blocks;
       const firstIndex = blocks.findIndex((block) => block.id === session.blockIds[0]);
@@ -1209,7 +1389,79 @@ export function MarkdownBlockRuntime({
       }
       return true;
     },
-    [applyBlockSelectionCommand, canDropBlock, file.id]
+    [applyBlockSelectionCommand, canDropBlock, file.id, paintDropIndicator, stopDragAutoScroll]
+  );
+
+  /** Nearest drop boundary to the pointer, or null when nothing useful is in reach. */
+  const nearestDropBoundary = useCallback((clientY: number) => {
+    const table = dragBoundariesRef.current;
+    if (table.length === 0 || !Number.isFinite(clientY)) return null;
+    let best = table[0];
+    for (const boundary of table) {
+      if (Math.abs(clientY - boundary.y) < Math.abs(clientY - best.y)) best = boundary;
+    }
+    // Far from every boundary the intent is ambiguous, so show nothing rather than guess.
+    return Math.abs(clientY - best.y) > 160 ? null : best;
+  }, []);
+
+  /**
+   * Boundary implied by the element under the pointer, for drag events that carry no coordinates.
+   *
+   * A real `dragover` always has a `clientY`; this covers synthesised events, and it keeps the
+   * element the user is actually over authoritative instead of falling back to "the first boundary",
+   * which is what a `NaN` distance silently resolves to.
+   */
+  const boundaryFromDragTarget = useCallback((target: EventTarget | null) => {
+    if (!(target instanceof Element)) return null;
+    const table = dragBoundariesRef.current;
+    if (target.closest("[data-native-block-drop-end]")) {
+      return table.find((boundary) => boundary.beforeId === null) ?? null;
+    }
+    const blockId = target.closest<HTMLElement>("[data-block-id]")?.dataset.blockId;
+    return blockId ? (table.find((boundary) => boundary.beforeId === blockId) ?? null) : null;
+  }, []);
+
+  const handleBlockDragOver = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      if (!canDropBlock(event.dataTransfer)) return;
+      // Claimed unconditionally so the frame margins and the tail region are live drop targets, not
+      // dead zones the pointer falls into between rows.
+      event.preventDefault();
+      dragAutoScrollRef.current.clientY = event.clientY;
+      const boundary = Number.isFinite(event.clientY)
+        ? nearestDropBoundary(event.clientY)
+        : boundaryFromDragTarget(event.target);
+      if (!boundary) {
+        event.dataTransfer.dropEffect = "none";
+        dropTargetRef.current = null;
+        paintDropIndicator(undefined);
+        return;
+      }
+      event.dataTransfer.dropEffect = "move";
+      if (dropTargetRef.current?.beforeId !== boundary.beforeId) {
+        dropTargetRef.current = { beforeId: boundary.beforeId };
+        paintDropIndicator(boundary.beforeId);
+      }
+    },
+    [boundaryFromDragTarget, canDropBlock, nearestDropBoundary, paintDropIndicator]
+  );
+
+  const handleBlockDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      if (!canDropBlock(event.dataTransfer)) return;
+      const target =
+        dropTargetRef.current ??
+        (Number.isFinite(event.clientY)
+          ? nearestDropBoundary(event.clientY)
+          : boundaryFromDragTarget(event.target));
+      if (!target) {
+        event.preventDefault();
+        clearBlockDrag();
+        return;
+      }
+      if (dropBlockBefore(target.beforeId, event.dataTransfer)) event.preventDefault();
+    },
+    [boundaryFromDragTarget, canDropBlock, clearBlockDrag, dropBlockBefore, nearestDropBoundary]
   );
 
   const pageFrameStyle = {
@@ -1343,7 +1595,13 @@ export function MarkdownBlockRuntime({
           </button>
         </div>
       ) : null}
-      <div className="min-h-0 flex-1 overflow-y-auto" data-native-markdown-scroll>
+      <div
+        ref={scrollElementRef}
+        className="min-h-0 flex-1 overflow-y-auto"
+        data-native-markdown-scroll
+        onDragOver={handleBlockDragOver}
+        onDrop={handleBlockDrop}
+      >
         <div aria-hidden data-native-editor-chrome className="h-11 shrink-0" />
         <div
           className={`editor-page-frame relative ${
@@ -1419,8 +1677,6 @@ export function MarkdownBlockRuntime({
                 keyboardEntry={!activeBlockId && !blockSelection && index === 0}
                 blockSelected={selectedBlockIdSet.has(block.id)}
                 blockSelectionFocus={blockSelection?.focusId === block.id}
-                nextBlockId={snapshot.blocks[index + 1]?.id}
-                dropBefore={blockDropBeforeId === block.id}
                 selection={pendingSelection?.blockId === block.id ? pendingSelection : undefined}
                 onActivate={(blockId, clickedSelection) => {
                   if (isSearchBarOpen) setSearchBarOpen(false);
@@ -1632,10 +1888,6 @@ export function MarkdownBlockRuntime({
                 onRedo={redo}
                 onDragStart={startBlockDrag}
                 onDragEnd={clearBlockDrag}
-                onCanDrop={canDropBlock}
-                onDragIntent={setBlockDropBeforeId}
-                onClearDragIntent={() => setBlockDropBeforeId(undefined)}
-                onDropBefore={(beforeId, dataTransfer) => dropBlockBefore(beforeId, dataTransfer)}
                 onOpenWikiLink={(target) => {
                   const destination = resolveWikiLinkTarget(
                     useFileStore.getState().files,
@@ -1906,6 +2158,67 @@ function caretOffsetOnBlockEdge(
   const y = rect.top + rect.height / 2;
   const x = Math.min(Math.max(caretX, rect.left + 1), Math.max(rect.right - 1, rect.left + 1));
   return sourceOffsetAtPoint(x, y, content, source, projectMarkdownInline(source));
+}
+
+/**
+ * A translucent snapshot of the Blocks being dragged, for `setDragImage`.
+ *
+ * Without one the browser drags the 24px grip button, which tells the user nothing about what they
+ * picked up. Multiple Blocks stack with a small offset and a count badge, the way Notion shows a
+ * multi-Block drag.
+ */
+function buildBlockDragGhost(
+  host: HTMLElement | null,
+  blockIds: readonly string[]
+): HTMLElement | null {
+  if (!host || typeof document === "undefined" || typeof CSS === "undefined") return null;
+  const rows = blockIds
+    .map((id) => host.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(id)}"]`))
+    .filter((row): row is HTMLElement => row !== null);
+  if (rows.length === 0) return null;
+  const firstContent = rows[0].querySelector<HTMLElement>("[data-native-block-content]");
+  if (!firstContent) return null;
+
+  const ghost = document.createElement("div");
+  const width = Math.round(firstContent.getBoundingClientRect().width);
+  Object.assign(ghost.style, {
+    position: "fixed",
+    top: "0",
+    left: "-10000px",
+    width: `${width}px`,
+    opacity: "0.75",
+    pointerEvents: "none",
+    borderRadius: "6px",
+    padding: "4px 8px",
+    background: "hsl(var(--background))",
+    boxShadow: "0 8px 24px rgba(0, 0, 0, 0.18)",
+  } satisfies Partial<CSSStyleDeclaration>);
+
+  for (const [index, row] of rows.slice(0, 3).entries()) {
+    const content = row.querySelector<HTMLElement>("[data-native-block-content]");
+    if (!content) continue;
+    const clone = content.cloneNode(true) as HTMLElement;
+    for (const chrome of Array.from(
+      clone.querySelectorAll("[data-native-block-controls], .sr-only, [data-code-language]")
+    )) {
+      chrome.remove();
+    }
+    clone.style.marginLeft = `${index * 4}px`;
+    clone.style.opacity = index === 0 ? "1" : "0.6";
+    ghost.append(clone);
+  }
+  if (rows.length > 1) {
+    const badge = document.createElement("div");
+    badge.textContent = `${rows.length} blocks`;
+    Object.assign(badge.style, {
+      marginTop: "4px",
+      fontSize: "11px",
+      opacity: "0.6",
+    } satisfies Partial<CSSStyleDeclaration>);
+    ghost.append(badge);
+  }
+  document.body.append(ghost);
+  return ghost;
 }
 
 function findMarkdownSearchMatches(

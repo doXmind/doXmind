@@ -428,6 +428,15 @@
   pointer-events: none;
 }
 
+/*
+ * The Block being dragged fades, so the insertion line reads as "this goes here" rather than the
+ * Page having two copies of the same content.
+ */
+.markdown-page [data-native-block-row][data-block-dragging="true"] {
+  opacity: 0.4;
+  transition: opacity 120ms ease-out;
+}
+
 .markdown-page [data-native-block-row][data-drop-before="true"]::before {
   /* Sits in the inter-row gap, on the boundary the Block would land at. */
   top: calc(var(--row-lead) - 1px);

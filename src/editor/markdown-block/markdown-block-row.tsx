@@ -90,7 +90,6 @@ interface MarkdownBlockRowProps {
   keyboardEntry?: boolean;
   blockSelected?: boolean;
   blockSelectionFocus?: boolean;
-  nextBlockId?: string;
   dropBefore?: boolean;
   selection?: { anchor: number; head: number };
   onActivate: (blockId: string, selection?: { anchor: number; head: number }) => void;
@@ -133,10 +132,6 @@ interface MarkdownBlockRowProps {
   onRedo: () => void;
   onDragStart: (blockId: string, event: DragEvent<HTMLButtonElement>) => void;
   onDragEnd: () => void;
-  onCanDrop: (dataTransfer: DataTransfer) => boolean;
-  onDragIntent?: (beforeId: string | null) => void;
-  onClearDragIntent?: () => void;
-  onDropBefore: (blockId: string | null, dataTransfer: DataTransfer) => boolean;
   onOpenWikiLink?: (target: string) => void;
   wikiEmbedContext?: MarkdownWikiEmbedContext;
   collectionContext?: MarkdownCollectionContext;
@@ -175,7 +170,6 @@ export function MarkdownBlockRow({
   keyboardEntry = true,
   blockSelected = false,
   blockSelectionFocus = false,
-  nextBlockId,
   dropBefore = false,
   selection,
   onActivate,
@@ -204,10 +198,6 @@ export function MarkdownBlockRow({
   onRedo,
   onDragStart,
   onDragEnd,
-  onCanDrop,
-  onDragIntent,
-  onClearDragIntent,
-  onDropBefore,
   onOpenWikiLink,
   wikiEmbedContext,
   collectionContext,
@@ -656,10 +646,8 @@ export function MarkdownBlockRow({
         textarea?.selectionEnd ?? editorSelection.head,
         images
       );
-      return;
     }
-    const beforeId = blockDropTarget(event.currentTarget, event.clientY, block.id, nextBlockId);
-    if (onDropBefore(beforeId, event.dataTransfer)) event.preventDefault();
+    // A Block drop is left to bubble: the container owns the boundary and the command.
   };
 
   const updateInlineSelection = (textarea: HTMLTextAreaElement) => {
@@ -746,20 +734,13 @@ export function MarkdownBlockRow({
         }
       }}
       onDragOver={(event) => {
+        // Only image files are a row-level concern. Block reordering is decided once, at the
+        // container, from a boundary table — a row can only see the pointer inside its own box, so
+        // deciding there made the insertion line flip on whichever row got the event.
         if (!sourceOnly && rasterFiles(event.dataTransfer).length) {
           event.preventDefault();
           event.dataTransfer.dropEffect = "copy";
-          return;
         }
-        if (!onCanDrop(event.dataTransfer)) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-        onDragIntent?.(blockDropTarget(event.currentTarget, event.clientY, block.id, nextBlockId));
-      }}
-      onDragLeave={(event) => {
-        const nextTarget = event.relatedTarget;
-        if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
-        onClearDragIntent?.();
       }}
       onDrop={handleDrop}
     >
@@ -1552,17 +1533,6 @@ function domSelectionToolbarPosition(editor: HTMLElement): { top: number; left: 
         ? Math.max(160, Math.min(viewportWidth - 160, rawLeft))
         : Math.max(8, rawLeft),
   };
-}
-
-function blockDropTarget(
-  row: HTMLDivElement,
-  clientY: number,
-  blockId: string,
-  nextBlockId: string | undefined
-): string | null {
-  const rect = row.getBoundingClientRect();
-  if (rect.height > 0 && clientY > rect.top + rect.height / 2) return nextBlockId ?? null;
-  return blockId;
 }
 
 function blockTypeLabel(block: MarkdownBlockView): string {

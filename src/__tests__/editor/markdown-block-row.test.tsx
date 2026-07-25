@@ -48,8 +48,6 @@ function slashHandlers() {
     onRedo: vi.fn(),
     onDragStart: vi.fn(),
     onDragEnd: vi.fn(),
-    onCanDrop: () => false,
-    onDropBefore: vi.fn(),
   } satisfies Partial<ComponentProps<typeof MarkdownBlockRow>>;
 }
 
@@ -85,8 +83,6 @@ describe("MarkdownBlockRow semantic previews", () => {
       onRedo: vi.fn(),
       onDragStart: vi.fn(),
       onDragEnd: vi.fn(),
-      onCanDrop: () => false,
-      onDropBefore: vi.fn(),
     };
 
     render(<MarkdownBlockRow {...props} />);
@@ -129,8 +125,6 @@ describe("MarkdownBlockRow semantic previews", () => {
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
-        onCanDrop={() => false}
-        onDropBefore={vi.fn()}
       />
     );
 
@@ -194,8 +188,6 @@ describe("MarkdownBlockRow semantic previews", () => {
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
-        onCanDrop={() => false}
-        onDropBefore={vi.fn()}
       />
     );
 
@@ -237,8 +229,6 @@ describe("MarkdownBlockRow semantic previews", () => {
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
-        onCanDrop={() => false}
-        onDropBefore={vi.fn()}
         collectionContext={{
           status: "ready",
           pages: [
@@ -326,8 +316,6 @@ describe("MarkdownBlockRow semantic previews", () => {
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
-        onCanDrop={() => false}
-        onDropBefore={vi.fn()}
         imageContext={{ pagePath: "Notes/Page.md", readAsset }}
       />
     );
@@ -376,8 +364,6 @@ describe("MarkdownBlockRow semantic previews", () => {
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
-        onCanDrop={() => false}
-        onDropBefore={vi.fn()}
       />
     );
 
@@ -407,8 +393,6 @@ describe("MarkdownBlockRow semantic previews", () => {
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
-        onCanDrop={() => false}
-        onDropBefore={vi.fn()}
       />
     );
     expect(screen.getByRole("textbox", { name: "Markdown block" })).toHaveValue(source.trimEnd());
@@ -440,8 +424,6 @@ describe("MarkdownBlockRow semantic previews", () => {
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
-        onCanDrop={() => false}
-        onDropBefore={vi.fn()}
         onRunSlashCommand={onRunSlashCommand}
       />
     );
@@ -720,8 +702,6 @@ describe("MarkdownBlockRow semantic previews", () => {
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
-        onCanDrop={() => false}
-        onDropBefore={vi.fn()}
       />
     );
 
@@ -762,8 +742,6 @@ describe("MarkdownBlockRow semantic previews", () => {
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
-        onCanDrop={() => false}
-        onDropBefore={vi.fn()}
         onOpenWikiLink={onOpenWikiLink}
       />
     );
@@ -838,8 +816,6 @@ describe("MarkdownBlockRow semantic previews", () => {
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
-        onCanDrop={() => false}
-        onDropBefore={vi.fn()}
         wikiEmbedContext={{
           status: "ready",
           index,
@@ -904,8 +880,6 @@ describe("MarkdownBlockRow semantic previews", () => {
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
-        onCanDrop={() => false}
-        onDropBefore={vi.fn()}
         wikiEmbedContext={{
           status: "ready",
           index,
@@ -959,8 +933,6 @@ describe("MarkdownBlockRow semantic previews", () => {
             onRedo={vi.fn()}
             onDragStart={vi.fn()}
             onDragEnd={vi.fn()}
-            onCanDrop={() => false}
-            onDropBefore={vi.fn()}
           />
         ))}
       </>
@@ -1013,8 +985,6 @@ describe("MarkdownBlockRow semantic previews", () => {
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
-        onCanDrop={() => false}
-        onDropBefore={vi.fn()}
       />
     );
 
@@ -1060,8 +1030,6 @@ describe("MarkdownBlockRow semantic previews", () => {
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
-        onCanDrop={() => false}
-        onDropBefore={vi.fn()}
       />
     );
 

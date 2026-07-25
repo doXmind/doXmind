@@ -464,7 +464,11 @@ export class MarkdownBlockDocument {
       if (beforeIndex < 0) throw new Error(`unknown before block: ${command.beforeId}`);
 
       this.recordHistory();
-      reordered.splice(beforeIndex, 0, ...selected);
+      reordered.splice(
+        beforeIndex,
+        0,
+        ...normalizeMovedListIndent(reordered, beforeIndex, selected)
+      );
       for (const boundaryIndex of [beforeIndex - 1, beforeIndex + selected.length - 1]) {
         if (boundaryIndex < 0 || boundaryIndex >= reordered.length - 1) continue;
         reordered[boundaryIndex] = ensureBlockBoundary(
@@ -1386,6 +1390,67 @@ function plainBlockContent(block: MarkdownBlockSource, content: string): string 
 function prefixSourceLines(source: string, prefix: string): string {
   if (!source) return prefix;
   return source.replace(/(^|(?:\r\n|\n|\r))/g, `$1${prefix}`);
+}
+
+/**
+ * Re-indent a moved list range so its indentation still means something where it landed.
+ *
+ * Without this, dragging a depth-2 item to the top of the Page left `    - c` — four leading spaces,
+ * which Markdown reads as an indented code block. The Block silently stopped being a list item, and
+ * that is the user's file, not a view. The shift is applied to the whole range so nesting *within*
+ * the moved subtree is preserved, and it is validated by re-scanning: if the result would not parse
+ * back to the intended kinds and depths, the original bytes are kept rather than made worse.
+ */
+function normalizeMovedListIndent(
+  reordered: readonly MarkdownBlockSource[],
+  beforeIndex: number,
+  selected: readonly MarkdownBlockSource[]
+): MarkdownBlockSource[] {
+  const moved = [...selected];
+  if (moved.every((block) => listItemFamily(block.kind) === null)) return moved;
+
+  const rootDepth = Math.min(...moved.map((block) => block.depth ?? 0));
+  const previous = beforeIndex > 0 ? reordered[beforeIndex - 1] : null;
+  const previousSyntax = previous ? listItemSyntax(previous.raw, true) : null;
+  // A list item may nest at most one level deeper than the item above it; anything else is top level.
+  const maxDepth = previousSyntax ? (previous?.depth ?? 0) + 1 : 0;
+  const targetDepth = Math.min(rootDepth, Math.max(maxDepth, 0));
+  const delta = targetDepth - rootDepth;
+  if (delta === 0) return moved;
+
+  const unit = previousSyntax?.nestingIndent || "  ";
+  const shifted = moved.map((block) => {
+    const depth = Math.max((block.depth ?? 0) + delta, 0);
+    let raw = block.raw;
+    if (delta > 0) {
+      for (let step = 0; step < delta; step += 1) raw = indentSourceLines(raw, unit);
+    } else {
+      raw = dedentSourceLines(raw, unit.length * -delta);
+    }
+    return { ...block, raw, depth };
+  });
+
+  // Fail closed: the shift is only worth anything if it round-trips to the same Block kinds.
+  const candidate = [
+    ...reordered.slice(0, beforeIndex),
+    ...shifted,
+    ...reordered.slice(beforeIndex),
+  ];
+  const scanned = scanMarkdownSource(candidate.map((block) => block.raw).join(""));
+  if (scanned.length !== candidate.length) return moved;
+  for (const [index, block] of shifted.entries()) {
+    const span = scanned[beforeIndex + index];
+    if (!span || blockFromSource(span.raw, block.id, span.listDepth).kind !== block.kind) {
+      return moved;
+    }
+  }
+  return shifted;
+}
+
+/** Remove up to `width` leading spaces or tabs from every line. */
+function dedentSourceLines(source: string, width: number): string {
+  if (width <= 0) return source;
+  return source.replace(/^[ \t]*/gm, (match) => match.slice(Math.min(width, match.length)));
 }
 
 function indentSourceLines(source: string, indentation: string): string {

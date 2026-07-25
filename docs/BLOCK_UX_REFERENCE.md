@@ -149,9 +149,41 @@ Measured, then closed:
   Feishu's behaviour. Safe because Enter belongs to the IME until the composition commits, so the
   offsets used to execute a command always come from committed text.
 
+### Drag and drop
+
+- The drop target is computed once, from a boundary table measured at dragstart, and resolved as the
+  boundary nearest the pointer. Deciding it from `dragover` on each row made the insertion line jump,
+  because a row only sees pointer events inside its own box — the boundary flipped on whichever row
+  happened to receive the event rather than on the edge the pointer is nearest. One table also makes
+  the page margins and the tail region live drop zones instead of dead space.
+- Boundaries that would not move anything are filtered out at dragstart, so a no-op drop paints no
+  line and reports `dropEffect: "none"` rather than promising a move that will not happen.
+- The insertion line is written straight to the DOM. Routing `dragover` through React state
+  re-rendered every row on every pointer move.
+- `setDragImage` gets a translucent clone of the Block's own content — the browser otherwise drags
+  the 24px grip, which says nothing about what was picked up. Multiple Blocks stack with a count
+  badge. The source rows fade to 40%.
+- The Page auto-scrolls within 72px of either edge, ramping ~240px/s to ~1440px/s with proximity.
+  HTML drag-and-drop suppresses wheel scrolling, so without this a Block can only be dropped
+  somewhere already on screen.
+- A moved list range is re-indented to be valid where it lands. Dragging a depth-2 item to the top of
+  a Page used to emit `    - c`, four leading spaces, which Markdown reads as an indented code block —
+  the list item silently stopped being a list item _in the user's file_. The shift applies to the
+  whole range so nesting inside it survives, and it is validated by re-scanning: if the result would
+  not parse back to the same Block kinds, the original bytes are kept rather than made worse.
+
+Verified in Chrome with a real drag cycle: ghost created then removed, the line painted on the
+correct row for a given `clientY`, the drop reordering as expected, and no leftover `data-block-dragging`,
+indicator or ghost node afterwards.
+
 ### Known gaps, measured not guessed
 
 - No syntax highlighting in code Blocks. Both references highlight; adding it means taking on a
   highlighter dependency, which is a product decision rather than a fix.
 - Callouts render a `CALLOUT` text label rather than a type icon and accent colour.
 - Tables are read-only; no cell navigation or row/column controls.
+- The source scanner classifies a 4-space-indented list item (`    - c` under `  - b`) as
+  `unsupported` rather than a depth-2 item, so lists deeper than two levels degrade to raw source on
+  load. Found while building the drag fixture; independent of drag.
+- Multi-Block selection is still missing, so a drag always carries one Block plus its list subtree.
+  The drag ghost already stacks and counts for the multi-Block case.
