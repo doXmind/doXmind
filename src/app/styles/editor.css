@@ -423,6 +423,12 @@
 .markdown-page [data-native-block-row] [data-editor-kind="blockquote"] {
   font-size: 1rem !important;
   line-height: 1.75rem !important;
+  /* Both editing surfaces break a long unbreakable token — the contenteditable through
+   * `break-words`, the textarea through the UA default — and no preview did. A token with no space,
+   * slash or hyphen to break at therefore overflowed on one line while unfocused and wrapped the
+   * moment it was focused: measured, a heading went 116px to 233px, a list item and a quote +28px.
+   * (An ordinary URL never showed this, because Chromium already breaks after `/` and `-`.) */
+  overflow-wrap: break-word;
 }
 
 .markdown-page .native-block-editor-surface {
@@ -505,6 +511,9 @@
 .markdown-page [data-editor-kind="heading"] {
   font-weight: 600;
   letter-spacing: -0.018em;
+  /* See the body rule above: without this a heading holding one unbreakable token grew 117px on
+   * focus, the largest single-gesture jump of any kind. */
+  overflow-wrap: break-word;
 }
 
 .markdown-page [data-editor-kind="heading"][data-editor-level="1"] {

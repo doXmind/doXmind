@@ -1913,7 +1913,7 @@ function BlockPreview({
           className="my-1 min-h-9 rounded-lg border border-border bg-muted/20"
         >
           <summary
-            className="cursor-pointer select-none px-3 py-2 text-sm font-medium"
+            className="cursor-pointer select-none break-words px-3 py-2 text-sm font-medium"
             onClick={(event) => event.stopPropagation()}
           >
             <InlineMarkdownPreview source={toggle.summary} onOpenWikiLink={onOpenWikiLink} />
@@ -2029,7 +2029,7 @@ function BlockPreview({
               <div className={`font-semibold ${style.accent}`}>{style.label}</div>
             )}
             {callout.body ? (
-              <div className="whitespace-pre-wrap">
+              <div className="whitespace-pre-wrap break-words">
                 <InlineMarkdownPreview source={callout.body} onOpenWikiLink={onOpenWikiLink} />
               </div>
             ) : null}
@@ -2046,7 +2046,7 @@ function BlockPreview({
       <div className="relative">
         <pre
           data-testid="fenced-code-block"
-          className="min-h-9 overflow-x-auto whitespace-pre-wrap rounded-md bg-muted px-3 py-2 font-mono text-sm leading-6"
+          className="min-h-9 overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted px-3 py-2 font-mono text-sm leading-6"
         >
           <HighlightedCode
             code={fence ? fence.payload : source}
@@ -2071,7 +2071,7 @@ function BlockPreview({
   }
   if (block.kind === "unsupported") {
     return (
-      <pre className="min-h-9 overflow-x-auto whitespace-pre-wrap rounded-md bg-muted/60 px-3 py-2 font-mono text-sm leading-6 text-muted-foreground">
+      <pre className="min-h-9 overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted/60 px-3 py-2 font-mono text-sm leading-6 text-muted-foreground">
         <code>{source || " "}</code>
       </pre>
     );
