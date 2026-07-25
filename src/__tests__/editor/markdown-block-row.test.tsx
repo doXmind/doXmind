@@ -751,6 +751,108 @@ describe("MarkdownBlockRow semantic previews", () => {
     expect(screen.getByRole("textbox", { name: "Link URL" })).toHaveValue("https://old.example");
   });
 
+  it.each([
+    ["NOTE", "Note", "sky"],
+    ["TIP", "Tip", "emerald"],
+    ["WARNING", "Warning", "amber"],
+    ["CAUTION", "Caution", "red"],
+  ] as const)("renders a %s callout with its own icon and accent", (marker, label, hue) => {
+    const [block] = MarkdownBlockDocument.fromMarkdown(
+      `> [!${marker}]\n> Body line.\n`
+    ).getSnapshot().blocks;
+    const { container } = render(
+      <MarkdownBlockRow block={block} index={0} count={1} active={false} {...slashHandlers()} />
+    );
+
+    const callout = screen.getByTestId("callout-block");
+    expect(callout.className).toContain(hue);
+    expect(callout).toHaveTextContent(label);
+    // No shouting uppercase label, and the icon is a real graphic.
+    expect(callout.querySelector("svg")).toBeInTheDocument();
+    expect(container.textContent).not.toContain(marker);
+  });
+
+  it("keeps a callout's accent when it is activated", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown(
+      "> [!WARNING] Careful\n> Body line.\n"
+    ).getSnapshot().blocks;
+    const { container, rerender } = render(
+      <MarkdownBlockRow block={block} index={0} count={1} active={false} {...slashHandlers()} />
+    );
+    expect(screen.getByTestId("callout-block").className).toContain("amber");
+
+    rerender(<MarkdownBlockRow block={block} index={0} count={1} active {...slashHandlers()} />);
+    expect(container.querySelector("[data-native-block-edit-surface]")?.className).toContain(
+      "amber"
+    );
+  });
+
+  it("honours column alignment and puts the caret in the cell that was clicked", () => {
+    const source = "| A | B |\n| :-- | --: |\n| a1 | b1 |\n";
+    const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
+    const onActivate = vi.fn();
+    const { container } = render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active={false}
+        {...slashHandlers()}
+        onActivate={onActivate}
+      />
+    );
+
+    const cells = container.querySelectorAll<HTMLElement>("[data-table-cell]");
+    expect(cells).toHaveLength(4);
+    expect(cells[0].className).toContain("text-left");
+    expect(cells[1].className).toContain("text-right");
+
+    // `b1` starts at the offset the cell advertises, so a click lands the caret on the text.
+    const b1 = cells[3];
+    expect(source.slice(Number(b1.dataset.tableCell), Number(b1.dataset.tableCell) + 2)).toBe("b1");
+    fireEvent.pointerDown(b1, { button: 0 });
+    fireEvent.click(b1);
+    expect(onActivate).toHaveBeenCalledWith(block.id, {
+      anchor: Number(b1.dataset.tableCell),
+      head: Number(b1.dataset.tableCell),
+    });
+  });
+
+  it("moves between table cells with Tab and adds a row at the end", () => {
+    const source = "| A | B |\n| --- | --- |\n| a1 | b1 |\n";
+    const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
+    const onSelectCellRange = vi.fn();
+    const onPaste = vi.fn();
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active
+        selection={{ anchor: 2, head: 2 }}
+        {...slashHandlers()}
+        onPaste={onPaste}
+        onSelectCellRange={onSelectCellRange}
+      />
+    );
+
+    const editor = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Markdown block" });
+    editor.setSelectionRange(2, 2);
+    fireEvent.keyDown(editor, { key: "Tab" });
+    // From "A" to "B".
+    expect(onSelectCellRange).toHaveBeenCalledWith(block.id, 6, 7);
+
+    // From the last cell, Tab appends a blank row with the same column count.
+    editor.setSelectionRange(source.trimEnd().length - 3, source.trimEnd().length - 3);
+    fireEvent.keyDown(editor, { key: "Tab" });
+    expect(onPaste).toHaveBeenCalledWith(
+      block.id,
+      source.trimEnd().length,
+      source.trimEnd().length,
+      "\n|  |  |"
+    );
+  });
+
   it("keeps a semantic print preview beside the active source control", () => {
     const [block] =
       MarkdownBlockDocument.fromMarkdown("# Printable heading\n").getSnapshot().blocks;

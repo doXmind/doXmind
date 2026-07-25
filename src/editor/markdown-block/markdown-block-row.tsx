@@ -1,6 +1,16 @@
 "use client";
 
-import { FileText, Link as LinkIcon, Loader2, type LucideIcon } from "lucide-react";
+import {
+  FileText,
+  Info,
+  Lightbulb,
+  Link as LinkIcon,
+  Loader2,
+  MessageSquareWarning,
+  OctagonAlert,
+  TriangleAlert,
+  type LucideIcon,
+} from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { createPortal } from "react-dom";
 import {
@@ -50,6 +60,12 @@ import {
   type WikiEmbedProjectionStatus,
 } from "@/editor/markdown-block/wiki-embed";
 import { parseMarkdownToggle } from "@/editor/markdown-block/markdown-toggle";
+import {
+  markdownTableBlankRow,
+  markdownTableCellAt,
+  markdownTableNeighbourCell,
+  parseMarkdownTableSource,
+} from "@/editor/markdown-block/markdown-table";
 import {
   MARKDOWN_IMAGE_EXTENSIONS,
   parseMarkdownImageBlock,
@@ -107,6 +123,8 @@ interface MarkdownBlockRowProps {
   ) => void;
   /** Commits a link with a destination the user typed, over the given source range. */
   onEditLink?: (blockId: string, from: number, to: number, url: string) => void;
+  /** Moves the caret to a source range inside the Block, without changing anything. */
+  onSelectCellRange?: (blockId: string, from: number, to: number) => void;
   onImportImages?: (blockId: string, from: number, to: number, files: readonly File[]) => void;
   onCompositionStart: (blockId: string) => void;
   onCompositionEnd: (blockId: string) => void;
@@ -184,6 +202,7 @@ export function MarkdownBlockRow({
   onPaste,
   onApplyInlineFormat,
   onEditLink,
+  onSelectCellRange,
   onImportImages,
   onCompositionStart,
   onCompositionEnd,
@@ -540,6 +559,25 @@ export function MarkdownBlockRow({
         });
         return;
       }
+      if (block.kind === "table" && onPaste) {
+        const geometry = parseMarkdownTableSource(source);
+        const current = geometry ? markdownTableCellAt(geometry, from) : null;
+        if (geometry && current) {
+          const next = markdownTableNeighbourCell(geometry, current, event.shiftKey ? -1 : 1);
+          if (next) {
+            onSelectCellRange?.(block.id, next.from, next.to);
+          } else if (!event.shiftKey) {
+            // Tab out of the last cell adds a row, the way it does in both reference products.
+            onPaste(
+              block.id,
+              geometry.appendAt,
+              geometry.appendAt,
+              markdownTableBlankRow(geometry)
+            );
+          }
+          return;
+        }
+      }
       if (indentsWithSpaces(block.kind)) {
         const shifted = shiftSourceIndent(source, from, to, event.shiftKey ? -1 : 1);
         if (shifted) {
@@ -858,8 +896,19 @@ export function MarkdownBlockRow({
           // Activating a Block must keep the caret where the user clicked. Without this the
           // rendered preview is replaced by an editing surface that focuses at end-of-Block, so
           // clicking into the middle of a paragraph silently jumps to its end.
-          if (active || !block.editable || event.button !== 0 || event.shiftKey) return;
+          // `> 0` rather than `!== 0`, so a synthesised event with no `button` still counts as
+          // primary instead of being silently ignored.
+          if (active || !block.editable || event.button > 0 || event.shiftKey) return;
           if ((event.target as HTMLElement | null)?.closest("a,button,input,label")) return;
+          // A table renders as a grid, so a plain caret hit-test would land nowhere useful. Each
+          // cell carries the source offset of its own text instead.
+          const tableCell = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+            "[data-table-cell]"
+          );
+          if (tableCell) {
+            pendingClickOffsetRef.current = Number(tableCell.dataset.tableCell);
+            return;
+          }
           const offset = sourceOffsetAtPoint(
             event.clientX,
             event.clientY,
@@ -1333,6 +1382,48 @@ function autosizeTextarea(textarea: HTMLTextAreaElement): void {
   const next = `${Math.max(textarea.scrollHeight, 36)}px`;
   if (textarea.style.height !== next) textarea.style.height = next;
 }
+
+/**
+ * Icon and accent per GitHub-flavoured callout type.
+ *
+ * Derived from the `[!TYPE]` marker in the source, so the whole appearance round-trips through the
+ * Markdown with nothing stored beside it.
+ */
+const CALLOUT_STYLES: Record<
+  string,
+  { icon: LucideIcon; label: string; container: string; accent: string }
+> = {
+  note: {
+    icon: Info,
+    label: "Note",
+    container: "border-sky-500/25 bg-sky-500/[0.06]",
+    accent: "text-sky-600 dark:text-sky-400",
+  },
+  tip: {
+    icon: Lightbulb,
+    label: "Tip",
+    container: "border-emerald-500/25 bg-emerald-500/[0.06]",
+    accent: "text-emerald-600 dark:text-emerald-400",
+  },
+  important: {
+    icon: MessageSquareWarning,
+    label: "Important",
+    container: "border-violet-500/25 bg-violet-500/[0.06]",
+    accent: "text-violet-600 dark:text-violet-400",
+  },
+  warning: {
+    icon: TriangleAlert,
+    label: "Warning",
+    container: "border-amber-500/25 bg-amber-500/[0.06]",
+    accent: "text-amber-600 dark:text-amber-500",
+  },
+  caution: {
+    icon: OctagonAlert,
+    label: "Caution",
+    container: "border-red-500/25 bg-red-500/[0.06]",
+    accent: "text-red-600 dark:text-red-400",
+  },
+};
 
 /** Destination of the link the selection already sits inside, or "" when there is none. */
 function existingLinkDestination(source: string, from: number, to: number): string {
@@ -1812,6 +1903,15 @@ function BlockPreview({
   if (block.kind === "table") {
     const table = tablePreview(source);
     if (table) {
+      // Cell source ranges, so clicking a cell can put the caret in that cell rather than at the
+      // end of the whole table's raw source.
+      const geometry = parseMarkdownTableSource(source);
+      const cellFor = (row: number, column: number) =>
+        geometry?.cells.find((cell) => cell.row === row && cell.column === column);
+      const alignClass = (column: number) => {
+        const align = geometry?.alignments[column];
+        return align === "center" ? "text-center" : align === "right" ? "text-right" : "text-left";
+      };
       return (
         <div className="min-h-9 overflow-x-auto py-1">
           <table aria-label="Markdown table" className="w-full border-collapse text-left text-sm">
@@ -1820,7 +1920,8 @@ function BlockPreview({
                 {table.header.map((cell, index) => (
                   <th
                     key={`header-${index}`}
-                    className="border border-border bg-muted/50 px-2 py-1.5 font-medium"
+                    data-table-cell={cellFor(0, index) ? `${cellFor(0, index)!.from}` : undefined}
+                    className={`border border-border bg-muted/50 px-2 py-1.5 font-medium ${alignClass(index)}`}
                   >
                     <InlineMarkdownPreview source={cell.text} onOpenWikiLink={onOpenWikiLink} />
                   </th>
@@ -1833,7 +1934,12 @@ function BlockPreview({
                   {row.map((cell, cellIndex) => (
                     <td
                       key={`cell-${rowIndex}-${cellIndex}`}
-                      className="border border-border px-2 py-1.5"
+                      data-table-cell={
+                        cellFor(rowIndex + 1, cellIndex)
+                          ? `${cellFor(rowIndex + 1, cellIndex)!.from}`
+                          : undefined
+                      }
+                      className={`border border-border px-2 py-1.5 ${alignClass(cellIndex)}`}
                     >
                       <InlineMarkdownPreview source={cell.text} onOpenWikiLink={onOpenWikiLink} />
                     </td>
@@ -1861,20 +1967,30 @@ function BlockPreview({
   if (block.kind === "callout") {
     const callout = calloutPreview(source);
     if (callout) {
+      // Icon and accent are derived from the `[!TYPE]` in the source — nothing is stored outside
+      // the Markdown. An uppercase `CALLOUT` label was the only signal before, which reads as
+      // shouting rather than as the note/warning/tip distinction the type is actually making.
+      const style = CALLOUT_STYLES[callout.type.toLowerCase()] ?? CALLOUT_STYLES.note;
+      const Icon = style.icon;
       return (
         <aside
           data-testid="callout-block"
           aria-label={`${callout.type} callout`}
-          className="min-h-9 rounded-md border border-border bg-muted/35 px-3 py-2"
+          className={`flex min-h-9 gap-2.5 rounded-md border px-3 py-2 ${style.container}`}
         >
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {callout.title || callout.type}
+          <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${style.accent}`} aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            {callout.title ? (
+              <div className="font-semibold">{callout.title}</div>
+            ) : (
+              <div className={`font-semibold ${style.accent}`}>{style.label}</div>
+            )}
+            {callout.body ? (
+              <div className="whitespace-pre-wrap">
+                <InlineMarkdownPreview source={callout.body} onOpenWikiLink={onOpenWikiLink} />
+              </div>
+            ) : null}
           </div>
-          {callout.body ? (
-            <div className="mt-1 whitespace-pre-wrap text-sm leading-6">
-              <InlineMarkdownPreview source={callout.body} onOpenWikiLink={onOpenWikiLink} />
-            </div>
-          ) : null}
         </aside>
       );
     }
@@ -2339,7 +2455,11 @@ function activeEditorSurfaceClass(block: MarkdownBlockView): string {
     return `${base} rounded-lg border border-border bg-muted/20 px-3 py-2 font-mono text-sm leading-6`;
   }
   if (block.kind === "callout") {
-    return `${base} rounded-md border border-border bg-muted/35 px-3 py-2`;
+    // Same type-derived container as the preview, so clicking a warning callout does not repaint it
+    // in the neutral palette.
+    const type = /\[!([A-Za-z]+)\]/.exec(block.raw)?.[1]?.toLowerCase() ?? "note";
+    const style = CALLOUT_STYLES[type] ?? CALLOUT_STYLES.note;
+    return `${base} rounded-md border px-3 py-2 ${style.container}`;
   }
   if (block.kind === "block_math") {
     return `${base} rounded-md bg-muted/35 px-3 py-2 font-mono text-sm leading-6`;

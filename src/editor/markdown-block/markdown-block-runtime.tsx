@@ -2173,6 +2173,11 @@ export function MarkdownBlockRuntime({
                   setBlockSelection(null);
                   setPendingSelection({ blockId, ...edit.selection });
                 }}
+                onSelectCellRange={(blockId, from, to) => {
+                  setActiveBlockId(blockId);
+                  setBlockSelection(null);
+                  setPendingSelection({ blockId, anchor: from, head: to });
+                }}
                 onImportImages={importImages}
                 onCompositionStart={(blockId) => {
                   composingBlockIdRef.current = blockId;
