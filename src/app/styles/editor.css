@@ -239,6 +239,125 @@
   line-height: inherit !important;
 }
 
+/*
+ * Syntax colours for `highlight.js` scopes.
+ *
+ * A small palette rather than a vendored theme: only the scopes our grammars actually emit, tuned
+ * against the editor's own surfaces so a code Block reads as part of the Page in both themes. The
+ * inline-code red is reused for strings so the two agree.
+ */
+.markdown-page pre .hljs-comment,
+.markdown-page pre .hljs-quote {
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+
+.markdown-page pre .hljs-keyword,
+.markdown-page pre .hljs-selector-tag,
+.markdown-page pre .hljs-literal,
+.markdown-page pre .hljs-doctag,
+.markdown-page pre .hljs-meta .hljs-keyword {
+  color: #a626a4;
+}
+
+.markdown-page pre .hljs-string,
+.markdown-page pre .hljs-regexp,
+.markdown-page pre .hljs-addition,
+.markdown-page pre .hljs-attribute,
+.markdown-page pre .hljs-meta .hljs-string {
+  color: #50a14f;
+}
+
+.markdown-page pre .hljs-number,
+.markdown-page pre .hljs-variable,
+.markdown-page pre .hljs-template-variable,
+.markdown-page pre .hljs-type,
+.markdown-page pre .hljs-selector-attr,
+.markdown-page pre .hljs-selector-pseudo,
+.markdown-page pre .hljs-built_in {
+  color: #c18401;
+}
+
+.markdown-page pre .hljs-title,
+.markdown-page pre .hljs-section,
+.markdown-page pre .hljs-title.class_,
+.markdown-page pre .hljs-title.function_ {
+  color: #4078f2;
+}
+
+.markdown-page pre .hljs-attr,
+.markdown-page pre .hljs-property,
+.markdown-page pre .hljs-symbol,
+.markdown-page pre .hljs-bullet,
+.markdown-page pre .hljs-link {
+  color: #986801;
+}
+
+.markdown-page pre .hljs-deletion,
+.markdown-page pre .hljs-name,
+.markdown-page pre .hljs-selector-id,
+.markdown-page pre .hljs-selector-class,
+.markdown-page pre .hljs-tag {
+  color: #e45649;
+}
+
+.markdown-page pre .hljs-emphasis {
+  font-style: italic;
+}
+
+.markdown-page pre .hljs-strong {
+  font-weight: 600;
+}
+
+.dark .markdown-page pre .hljs-keyword,
+.dark .markdown-page pre .hljs-selector-tag,
+.dark .markdown-page pre .hljs-literal,
+.dark .markdown-page pre .hljs-doctag,
+.dark .markdown-page pre .hljs-meta .hljs-keyword {
+  color: #c678dd;
+}
+
+.dark .markdown-page pre .hljs-string,
+.dark .markdown-page pre .hljs-regexp,
+.dark .markdown-page pre .hljs-addition,
+.dark .markdown-page pre .hljs-attribute,
+.dark .markdown-page pre .hljs-meta .hljs-string {
+  color: #98c379;
+}
+
+.dark .markdown-page pre .hljs-number,
+.dark .markdown-page pre .hljs-variable,
+.dark .markdown-page pre .hljs-template-variable,
+.dark .markdown-page pre .hljs-type,
+.dark .markdown-page pre .hljs-selector-attr,
+.dark .markdown-page pre .hljs-selector-pseudo,
+.dark .markdown-page pre .hljs-built_in {
+  color: #e5c07b;
+}
+
+.dark .markdown-page pre .hljs-title,
+.dark .markdown-page pre .hljs-section,
+.dark .markdown-page pre .hljs-title.class_,
+.dark .markdown-page pre .hljs-title.function_ {
+  color: #61afef;
+}
+
+.dark .markdown-page pre .hljs-attr,
+.dark .markdown-page pre .hljs-property,
+.dark .markdown-page pre .hljs-symbol,
+.dark .markdown-page pre .hljs-bullet,
+.dark .markdown-page pre .hljs-link {
+  color: #d19a66;
+}
+
+.dark .markdown-page pre .hljs-deletion,
+.dark .markdown-page pre .hljs-name,
+.dark .markdown-page pre .hljs-selector-id,
+.dark .markdown-page pre .hljs-selector-class,
+.dark .markdown-page pre .hljs-tag {
+  color: #e06c75;
+}
+
 .markdown-page pre code {
   @apply bg-transparent p-0;
   color: inherit;

@@ -59,6 +59,11 @@ import {
   resolveWikiEmbed,
   type WikiEmbedProjectionStatus,
 } from "@/editor/markdown-block/wiki-embed";
+import {
+  highlightCodeTokens,
+  resolveCodeLanguage,
+  type CodeToken,
+} from "@/editor/markdown-block/code-highlight";
 import { parseMarkdownToggle } from "@/editor/markdown-block/markdown-toggle";
 import {
   markdownTableBlankRow,
@@ -1425,6 +1430,40 @@ const CALLOUT_STYLES: Record<
   },
 };
 
+/**
+ * A code payload, highlighted once its grammar has loaded.
+ *
+ * Renders plain text first and upgrades in place, so a code Block is never blank while a grammar
+ * loads and never disappears if one fails. Tokens are rendered as React elements — nothing derived
+ * from the document becomes markup.
+ */
+function HighlightedCode({ code, language }: { code: string; language: string }) {
+  const [tokens, setTokens] = useState<readonly CodeToken[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTokens(null);
+    if (!resolveCodeLanguage(language)) return () => undefined;
+    void highlightCodeTokens(code, language).then((next) => {
+      if (!cancelled) setTokens(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [code, language]);
+
+  if (!tokens) return <code>{code}</code>;
+  return (
+    <code>
+      {tokens.map((token, index) => (
+        <span key={index} className={token.className ?? undefined}>
+          {token.text}
+        </span>
+      ))}
+    </code>
+  );
+}
+
 /** Destination of the link the selection already sits inside, or "" when there is none. */
 function existingLinkDestination(source: string, from: number, to: number): string {
   const pattern = /\[(?:\\.|[^\]\\])*\]\(([^)]*)\)/g;
@@ -2005,7 +2044,10 @@ function BlockPreview({
           data-testid="fenced-code-block"
           className="min-h-9 overflow-x-auto whitespace-pre-wrap rounded-md bg-muted px-3 py-2 font-mono text-sm leading-6"
         >
-          <code>{fence ? fence.payload : source}</code>
+          <HighlightedCode
+            code={fence ? fence.payload : source}
+            language={fence?.infoString ?? ""}
+          />
         </pre>
         {onSetCodeLanguage ? (
           <CodeLanguageChip

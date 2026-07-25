@@ -176,14 +176,50 @@ Verified in Chrome with a real drag cycle: ghost created then removed, the line 
 correct row for a given `clientY`, the drop reordering as expected, and no leftover `data-block-dragging`,
 indicator or ghost node afterwards.
 
+### Block selection
+
+- A pointer sweep past 4px becomes a Block selection, resolved from the rows' vertical bands rather
+  than from `elementFromPoint` — which is what makes it work over the page margins, and the only
+  thing that works when the pointer is beyond the content column. From the margin it also draws a
+  marquee; inside a single Block the browser's own text selection is left alone.
+- Typing over a selection replaces it. ArrowLeft/Right collapse it to a caret. Shift+Arrow grows a
+  text selection into a Block selection. Shift+click extends from the caret's Block.
+- A floating toolbar (Turn into / Copy / Duplicate / Delete) appears above the union of the selected
+  rows, measured after commit. Turn into applies to the whole range; source-only Blocks in it are
+  left byte-identical.
+- One shortcut legend for the document, not one per row: a per-row `sr-only` copy landed inside any
+  Range spanning two rows, so copying across Blocks pasted "Press Enter to edit…" into the clipboard.
+
+### Inline marks and links
+
+- Mod+B / Mod+I / Mod+E / Mod+Shift+X apply bold, italic, code, strike. Mod+K opens a link editor,
+  from a range or from a caret inside an existing link.
+- Applying a link asks for a destination. It used to write `[label](https://)` — a dead link, with
+  the selection over the _label_, so the next keystroke rewrote the text rather than the URL.
+- Two things were claiming those keys and both had to move: the window shortcut handler now honours
+  `defaultPrevented`, and the app menu's Mod+B / Mod+K are `registerAccelerator: false` — a
+  main-process accelerator fires _before_ the page, so no renderer-side handling could have won.
+
+### Code Blocks, callouts, tables
+
+- Syntax highlighting via `highlight.js/lib/core` with one dynamic import per language, so a Page
+  with no code loads none of it. Output is reduced to `{ text, className }` tokens and rendered as
+  React elements — nothing derived from a document reaches the DOM as markup (ADR-0011). An unknown
+  language falls back to plain text rather than deriving a module path from the document. The
+  _editing_ surface stays plain; only the rendered Block is highlighted.
+- Callout type icon and accent per `[!TYPE]`, matched on the editing surface so activation does not
+  repaint it.
+- Table cells carry their own source offsets, so clicking a cell puts the caret in that cell; Tab
+  walks cells and appends a row at the end; column alignment from the delimiter row is honoured.
+
 ### Known gaps, measured not guessed
 
-- No syntax highlighting in code Blocks. Both references highlight; adding it means taking on a
-  highlighter dependency, which is a product decision rather than a fix.
-- Callouts render a `CALLOUT` text label rather than a type icon and accent colour.
-- Tables are read-only; no cell navigation or row/column controls.
-- The source scanner classifies a 4-space-indented list item (`    - c` under `  - b`) as
-  `unsupported` rather than a depth-2 item, so lists deeper than two levels degrade to raw source on
-  load. Found while building the drag fixture; independent of drag.
-- Multi-Block selection is still missing, so a drag always carries one Block plus its list subtree.
-  The drag ghost already stacks and counts for the multi-Block case.
+- The active code editing surface is a plain textarea — highlighting applies to the rendered Block
+  only. Highlighting while editing needs a token-aware editing surface, which is a much larger
+  change than a preview.
+- Table row/column _insertion_ has no hover control; Tab-at-the-end is the only way to add a row, and
+  there is no way to add a column.
+- `isMarkdownLinkOpaqueBlockSource` judges a span by its raw text alone, so a genuine nested list
+  item indented 4+ columns is treated as indented code and its wiki links are masked out of the
+  knowledge index. Pre-existing; the fix belongs at the two call sites, which should skip the check
+  when the span has a `listDepth`.
