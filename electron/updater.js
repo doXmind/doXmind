@@ -136,7 +136,8 @@ function promptRestart(releaseName, releaseNotes) {
       defaultId: 0,
       cancelId: 1,
       message: "Update ready",
-      detail: detailParts.join("\n\n") + "\n\nRestart to apply. Unsaved edits are flushed on close.",
+      detail:
+        detailParts.join("\n\n") + "\n\nRestart to apply. Unsaved edits are flushed on close.",
     })
     .then(({ response }) => {
       if (response === 0) autoUpdater.quitAndInstall();

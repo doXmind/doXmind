@@ -33,6 +33,8 @@ export interface SemanticInlineEditorProps {
   readonly describedBy?: string;
   readonly className?: string;
   readonly selection?: SemanticInlineSelection;
+  /** Shown through CSS when the Block has no text. Never part of the source. */
+  readonly placeholder?: string;
   readonly autoFocus?: boolean;
   readonly highlightSelection?: boolean;
   readonly onSourceChange: (source: string, selection: SemanticInlineSelection) => void;
@@ -67,6 +69,7 @@ export function SemanticInlineEditor({
   describedBy,
   className,
   selection,
+  placeholder,
   autoFocus = false,
   highlightSelection = false,
   onSourceChange,
@@ -165,6 +168,9 @@ export function SemanticInlineEditor({
   useLayoutEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
+    // `setBaseAndExtent` during an IME composition closes the candidate window and drops the
+    // in-flight text, so the caret restore waits for the composition to settle.
+    if (composingRef.current) return;
 
     if (autoFocus && document.activeElement !== editor) editor.focus();
 
@@ -184,7 +190,7 @@ export function SemanticInlineEditor({
     if (!editor || !onSelectionChange) return;
 
     const handleSelectionChange = (event: Event) => {
-      if (restoringSelectionRef.current) return;
+      if (restoringSelectionRef.current || composingRef.current) return;
       const nextSelection = readSourceSelection(editor, projection);
       if (nextSelection) onSelectionChange(nextSelection, event);
     };
@@ -237,9 +243,10 @@ export function SemanticInlineEditor({
       aria-label="Markdown block"
       aria-describedby={describedBy}
       aria-multiline="true"
-      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Meta+Shift+D Control+Shift+D Meta+Shift+Backspace Control+Shift+Backspace"
+      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Meta+D Control+D Meta+Shift+Backspace Control+Shift+Backspace"
       data-native-block-editor
       data-native-semantic-editor
+      data-placeholder={placeholder}
       className={className}
       contentEditable
       suppressContentEditableWarning
@@ -260,12 +267,12 @@ export function SemanticInlineEditor({
         onKeyDown?.(event, currentSourceSelection());
       }}
       onKeyUp={(event) => {
-        if (restoringSelectionRef.current) return;
+        if (restoringSelectionRef.current || composingRef.current) return;
         const nextSelection = readSourceSelection(event.currentTarget, projection);
         if (nextSelection) onSelectionChange?.(nextSelection, event.nativeEvent);
       }}
       onMouseUp={(event: MouseEvent<HTMLDivElement>) => {
-        if (restoringSelectionRef.current) return;
+        if (restoringSelectionRef.current || composingRef.current) return;
         const nextSelection = readSourceSelection(event.currentTarget, projection);
         if (nextSelection) onSelectionChange?.(nextSelection, event.nativeEvent);
       }}

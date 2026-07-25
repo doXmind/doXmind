@@ -1,6 +1,12 @@
 /* Local PDF layout for the live native Markdown Block DOM. */
 
 @media print {
+  /* Placeholders and the language chip are editing affordances, never exported content. */
+  [data-block-placeholder],
+  [data-code-language] {
+    display: none !important;
+  }
+
   @page {
     size: A4;
     margin: 18mm 16mm 22mm;

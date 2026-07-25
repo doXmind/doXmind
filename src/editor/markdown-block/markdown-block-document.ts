@@ -146,6 +146,8 @@ export type MarkdownBlockCommand =
       type: "insertAfter";
       blockId: string;
       raw?: string;
+      /** Insert above the anchor instead of below it (Notion's ⌥-click on the gutter `+`). */
+      before?: boolean;
     }
   | {
       type: "setTaskChecked";
@@ -187,7 +189,12 @@ interface ListItemSourceSyntax {
   prefix: string;
   nextPrefix: string;
   nestingIndent: string;
+  /** Leading indentation in characters, for slicing source. */
   indent: number;
+  /** Leading indentation in Markdown columns, for measuring nesting against a parent. */
+  indentColumns: number;
+  /** Column where this item's content starts — the column a child item nests against. */
+  contentIndent: number;
   contentFrom: number;
   checked?: boolean;
   checkboxOffset?: number;
@@ -205,12 +212,27 @@ interface BlockquoteSourceSyntax {
  * their ids never cross the storage boundary.
  */
 export class MarkdownBlockDocument {
+  /**
+   * How many states the undo and redo stacks hold. Each entry keeps a whole Markdown string, so an
+   * unbounded stack grows with the Page for as long as the session lives.
+   */
+  private static readonly HISTORY_LIMIT = 200;
+
   private revision = 0;
   private markdown: string;
   private blocks: MarkdownBlockSpan[];
   private nextBlockNumber: number;
   private undoStack: MarkdownBlockState[] = [];
   private redoStack: MarkdownBlockState[] = [];
+  /**
+   * End of the last typed edit, used to fold a typing run into one history entry.
+   *
+   * Without this every keystroke was its own undo step, so Mod+Z walked back one character at a
+   * time and felt broken. Deliberately keyed on position rather than on a clock: a run continues
+   * only while the next edit starts exactly where the previous one ended, which is deterministic
+   * and needs no timer to reason about or to test.
+   */
+  private lastTypedEdit: { blockId: string; sourceEnd: number } | null = null;
 
   private constructor(markdown: string, blocks: MarkdownBlockSpan[], nextBlockNumber: number) {
     this.markdown = markdown;
@@ -244,25 +266,40 @@ export class MarkdownBlockDocument {
     };
   }
 
+  /**
+   * End the current typing run, so the next keystroke starts a fresh undo entry.
+   *
+   * The caller owns the events a position test cannot see: moving to another Block, finishing an IME
+   * composition, blurring the editor, or simply pausing.
+   */
+  flushHistory(): void {
+    this.lastTypedEdit = null;
+  }
+
   undo(): MarkdownBlockSnapshot {
+    this.lastTypedEdit = null;
     const previous = this.undoStack.pop();
     if (!previous) return this.getSnapshot();
-    this.redoStack.push(this.cloneState());
+    this.pushRedo(this.cloneState());
     this.restoreState(previous);
     this.revision += 1;
     return this.getSnapshot();
   }
 
   redo(): MarkdownBlockSnapshot {
+    this.lastTypedEdit = null;
     const next = this.redoStack.pop();
     if (!next) return this.getSnapshot();
-    this.undoStack.push(this.cloneState());
+    this.pushUndo(this.cloneState());
     this.restoreState(next);
     this.revision += 1;
     return this.getSnapshot();
   }
 
   apply(command: MarkdownBlockCommand): MarkdownBlockApplyResult {
+    // Only typing can extend a run. Every structural command is its own undo step, so a split, a
+    // move or an indent can never be swallowed into the keystrokes around it.
+    if (command.type !== "replaceText") this.lastTypedEdit = null;
     if (command.type === "outdentBlocks") {
       if (command.blockIds.length === 0) return { snapshot: this.getSnapshot() };
       const sourceBlocks = this.sourceBlocks();
@@ -432,7 +469,11 @@ export class MarkdownBlockDocument {
       if (beforeIndex < 0) throw new Error(`unknown before block: ${command.beforeId}`);
 
       this.recordHistory();
-      reordered.splice(beforeIndex, 0, ...selected);
+      reordered.splice(
+        beforeIndex,
+        0,
+        ...normalizeMovedListIndent(reordered, beforeIndex, selected)
+      );
       for (const boundaryIndex of [beforeIndex - 1, beforeIndex + selected.length - 1]) {
         if (boundaryIndex < 0 || boundaryIndex >= reordered.length - 1) continue;
         reordered[boundaryIndex] = ensureBlockBoundary(
@@ -698,18 +739,20 @@ export class MarkdownBlockDocument {
 
     if (command.type === "split") {
       const { content, separator } = splitBlockSource(block.raw);
-      const splitTo = command.to ?? command.at;
-      if (command.at < 0 || splitTo < command.at || splitTo > content.length) {
+      if (command.at < 0 || (command.to ?? command.at) < command.at) {
         throw new RangeError("split position is outside the block");
       }
       const listItem = listItemSyntax(block.raw, block.depth !== undefined);
-      if (listItem && command.at < listItem.contentFrom) {
-        throw new RangeError("a list item cannot split inside its source marker");
-      }
+      // A caret can legitimately sit before a Block's source marker: the marker is hidden
+      // from the visible projection, so visible offset 0 maps to source offset 0. Clamp into
+      // the content region instead of rejecting the split.
+      const contentFloor = listItem?.contentFrom ?? blockquoteSyntax(block.raw)?.contentFrom ?? 0;
+      const at = Math.min(Math.max(command.at, contentFloor), content.length);
+      const splitTo = Math.min(Math.max(command.to ?? command.at, at), content.length);
       if (
         listItem &&
         content.slice(listItem.contentFrom).length === 0 &&
-        command.at === listItem.contentFrom &&
+        at === listItem.contentFrom &&
         splitTo === listItem.contentFrom
       ) {
         this.recordHistory();
@@ -728,27 +771,24 @@ export class MarkdownBlockDocument {
         };
       }
       const blockquote = blockquoteSyntax(block.raw);
-      if (blockquote && command.at < blockquote.contentFrom) {
-        throw new RangeError("a blockquote cannot split inside its source marker");
-      }
-      if (blockquote && command.at < content.length) {
+      if (blockquote && at < content.length) {
         this.recordHistory();
         const newline = preferredLineEnding(block.raw, this.markdown);
         const inserted = newline + blockquote.prefix;
         sourceBlocks[index] = blockFromSource(
-          content.slice(0, command.at) + inserted + content.slice(splitTo) + separator,
+          content.slice(0, at) + inserted + content.slice(splitTo) + separator,
           block.id
         );
         this.commitSources(sourceBlocks);
         this.revision += 1;
-        const cursor = command.at + inserted.length;
+        const cursor = at + inserted.length;
         return {
           snapshot: this.getSnapshot(),
           selection: { blockId: block.id, anchor: cursor, head: cursor },
         };
       }
       this.recordHistory();
-      const leftContent = content.slice(0, command.at);
+      const leftContent = content.slice(0, at);
       const rightContent = content.slice(splitTo);
       const rightRaw = listItem ? listItem.nextPrefix + rightContent : rightContent;
       let left = reclassifyEditableSource(block, leftContent);
@@ -803,7 +843,11 @@ export class MarkdownBlockDocument {
         isMarkdownSourceOnlyBlockKind(previous.kind) ||
         isMarkdownSourceOnlyBlockKind(block.kind)
       ) {
-        throw new Error("unsupported blocks cannot be merged as text");
+        // Backspace at the start of a Block whose neighbour has no text representation is a
+        // no-op, not an error: a divider, image, table or diagram cannot absorb text. Returning
+        // the snapshot unchanged keeps the keystroke inert instead of throwing out of a key
+        // handler and tearing down the editing surface.
+        return { snapshot: this.getSnapshot() };
       }
       this.recordHistory();
       const previousParts = splitBlockSource(previous.raw);
@@ -976,26 +1020,40 @@ export class MarkdownBlockDocument {
 
     if (command.type === "insertAfter") {
       this.recordHistory();
-      const raw = command.raw ?? "";
-      const inserted: MarkdownBlockSource = {
-        id: `block-${this.nextBlockNumber}`,
-        kind: "paragraph",
-        raw,
-        editable: true,
-      };
-      this.nextBlockNumber += 1;
       const newline = preferredLineEnding(
         block.raw,
         sourceBlocks[index + 1]?.raw ?? "",
         this.markdown
       );
-      sourceBlocks[index] = ensureBlockSeparator(block, newline);
-      const normalized =
-        index < sourceBlocks.length - 1 ? ensureBlockSeparator(inserted, newline) : inserted;
-      sourceBlocks.splice(index + 1, 0, normalized);
+      // Inserting next to a list item continues the list at the anchor's own depth. Emitting a
+      // bare paragraph instead used to reflow every following sibling: the plain line ended the
+      // list, so `  - c` reparsed at depth 0 and the whole subtree jumped 24px left.
+      const listItem = listItemSyntax(block.raw, block.depth !== undefined);
+      const raw = command.raw ?? (listItem ? listItem.nextPrefix : "");
+      const inserted = blockFromSource(
+        raw,
+        `block-${this.nextBlockNumber}`,
+        listItem ? block.depth : undefined
+      );
+      this.nextBlockNumber += 1;
+      if (command.before) {
+        const previous = index > 0 ? sourceBlocks[index - 1] : null;
+        const joined = ensureBlockBoundary(inserted, block, newline);
+        sourceBlocks.splice(index, 1, joined, block);
+        if (previous) sourceBlocks[index - 1] = ensureBlockBoundary(previous, joined, newline);
+      } else {
+        // Land after the anchor's whole subtree so a new sibling never wedges itself between a
+        // parent list item and its own children.
+        const subtreeEnd = listDescendantRangeEnd(sourceBlocks, index, 1);
+        const previous = sourceBlocks[subtreeEnd - 1];
+        const next = sourceBlocks[subtreeEnd] ?? null;
+        const joined = next ? ensureBlockBoundary(inserted, next, newline) : inserted;
+        sourceBlocks[subtreeEnd - 1] = ensureBlockBoundary(previous, joined, newline);
+        sourceBlocks.splice(subtreeEnd, 0, joined);
+      }
       this.commitSources(sourceBlocks);
       this.revision += 1;
-      const cursor = splitBlockSource(raw).content.length;
+      const cursor = splitBlockSource(inserted.raw).content.length;
       return {
         snapshot: this.getSnapshot(),
         selection: { blockId: inserted.id, anchor: cursor, head: cursor },
@@ -1013,21 +1071,39 @@ export class MarkdownBlockDocument {
     const raw =
       block.raw.slice(0, command.range.from) + command.text + block.raw.slice(command.range.to);
     if (raw === block.raw) return { snapshot: this.getSnapshot() };
-    if (command.recordHistory !== false) this.recordHistory();
-    const rescanned = scanMarkdownSource(raw).map((span) => span.raw);
-    const replacementSources = (rescanned.length > 0 ? rescanned : [raw]).map(
-      (source, replacementIndex) => {
-        if (replacementIndex === 0) return reclassifyEditableSource(block, source);
-        const seed: MarkdownBlockSource = {
-          id: `block-${this.nextBlockNumber}`,
-          kind: "paragraph",
-          raw: source,
-          editable: true,
-        };
-        this.nextBlockNumber += 1;
-        return reclassifyEditableSource(seed, source);
-      }
+    // Keep the whole span, not just its text: the scan is the only thing that knows a line's list
+    // depth, because depth is measured against the *previous* item's content column. Classifying a
+    // span on its own text loses that — `    - c` in isolation is an indented code block.
+    const rescanned = scanMarkdownSource(raw);
+    // Reclassification is pure, so the resulting kind can be known before anything is mutated. A
+    // Markdown autoformat (`# ` becoming a heading) has to be its own undo step, or one Mod+Z would
+    // take back both the transform and the words typed after it.
+    const structureUnchanged =
+      rescanned.length <= 1 &&
+      reclassifyEditableSource(block, rescanned[0]?.raw ?? raw).kind === block.kind;
+    const continuesRun = this.continuesTypingRun(
+      block.id,
+      command.range,
+      command.text,
+      structureUnchanged
     );
+    if (command.recordHistory !== false && !continuesRun) this.recordHistory();
+    this.lastTypedEdit = structureUnchanged
+      ? { blockId: block.id, sourceEnd: command.range.from + command.text.length }
+      : null;
+    const spans =
+      rescanned.length > 0
+        ? rescanned
+        : [{ raw, listDepth: undefined } as (typeof rescanned)[number]];
+    const replacementSources = spans.map((span, replacementIndex) => {
+      // The host Block keeps going through reclassification, which is what makes an autoformat
+      // preserve its identity while typing. Spans split off by this edit are built the way
+      // `fromMarkdown` builds them, carrying the depth the scan measured.
+      if (replacementIndex === 0) return reclassifyEditableSource(block, span.raw);
+      const id = `block-${this.nextBlockNumber}`;
+      this.nextBlockNumber += 1;
+      return blockFromSource(span.raw, id, span.listDepth);
+    });
     sourceBlocks.splice(index, 1, ...replacementSources);
     this.commitSources(sourceBlocks);
     this.revision += 1;
@@ -1088,8 +1164,41 @@ export class MarkdownBlockDocument {
   }
 
   private recordHistory(): void {
-    this.undoStack.push(this.cloneState());
+    this.pushUndo(this.cloneState());
     this.redoStack = [];
+  }
+
+  private pushUndo(state: MarkdownBlockState): void {
+    this.undoStack.push(state);
+    if (this.undoStack.length > MarkdownBlockDocument.HISTORY_LIMIT) this.undoStack.shift();
+  }
+
+  private pushRedo(state: MarkdownBlockState): void {
+    this.redoStack.push(state);
+    if (this.redoStack.length > MarkdownBlockDocument.HISTORY_LIMIT) this.redoStack.shift();
+  }
+
+  /**
+   * Whether this edit continues the current typing run and so needs no new history entry.
+   *
+   * A run continues while the user keeps typing forward from where they were, or keeps deleting
+   * backwards from where they were, within one Block, without crossing a word or line boundary and
+   * without changing what kind of Block it is. Whitespace ends a run, which gives Mod+Z word-level
+   * granularity rather than either one-character-at-a-time or one-giant-step.
+   */
+  private continuesTypingRun(
+    blockId: string,
+    range: Utf16Range,
+    text: string,
+    structureUnchanged: boolean
+  ): boolean {
+    const run = this.lastTypedEdit;
+    if (!run || run.blockId !== blockId || !structureUnchanged) return false;
+    if (/[\s\r\n]/.test(text)) return false;
+    const isInsertion = range.from === range.to && text.length > 0;
+    if (isInsertion) return run.sourceEnd === range.from;
+    const isDeletion = text.length === 0 && range.to > range.from;
+    return isDeletion && run.sourceEnd === range.to;
   }
 }
 
@@ -1180,8 +1289,11 @@ function reprojectListDepths(blocks: MarkdownBlockSource[]): void {
     let depth = -1;
     for (let parentDepth = stack.length - 1; parentDepth >= 0; parentDepth -= 1) {
       const parent = stack[parentDepth];
-      const parentContentIndent = parent.indent + parent.nestingIndent.length;
-      if (syntax.indent >= parentContentIndent && syntax.indent <= parentContentIndent + 3) {
+      const parentContentIndent = parent.contentIndent;
+      if (
+        syntax.indentColumns >= parentContentIndent &&
+        syntax.indentColumns <= parentContentIndent + 3
+      ) {
         depth = parentDepth + 1;
         break;
       }
@@ -1190,18 +1302,6 @@ function reprojectListDepths(blocks: MarkdownBlockSource[]): void {
     block.depth = depth;
     stack.splice(depth, stack.length - depth, syntax);
   }
-}
-
-function ensureBlockSeparator(
-  block: MarkdownBlockSource,
-  newline: "\r\n" | "\n" | "\r"
-): MarkdownBlockSource {
-  const { content, separator } = splitBlockSource(block.raw);
-  if (countLineEndings(separator) >= 2) return block;
-  return {
-    ...block,
-    raw: `${content}${newline}${newline}`,
-  };
 }
 
 function normalizeNeighborBoundaries(
@@ -1301,6 +1401,67 @@ function plainBlockContent(block: MarkdownBlockSource, content: string): string 
 function prefixSourceLines(source: string, prefix: string): string {
   if (!source) return prefix;
   return source.replace(/(^|(?:\r\n|\n|\r))/g, `$1${prefix}`);
+}
+
+/**
+ * Re-indent a moved list range so its indentation still means something where it landed.
+ *
+ * Without this, dragging a depth-2 item to the top of the Page left `    - c` — four leading spaces,
+ * which Markdown reads as an indented code block. The Block silently stopped being a list item, and
+ * that is the user's file, not a view. The shift is applied to the whole range so nesting *within*
+ * the moved subtree is preserved, and it is validated by re-scanning: if the result would not parse
+ * back to the intended kinds and depths, the original bytes are kept rather than made worse.
+ */
+function normalizeMovedListIndent(
+  reordered: readonly MarkdownBlockSource[],
+  beforeIndex: number,
+  selected: readonly MarkdownBlockSource[]
+): MarkdownBlockSource[] {
+  const moved = [...selected];
+  if (moved.every((block) => listItemFamily(block.kind) === null)) return moved;
+
+  const rootDepth = Math.min(...moved.map((block) => block.depth ?? 0));
+  const previous = beforeIndex > 0 ? reordered[beforeIndex - 1] : null;
+  const previousSyntax = previous ? listItemSyntax(previous.raw, true) : null;
+  // A list item may nest at most one level deeper than the item above it; anything else is top level.
+  const maxDepth = previousSyntax ? (previous?.depth ?? 0) + 1 : 0;
+  const targetDepth = Math.min(rootDepth, Math.max(maxDepth, 0));
+  const delta = targetDepth - rootDepth;
+  if (delta === 0) return moved;
+
+  const unit = previousSyntax?.nestingIndent || "  ";
+  const shifted = moved.map((block) => {
+    const depth = Math.max((block.depth ?? 0) + delta, 0);
+    let raw = block.raw;
+    if (delta > 0) {
+      for (let step = 0; step < delta; step += 1) raw = indentSourceLines(raw, unit);
+    } else {
+      raw = dedentSourceLines(raw, unit.length * -delta);
+    }
+    return { ...block, raw, depth };
+  });
+
+  // Fail closed: the shift is only worth anything if it round-trips to the same Block kinds.
+  const candidate = [
+    ...reordered.slice(0, beforeIndex),
+    ...shifted,
+    ...reordered.slice(beforeIndex),
+  ];
+  const scanned = scanMarkdownSource(candidate.map((block) => block.raw).join(""));
+  if (scanned.length !== candidate.length) return moved;
+  for (const [index, block] of shifted.entries()) {
+    const span = scanned[beforeIndex + index];
+    if (!span || blockFromSource(span.raw, block.id, span.listDepth).kind !== block.kind) {
+      return moved;
+    }
+  }
+  return shifted;
+}
+
+/** Remove up to `width` leading spaces or tabs from every line. */
+function dedentSourceLines(source: string, width: number): string {
+  if (width <= 0) return source;
+  return source.replace(/^[ \t]*/gm, (match) => match.slice(Math.min(width, match.length)));
 }
 
 function indentSourceLines(source: string, indentation: string): string {
@@ -1500,9 +1661,10 @@ function isUnsupportedBlockSource(raw: string): boolean {
 function listItemSyntax(raw: string, allowNested = false): ListItemSourceSyntax | null {
   const { content } = splitBlockSource(raw);
 
-  const task = content.match(/^( *)([-+*])([ \t]+)\[([ xX])\]([ \t]+|$)/);
+  const task = content.match(/^([ \t]*)([-+*])([ \t]+)\[([ xX])\]([ \t]+|$)/);
   if (task) {
-    if (!allowNested && task[1].length > 3) return null;
+    const indentColumns = advanceMarkdownColumns(0, task[1]);
+    if (!allowNested && indentColumns > 3) return null;
     const prefix = task[0];
     const checkboxOffset = task[1].length + task[2].length + task[3].length + 1;
     const uncheckedPrefix =
@@ -1513,15 +1675,18 @@ function listItemSyntax(raw: string, allowNested = false): ListItemSourceSyntax 
       nextPrefix: uncheckedPrefix.endsWith("]") ? `${uncheckedPrefix} ` : uncheckedPrefix,
       nestingIndent: " ".repeat(task[2].length + task[3].length),
       indent: task[1].length,
+      indentColumns,
+      contentIndent: advanceMarkdownColumns(indentColumns + task[2].length, task[3]),
       contentFrom: prefix.length,
       checked: task[4].toLowerCase() === "x",
       checkboxOffset,
     };
   }
 
-  const bullet = content.match(/^( *)([-+*])([ \t]+|$)/);
+  const bullet = content.match(/^([ \t]*)([-+*])([ \t]+|$)/);
   if (bullet) {
-    if (!allowNested && bullet[1].length > 3) return null;
+    const indentColumns = advanceMarkdownColumns(0, bullet[1]);
+    if (!allowNested && indentColumns > 3) return null;
     const prefix = bullet[0];
     return {
       kind: "bullet_list_item",
@@ -1529,13 +1694,16 @@ function listItemSyntax(raw: string, allowNested = false): ListItemSourceSyntax 
       nextPrefix: bullet[3] ? prefix : `${prefix} `,
       nestingIndent: " ".repeat(bullet[2].length + bullet[3].length),
       indent: bullet[1].length,
+      indentColumns,
+      contentIndent: advanceMarkdownColumns(indentColumns + bullet[2].length, bullet[3]),
       contentFrom: prefix.length,
     };
   }
 
-  const ordered = content.match(/^( *)(\d{1,9})([.)])([ \t]+|$)/);
+  const ordered = content.match(/^([ \t]*)(\d{1,9})([.)])([ \t]+|$)/);
   if (ordered) {
-    if (!allowNested && ordered[1].length > 3) return null;
+    const indentColumns = advanceMarkdownColumns(0, ordered[1]);
+    if (!allowNested && indentColumns > 3) return null;
     const prefix = ordered[0];
     const ordinal = Number(ordered[2]);
     const nextOrdinal = ordinal < 999_999_999 ? ordinal + 1 : ordinal;
@@ -1545,10 +1713,27 @@ function listItemSyntax(raw: string, allowNested = false): ListItemSourceSyntax 
       nextPrefix: `${ordered[1]}${nextOrdinal}${ordered[3]}${ordered[4] || " "}`,
       nestingIndent: " ".repeat(ordered[2].length + ordered[3].length + ordered[4].length),
       indent: ordered[1].length,
+      indentColumns,
+      contentIndent: advanceMarkdownColumns(
+        indentColumns + ordered[2].length + ordered[3].length,
+        ordered[4]
+      ),
       contentFrom: prefix.length,
     };
   }
   return null;
+}
+
+/**
+ * Advance a Markdown column position across literal indentation, expanding tabs to the next tab
+ * stop. Mirrors the source scanner so Block depths survive a reprojection unchanged.
+ */
+function advanceMarkdownColumns(startColumn: number, source: string): number {
+  let column = startColumn;
+  for (const character of source) {
+    column = character === "\t" ? column + 4 - (column % 4) : column + 1;
+  }
+  return column;
 }
 
 function blockquoteSyntax(raw: string): BlockquoteSourceSyntax | null {

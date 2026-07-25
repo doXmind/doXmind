@@ -1,6 +1,18 @@
 "use client";
 
-import { FileText, Loader2 } from "lucide-react";
+import {
+  FileText,
+  Info,
+  Lightbulb,
+  Link as LinkIcon,
+  Loader2,
+  MessageSquareWarning,
+  OctagonAlert,
+  TriangleAlert,
+  type LucideIcon,
+} from "lucide-react";
+import * as LucideIcons from "lucide-react";
+import { createPortal } from "react-dom";
 import {
   type ChangeEvent,
   type ClipboardEvent,
@@ -26,7 +38,10 @@ import {
   BlockGutterControls,
   TURN_INTO_OPTIONS,
 } from "@/editor/markdown-block/block-gutter-controls";
-import { createBlockEditingProjection } from "@/editor/markdown-block/block-editing-projection";
+import {
+  createBlockEditingProjection,
+  splitDelimitedBlockSource,
+} from "@/editor/markdown-block/block-editing-projection";
 import { editableMarkdownBlockSource } from "@/editor/markdown-block/markdown-block-source";
 import { isMarkdownSourceOnlyBlockKind } from "@/editor/markdown-block/markdown-block-document";
 import { InlineFormatToolbar } from "@/editor/markdown-block/inline-format-toolbar";
@@ -44,7 +59,18 @@ import {
   resolveWikiEmbed,
   type WikiEmbedProjectionStatus,
 } from "@/editor/markdown-block/wiki-embed";
+import {
+  highlightCodeTokens,
+  resolveCodeLanguage,
+  type CodeToken,
+} from "@/editor/markdown-block/code-highlight";
 import { parseMarkdownToggle } from "@/editor/markdown-block/markdown-toggle";
+import {
+  markdownTableBlankRow,
+  markdownTableCellAt,
+  markdownTableNeighbourCell,
+  parseMarkdownTableSource,
+} from "@/editor/markdown-block/markdown-table";
 import {
   MARKDOWN_IMAGE_EXTENSIONS,
   parseMarkdownImageBlock,
@@ -85,12 +111,13 @@ interface MarkdownBlockRowProps {
   keyboardEntry?: boolean;
   blockSelected?: boolean;
   blockSelectionFocus?: boolean;
-  nextBlockId?: string;
   dropBefore?: boolean;
   selection?: { anchor: number; head: number };
-  onActivate: (blockId: string) => void;
+  onActivate: (blockId: string, selection?: { anchor: number; head: number }) => void;
   onSelectBlock?: (blockId: string, extend?: boolean) => void;
   onBlockSelectionKeyDown?: (blockId: string, event: KeyboardEvent<HTMLDivElement>) => void;
+  /** Grows a text selection past the Block boundary into a Block selection. */
+  onExtendSelectionToBlock?: (blockId: string, direction: -1 | 1) => boolean;
   onChange: (blockId: string, source: string) => void;
   onPaste: (blockId: string, from: number, to: number, text: string) => void;
   onApplyInlineFormat?: (
@@ -99,23 +126,30 @@ interface MarkdownBlockRowProps {
     to: number,
     format: MarkdownInlineFormat
   ) => void;
+  /** Commits a link with a destination the user typed, over the given source range. */
+  onEditLink?: (blockId: string, from: number, to: number, url: string) => void;
+  /** Moves the caret to a source range inside the Block, without changing anything. */
+  onSelectCellRange?: (blockId: string, from: number, to: number) => void;
   onImportImages?: (blockId: string, from: number, to: number, files: readonly File[]) => void;
   onCompositionStart: (blockId: string) => void;
   onCompositionEnd: (blockId: string) => void;
   onSplit: (blockId: string, from: number, to: number) => void;
   onMergeBackward: (blockId: string) => void;
-  onInsertAfter: (blockId: string) => void;
+  onMergeForward?: (blockId: string) => void;
+  onInsertAfter: (blockId: string, placement?: "below" | "above") => void;
   onCopyMarkdown?: (blockId: string) => void | Promise<void>;
   onDuplicate: (blockId: string) => void;
   onDelete: (blockId: string) => void;
   onSetTaskChecked: (blockId: string, checked: boolean) => void;
+  /** Rewrites just the info string on a fenced Block's opening delimiter line. */
+  onSetCodeLanguage?: (blockId: string, language: string) => void;
   onMove: (blockId: string, direction: -1 | 1) => boolean | void;
   onIndent?: (
     blockId: string,
     direction: -1 | 1,
     selection: { anchor: number; head: number }
   ) => boolean | void;
-  onNavigate?: (blockId: string, direction: -1 | 1) => boolean;
+  onNavigate?: (blockId: string, direction: -1 | 1, caretX?: number) => boolean;
   onSetKind: (
     blockId: string,
     kind: MarkdownSettableBlockKind,
@@ -125,15 +159,15 @@ interface MarkdownBlockRowProps {
   onRedo: () => void;
   onDragStart: (blockId: string, event: DragEvent<HTMLButtonElement>) => void;
   onDragEnd: () => void;
-  onCanDrop: (dataTransfer: DataTransfer) => boolean;
-  onDragIntent?: (beforeId: string | null) => void;
-  onClearDragIntent?: () => void;
-  onDropBefore: (blockId: string | null, dataTransfer: DataTransfer) => boolean;
   onOpenWikiLink?: (target: string) => void;
   wikiEmbedContext?: MarkdownWikiEmbedContext;
   collectionContext?: MarkdownCollectionContext;
   imageContext?: MarkdownImageContext;
-  onRunSlashCommand?: (blockId: string, commandId: MarkdownSlashCommandId) => void;
+  onRunSlashCommand?: (
+    blockId: string,
+    commandId: MarkdownSlashCommandId,
+    run: MarkdownSlashRun
+  ) => void;
 }
 
 export interface MarkdownWikiEmbedContext {
@@ -163,25 +197,29 @@ export function MarkdownBlockRow({
   keyboardEntry = true,
   blockSelected = false,
   blockSelectionFocus = false,
-  nextBlockId,
   dropBefore = false,
   selection,
   onActivate,
   onSelectBlock,
   onBlockSelectionKeyDown,
+  onExtendSelectionToBlock,
   onChange,
   onPaste,
   onApplyInlineFormat,
+  onEditLink,
+  onSelectCellRange,
   onImportImages,
   onCompositionStart,
   onCompositionEnd,
   onSplit,
   onMergeBackward,
+  onMergeForward,
   onInsertAfter,
   onCopyMarkdown,
   onDuplicate,
   onDelete,
   onSetTaskChecked,
+  onSetCodeLanguage,
   onMove,
   onIndent,
   onNavigate,
@@ -190,10 +228,6 @@ export function MarkdownBlockRow({
   onRedo,
   onDragStart,
   onDragEnd,
-  onCanDrop,
-  onDragIntent,
-  onClearDragIntent,
-  onDropBefore,
   onOpenWikiLink,
   wikiEmbedContext,
   collectionContext,
@@ -203,7 +237,7 @@ export function MarkdownBlockRow({
   const rowRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editorId = `native-block-editor-${block.id}`;
-  const descriptionId = `native-block-description-${block.id}`;
+  const descriptionId = NATIVE_BLOCK_SHORTCUTS_ID;
   const rawSource = editableMarkdownBlockSource(block.raw);
   const editingProjection = useMemo(() => createBlockEditingProjection(block), [block]);
   const source = editingProjection.editorText;
@@ -214,16 +248,21 @@ export function MarkdownBlockRow({
     !/[\r\n]/.test(source) &&
     parseWikiEmbedBlock(source) === null &&
     inlineProjection.visibleText !== source;
-  const slashQuery =
-    active && block.kind === "paragraph" && /^\/[^\r\n]*$/.test(source) && onRunSlashCommand
-      ? source.slice(1)
-      : null;
-  const slashCommands = useMemo(
-    () => (slashQuery === null ? [] : searchMarkdownSlashCommands(slashQuery)),
-    [slashQuery]
-  );
+  // Opening the grip menu moves focus into a portalled dropdown, which takes the row out of
+  // `:hover`/`:focus-within` and used to fade the very control the menu is attached to.
+  const [controlsMenuOpen, setControlsMenuOpen] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
-  const [dismissedSlashSource, setDismissedSlashSource] = useState<string | null>(null);
+  // Keyed on the trigger character's offset, not on the source string. Escaping a menu whose key
+  // was the source text reopened it on the very next keystroke, so the menu fought the user.
+  const [dismissedSlashStart, setDismissedSlashStart] = useState<number | null>(null);
+  const [slashPosition, setSlashPosition] = useState<SlashMenuPosition | null>(null);
+  const slashListRef = useRef<HTMLDivElement>(null);
+  const [linkEditor, setLinkEditor] = useState<{
+    from: number;
+    to: number;
+    url: string;
+    position: { top: number; left: number };
+  } | null>(null);
   const [inlineSelection, setInlineSelection] = useState<{
     from: number;
     to: number;
@@ -235,36 +274,124 @@ export function MarkdownBlockRow({
   });
   const sourceLengthRef = useRef(source.length);
   sourceLengthRef.current = source.length;
-  const slashMenuOpen =
-    slashQuery !== null && slashCommands.length > 0 && dismissedSlashSource !== source;
+  const pendingClickOffsetRef = useRef<number | null>(null);
+  const composingRef = useRef(false);
+  /**
+   * The textarea's own value while an IME composition is open.
+   *
+   * A controlled `value={source}` fights the IME: every mid-composition keystroke round-trips
+   * through the document, React writes the derived string back into the element, and Chromium
+   * cancels the candidate window. Holding the DOM value locally until `compositionend` means React
+   * never reassigns it mid-composition, and exactly one command is issued for the settled text.
+   */
+  const [composingValue, setComposingValue] = useState<string | null>(null);
+  // The slash menu is anchored to the caret, not to the whole Block. Deriving the trigger from
+  // `/^\/.*$/` over the entire source meant the menu only ever opened on a paragraph whose *only*
+  // content was the query — you could not type `Next steps: /table`, and no list item, heading or
+  // quote could reach it at all.
+  const [caretOffset, setCaretOffset] = useState<number | null>(null);
+  const noteCaretOffset = (offset: number) => {
+    // Only the slash run needs a live caret. Storing it unconditionally would re-render the row on
+    // every arrow key; `null` short-circuits to React's bail-out when no trigger char is present.
+    setCaretOffset(SLASH_TRIGGER_PATTERN.test(source) ? offset : null);
+  };
+  // While an IME composition is open the model deliberately lags the DOM, so the menu filters on the
+  // live text. That is what makes `/` + pinyin narrow as you type, the way Feishu's insert panel
+  // does — and it is safe because Enter belongs to the IME until the composition commits, so the
+  // offsets used to execute a command always come from committed text.
+  const liveSource = composingValue ?? source;
+  const slashRun =
+    active && block.editable && !sourceOnly && onRunSlashCommand
+      ? slashRunAt(
+          liveSource,
+          composingValue === null
+            ? (caretOffset ?? editorSelectionRef.current.head)
+            : liveSource.length
+        )
+      : null;
+  const slashQuery = slashRun?.query ?? null;
+  const slashStart = slashRun?.start ?? null;
+  const slashCommands = useMemo(
+    () => (slashQuery === null ? [] : searchMarkdownSlashCommands(slashQuery)),
+    [slashQuery]
+  );
+  // Stays open with zero matches so Enter cannot silently split the Block behind an open menu.
+  const slashMenuOpen = slashStart !== null && dismissedSlashStart !== slashStart;
   const activeListItem = listItemPreview(rawSource, block.kind);
 
   useEffect(() => {
     setSlashIndex(0);
-    if (dismissedSlashSource !== null && dismissedSlashSource !== source) {
-      setDismissedSlashSource(null);
+  }, [slashQuery]);
+
+  useEffect(() => {
+    // Forget the dismissal once the caret leaves the run it dismissed, so a later `/` in the same
+    // Block opens normally.
+    if (dismissedSlashStart !== null && slashStart !== dismissedSlashStart) {
+      setDismissedSlashStart(null);
     }
-  }, [dismissedSlashSource, slashQuery, source]);
+  }, [dismissedSlashStart, slashStart]);
+
+  useEffect(() => {
+    if (!slashMenuOpen) {
+      setSlashPosition(null);
+      return;
+    }
+    const surface = rowRef.current?.querySelector<HTMLElement>("[data-native-block-editor]");
+    if (!surface || slashStart === null) return;
+    const measure = () => setSlashPosition(slashMenuPosition(surface, slashStart));
+    measure();
+    const scroller = surface.closest("[data-native-markdown-scroll]");
+    scroller?.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    return () => {
+      scroller?.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+    };
+  }, [slashMenuOpen, slashStart, slashCommands.length]);
+
+  useEffect(() => {
+    if (!slashMenuOpen) return;
+    slashListRef.current
+      ?.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest" });
+  }, [slashIndex, slashMenuOpen]);
+
+  // Which surface rendered last. Typing `**bold**` flips the Block from the raw textarea to the
+  // semantic surface (and undo flips it back). React unmounts one and mounts the other, so unless
+  // the caret is carried across explicitly it lands at offset 0 and the next keystroke goes to the
+  // wrong place — the single worst "the caret lies" bug in the editor.
+  const surfaceKind = useSemanticInlineEditor ? "semantic" : "textarea";
+  const previousSurfaceRef = useRef(surfaceKind);
+  const carriedSelectionRef = useRef<SemanticInlineSelection | null>(null);
+  const lastSelectionPropRef = useRef(selection);
+  if (selection !== lastSelectionPropRef.current) {
+    lastSelectionPropRef.current = selection;
+    carriedSelectionRef.current = null;
+  }
+  if (previousSurfaceRef.current !== surfaceKind) {
+    previousSurfaceRef.current = surfaceKind;
+    carriedSelectionRef.current = active ? editorSelectionRef.current : null;
+  }
+  const restoredSelection = selection ?? carriedSelectionRef.current ?? undefined;
 
   useEffect(() => {
     if (!active) return;
-    editorSelectionRef.current = selection ?? {
+    editorSelectionRef.current = restoredSelection ?? {
       anchor: sourceLengthRef.current,
       head: sourceLengthRef.current,
     };
     const textarea = textareaRef.current;
     if (!textarea) return;
     if (autoFocusEditor) textarea.focus();
-    if (selection) {
-      const anchor = Math.min(selection.anchor, textarea.value.length);
-      const head = Math.min(selection.head, textarea.value.length);
+    if (restoredSelection) {
+      const anchor = Math.min(restoredSelection.anchor, textarea.value.length);
+      const head = Math.min(restoredSelection.head, textarea.value.length);
       textarea.setSelectionRange(anchor, head);
     } else {
       textarea.setSelectionRange(textarea.value.length, textarea.value.length);
     }
-    textarea.style.height = "0px";
-    textarea.style.height = `${Math.max(textarea.scrollHeight, 36)}px`;
-  }, [active, autoFocusEditor, selection]);
+    autosizeTextarea(textarea);
+  }, [active, autoFocusEditor, restoredSelection, surfaceKind]);
 
   useEffect(() => {
     if (blockSelectionFocus) rowRef.current?.focus();
@@ -275,10 +402,22 @@ export function MarkdownBlockRow({
   }, [active, sourceOnly]);
 
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    if (composingRef.current) {
+      // Track the DOM value so React's controlled value keeps matching it, but issue no command:
+      // an IME composition is one edit, committed once at `compositionend`.
+      setComposingValue(event.target.value);
+      autosizeTextarea(event.target);
+      return;
+    }
     setInlineSelection(null);
+    // Mirror the post-input caret before the source change can swap the editing surface.
+    editorSelectionRef.current = {
+      anchor: event.target.selectionStart,
+      head: event.target.selectionEnd,
+    };
+    noteCaretOffset(event.target.selectionEnd);
     onChange(block.id, event.target.value);
-    event.target.style.height = "0px";
-    event.target.style.height = `${Math.max(event.target.scrollHeight, 36)}px`;
+    autosizeTextarea(event.target);
   };
 
   const handleEditorKeyDown = (
@@ -289,9 +428,22 @@ export function MarkdownBlockRow({
     const from = Math.min(editorSelection.anchor, editorSelection.head);
     const to = Math.max(editorSelection.anchor, editorSelection.head);
     if (event.nativeEvent.isComposing) return;
+    // Boundary tests must run in the offsets the user can actually see. The semantic surface
+    // hides Markdown delimiters, so source offset 2 of `**bold**` is visible offset 0 — testing
+    // `from === 0` there makes every boundary key silently do nothing.
+    const collapsed = from === to;
+    const visibleRange = useSemanticInlineEditor
+      ? inlineProjection.sourceRangeToVisible({ from, to })
+      : { from, to };
+    const visibleLength = useSemanticInlineEditor
+      ? inlineProjection.visibleText.length
+      : editorLength;
+    const atVisibleStart = collapsed && visibleRange.from === 0;
+    const atVisibleEnd = collapsed && visibleRange.to === visibleLength;
     if (slashMenuOpen) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
+        if (slashCommands.length === 0) return;
         const direction = event.key === "ArrowDown" ? 1 : -1;
         setSlashIndex(
           (current) => (current + direction + slashCommands.length) % slashCommands.length
@@ -299,14 +451,16 @@ export function MarkdownBlockRow({
         return;
       }
       if (event.key === "Enter" || event.key === "Tab") {
+        // Swallowed even with no match: the menu is on screen, so Enter belongs to it.
         event.preventDefault();
         const command = slashCommands[slashIndex] ?? slashCommands[0];
-        if (command) onRunSlashCommand?.(block.id, command.id);
+        if (command && slashRun) onRunSlashCommand?.(block.id, command.id, slashRun);
         return;
       }
       if (event.key === "Escape") {
         event.preventDefault();
-        setDismissedSlashSource(source);
+        // Leaves the literal `/` the user typed in place — dismissing is never an edit.
+        setDismissedSlashStart(slashRun?.start ?? null);
         return;
       }
     }
@@ -321,6 +475,30 @@ export function MarkdownBlockRow({
       onSelectBlock?.(block.id);
       return;
     }
+    if ((event.metaKey || event.ctrlKey) && !event.altKey) {
+      // Inline formatting shortcuts. `stopPropagation` matters as much as `preventDefault`: the
+      // window-level handler owns Mod+K for the command palette and the app menu shows Mod+B for
+      // the sidebar, so without it one keystroke would fire two things.
+      const shortcut = inlineFormatShortcut(event);
+      // Mod+K also works from a collapsed caret inside an existing link, which is how you edit its
+      // destination. Every other format needs something selected to act on.
+      if (
+        shortcut === "link" &&
+        onEditLink &&
+        (from < to || existingLinkDestination(source, from, to))
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        openLinkEditor(from, to);
+        return;
+      }
+      if (shortcut && shortcut !== "link" && onApplyInlineFormat && from < to) {
+        event.preventDefault();
+        event.stopPropagation();
+        onApplyInlineFormat(block.id, from, to, shortcut);
+        return;
+      }
+    }
     if (
       (event.metaKey || event.ctrlKey) &&
       !event.shiftKey &&
@@ -334,12 +512,8 @@ export function MarkdownBlockRow({
         return;
       }
     }
-    if (
-      (event.metaKey || event.ctrlKey) &&
-      event.shiftKey &&
-      !event.altKey &&
-      event.key.toLowerCase() === "d"
-    ) {
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "d") {
+      // Both Mod+D (Notion, Feishu) and Mod+Shift+D (what this editor shipped) duplicate.
       event.preventDefault();
       if (!event.repeat) onDuplicate(block.id);
       return;
@@ -371,21 +545,64 @@ export function MarkdownBlockRow({
       if (onMove(block.id, direction) !== false) event.preventDefault();
       return;
     }
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key === "/") {
+      // Keyboard route into the Block menu. Tab is a structural key inside the editor (below), so
+      // this replaces the old "Shift+Tab walks to the gutter buttons" route.
+      event.preventDefault();
+      openBlockActionsMenu();
+      return;
+    }
+    if (event.key === "Tab" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      // Tab never leaves the document while a Block is being edited. Notion and Feishu both
+      // treat it as a structural key inside the editor; letting the browser move focus to the
+      // next tab stop drops the caret and the user's place in the Page.
+      event.preventDefault();
+      if (isListBlockKind(block.kind) && onIndent) {
+        onIndent(block.id, event.shiftKey ? -1 : 1, {
+          anchor: editorSelection.anchor,
+          head: editorSelection.head,
+        });
+        return;
+      }
+      if (block.kind === "table" && onPaste) {
+        const geometry = parseMarkdownTableSource(source);
+        const current = geometry ? markdownTableCellAt(geometry, from) : null;
+        if (geometry && current) {
+          const next = markdownTableNeighbourCell(geometry, current, event.shiftKey ? -1 : 1);
+          if (next) {
+            onSelectCellRange?.(block.id, next.from, next.to);
+          } else if (!event.shiftKey) {
+            // Tab out of the last cell adds a row, the way it does in both reference products.
+            onPaste(
+              block.id,
+              geometry.appendAt,
+              geometry.appendAt,
+              markdownTableBlankRow(geometry)
+            );
+          }
+          return;
+        }
+      }
+      if (indentsWithSpaces(block.kind)) {
+        const shifted = shiftSourceIndent(source, from, to, event.shiftKey ? -1 : 1);
+        if (shifted) {
+          onPaste(block.id, shifted.from, shifted.to, shifted.text);
+        }
+      }
+      return;
+    }
     if (
-      event.key === "Tab" &&
+      onExtendSelectionToBlock &&
+      event.shiftKey &&
       !event.metaKey &&
       !event.ctrlKey &&
       !event.altKey &&
-      (block.kind === "bullet_list_item" ||
-        block.kind === "ordered_list_item" ||
-        block.kind === "task_list_item") &&
-      onIndent
+      ((event.key === "ArrowUp" && visibleRange.from === 0) ||
+        (event.key === "ArrowDown" && visibleRange.to === visibleLength))
     ) {
-      event.preventDefault();
-      onIndent(block.id, event.shiftKey ? -1 : 1, {
-        anchor: editorSelection.anchor,
-        head: editorSelection.head,
-      });
+      // The head has run out of text in this direction, so keep extending into the next Block.
+      const direction = event.key === "ArrowUp" ? -1 : 1;
+      if (onExtendSelectionToBlock(block.id, direction)) event.preventDefault();
       return;
     }
     if (
@@ -394,12 +611,51 @@ export function MarkdownBlockRow({
       !event.metaKey &&
       !event.ctrlKey &&
       !event.altKey &&
-      from === to &&
-      ((event.key === "ArrowUp" && from === 0) ||
-        (event.key === "ArrowDown" && to === editorLength))
+      collapsed &&
+      (event.key === "ArrowUp" || event.key === "ArrowDown")
     ) {
+      // Leave the Block only from its first/last *visual* line, so a wrapped paragraph lets the
+      // caret walk its own lines first. `caretLineBoundary` reports the caret's x so the target
+      // Block can place the caret in the same column instead of at offset 0 / end.
       const direction = event.key === "ArrowUp" ? -1 : 1;
+      const boundary = caretLineBoundary(event.currentTarget, from);
+      const leaving = boundary
+        ? direction === -1
+          ? boundary.atFirstLine
+          : boundary.atLastLine
+        : direction === -1
+          ? atVisibleStart
+          : atVisibleEnd;
+      if (leaving && onNavigate(block.id, direction, boundary?.caretX)) event.preventDefault();
+      return;
+    }
+    if (
+      onNavigate &&
+      !event.shiftKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      ((event.key === "ArrowLeft" && atVisibleStart) ||
+        (event.key === "ArrowRight" && atVisibleEnd))
+    ) {
+      // ArrowLeft at the start lands at the END of the previous Block, and ArrowRight at the end
+      // lands at offset 0 of the next one — `navigateBlock` already picks those offsets.
+      const direction = event.key === "ArrowLeft" ? -1 : 1;
       if (onNavigate(block.id, direction)) event.preventDefault();
+      return;
+    }
+    if (
+      onMergeForward &&
+      event.key === "Delete" &&
+      !event.shiftKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !sourceOnly &&
+      atVisibleEnd
+    ) {
+      event.preventDefault();
+      onMergeForward(block.id);
       return;
     }
     if (
@@ -414,26 +670,22 @@ export function MarkdownBlockRow({
       if (
         source.length === 0 &&
         (block.depth ?? 0) > 0 &&
-        (block.kind === "bullet_list_item" ||
-          block.kind === "ordered_list_item" ||
-          block.kind === "task_list_item") &&
+        isListBlockKind(block.kind) &&
         onIndent
       ) {
         onIndent(block.id, -1, { anchor: 0, head: 0 });
         return;
       }
-      onSplit(block.id, from, to);
+      // At a visible boundary the source offset may sit *inside* a delimiter run, so splitting
+      // there would tear `**bold**` into `**` and `bold**`. Snap to the Block's source edges.
+      if (atVisibleStart) onSplit(block.id, 0, 0);
+      else if (atVisibleEnd) onSplit(block.id, source.length, source.length);
+      else onSplit(block.id, from, to);
       return;
     }
-    if (!sourceOnly && event.key === "Backspace" && from === 0 && to === 0) {
+    if (!sourceOnly && event.key === "Backspace" && atVisibleStart) {
       event.preventDefault();
-      if (
-        (block.depth ?? 0) > 0 &&
-        (block.kind === "bullet_list_item" ||
-          block.kind === "ordered_list_item" ||
-          block.kind === "task_list_item") &&
-        onIndent
-      ) {
+      if ((block.depth ?? 0) > 0 && isListBlockKind(block.kind) && onIndent) {
         onIndent(block.id, -1, { anchor: 0, head: 0 });
         return;
       }
@@ -483,10 +735,8 @@ export function MarkdownBlockRow({
         textarea?.selectionEnd ?? editorSelection.head,
         images
       );
-      return;
     }
-    const beforeId = blockDropTarget(event.currentTarget, event.clientY, block.id, nextBlockId);
-    if (onDropBefore(beforeId, event.dataTransfer)) event.preventDefault();
+    // A Block drop is left to bubble: the container owns the boundary and the command.
   };
 
   const updateInlineSelection = (textarea: HTMLTextAreaElement) => {
@@ -496,6 +746,7 @@ export function MarkdownBlockRow({
       anchor: textarea.selectionStart,
       head: textarea.selectionEnd,
     };
+    noteCaretOffset(textarea.selectionEnd);
     if (sourceOnly || !onApplyInlineFormat || from === to) {
       setInlineSelection(null);
       return;
@@ -512,6 +763,7 @@ export function MarkdownBlockRow({
     editor: HTMLElement
   ) => {
     editorSelectionRef.current = nextSelection;
+    noteCaretOffset(nextSelection.head);
     const from = Math.min(nextSelection.anchor, nextSelection.head);
     const to = Math.max(nextSelection.anchor, nextSelection.head);
     if (!onApplyInlineFormat || from === to) {
@@ -525,6 +777,23 @@ export function MarkdownBlockRow({
     });
   };
 
+  /**
+   * Open the link editor over a selection.
+   *
+   * Prefilled from the link the selection already sits inside, so Mod+K on an existing link edits
+   * its destination instead of nesting a new link inside it.
+   */
+  const openLinkEditor = (from: number, to: number) => {
+    const surface = rowRef.current?.querySelector<HTMLElement>("[data-native-block-editor]");
+    const position = surface
+      ? surface instanceof HTMLTextAreaElement
+        ? textareaSelectionToolbarPosition(surface, from, to)
+        : domSelectionToolbarPosition(surface)
+      : { top: 0, left: 0 };
+    setInlineSelection(null);
+    setLinkEditor({ from, to, url: existingLinkDestination(source, from, to), position });
+  };
+
   const openBlockActionsMenu = () => {
     setInlineSelection(null);
     rowRef.current?.querySelector<HTMLButtonElement>('button[aria-label="Block actions"]')?.click();
@@ -533,9 +802,9 @@ export function MarkdownBlockRow({
   return (
     <div
       ref={rowRef}
-      className={`group/native-block relative flex min-h-9 items-start gap-1 rounded-md py-0.5 pl-1 pr-1 transition-colors ${
-        blockSelected ? "bg-[rgba(35,131,226,0.09)]" : active ? "" : "hover:bg-muted/25"
-      }`}
+      // Hover tint and selection fill are drawn by `[data-native-block-row]::after` in editor.css
+      // so they stay inside the content rail and never bleed across the control gutter.
+      className="group/native-block relative flex min-h-9 items-start gap-[6px] rounded-md py-0.5 pl-1 pr-1"
       data-block-id={block.id}
       data-block-kind={block.kind}
       data-block-level={block.level}
@@ -544,8 +813,9 @@ export function MarkdownBlockRow({
       data-active={active ? "true" : "false"}
       data-block-selected={blockSelected ? "true" : undefined}
       data-drop-before={dropBefore ? "true" : undefined}
+      data-controls-open={controlsMenuOpen ? "true" : undefined}
       role="group"
-      aria-label={`Block ${index + 1} of ${count}`}
+      aria-label={`${blockTypeLabel(block)}, block ${index + 1} of ${count}`}
       aria-describedby={descriptionId}
       aria-current={active ? "true" : undefined}
       tabIndex={blockSelectionFocus || (!active && block.editable && keyboardEntry) ? 0 : -1}
@@ -570,29 +840,20 @@ export function MarkdownBlockRow({
         }
       }}
       onDragOver={(event) => {
+        // Only image files are a row-level concern. Block reordering is decided once, at the
+        // container, from a boundary table — a row can only see the pointer inside its own box, so
+        // deciding there made the insertion line flip on whichever row got the event.
         if (!sourceOnly && rasterFiles(event.dataTransfer).length) {
           event.preventDefault();
           event.dataTransfer.dropEffect = "copy";
-          return;
         }
-        if (!onCanDrop(event.dataTransfer)) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-        onDragIntent?.(blockDropTarget(event.currentTarget, event.clientY, block.id, nextBlockId));
-      }}
-      onDragLeave={(event) => {
-        const nextTarget = event.relatedTarget;
-        if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
-        onClearDragIntent?.();
       }}
       onDrop={handleDrop}
     >
-      <span id={descriptionId} className="sr-only">
-        {`Block ${index + 1} of ${count}. Press Enter to edit. Use Alt plus Arrow keys to move, Mod plus Shift plus D to duplicate, and Mod plus Shift plus Backspace to delete.`}
-      </span>
       <div
         data-native-block-controls
-        className="flex w-14 shrink-0 items-center justify-end pt-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/native-block:opacity-100"
+        // Reveal/hide timing and first-line alignment live in editor.css.
+        className="flex w-[54px] shrink-0 items-start justify-end"
         onPointerDownCapture={(event) => {
           const target = event.target as HTMLElement;
           if (target.closest('button[aria-label="Block actions"]')) {
@@ -616,9 +877,10 @@ export function MarkdownBlockRow({
           canMoveDown={index < count - 1}
           canTurnInto={block.editable && !sourceOnly}
           draggable
-          buttonTabIndex={active ? 0 : -1}
+          buttonTabIndex={active || blockSelectionFocus ? 0 : -1}
           describedBy={descriptionId}
-          onAdd={() => onInsertAfter(block.id)}
+          onMenuOpenChange={setControlsMenuOpen}
+          onAdd={(placement) => onInsertAfter(block.id, placement)}
           onTurnInto={(kind, level) => onSetKind(block.id, kind, level)}
           onCopyMarkdown={() =>
             onCopyMarkdown ? onCopyMarkdown(block.id) : navigator.clipboard?.writeText(block.raw)
@@ -633,14 +895,48 @@ export function MarkdownBlockRow({
       </div>
 
       <div
+        data-native-block-content
         className="min-w-0 flex-1"
+        onPointerDownCapture={(event) => {
+          // Activating a Block must keep the caret where the user clicked. Without this the
+          // rendered preview is replaced by an editing surface that focuses at end-of-Block, so
+          // clicking into the middle of a paragraph silently jumps to its end.
+          // `> 0` rather than `!== 0`, so a synthesised event with no `button` still counts as
+          // primary instead of being silently ignored.
+          if (active || !block.editable || event.button > 0 || event.shiftKey) return;
+          if ((event.target as HTMLElement | null)?.closest("a,button,input,label")) return;
+          // A table renders as a grid, so a plain caret hit-test would land nowhere useful. Each
+          // cell carries the source offset of its own text instead.
+          const tableCell = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+            "[data-table-cell]"
+          );
+          if (tableCell) {
+            pendingClickOffsetRef.current = Number(tableCell.dataset.tableCell);
+            return;
+          }
+          const offset = sourceOffsetAtPoint(
+            event.clientX,
+            event.clientY,
+            event.currentTarget,
+            source,
+            sourceOnly ? null : inlineProjection
+          );
+          if (offset === null) return;
+          pendingClickOffsetRef.current = offset;
+        }}
         onClick={(event) => {
-          if (event.shiftKey) {
+          // Inside the Block being edited, Shift+click is the browser's own "extend the text
+          // selection to here". Hijacking it tore down the editor mid-gesture.
+          if (event.shiftKey && !active) {
             event.preventDefault();
             onSelectBlock?.(block.id, true);
             return;
           }
-          if (!active && block.editable) onActivate(block.id);
+          if (!active && block.editable) {
+            const offset = pendingClickOffsetRef.current;
+            pendingClickOffsetRef.current = null;
+            onActivate(block.id, offset === null ? undefined : { anchor: offset, head: offset });
+          }
         }}
       >
         {active && block.editable ? (
@@ -649,8 +945,14 @@ export function MarkdownBlockRow({
               data-native-block-edit-surface
               data-editor-kind={block.kind}
               data-editor-level={block.level}
-              className={activeEditorSurfaceClass(block)}
+              className={`relative ${activeEditorSurfaceClass(block)}`}
             >
+              {block.kind === "fenced_code" && onSetCodeLanguage ? (
+                <CodeLanguageChip
+                  language={splitDelimitedBlockSource("fenced_code", rawSource)?.infoString ?? ""}
+                  onCommit={(language) => onSetCodeLanguage(block.id, language)}
+                />
+              ) : null}
               {block.kind === "task_list_item" && activeListItem ? (
                 <input
                   type="checkbox"
@@ -674,12 +976,14 @@ export function MarkdownBlockRow({
                   id={editorId}
                   describedBy={descriptionId}
                   source={source}
-                  selection={selection}
+                  selection={restoredSelection}
                   autoFocus={autoFocusEditor}
                   highlightSelection={highlightSelection}
+                  placeholder={source.length === 0 ? blockPlaceholder(block) : undefined}
                   className="native-block-textarea block min-w-0 flex-1 whitespace-pre-wrap break-words bg-transparent outline-none"
                   onSourceChange={(nextSource, nextSelection) => {
                     editorSelectionRef.current = nextSelection;
+                    noteCaretOffset(nextSelection.head);
                     setInlineSelection(null);
                     onChange(block.id, nextSource);
                   }}
@@ -722,25 +1026,56 @@ export function MarkdownBlockRow({
                   id={editorId}
                   aria-label="Markdown block"
                   aria-describedby={descriptionId}
-                  aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Meta+Shift+D Control+Shift+D Meta+Shift+Backspace Control+Shift+Backspace"
+                  aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Meta+D Control+D Meta+Shift+Backspace Control+Shift+Backspace"
                   data-native-block-editor
                   className={`native-block-textarea block min-w-0 flex-1 resize-none overflow-hidden bg-transparent outline-none ${
                     sourceOnly ? "font-mono" : ""
                   }`}
-                  value={source}
+                  value={composingValue ?? source}
                   rows={1}
-                  spellCheck
+                  placeholder={source.length === 0 ? blockPlaceholder(block) : undefined}
+                  // Browser spellcheck squiggles under code, LaTeX and diagram source are noise.
+                  spellCheck={!sourceOnly}
                   onChange={handleChange}
                   onPaste={handlePaste}
-                  onCompositionStart={() => onCompositionStart(block.id)}
-                  onCompositionEnd={() => onCompositionEnd(block.id)}
+                  onCompositionStart={(event) => {
+                    composingRef.current = true;
+                    setInlineSelection(null);
+                    setComposingValue(event.currentTarget.value);
+                    onCompositionStart(block.id);
+                  }}
+                  onCompositionUpdate={(event) => setComposingValue(event.currentTarget.value)}
+                  onCompositionEnd={(event) => {
+                    composingRef.current = false;
+                    const settled = event.currentTarget.value;
+                    setComposingValue(null);
+                    onCompositionEnd(block.id);
+                    if (settled !== source) onChange(block.id, settled);
+                  }}
                   onKeyDown={handleTextareaKeyDown}
-                  onKeyUp={(event) => updateInlineSelection(event.currentTarget)}
+                  onKeyUp={(event) => {
+                    if (event.nativeEvent.isComposing) return;
+                    updateInlineSelection(event.currentTarget);
+                  }}
                   onMouseUp={(event) => updateInlineSelection(event.currentTarget)}
-                  onSelect={(event) => updateInlineSelection(event.currentTarget)}
+                  onSelect={(event) => {
+                    if (composingRef.current) return;
+                    updateInlineSelection(event.currentTarget);
+                  }}
                 />
               )}
             </div>
+            {linkEditor ? (
+              <LinkEditPopover
+                url={linkEditor.url}
+                position={linkEditor.position}
+                onCancel={() => setLinkEditor(null)}
+                onCommit={(url) => {
+                  setLinkEditor(null);
+                  if (url.trim()) onEditLink?.(block.id, linkEditor.from, linkEditor.to, url);
+                }}
+              />
+            ) : null}
             <InlineFormatToolbar
               visible={inlineSelection !== null}
               position={inlineSelection?.position}
@@ -784,10 +1119,7 @@ export function MarkdownBlockRow({
                 }
               }}
               onLink={() => {
-                if (inlineSelection) {
-                  onApplyInlineFormat?.(block.id, inlineSelection.from, inlineSelection.to, "link");
-                  setInlineSelection(null);
-                }
+                if (inlineSelection) openLinkEditor(inlineSelection.from, inlineSelection.to);
               }}
               onCode={() => {
                 if (inlineSelection) {
@@ -797,44 +1129,74 @@ export function MarkdownBlockRow({
               }}
               onMore={openBlockActionsMenu}
             />
-            {slashMenuOpen ? (
-              <div
-                role="listbox"
-                aria-label="Block commands"
-                className="absolute left-10 top-full z-50 mt-1 max-h-80 w-[min(22rem,calc(100vw-5rem))] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-xl"
-              >
-                {slashCommands.map((command, commandIndex) => (
-                  <button
-                    key={command.id}
-                    type="button"
-                    role="option"
-                    aria-selected={commandIndex === slashIndex}
-                    className={`flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left ${
-                      commandIndex === slashIndex ? "bg-muted" : "hover:bg-muted/70"
-                    }`}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onRunSlashCommand?.(block.id, command.id);
+            {slashMenuOpen && slashPosition
+              ? createPortal(
+                  <div
+                    ref={slashListRef}
+                    role="listbox"
+                    aria-label="Block commands"
+                    style={{
+                      position: "fixed",
+                      top: slashPosition.top,
+                      left: slashPosition.left,
+                      maxHeight: slashPosition.maxHeight,
+                      transform: slashPosition.flipped ? "translateY(-100%)" : undefined,
                     }}
+                    // Notion's measured slash panel: 314px wide, 10px radius, opaque, layered
+                    // shadow with a hairline ring. No transition on `top`/`left` — the panel is
+                    // caret-anchored, and animating it would read as the menu lagging the caret.
+                    className="z-50 w-[min(314px,calc(100vw-2rem))] overflow-y-auto overscroll-contain rounded-[10px] bg-popover p-1.5 text-popover-foreground shadow-[0_20px_24px_rgba(25,25,25,0.05),0_5px_8px_rgba(25,25,25,0.027),0_0_0_1px_hsl(var(--border))]"
+                    onMouseDown={(event) => event.preventDefault()}
                   >
-                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded border border-border bg-background font-mono text-xs text-muted-foreground">
-                      {command.title.slice(0, 1)}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-medium">{command.title}</span>
-                      <span className="block text-xs text-muted-foreground">
-                        {command.description}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
+                    {slashCommands.length === 0 ? (
+                      <p
+                        role="option"
+                        aria-selected={false}
+                        aria-disabled="true"
+                        className="px-3 py-5 text-center text-xs text-muted-foreground"
+                      >
+                        No matching blocks
+                      </p>
+                    ) : (
+                      slashCommands.map((command, commandIndex) => (
+                        <button
+                          key={command.id}
+                          type="button"
+                          role="option"
+                          tabIndex={-1}
+                          aria-selected={commandIndex === slashIndex}
+                          className={`flex h-[31px] w-full items-center gap-2.5 rounded-md px-2 text-left transition-colors duration-[20ms] ease-in ${
+                            commandIndex === slashIndex ? "bg-accent text-accent-foreground" : ""
+                          }`}
+                          // `mousemove`, not `mouseenter`: a menu that repositions under a still
+                          // pointer must not steal the keyboard cursor the user is driving.
+                          onMouseMove={() => setSlashIndex(commandIndex)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (slashRun) onRunSlashCommand?.(block.id, command.id, slashRun);
+                          }}
+                        >
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
+                            <SlashCommandIcon name={command.icon} />
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-sm">{command.title}</span>
+                          {command.shortcut ? (
+                            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                              {command.shortcut}
+                            </span>
+                          ) : null}
+                        </button>
+                      ))
+                    )}
+                  </div>,
+                  document.body
+                )
+              : null}
             <div data-native-block-print-preview className="hidden">
               <BlockPreview
                 block={block}
                 onSetTaskChecked={onSetTaskChecked}
+                onSetCodeLanguage={onSetCodeLanguage}
                 onOpenWikiLink={onOpenWikiLink}
                 wikiEmbedContext={wikiEmbedContext}
                 collectionContext={collectionContext}
@@ -846,6 +1208,7 @@ export function MarkdownBlockRow({
           <BlockPreview
             block={block}
             onSetTaskChecked={onSetTaskChecked}
+            onSetCodeLanguage={onSetCodeLanguage}
             onOpenWikiLink={onOpenWikiLink}
             wikiEmbedContext={wikiEmbedContext}
             collectionContext={collectionContext}
@@ -855,6 +1218,541 @@ export function MarkdownBlockRow({
       </div>
     </div>
   );
+}
+
+/** `/` is the Notion trigger; `、` is the fullwidth one Feishu accepts, so a CJK keyboard needs no
+ * mode switch to reach the menu. */
+const SLASH_TRIGGER_PATTERN = /[/、]/;
+
+/**
+ * Id of the one shortcut legend, rendered by the runtime.
+ *
+ * Every row used to render its own copy in an `sr-only` span. A DOM Range spanning two rows picked
+ * those up, so copying across Blocks pasted "Press Enter to edit…" into the user's clipboard.
+ */
+export const NATIVE_BLOCK_SHORTCUTS_ID = "native-block-shortcuts";
+
+export interface MarkdownSlashRun {
+  /** Offset of the trigger character in the Block's editor source. */
+  readonly start: number;
+  /** Offset just past the caret — the end of the text the command will replace. */
+  readonly end: number;
+  readonly query: string;
+}
+
+/**
+ * The `/query` run the caret currently sits in, or null.
+ *
+ * Scans back from the caret to the nearest trigger character with no whitespace in between, and
+ * requires that character to start a word. That last rule is what keeps `src/lib`, `and/or` and
+ * `2026/07` typeable without the menu jumping in.
+ */
+function slashRunAt(source: string, caret: number): MarkdownSlashRun | null {
+  const end = Math.min(Math.max(caret, 0), source.length);
+  for (let index = end - 1; index >= 0; index -= 1) {
+    const char = source[index];
+    if (char === "\n" || char === "\r") return null;
+    if (!SLASH_TRIGGER_PATTERN.test(char)) {
+      if (/\s/.test(char)) return null;
+      continue;
+    }
+    const previous = index > 0 ? source[index - 1] : "";
+    if (previous && !/[\s(（【[「]/.test(previous)) return null;
+    return { start: index, end, query: source.slice(index + 1, end) };
+  }
+  return null;
+}
+
+interface SlashMenuPosition {
+  top: number;
+  left: number;
+  maxHeight: number;
+  flipped: boolean;
+}
+
+/**
+ * Place the slash menu against the caret, flipping above it near the bottom of the viewport and
+ * clamping horizontally so it is never clipped.
+ */
+function slashMenuPosition(surface: HTMLElement, triggerOffset: number): SlashMenuPosition {
+  const rect =
+    surface instanceof HTMLTextAreaElement
+      ? textareaCaretRect(surface, triggerOffset)
+      : domCaretRect(surface);
+  const fallback = surface.getBoundingClientRect();
+  const anchorTop = rect?.top ?? fallback.top;
+  const anchorBottom = rect?.bottom ?? fallback.bottom;
+  const anchorLeft = rect?.left ?? fallback.left;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+  const width = Math.min(314, Math.max(viewportWidth - 32, 200));
+  const gap = 8;
+  const below = viewportHeight - anchorBottom - gap - 16;
+  const above = anchorTop - gap - 16;
+  const flipped = below < 200 && above > below;
+  return {
+    top: flipped ? anchorTop - gap : anchorBottom + gap,
+    left: Math.min(Math.max(anchorLeft, 8), Math.max(viewportWidth - width - 8, 8)),
+    maxHeight: Math.max(Math.min(flipped ? above : below, 320), 120),
+    flipped,
+  };
+}
+
+/** Renders a command's Lucide icon by name, falling back to a neutral glyph. */
+function SlashCommandIcon({ name }: { name: string }) {
+  const icons = LucideIcons as unknown as Record<string, LucideIcon | undefined>;
+  const Icon = icons[name] ?? LucideIcons.Pilcrow;
+  return <Icon className="h-4 w-4" aria-hidden="true" />;
+}
+
+interface CaretPointHost {
+  caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+  caretRangeFromPoint?: (x: number, y: number) => Range | null;
+}
+
+/**
+ * Resolve a viewport point inside a Block's rendered preview to an offset in the Block's editor
+ * source, so activating a Block can put the caret exactly where the pointer landed.
+ *
+ * The preview shows the *visible* projection (Markdown delimiters hidden), so the character index
+ * measured against the DOM has to be mapped back through the inline projection. When the Block is
+ * edited as raw source the preview text and the editor text are the same string and no mapping is
+ * needed.
+ */
+export function sourceOffsetAtPoint(
+  x: number,
+  y: number,
+  container: HTMLElement,
+  source: string,
+  projection: ReturnType<typeof projectMarkdownInline> | null
+): number | null {
+  const host = document as unknown as CaretPointHost;
+  let node: Node | null = null;
+  let offset = 0;
+  const position = host.caretPositionFromPoint?.(x, y);
+  if (position) {
+    node = position.offsetNode;
+    offset = position.offset;
+  } else {
+    const range = host.caretRangeFromPoint?.(x, y);
+    if (!range) return null;
+    node = range.startContainer;
+    offset = range.startOffset;
+  }
+  if (!node || node.nodeType !== Node.TEXT_NODE || !container.contains(node)) return null;
+  const visibleOffset = textOffsetWithin(container, node, offset);
+  if (visibleOffset === null) return null;
+  if (!projection || projection.visibleText === source) {
+    return Math.min(visibleOffset, source.length);
+  }
+  const clamped = Math.min(visibleOffset, projection.visibleText.length);
+  return projection.visibleOffsetToSource(clamped, "forward");
+}
+
+/**
+ * Character offset of `(node, offset)` counted over the text content of `container`, skipping
+ * decoration that is not part of the Block's text — the list bullet and ordinal are `aria-hidden`
+ * spans rendered next to the content and counting them would shift every mapped offset.
+ */
+function textOffsetWithin(container: HTMLElement, node: Node, offset: number): number | null {
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    acceptNode: (candidate) =>
+      candidate.parentElement?.closest('[aria-hidden="true"]')
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT,
+  });
+  let total = 0;
+  let current = walker.nextNode();
+  while (current) {
+    if (current === node) return total + offset;
+    total += current.textContent?.length ?? 0;
+    current = walker.nextNode();
+  }
+  return null;
+}
+
+let fieldSizingSupport: boolean | null = null;
+
+/**
+ * Grow the textarea to fit its content.
+ *
+ * The old implementation wrote `height: 0px`, read `scrollHeight`, then wrote the real height —
+ * two forced synchronous layouts of the whole Page on every keystroke. Where `field-sizing` is
+ * available (Chromium 123+, so every packaged build) CSS does this for free and we do nothing.
+ */
+function autosizeTextarea(textarea: HTMLTextAreaElement): void {
+  fieldSizingSupport ??= "fieldSizing" in document.documentElement.style;
+  if (fieldSizingSupport) return;
+  textarea.style.height = "auto";
+  const next = `${Math.max(textarea.scrollHeight, 36)}px`;
+  if (textarea.style.height !== next) textarea.style.height = next;
+}
+
+/**
+ * Icon and accent per GitHub-flavoured callout type.
+ *
+ * Derived from the `[!TYPE]` marker in the source, so the whole appearance round-trips through the
+ * Markdown with nothing stored beside it.
+ */
+const CALLOUT_STYLES: Record<
+  string,
+  { icon: LucideIcon; label: string; container: string; accent: string }
+> = {
+  note: {
+    icon: Info,
+    label: "Note",
+    container: "border-sky-500/25 bg-sky-500/[0.06]",
+    accent: "text-sky-600 dark:text-sky-400",
+  },
+  tip: {
+    icon: Lightbulb,
+    label: "Tip",
+    container: "border-emerald-500/25 bg-emerald-500/[0.06]",
+    accent: "text-emerald-600 dark:text-emerald-400",
+  },
+  important: {
+    icon: MessageSquareWarning,
+    label: "Important",
+    container: "border-violet-500/25 bg-violet-500/[0.06]",
+    accent: "text-violet-600 dark:text-violet-400",
+  },
+  warning: {
+    icon: TriangleAlert,
+    label: "Warning",
+    container: "border-amber-500/25 bg-amber-500/[0.06]",
+    accent: "text-amber-600 dark:text-amber-500",
+  },
+  caution: {
+    icon: OctagonAlert,
+    label: "Caution",
+    container: "border-red-500/25 bg-red-500/[0.06]",
+    accent: "text-red-600 dark:text-red-400",
+  },
+};
+
+/**
+ * A code payload, highlighted once its grammar has loaded.
+ *
+ * Renders plain text first and upgrades in place, so a code Block is never blank while a grammar
+ * loads and never disappears if one fails. Tokens are rendered as React elements — nothing derived
+ * from the document becomes markup.
+ */
+function HighlightedCode({ code, language }: { code: string; language: string }) {
+  const [tokens, setTokens] = useState<readonly CodeToken[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTokens(null);
+    if (!resolveCodeLanguage(language)) return () => undefined;
+    void highlightCodeTokens(code, language).then((next) => {
+      if (!cancelled) setTokens(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [code, language]);
+
+  if (!tokens) return <code>{code}</code>;
+  return (
+    <code>
+      {tokens.map((token, index) => (
+        <span key={index} className={token.className ?? undefined}>
+          {token.text}
+        </span>
+      ))}
+    </code>
+  );
+}
+
+/** Destination of the link the selection already sits inside, or "" when there is none. */
+function existingLinkDestination(source: string, from: number, to: number): string {
+  const pattern = /\[(?:\\.|[^\]\\])*\]\(([^)]*)\)/g;
+  for (let match = pattern.exec(source); match; match = pattern.exec(source)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (from >= start && to <= end) return match[1].replace(/^<|>$/g, "");
+  }
+  return "";
+}
+
+/**
+ * A small popover for a link's destination.
+ *
+ * The toolbar's Link button used to write `[label](https://)` straight into the source: a link that
+ * goes nowhere, with the selection left over the *label*, so the next keystroke rewrote the text
+ * instead of the URL. Both reference products ask for the destination first.
+ */
+function LinkEditPopover({
+  url,
+  position,
+  onCommit,
+  onCancel,
+}: {
+  url: string;
+  position: { top: number; left: number };
+  onCommit: (url: string) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState(url);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.select();
+  }, []);
+
+  return (
+    <div
+      role="group"
+      aria-label="Link destination"
+      style={{
+        position: "fixed",
+        top: position.top - 8,
+        left: position.left,
+        transform: "translate(-50%, -100%)",
+        zIndex: 50,
+      }}
+      className="flex h-9 items-center gap-1 rounded-[10px] bg-popover p-1 text-popover-foreground shadow-[0_20px_24px_rgba(25,25,25,0.05),0_5px_8px_rgba(25,25,25,0.027),0_0_0_1px_hsl(var(--border))]"
+    >
+      <LinkIcon className="ml-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <input
+        ref={inputRef}
+        aria-label="Link URL"
+        placeholder="Paste or type a link"
+        value={draft}
+        spellCheck={false}
+        className="h-7 w-56 bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground/70"
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Enter") {
+            event.preventDefault();
+            onCommit(draft);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            onCancel();
+          }
+        }}
+      />
+      <button
+        type="button"
+        aria-label="Apply link"
+        className="flex h-7 items-center rounded-md px-2 text-xs font-medium transition-colors duration-[20ms] ease-in hover:bg-accent hover:text-accent-foreground"
+        onClick={() => onCommit(draft)}
+      >
+        Link
+      </button>
+    </div>
+  );
+}
+
+/** Which inline format a Mod-shortcut asks for, if any. */
+function inlineFormatShortcut(event: KeyboardEvent<HTMLElement>): MarkdownInlineFormat | null {
+  const key = event.key.toLowerCase();
+  if (event.shiftKey) return key === "x" ? "strike" : null;
+  if (key === "b") return "bold";
+  if (key === "i") return "italic";
+  if (key === "e") return "code";
+  if (key === "k") return "link";
+  return null;
+}
+
+/**
+ * The code Block's language, as an editable chip.
+ *
+ * Projecting the ``` line out of the editing surface would otherwise make the info string
+ * unreachable, so it gets its own control. A free-text field rather than a fixed menu, because the
+ * info string is arbitrary in Markdown and a closed list would silently drop whatever the file
+ * already says.
+ */
+function CodeLanguageChip({
+  language,
+  onCommit,
+}: {
+  language: string;
+  onCommit: (language: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(language);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const next = draft.trim();
+    if (next !== language) onCommit(next);
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        aria-label="Code language"
+        value={draft}
+        placeholder="language"
+        spellCheck={false}
+        className="absolute right-2 top-1.5 z-10 w-24 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        onChange={(event) => setDraft(event.target.value)}
+        onClick={(event) => event.stopPropagation()}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            setDraft(language);
+            setEditing(false);
+          }
+        }}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      data-code-language
+      aria-label={language ? `Code language: ${language}` : "Set code language"}
+      className="absolute right-2 top-1.5 rounded px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground opacity-0 transition-opacity duration-[20ms] hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover/native-block:opacity-100"
+      onClick={(event) => {
+        event.stopPropagation();
+        setDraft(language);
+        setEditing(true);
+      }}
+    >
+      {language || "plain text"}
+    </button>
+  );
+}
+
+function isListBlockKind(kind: MarkdownBlockView["kind"]): boolean {
+  return kind === "bullet_list_item" || kind === "ordered_list_item" || kind === "task_list_item";
+}
+
+/** Kinds whose payload is indentation-significant, so Tab means "two spaces", not "outdent". */
+function indentsWithSpaces(kind: MarkdownBlockView["kind"]): boolean {
+  return kind === "fenced_code" || kind === "mermaid" || kind === "block_math";
+}
+
+/**
+ * Shift every line touched by `[from, to)` by one two-space step. Returns the replacement as a
+ * single span so the caller can commit it as one source edit (one undo entry).
+ */
+function shiftSourceIndent(
+  source: string,
+  from: number,
+  to: number,
+  direction: -1 | 1
+): { from: number; to: number; text: string } | null {
+  const lineStart = source.lastIndexOf("\n", Math.max(from - 1, 0)) + 1;
+  const lineEndIndex = source.indexOf("\n", to);
+  const lineEnd = lineEndIndex === -1 ? source.length : lineEndIndex;
+  if (from === to && direction === 1) {
+    return { from, to, text: "  " };
+  }
+  const lines = source.slice(lineStart, lineEnd).split("\n");
+  const shifted = lines.map((line) =>
+    direction === 1 ? `  ${line}` : line.replace(/^ {1,2}/, "")
+  );
+  const text = shifted.join("\n");
+  if (text === source.slice(lineStart, lineEnd)) return null;
+  return { from: lineStart, to: lineEnd, text };
+}
+
+/**
+ * Where the caret sits inside the wrapped text of an editing surface.
+ *
+ * Vertical arrow keys must only leave a Block from its first or last *visual* line — a paragraph
+ * that wraps over three lines has to let the caret walk them first, the way Notion and Feishu do.
+ * `caretX` is the caret's viewport x so the destination Block can keep the same column.
+ */
+function caretLineBoundary(
+  surface: HTMLElement,
+  caret: number
+): { atFirstLine: boolean; atLastLine: boolean; caretX: number } | null {
+  const rect =
+    surface instanceof HTMLTextAreaElement
+      ? textareaCaretRect(surface, caret)
+      : domCaretRect(surface);
+  if (!rect) return null;
+  const surfaceRect = surface.getBoundingClientRect();
+  if (surfaceRect.height <= 0) return null;
+  const lineHeight = rect.height > 0 ? rect.height : parseLineHeight(surface);
+  if (lineHeight <= 0) return null;
+  const tolerance = lineHeight / 2;
+  return {
+    atFirstLine: rect.top - surfaceRect.top < tolerance,
+    atLastLine: surfaceRect.bottom - rect.bottom < tolerance,
+    caretX: rect.left,
+  };
+}
+
+function parseLineHeight(element: HTMLElement): number {
+  const raw = window.getComputedStyle(element).lineHeight;
+  const parsed = Number.parseFloat(raw);
+  if (Number.isFinite(parsed)) return parsed;
+  const fontSize = Number.parseFloat(window.getComputedStyle(element).fontSize);
+  return Number.isFinite(fontSize) ? fontSize * 1.5 : 0;
+}
+
+function domCaretRect(surface: HTMLElement): DOMRect | null {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  if (!surface.contains(range.startContainer)) return null;
+  const rects = range.getClientRects();
+  const rect = rects.length > 0 ? rects[rects.length - 1] : range.getBoundingClientRect();
+  if (!rect || (rect.height === 0 && rect.top === 0)) return null;
+  return rect as DOMRect;
+}
+
+/**
+ * Measure a textarea caret by laying out the same text in an off-screen mirror. A textarea gives
+ * no caret geometry of its own, and this is the same technique the selection toolbar already uses.
+ */
+function textareaCaretRect(textarea: HTMLTextAreaElement, caret: number): DOMRect | null {
+  const rect = textarea.getBoundingClientRect();
+  if (rect.height <= 0) return null;
+  const computed = window.getComputedStyle(textarea);
+  const mirror = document.createElement("div");
+  Object.assign(mirror.style, {
+    position: "fixed",
+    visibility: "hidden",
+    pointerEvents: "none",
+    zIndex: "-1",
+    boxSizing: computed.boxSizing,
+    left: `${rect.left}px`,
+    top: `${rect.top - textarea.scrollTop}px`,
+    width: `${rect.width}px`,
+    minHeight: `${rect.height}px`,
+    padding: computed.padding,
+    border: computed.border,
+    font: computed.font,
+    fontFamily: computed.fontFamily,
+    fontSize: computed.fontSize,
+    fontWeight: computed.fontWeight,
+    fontStyle: computed.fontStyle,
+    lineHeight: computed.lineHeight,
+    letterSpacing: computed.letterSpacing,
+    tabSize: computed.tabSize,
+    whiteSpace: "pre-wrap",
+    overflowWrap: "break-word",
+    wordBreak: computed.wordBreak,
+  });
+  const value = textarea.value;
+  mirror.append(document.createTextNode(value.slice(0, caret)));
+  const marker = document.createElement("span");
+  marker.textContent = "​";
+  mirror.append(marker, document.createTextNode(value.slice(caret) || "​"));
+  document.body.append(mirror);
+  const markerRect = marker.getBoundingClientRect();
+  mirror.remove();
+  if (markerRect.height <= 0) return null;
+  return markerRect as DOMRect;
 }
 
 function textareaSelectionToolbarPosition(
@@ -937,17 +1835,6 @@ function domSelectionToolbarPosition(editor: HTMLElement): { top: number; left: 
   };
 }
 
-function blockDropTarget(
-  row: HTMLDivElement,
-  clientY: number,
-  blockId: string,
-  nextBlockId: string | undefined
-): string | null {
-  const rect = row.getBoundingClientRect();
-  if (rect.height > 0 && clientY > rect.top + rect.height / 2) return nextBlockId ?? null;
-  return blockId;
-}
-
 function blockTypeLabel(block: MarkdownBlockView): string {
   if (block.kind === "heading") return `Heading ${block.level ?? 1}`;
   if (block.kind === "bullet_list_item") return "Bulleted list";
@@ -974,6 +1861,7 @@ function isRasterFile(file: File): boolean {
 function BlockPreview({
   block,
   onSetTaskChecked,
+  onSetCodeLanguage,
   onOpenWikiLink,
   wikiEmbedContext,
   collectionContext,
@@ -982,6 +1870,7 @@ function BlockPreview({
 }: {
   block: MarkdownBlockView;
   onSetTaskChecked: (blockId: string, checked: boolean) => void;
+  onSetCodeLanguage?: (blockId: string, language: string) => void;
   onOpenWikiLink?: (target: string) => void;
   wikiEmbedContext?: MarkdownWikiEmbedContext;
   collectionContext?: MarkdownCollectionContext;
@@ -1053,6 +1942,15 @@ function BlockPreview({
   if (block.kind === "table") {
     const table = tablePreview(source);
     if (table) {
+      // Cell source ranges, so clicking a cell can put the caret in that cell rather than at the
+      // end of the whole table's raw source.
+      const geometry = parseMarkdownTableSource(source);
+      const cellFor = (row: number, column: number) =>
+        geometry?.cells.find((cell) => cell.row === row && cell.column === column);
+      const alignClass = (column: number) => {
+        const align = geometry?.alignments[column];
+        return align === "center" ? "text-center" : align === "right" ? "text-right" : "text-left";
+      };
       return (
         <div className="min-h-9 overflow-x-auto py-1">
           <table aria-label="Markdown table" className="w-full border-collapse text-left text-sm">
@@ -1061,7 +1959,8 @@ function BlockPreview({
                 {table.header.map((cell, index) => (
                   <th
                     key={`header-${index}`}
-                    className="border border-border bg-muted/50 px-2 py-1.5 font-medium"
+                    data-table-cell={cellFor(0, index) ? `${cellFor(0, index)!.from}` : undefined}
+                    className={`border border-border bg-muted/50 px-2 py-1.5 font-medium ${alignClass(index)}`}
                   >
                     <InlineMarkdownPreview source={cell.text} onOpenWikiLink={onOpenWikiLink} />
                   </th>
@@ -1074,7 +1973,12 @@ function BlockPreview({
                   {row.map((cell, cellIndex) => (
                     <td
                       key={`cell-${rowIndex}-${cellIndex}`}
-                      className="border border-border px-2 py-1.5"
+                      data-table-cell={
+                        cellFor(rowIndex + 1, cellIndex)
+                          ? `${cellFor(rowIndex + 1, cellIndex)!.from}`
+                          : undefined
+                      }
+                      className={`border border-border px-2 py-1.5 ${alignClass(cellIndex)}`}
                     >
                       <InlineMarkdownPreview source={cell.text} onOpenWikiLink={onOpenWikiLink} />
                     </td>
@@ -1102,32 +2006,63 @@ function BlockPreview({
   if (block.kind === "callout") {
     const callout = calloutPreview(source);
     if (callout) {
+      // Icon and accent are derived from the `[!TYPE]` in the source — nothing is stored outside
+      // the Markdown. An uppercase `CALLOUT` label was the only signal before, which reads as
+      // shouting rather than as the note/warning/tip distinction the type is actually making.
+      const style = CALLOUT_STYLES[callout.type.toLowerCase()] ?? CALLOUT_STYLES.note;
+      const Icon = style.icon;
       return (
         <aside
           data-testid="callout-block"
           aria-label={`${callout.type} callout`}
-          className="min-h-9 rounded-md border border-border bg-muted/35 px-3 py-2"
+          className={`flex min-h-9 gap-2.5 rounded-md border px-3 py-2 ${style.container}`}
         >
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {callout.title || callout.type}
+          <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${style.accent}`} aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            {callout.title ? (
+              <div className="font-semibold">{callout.title}</div>
+            ) : (
+              <div className={`font-semibold ${style.accent}`}>{style.label}</div>
+            )}
+            {callout.body ? (
+              <div className="whitespace-pre-wrap">
+                <InlineMarkdownPreview source={callout.body} onOpenWikiLink={onOpenWikiLink} />
+              </div>
+            ) : null}
           </div>
-          {callout.body ? (
-            <div className="mt-1 whitespace-pre-wrap text-sm leading-6">
-              <InlineMarkdownPreview source={callout.body} onOpenWikiLink={onOpenWikiLink} />
-            </div>
-          ) : null}
         </aside>
       );
     }
   }
   if (block.kind === "fenced_code") {
+    // Show the code, not the syntax that delimits it. Notion and Feishu both render a code Block
+    // with no visible fence and put the language in a control instead.
+    const fence = splitDelimitedBlockSource("fenced_code", source);
     return (
-      <pre
-        data-testid="fenced-code-block"
-        className="min-h-9 overflow-x-auto whitespace-pre-wrap rounded-md bg-muted px-3 py-2 font-mono text-sm leading-6"
-      >
-        <code>{source || " "}</code>
-      </pre>
+      <div className="relative">
+        <pre
+          data-testid="fenced-code-block"
+          className="min-h-9 overflow-x-auto whitespace-pre-wrap rounded-md bg-muted px-3 py-2 font-mono text-sm leading-6"
+        >
+          <HighlightedCode
+            code={fence ? fence.payload : source}
+            language={fence?.infoString ?? ""}
+          />
+        </pre>
+        {onSetCodeLanguage ? (
+          <CodeLanguageChip
+            language={fence?.infoString ?? ""}
+            onCommit={(language) => onSetCodeLanguage(block.id, language)}
+          />
+        ) : fence?.infoString ? (
+          <span
+            data-code-language
+            className="pointer-events-none absolute right-2 top-1.5 select-none font-mono text-[11px] text-muted-foreground"
+          >
+            {fence.infoString}
+          </span>
+        ) : null}
+      </div>
     );
   }
   if (block.kind === "unsupported") {
@@ -1143,8 +2078,15 @@ function BlockPreview({
       .map((line) => line.replace(/^ {0,3}>[ \t]?/, ""))
       .join("\n");
     return (
-      <blockquote className="min-h-9 whitespace-pre-wrap border-l-4 border-muted-foreground/35 px-3 py-1 text-base italic leading-7 text-muted-foreground">
-        {text ? <InlineMarkdownPreview source={text} onOpenWikiLink={onOpenWikiLink} /> : " "}
+      // Chrome is byte-identical to `activeEditorSurfaceClass`'s blockquote arm. Previously the
+      // preview drew a 4px muted bar around 13px italic grey text while the editing surface drew a
+      // 3px foreground bar around 16px upright body text, so clicking a quote changed six things at
+      // once. Notion and Feishu both keep a quote at body size and upright.
+      <blockquote
+        data-editor-kind="blockquote"
+        className="min-h-9 whitespace-pre-wrap border-l-[3px] border-foreground py-1 pl-[14px] pr-0"
+      >
+        {text ? <InlineMarkdownPreview source={text} onOpenWikiLink={onOpenWikiLink} /> : null}
       </blockquote>
     );
   }
@@ -1152,12 +2094,10 @@ function BlockPreview({
   if (listItem) {
     const content = listItem.content ? (
       <InlineMarkdownPreview source={listItem.content} onOpenWikiLink={onOpenWikiLink} />
-    ) : (
-      " "
-    );
+    ) : null;
     if (block.kind === "task_list_item") {
       return (
-        <div className="flex min-h-9 items-start gap-2 px-1 py-1 text-base leading-7">
+        <div data-editor-kind="task_list_item" className="flex min-h-9 items-start gap-2 px-1 py-1">
           <input
             type="checkbox"
             aria-label={listItem.content || "Empty task"}
@@ -1174,7 +2114,7 @@ function BlockPreview({
       );
     }
     return (
-      <div className="flex min-h-9 items-start gap-2 px-1 py-1 text-base leading-7">
+      <div data-editor-kind={block.kind} className="flex min-h-9 items-start gap-2 px-1 py-1">
         <span className="w-5 shrink-0 select-none text-right text-muted-foreground" aria-hidden>
           {listItem.marker}
         </span>
@@ -1185,26 +2125,67 @@ function BlockPreview({
   const text = block.kind === "heading" ? source.replace(/^#{1,6}[ \t]+/, "") : source;
   const inline = <InlineMarkdownPreview source={text} onOpenWikiLink={onOpenWikiLink} />;
   if (block.kind !== "heading") {
+    // The old `" "` filler was a real U+0020 that a cross-Block copy would pick up. Height now
+    // comes from `min-h-9`, so an empty Block can render genuinely empty.
     return (
-      <p className="min-h-9 whitespace-pre-wrap px-1 py-1 text-base leading-7">
-        {text ? inline : " "}
+      // No `text-*` utility here: globals.css overrides Tailwind's `.text-base` with the 13px UI
+      // type scale using `!important`, while the editing surface inherits `.markdown-page`'s 16px.
+      // Sizing both from `data-editor-kind` in editor.css is what stops the text from jumping a
+      // whole type step the moment the Block is clicked into.
+      <p data-editor-kind="paragraph" className="min-h-9 whitespace-pre-wrap px-1 py-1">
+        {text ? inline : null}
       </p>
     );
   }
-  const classes = "min-h-9 whitespace-pre-wrap px-1 py-1 font-semibold tracking-tight";
+  // An empty heading always shows its level, the way Notion and Feishu label one. `tracking-tight`
+  // is gone: the editing surface uses -0.018em, and the two values made every glyph slide sideways
+  // the moment the heading was clicked into.
+  const classes = "min-h-9 whitespace-pre-wrap px-1 py-1 font-semibold";
+  const headingProps = { "data-editor-kind": "heading", "data-editor-level": block.level ?? 1 };
+  const body = text ? (
+    inline
+  ) : (
+    <span data-block-placeholder aria-hidden="true" className="select-none font-normal">
+      {`Heading ${block.level ?? 1}`}
+    </span>
+  );
   switch (block.level) {
     case 1:
-      return <h1 className={`${classes} text-3xl`}>{text ? inline : " "}</h1>;
+      return (
+        <h1 {...headingProps} className={classes}>
+          {body}
+        </h1>
+      );
     case 2:
-      return <h2 className={`${classes} text-2xl`}>{text ? inline : " "}</h2>;
+      return (
+        <h2 {...headingProps} className={classes}>
+          {body}
+        </h2>
+      );
     case 3:
-      return <h3 className={`${classes} text-xl`}>{text ? inline : " "}</h3>;
+      return (
+        <h3 {...headingProps} className={classes}>
+          {body}
+        </h3>
+      );
     case 4:
-      return <h4 className={`${classes} text-lg`}>{text ? inline : " "}</h4>;
+      return (
+        <h4 {...headingProps} className={classes}>
+          {body}
+        </h4>
+      );
     case 5:
-      return <h5 className={`${classes} text-base`}>{text ? inline : " "}</h5>;
+      return (
+        <h5 {...headingProps} className={classes}>
+          {body}
+        </h5>
+      );
     default:
-      return <h6 className={`${classes} text-sm`}>{text ? inline : " "}</h6>;
+      return (
+        <h6 {...headingProps} className={classes}>
+          {body}
+        </h6>
+      );
   }
 }
 
@@ -1496,17 +2477,61 @@ function listItemPreview(
 
 function activeEditorSurfaceClass(block: MarkdownBlockView): string {
   const base = "native-block-editor-surface flex min-h-9 min-w-0 items-start";
-  if (
-    block.kind === "bullet_list_item" ||
-    block.kind === "ordered_list_item" ||
-    block.kind === "task_list_item"
-  ) {
-    return `${base} gap-2 px-1 py-1`;
+  if (isListBlockKind(block.kind)) {
+    const checkedTodo = block.kind === "task_list_item" && block.checked;
+    // A checked to-do keeps its strikethrough while being edited; losing it on activation makes
+    // the Block look like it silently unchecked itself.
+    return `${base} gap-2 px-1 py-1${checkedTodo ? " text-muted-foreground line-through" : ""}`;
   }
   if (block.kind === "blockquote") {
-    return `${base} border-l-[3px] border-foreground px-3 py-1`;
+    // 14px matches `.markdown-page blockquote`'s padding-left, so the text does not slide 2px
+    // sideways the moment the Block is activated.
+    return `${base} border-l-[3px] border-foreground py-1 pl-[14px] pr-0`;
+  }
+  // Activation must not strip a Block's container. Each arm mirrors the preview chrome for that
+  // kind so clicking in never repaints the whole Block as bare text on the Page background.
+  if (block.kind === "fenced_code" || block.kind === "unsupported") {
+    return `${base} rounded-lg bg-muted p-4 font-mono text-sm leading-6`;
+  }
+  if (block.kind === "mermaid" || block.kind === "toggle") {
+    return `${base} rounded-lg border border-border bg-muted/20 px-3 py-2 font-mono text-sm leading-6`;
+  }
+  if (block.kind === "callout") {
+    // Same type-derived container as the preview, so clicking a warning callout does not repaint it
+    // in the neutral palette.
+    const type = /\[!([A-Za-z]+)\]/.exec(block.raw)?.[1]?.toLowerCase() ?? "note";
+    const style = CALLOUT_STYLES[type] ?? CALLOUT_STYLES.note;
+    return `${base} rounded-md border px-3 py-2 ${style.container}`;
+  }
+  if (block.kind === "block_math") {
+    return `${base} rounded-md bg-muted/35 px-3 py-2 font-mono text-sm leading-6`;
   }
   return `${base} px-1 py-1`;
+}
+
+/**
+ * Placeholder for an empty Block, shown only while it is being edited.
+ *
+ * Notion shows "Press 'space' for AI or '/' for commands" on the focused empty line and nothing on
+ * unfocused ones; Feishu shows "输入 / 唤起更多". Both always label an empty heading. Raw-source kinds
+ * get none — their syntax is the content.
+ */
+function blockPlaceholder(block: MarkdownBlockView): string | undefined {
+  switch (block.kind) {
+    case "paragraph":
+      return "Write, or press '/' for commands";
+    case "heading":
+      return `Heading ${block.level ?? 1}`;
+    case "bullet_list_item":
+    case "ordered_list_item":
+      return "List";
+    case "task_list_item":
+      return "To-do";
+    case "blockquote":
+      return "Empty quote";
+    default:
+      return undefined;
+  }
 }
 
 interface TablePreviewCell {

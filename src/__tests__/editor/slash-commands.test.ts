@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  markdownSlashCommandCaret,
   markdownSlashCommandSource,
   searchMarkdownSlashCommands,
 } from "@/editor/markdown-block/slash-commands";
@@ -21,6 +22,56 @@ describe("native Markdown slash commands", () => {
     expect(searchMarkdownSlashCommands("calendar").map((command) => command.id)).toEqual([
       "collection-calendar",
     ]);
+  });
+
+  it("narrows full pinyin the way the Feishu insert panel does", () => {
+    expect(searchMarkdownSlashCommands("biaoti").map((command) => command.id)).toEqual([
+      "heading-1",
+      "heading-2",
+      "heading-3",
+    ]);
+    expect(searchMarkdownSlashCommands("daima").map((command) => command.id)).toEqual(["code"]);
+  });
+
+  it.each([
+    ["bt", "heading-1"],
+    ["bg", "table"],
+    ["bl", "bullet-list"],
+    ["tbl", "table"],
+    ["table", "table"],
+  ] as const)("ranks the best match for %s first", (query, expected) => {
+    expect(searchMarkdownSlashCommands(query)[0]?.id).toBe(expected);
+  });
+
+  it("carries icon and Markdown shortcut metadata per row", () => {
+    const commands = searchMarkdownSlashCommands("");
+    const heading = commands.find((command) => command.id === "heading-1");
+
+    expect(heading).toMatchObject({ icon: "Heading1", shortcut: "#" });
+    expect(commands.find((command) => command.id === "task")?.shortcut).toBe("- [ ]");
+    expect(commands.find((command) => command.id === "table")?.shortcut).toBeUndefined();
+    for (const command of commands) {
+      expect(command.icon).not.toBe("");
+      expect(command.pinyin.length).toBeGreaterThan(0);
+      expect(command.initials.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("places the caret inside the generated template", () => {
+    const code = markdownSlashCommandSource("code");
+    const caret = markdownSlashCommandCaret("code");
+
+    expect(code.slice(0, caret)).toBe("```\n");
+    expect(code.slice(caret)).toBe("\n```");
+    expect(markdownSlashCommandCaret("code", "\r\n")).toBe("```\r\n".length);
+    expect(markdownSlashCommandSource("toggle").slice(markdownSlashCommandCaret("toggle"))).toBe(
+      "Write something…\n\n</details>"
+    );
+    expect(markdownSlashCommandSource("table").slice(markdownSlashCommandCaret("table"))).toBe(
+      " |  |"
+    );
+    expect(markdownSlashCommandCaret("callout")).toBe(markdownSlashCommandSource("callout").length);
+    expect(markdownSlashCommandCaret("text")).toBe(0);
   });
 
   it.each([

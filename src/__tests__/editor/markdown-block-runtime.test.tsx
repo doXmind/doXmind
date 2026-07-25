@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, createEvent, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -46,8 +46,57 @@ function dragTransfer(initial: Record<string, string> = {}) {
     setData(type: string, value: string) {
       data.set(type, value);
     },
-    setDragImage() {},
+    setDragImage: vi.fn(),
   } as unknown as DataTransfer;
+}
+
+/**
+ * jsdom has no `DragEvent`, so Testing Library falls back to a plain `Event` and silently drops
+ * `clientY`. Define it explicitly, or every coordinate-based assertion is vacuous.
+ */
+function fireDragAt(
+  target: HTMLElement,
+  type: "dragOver" | "drop",
+  dataTransfer: DataTransfer,
+  clientY: number
+) {
+  const event = createEvent[type](target, { dataTransfer });
+  Object.defineProperty(event, "clientY", { value: clientY, configurable: true });
+  return fireEvent(target, event);
+}
+
+/**
+ * jsdom implements neither `DragEvent` nor `PointerEvent`, so Testing Library falls back to a plain
+ * `Event` and the coordinates never arrive. Define them explicitly.
+ */
+function firePointerAt(
+  target: Window | HTMLElement,
+  type: "pointerDown" | "pointerMove" | "pointerUp",
+  clientX: number,
+  clientY: number
+) {
+  const event = createEvent[type](target as Element, { button: 0 });
+  Object.defineProperty(event, "clientX", { value: clientX, configurable: true });
+  Object.defineProperty(event, "clientY", { value: clientY, configurable: true });
+  return fireEvent(target as Element, event);
+}
+
+/** Stack rows vertically so the drop-boundary table has real geometry to pick from. */
+function stackRowRects(rows: ArrayLike<HTMLElement>, height = 40, top = 100) {
+  for (let index = 0; index < rows.length; index += 1) {
+    const rowTop = top + index * height;
+    vi.spyOn(rows[index], "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: rowTop,
+      top: rowTop,
+      left: 0,
+      right: 600,
+      bottom: rowTop + height,
+      width: 600,
+      height,
+      toJSON: () => ({}),
+    });
+  }
 }
 
 function setCollapsedDomSelection(node: Node, offset: number) {
@@ -629,12 +678,15 @@ describe("MarkdownBlockRuntime", () => {
     render(<MarkdownBlockRuntime file={{ ...file, content: markdown }} />);
 
     fireEvent.click(screen.getByTestId("fenced-code-block"));
+    // The editor shows the payload only — the ``` delimiter lines are projected out, the way both
+    // Notion and Feishu present a code Block — so the typed value carries no fences.
     const textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
-    textarea.setSelectionRange(22, 22);
+    expect(textarea.value).toBe("const first = 1;\n\nconst second = 2;");
+    textarea.setSelectionRange(16, 16);
 
     expect(fireEvent.keyDown(textarea, { key: "Enter" })).toBe(true);
     fireEvent.change(textarea, {
-      target: { value: "```ts\nconst first = 1;\n// inserted\n\nconst second = 2;\n```" },
+      target: { value: "const first = 1;\n// inserted\n\nconst second = 2;" },
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
@@ -669,7 +721,7 @@ describe("MarkdownBlockRuntime", () => {
   it("keeps only one inactive Block in the document tab order", () => {
     render(<MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />);
 
-    const rows = screen.getAllByRole("group", { name: /Block \d of 3/ });
+    const rows = screen.getAllByRole("group", { name: /block \d of 3/ });
     expect(rows.map((row) => row.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
   });
 
@@ -1351,7 +1403,7 @@ describe("MarkdownBlockRuntime", () => {
           })
         ).toBe(false);
       } else {
-        const row = screen.getByRole("group", { name: "Block 1 of 1" });
+        const row = screen.getByRole("group", { name: "Text, block 1 of 1" });
         expect(
           fireEvent.drop(row, {
             dataTransfer: {
@@ -2234,6 +2286,48 @@ describe("MarkdownBlockRuntime", () => {
     expect(screen.getByLabelText("Markdown block")).toHaveValue("Hello");
   });
 
+  it("writes no command while an IME composition is open", async () => {
+    render(<MarkdownBlockRuntime file={file} />);
+    fireEvent.click(screen.getByText("Hello"));
+    const textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    const documentElement = document.querySelector("[data-native-markdown-document]");
+    const revisionBefore = documentElement?.getAttribute("data-revision");
+
+    fireEvent.compositionStart(textarea);
+    fireEvent.compositionUpdate(textarea, { data: "n" });
+    fireEvent.change(textarea, { target: { value: "ni" } });
+    fireEvent.change(textarea, { target: { value: "niha" } });
+
+    // The DOM keeps the in-flight pinyin — React must not write the model's value back over it —
+    // while the document itself is untouched until the composition settles.
+    expect(textarea).toHaveValue("niha");
+    expect(documentElement?.getAttribute("data-revision")).toBe(revisionBefore);
+
+    fireEvent.compositionEnd(textarea, { target: { value: "你好" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("你好");
+    expect(updateFile).toHaveBeenCalledTimes(1);
+    expect(updateFile).toHaveBeenCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "你好\n" })
+    );
+  });
+
+  it("keeps a typed word as one undo step and breaks the run at a Block change", async () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "one\n\ntwo\n" }} />);
+    fireEvent.click(screen.getByText("one"));
+    const first = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    for (const value of ["oneA", "oneAB", "oneABC"]) {
+      fireEvent.change(first, { target: { value } });
+    }
+
+    // One Mod+Z takes back the whole run, not one character.
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "z", metaKey: true });
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("one");
+  });
+
   it("exposes native menu Undo and Redo through canonical Markdown history", () => {
     render(<MarkdownBlockRuntime file={file} />);
     fireEvent.click(screen.getByText("Hello"));
@@ -2328,6 +2422,191 @@ describe("MarkdownBlockRuntime", () => {
       expect.objectContaining({ content: "Third\n\nFirst\n\nSecond\n\nFourth\n" })
     );
     expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+  });
+
+  it("turns a cross-Block pointer drag into a Block selection", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />
+    );
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    stackRowRects(rows);
+
+    // Press inside "First" at y=110, sweep to y=195 — a band that covers all three rows.
+    firePointerAt(rows[0], "pointerDown", 300, 110);
+    firePointerAt(window, "pointerMove", 300, 195);
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(3);
+    expect(container.querySelector(".markdown-page")).toHaveAttribute("data-block-marquee", "true");
+    // No marquee rectangle: the sweep started on a Block, so only the fill is shown.
+    expect(container.querySelector("[data-native-block-marquee]")).not.toBeInTheDocument();
+
+    fireEvent.pointerUp(window);
+    expect(container.querySelector(".markdown-page")).not.toHaveAttribute("data-block-marquee");
+  });
+
+  it("leaves a sweep inside one Block to the browser's own text selection", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
+    );
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    stackRowRects(rows);
+
+    firePointerAt(rows[0], "pointerDown", 300, 110);
+    firePointerAt(window, "pointerMove", 420, 120);
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(0);
+    expect(container.querySelector(".markdown-page")).not.toHaveAttribute("data-block-marquee");
+    fireEvent.pointerUp(window);
+  });
+
+  it("marquee-selects from the page margin", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />
+    );
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    stackRowRects(rows);
+    const page = container.querySelector<HTMLElement>(".markdown-page")!;
+
+    firePointerAt(page, "pointerDown", 20, 105);
+    firePointerAt(window, "pointerMove", 60, 175);
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+    expect(container.querySelector("[data-native-block-marquee]")).toBeInTheDocument();
+    fireEvent.pointerUp(window);
+    expect(container.querySelector("[data-native-block-marquee]")).not.toBeInTheDocument();
+  });
+
+  it("replaces a Block selection with the typed character in one undo step", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />
+    );
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+
+    fireEvent.keyDown(container.querySelectorAll("[data-native-block-row]")[0], { key: "x" });
+    expect(container.querySelectorAll("[data-native-block-row]")).toHaveLength(2);
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("x");
+
+    act(() => useEditorRefStore.getState().requestUndo?.());
+    expect(container.querySelectorAll("[data-native-block-row]")).toHaveLength(3);
+  });
+
+  it("collapses a Block selection back to a caret on ArrowLeft and ArrowRight", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
+    );
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+
+    fireEvent.keyDown(container.querySelectorAll("[data-native-block-row]")[0], {
+      key: "ArrowRight",
+    });
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(0);
+    const editor = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    expect(editor).toHaveValue("Second");
+    expect(editor.selectionStart).toBe("Second".length);
+  });
+
+  it("surfaces a toolbar for a multi-Block selection and acts on the whole range", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "one\n\ntwo\n\nthree\n" }} />
+    );
+    fireEvent.click(screen.getByText("one"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+    // Focus follows the selection's focus edge, so the next key goes to that row.
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown", shiftKey: true });
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(3);
+
+    const toolbar = screen.getByRole("toolbar", { name: "3 blocks selected" });
+    expect(within(toolbar).getByText("Turn into")).toBeInTheDocument();
+    expect(within(toolbar).getByText("Duplicate")).toBeInTheDocument();
+
+    fireEvent.click(within(toolbar).getByRole("button", { name: "Delete selected blocks" }));
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith("page-1", expect.objectContaining({ content: "" }));
+  });
+
+  it("keeps the shortcut legend out of a cross-Block copy", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
+    );
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    const range = document.createRange();
+    range.setStartBefore(rows[0]);
+    range.setEndAfter(rows[1]);
+    expect(range.toString()).not.toContain("Press Enter to edit");
+    // One legend for the whole document, referenced by every row.
+    expect(container.querySelectorAll("#native-block-shortcuts")).toHaveLength(1);
+  });
+
+  it("picks the nearest drop boundary wherever the pointer is", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n\nFourth\n" }} />
+    );
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    stackRowRects(rows);
+    const grips = screen.getAllByRole("button", { name: "Block actions" });
+    const transfer = dragTransfer();
+    fireEvent.dragStart(grips[0], { dataTransfer: transfer });
+
+    const scroller = container.querySelector<HTMLElement>("[data-native-markdown-scroll]")!;
+    // Rows sit at y=100,140,180,220. Dragging "First" makes the boundary before "Second" a no-op,
+    // so the nearest useful boundaries are "Third" at 180 and "Fourth" at 220.
+    fireDragAt(scroller, "dragOver", transfer, 185);
+    expect(rows[2]).toHaveAttribute("data-drop-before", "true");
+
+    // Nearest wins even when the pointer is nowhere near a row's own box — the page margin is live.
+    fireDragAt(scroller, "dragOver", transfer, 214);
+    expect(rows[3]).toHaveAttribute("data-drop-before", "true");
+    expect(container.querySelectorAll("[data-drop-before]")).toHaveLength(1);
+  });
+
+  it("shows no insertion line for a drop that would not move anything", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
+    );
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    stackRowRects(rows);
+    // Drag the last Block: dropping it before itself, and dropping it at the tail, are both no-ops,
+    // so the only useful boundary is before "First" at y=100.
+    const grips = screen.getAllByRole("button", { name: "Block actions" });
+    const transfer = dragTransfer();
+    fireEvent.dragStart(grips[1], { dataTransfer: transfer });
+
+    const scroller = container.querySelector<HTMLElement>("[data-native-markdown-scroll]")!;
+    fireDragAt(scroller, "dragOver", transfer, 900);
+    expect(container.querySelectorAll("[data-drop-before]")).toHaveLength(0);
+    expect(
+      container.querySelector<HTMLElement>("[data-native-block-drop-end]")
+    ).not.toHaveAttribute("data-drop-active");
+    expect(transfer.dropEffect).toBe("none");
+
+    // Close in, the one real boundary does light up.
+    fireDragAt(scroller, "dragOver", transfer, 104);
+    expect(rows[0]).toHaveAttribute("data-drop-before", "true");
+    expect(transfer.dropEffect).toBe("move");
+  });
+
+  it("drags a translucent snapshot of the Block and dims the source", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
+    );
+    const grip = screen.getAllByRole("button", { name: "Block actions" })[0];
+    const transfer = dragTransfer();
+    fireEvent.dragStart(grip, { dataTransfer: transfer });
+
+    expect(transfer.setDragImage).toHaveBeenCalled();
+    expect(container.querySelectorAll('[data-block-dragging="true"]')).toHaveLength(1);
+
+    fireEvent.dragEnd(grip, { dataTransfer: transfer });
+    expect(container.querySelectorAll("[data-block-dragging]")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-drop-before]")).toHaveLength(0);
   });
 
   it("drags a selected list root with every descendant in one session", async () => {

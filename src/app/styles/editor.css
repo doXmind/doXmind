@@ -24,30 +24,178 @@
 
 .markdown-page {
   @apply min-h-[500px] pb-[50vh] pt-4 outline-none;
+  /* Left edge of the content column, measured from a row's own left edge:
+   * pl-1 (4px) + gutter (54px) + row gap (6px) = 64px. Those two widths are chosen so the grip's
+   * right edge lands exactly 10px left of the first glyph, which is Notion's measured offset, while
+   * this rail stays a round 4rem. Hover tint, selection fill and the drop indicator all hang off
+   * this one value so they can never disagree. */
+  --editor-content-rail: 4rem;
   font-size: 1rem;
   line-height: 1.75;
 }
 
+/*
+ * Row rhythm is padding, never margin.
+ *
+ * Margin belongs to no element, so spacing rows with `margin-top` leaves a pointer dead band
+ * between them — up to 28px above a heading. Sweeping the left gutter from one Block to the next
+ * crossed that band and dropped the hover controls to opacity 0, then faded them back in. Notion's
+ * hover band is the whole row rectangle including its spacing and Feishu slides one shared handle
+ * between rows; both are impossible to lose. Padding on the row makes consecutive row boxes
+ * contiguous, so every pixel of the column is live.
+ *
+ * `--row-lead` mirrors the padding so the hover tint, selection fill and drop indicator can be
+ * drawn over the Block itself rather than over its leading gap.
+ */
+.markdown-page > [data-native-block-row] {
+  --row-lead: 0px;
+  padding-top: var(--row-lead);
+  contain: layout style;
+}
+
 .markdown-page > [data-native-block-row] + [data-native-block-row] {
-  margin-top: 2px;
+  --row-lead: 2px;
 }
 
 .markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="1"] {
-  margin-top: 1.75rem;
+  --row-lead: 1.75rem;
 }
 
 .markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="2"] {
-  margin-top: 1.375rem;
+  --row-lead: 1.375rem;
 }
 
 .markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="3"] {
-  margin-top: 1.125rem;
+  --row-lead: 1.125rem;
 }
 
 .markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="4"],
 .markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="5"],
 .markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="6"] {
-  margin-top: 0.875rem;
+  --row-lead: 0.875rem;
+}
+
+/* The first row in the Page has no leading gap to inherit. */
+.markdown-page > [data-native-block-row]:first-child {
+  --row-lead: 0px;
+}
+
+/*
+ * Hover tint and selection fill.
+ *
+ * Both are drawn on one pseudo-element confined to the content rail, so neither bleeds across the
+ * control gutter (Notion tints nothing at all on a text Block; Feishu tints only the Block box).
+ * `top: -1px / bottom: -1px` bridges the 2px inter-row gap so a multi-Block selection reads as one
+ * continuous band instead of a stack of chips.
+ */
+.markdown-page > [data-native-block-row]::after {
+  position: absolute;
+  top: calc(var(--row-lead) - 1px);
+  right: 0;
+  bottom: -1px;
+  left: var(--editor-content-rail, 4rem);
+  border-radius: 3px;
+  content: "";
+  pointer-events: none;
+}
+
+.markdown-page
+  > [data-native-block-row]:hover:not([data-active="true"]):not([data-block-selected])::after {
+  /* 80ms in, no delay: hover feedback has to feel like a state, not an animation. Notion uses
+   * 20ms on its own controls; anything near Tailwind's default 150ms reads as lag. */
+  background: hsl(var(--foreground) / 0.028);
+  transition: background-color 80ms ease-out;
+}
+
+.markdown-page > [data-native-block-row][data-block-selected="true"]::after {
+  /* Notion's selection fill, measured: rgba(35,131,226,0.14). Never transitioned — a selection is
+   * the direct result of a click or key and must appear in the same frame. */
+  background: rgba(35, 131, 226, 0.14);
+}
+
+/*
+ * Gutter controls: instant in, forgiving out.
+ *
+ * Revealing with a fade makes the handle feel like it is catching up with the pointer. Hiding
+ * immediately makes a 1px overshoot blink. So: appear in the same frame, disappear after a short
+ * grace period. `pointer-events` follows visibility so invisible controls are never clickable.
+ */
+.markdown-page [data-native-block-controls] {
+  opacity: 0;
+  transition: opacity 110ms ease-out 90ms;
+  pointer-events: none;
+}
+
+.markdown-page [data-native-block-row]:hover [data-native-block-controls],
+.markdown-page [data-native-block-row]:focus-within [data-native-block-controls],
+.markdown-page [data-native-block-row][data-controls-open="true"] [data-native-block-controls] {
+  opacity: 1;
+  transition-delay: 0ms;
+  transition-duration: 0ms;
+  pointer-events: auto;
+}
+
+/*
+ * Vertical alignment of the gutter controls.
+ *
+ * The controls belong on the Block's first text line, not in the middle of the row. Values are
+ * `contentPaddingTop + (firstLineBoxHeight - controlHeight) / 2` with the 24px control and the
+ * content column's 4px `py-1`, then corrected against measured deltas in the running app — the
+ * arithmetic alone was 3-24px out per kind because container kinds add their own chrome.
+ */
+.markdown-page [data-native-block-controls] {
+  padding-top: var(--controls-lead, 6px);
+}
+
+.markdown-page [data-native-block-row][data-block-kind="heading"][data-block-level="1"] {
+  --controls-lead: 11.5px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="heading"][data-block-level="2"] {
+  --controls-lead: 7.5px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="heading"][data-block-level="3"] {
+  --controls-lead: 5px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="heading"][data-block-level="4"] {
+  --controls-lead: 4px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="heading"][data-block-level="5"] {
+  --controls-lead: 2.5px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="heading"][data-block-level="6"] {
+  --controls-lead: 1px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="blockquote"] {
+  --controls-lead: 2px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="fenced_code"],
+.markdown-page [data-native-block-row][data-block-kind="mermaid"],
+.markdown-page [data-native-block-row][data-block-kind="unsupported"] {
+  --controls-lead: 12.5px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="block_math"] {
+  --controls-lead: 24px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="callout"],
+.markdown-page [data-native-block-row][data-block-kind="toggle"] {
+  --controls-lead: 4.5px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="table"] {
+  --controls-lead: 27px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="thematic_break"] {
+  --controls-lead: 8px;
 }
 
 .editor-leading-compact .markdown-page {
@@ -73,9 +221,141 @@
   @apply overflow-x-auto rounded-lg bg-muted p-4 font-mono text-sm;
 }
 
+/*
+ * Inline code tracks the text around it.
+ *
+ * globals.css routes every `.markdown-page code` to the chrome code-font slider (12px), which left
+ * inline code visibly shrunken inside 16px prose. Measured in Feishu Doc, inline code renders at
+ * ratio 1.0 against its paragraph — the mono family and the tint carry the distinction, not a
+ * smaller size. `1em` keeps that true at any editor font size, and `!important` is needed to beat
+ * the chrome rule. Fenced Blocks below keep the slider: a code Block genuinely is a code surface,
+ * so a user's code-font preference belongs there.
+ */
 .markdown-page code {
-  @apply rounded bg-muted px-1 py-0.5 font-mono text-sm;
+  @apply rounded bg-muted px-1 py-0.5 font-mono;
   color: #eb5757;
+  font-size: 1em !important;
+  /* Mono glyphs run optically large at the same px, so hold the line box to the prose leading. */
+  line-height: inherit !important;
+}
+
+/*
+ * Syntax colours for `highlight.js` scopes.
+ *
+ * A small palette rather than a vendored theme: only the scopes our grammars actually emit, tuned
+ * against the editor's own surfaces so a code Block reads as part of the Page in both themes. The
+ * inline-code red is reused for strings so the two agree.
+ */
+.markdown-page pre .hljs-comment,
+.markdown-page pre .hljs-quote {
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+
+.markdown-page pre .hljs-keyword,
+.markdown-page pre .hljs-selector-tag,
+.markdown-page pre .hljs-literal,
+.markdown-page pre .hljs-doctag,
+.markdown-page pre .hljs-meta .hljs-keyword {
+  color: #a626a4;
+}
+
+.markdown-page pre .hljs-string,
+.markdown-page pre .hljs-regexp,
+.markdown-page pre .hljs-addition,
+.markdown-page pre .hljs-attribute,
+.markdown-page pre .hljs-meta .hljs-string {
+  color: #50a14f;
+}
+
+.markdown-page pre .hljs-number,
+.markdown-page pre .hljs-variable,
+.markdown-page pre .hljs-template-variable,
+.markdown-page pre .hljs-type,
+.markdown-page pre .hljs-selector-attr,
+.markdown-page pre .hljs-selector-pseudo,
+.markdown-page pre .hljs-built_in {
+  color: #c18401;
+}
+
+.markdown-page pre .hljs-title,
+.markdown-page pre .hljs-section,
+.markdown-page pre .hljs-title.class_,
+.markdown-page pre .hljs-title.function_ {
+  color: #4078f2;
+}
+
+.markdown-page pre .hljs-attr,
+.markdown-page pre .hljs-property,
+.markdown-page pre .hljs-symbol,
+.markdown-page pre .hljs-bullet,
+.markdown-page pre .hljs-link {
+  color: #986801;
+}
+
+.markdown-page pre .hljs-deletion,
+.markdown-page pre .hljs-name,
+.markdown-page pre .hljs-selector-id,
+.markdown-page pre .hljs-selector-class,
+.markdown-page pre .hljs-tag {
+  color: #e45649;
+}
+
+.markdown-page pre .hljs-emphasis {
+  font-style: italic;
+}
+
+.markdown-page pre .hljs-strong {
+  font-weight: 600;
+}
+
+.dark .markdown-page pre .hljs-keyword,
+.dark .markdown-page pre .hljs-selector-tag,
+.dark .markdown-page pre .hljs-literal,
+.dark .markdown-page pre .hljs-doctag,
+.dark .markdown-page pre .hljs-meta .hljs-keyword {
+  color: #c678dd;
+}
+
+.dark .markdown-page pre .hljs-string,
+.dark .markdown-page pre .hljs-regexp,
+.dark .markdown-page pre .hljs-addition,
+.dark .markdown-page pre .hljs-attribute,
+.dark .markdown-page pre .hljs-meta .hljs-string {
+  color: #98c379;
+}
+
+.dark .markdown-page pre .hljs-number,
+.dark .markdown-page pre .hljs-variable,
+.dark .markdown-page pre .hljs-template-variable,
+.dark .markdown-page pre .hljs-type,
+.dark .markdown-page pre .hljs-selector-attr,
+.dark .markdown-page pre .hljs-selector-pseudo,
+.dark .markdown-page pre .hljs-built_in {
+  color: #e5c07b;
+}
+
+.dark .markdown-page pre .hljs-title,
+.dark .markdown-page pre .hljs-section,
+.dark .markdown-page pre .hljs-title.class_,
+.dark .markdown-page pre .hljs-title.function_ {
+  color: #61afef;
+}
+
+.dark .markdown-page pre .hljs-attr,
+.dark .markdown-page pre .hljs-property,
+.dark .markdown-page pre .hljs-symbol,
+.dark .markdown-page pre .hljs-bullet,
+.dark .markdown-page pre .hljs-link {
+  color: #d19a66;
+}
+
+.dark .markdown-page pre .hljs-deletion,
+.dark .markdown-page pre .hljs-name,
+.dark .markdown-page pre .hljs-selector-id,
+.dark .markdown-page pre .hljs-selector-class,
+.dark .markdown-page pre .hljs-tag {
+  color: #e06c75;
 }
 
 .markdown-page pre code {
@@ -124,14 +404,23 @@
   line-height: 1.3;
 }
 
+/*
+ * One type scale for a Block, whether it is rendered or being edited.
+ *
+ * globals.css deliberately overrides Tailwind's `.text-*` utilities with the 13px chrome type scale
+ * using `!important`, so any preview that carried `text-base` rendered at 13px while its editing
+ * surface inherited `.markdown-page`'s 16px. Clicking a paragraph then jumped it a whole type step
+ * and reflowed the Page. Previews now carry the same `data-editor-kind` as the surface and both are
+ * sized here, once. The `!important` is required to beat that utility override.
+ */
 .markdown-page [data-native-block-row] p,
 .markdown-page [data-native-block-row] [data-editor-kind="paragraph"],
 .markdown-page [data-native-block-row] [data-editor-kind="bullet_list_item"],
 .markdown-page [data-native-block-row] [data-editor-kind="ordered_list_item"],
 .markdown-page [data-native-block-row] [data-editor-kind="task_list_item"],
 .markdown-page [data-native-block-row] [data-editor-kind="blockquote"] {
-  font-size: 1rem;
-  line-height: 1.75rem;
+  font-size: 1rem !important;
+  line-height: 1.75rem !important;
 }
 
 .markdown-page .native-block-editor-surface {
@@ -140,6 +429,9 @@
 }
 
 .markdown-page .native-block-textarea {
+  /* Let the browser size the field. The JS autosizer wrote `height: 0px`, read `scrollHeight`,
+   * then wrote the real height — two forced full-page layouts per keystroke. */
+  field-sizing: content;
   min-height: 1.75rem;
   margin: 0;
   padding: 0;
@@ -157,39 +449,86 @@
   appearance: none;
 }
 
+/*
+ * Placeholders.
+ *
+ * Drawn with `attr()`/`::placeholder` so the text is never part of the source, never lands in a
+ * clipboard copy, and never reaches a PDF export. No transition — a fading placeholder reads as a
+ * rendering glitch on a caret-anchored element.
+ */
+.markdown-page .native-block-textarea::placeholder {
+  color: hsl(var(--foreground) / 0.26);
+}
+
+.dark .markdown-page .native-block-textarea::placeholder {
+  color: hsl(var(--foreground) / 0.32);
+}
+
+.markdown-page [data-native-semantic-editor][data-placeholder]:empty::before,
+.markdown-page [data-native-semantic-editor][data-placeholder]:has(> :only-child:empty)::before {
+  color: hsl(var(--foreground) / 0.26);
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+.dark .markdown-page [data-native-semantic-editor][data-placeholder]:empty::before,
+.dark
+  .markdown-page
+  [data-native-semantic-editor][data-placeholder]:has(> :only-child:empty)::before {
+  color: hsl(var(--foreground) / 0.32);
+}
+
+.markdown-page [data-block-placeholder] {
+  color: hsl(var(--foreground) / 0.26);
+}
+
+.dark .markdown-page [data-block-placeholder] {
+  color: hsl(var(--foreground) / 0.32);
+}
+
+/* An empty heading keeps its line box so activating it never shifts the Page. */
+.markdown-page h1:empty,
+.markdown-page h2:empty,
+.markdown-page h3:empty,
+.markdown-page h4:empty,
+.markdown-page h5:empty,
+.markdown-page h6:empty {
+  min-height: 1.3em;
+}
+
 .markdown-page [data-editor-kind="heading"] {
   font-weight: 600;
   letter-spacing: -0.018em;
 }
 
 .markdown-page [data-editor-kind="heading"][data-editor-level="1"] {
-  font-size: 1.875rem;
-  line-height: 1.3;
+  font-size: 1.875rem !important;
+  line-height: 1.3 !important;
 }
 
 .markdown-page [data-editor-kind="heading"][data-editor-level="2"] {
-  font-size: 1.5rem;
-  line-height: 1.3;
+  font-size: 1.5rem !important;
+  line-height: 1.3 !important;
 }
 
 .markdown-page [data-editor-kind="heading"][data-editor-level="3"] {
-  font-size: 1.25rem;
-  line-height: 1.3;
+  font-size: 1.25rem !important;
+  line-height: 1.3 !important;
 }
 
 .markdown-page [data-editor-kind="heading"][data-editor-level="4"] {
-  font-size: 1.125rem;
-  line-height: 1.3;
+  font-size: 1.125rem !important;
+  line-height: 1.3 !important;
 }
 
 .markdown-page [data-editor-kind="heading"][data-editor-level="5"] {
-  font-size: 1rem;
-  line-height: 1.3;
+  font-size: 1rem !important;
+  line-height: 1.3 !important;
 }
 
 .markdown-page [data-editor-kind="heading"][data-editor-level="6"] {
-  font-size: 0.875rem;
-  line-height: 1.3;
+  font-size: 0.875rem !important;
+  line-height: 1.3 !important;
 }
 
 .markdown-page [data-editor-kind="blockquote"] {
@@ -200,7 +539,7 @@
 .markdown-page [data-native-block-drop-end][data-drop-active="true"]::before {
   position: absolute;
   right: 0;
-  left: 2.5rem;
+  left: var(--editor-content-rail, 4rem);
   height: 2px;
   border-radius: 999px;
   background: #2383e2;
@@ -208,8 +547,23 @@
   pointer-events: none;
 }
 
+/* While a selection sweep is in flight, nothing should also be selecting text. */
+.markdown-page[data-block-marquee] {
+  user-select: none;
+}
+
+/*
+ * The Block being dragged fades, so the insertion line reads as "this goes here" rather than the
+ * Page having two copies of the same content.
+ */
+.markdown-page [data-native-block-row][data-block-dragging="true"] {
+  opacity: 0.4;
+  transition: opacity 120ms ease-out;
+}
+
 .markdown-page [data-native-block-row][data-drop-before="true"]::before {
-  top: -2px;
+  /* Sits in the inter-row gap, on the boundary the Block would land at. */
+  top: calc(var(--row-lead) - 1px);
 }
 
 .markdown-page [data-native-block-drop-end][data-drop-active="true"] {

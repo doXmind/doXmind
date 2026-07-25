@@ -272,6 +272,29 @@ describe("MarkdownBlockDocument", () => {
     expect(result.snapshot.blocks.map((block) => block.depth)).toEqual([0, 1, 2, 2, 0]);
   });
 
+  it("keeps tab-indented list depths after an edit reprojects the hierarchy", () => {
+    const markdown = "- a\n\t- b\n\t\t- c\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    expect(before.blocks.map(({ kind, depth }) => ({ kind, depth }))).toEqual([
+      { kind: "bullet_list_item", depth: 0 },
+      { kind: "bullet_list_item", depth: 1 },
+      { kind: "bullet_list_item", depth: 2 },
+    ]);
+    expect(before.markdown).toBe(markdown);
+
+    const result = document.apply({
+      type: "replaceText",
+      blockId: before.blocks[2].id,
+      range: { from: "\t\t- c".length, to: "\t\t- c".length },
+      text: " edited",
+    });
+
+    expect(result.snapshot.markdown).toBe("- a\n\t- b\n\t\t- c edited\n");
+    expect(result.snapshot.blocks.map((block) => block.depth)).toEqual([0, 1, 2]);
+  });
+
   it("projects an explicit multi-line blockquote as one editable source-backed Block", () => {
     const markdown = "> quoted\r\n> second line\r\n\r\nAfter\r\n";
 
@@ -1525,5 +1548,239 @@ describe("MarkdownBlockDocument", () => {
     expect(redone.markdown).toBe("## Alpha\n");
     expect(redone.blocks[0].id).toBe(blockId);
     expect(redone.revision).toBe(3);
+  });
+});
+
+describe("typing-run history granularity", () => {
+  const typeInto = (document: MarkdownBlockDocument, blockId: string, text: string) => {
+    for (const char of text) {
+      const block = document.getSnapshot().blocks.find((candidate) => candidate.id === blockId);
+      if (!block) throw new Error("block went away");
+      // Type at the end of the content, before any trailing blank line.
+      const end = block.raw.replace(/(\r\n|\n|\r)+$/, "").length;
+      document.apply({ type: "replaceText", blockId, range: { from: end, to: end }, text: char });
+    }
+  };
+
+  it("folds a word into one undo entry and checkpoints at whitespace", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("");
+    const blockId = document.getSnapshot().blocks[0].id;
+    typeInto(document, blockId, "hello world");
+    expect(document.getSnapshot().markdown).toBe("hello world");
+
+    // One step per word, not one per character: the space is the checkpoint, so the entry recorded
+    // before it holds the first word alone.
+    expect(document.undo().markdown).toBe("hello");
+    expect(document.undo().markdown).toBe("");
+  });
+
+  it("never folds an autoformat into the typing around it", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("");
+    const blockId = document.getSnapshot().blocks[0].id;
+    typeInto(document, blockId, "#");
+    // The space is what turns the Block into a heading; it must stand alone in history.
+    typeInto(document, blockId, " ");
+    const headingId = document.getSnapshot().blocks[0].id;
+    typeInto(document, headingId, "Title");
+    expect(document.getSnapshot().blocks[0].kind).toBe("heading");
+
+    expect(document.undo().blocks[0].raw).toBe("# ");
+    // A second undo reaches the state before the space, i.e. the bare marker. Its kind is
+    // `unsupported` today — a lone `#` classifying as raw is tracked separately.
+    expect(document.undo().blocks[0].raw).toBe("#");
+  });
+
+  it("starts a new entry after an explicit flush", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("");
+    const blockId = document.getSnapshot().blocks[0].id;
+    typeInto(document, blockId, "ab");
+    document.flushHistory();
+    typeInto(document, blockId, "cd");
+
+    expect(document.undo().markdown).toBe("ab");
+    expect(document.undo().markdown).toBe("");
+  });
+
+  it("does not fold a structural command into a typing run", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("one\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+    typeInto(document, blockId, "X");
+    document.apply({ type: "split", blockId, at: 4 });
+    expect(document.getSnapshot().blocks).toHaveLength(2);
+
+    // The split is its own step, so one undo rejoins the Block with the typed character intact.
+    const rejoined = document.undo();
+    expect(rejoined.blocks).toHaveLength(1);
+    expect(rejoined.blocks[0].raw.startsWith("oneX")).toBe(true);
+  });
+
+  it("folds a backspace run and stops at a word boundary", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("abcd\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+    for (let remaining = 4; remaining > 1; remaining -= 1) {
+      document.apply({
+        type: "replaceText",
+        blockId,
+        range: { from: remaining - 1, to: remaining },
+        text: "",
+      });
+    }
+    expect(document.getSnapshot().blocks[0].raw.startsWith("a")).toBe(true);
+    expect(document.undo().blocks[0].raw.startsWith("abcd")).toBe(true);
+  });
+
+  it("caps the undo stack", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("seed\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+    for (let index = 0; index < 260; index += 1) {
+      const end = document.getSnapshot().blocks[0].raw.length;
+      document.apply({ type: "replaceText", blockId, range: { from: end, to: end }, text: " x" });
+    }
+    let steps = 0;
+    let previous = document.getSnapshot().markdown;
+    while (steps < 400) {
+      const next = document.undo().markdown;
+      if (next === previous) break;
+      previous = next;
+      steps += 1;
+    }
+    expect(steps).toBeLessThanOrEqual(200);
+    expect(steps).toBeGreaterThan(150);
+  });
+});
+
+describe("moveBlocks re-indents what it moves", () => {
+  const move = (markdown: string, movedText: string, beforeText: string | null) => {
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const blocks = document.getSnapshot().blocks;
+    const moved = blocks.find((block) => block.raw.includes(movedText));
+    if (!moved) throw new Error(`no Block contains ${movedText}`);
+    const beforeId =
+      beforeText === null
+        ? null
+        : (blocks.find((block) => block.raw.includes(beforeText))?.id ?? null);
+    const result = document.apply({ type: "moveBlocks", blockIds: [moved.id], beforeId });
+    return {
+      markdown: result.snapshot.markdown,
+      kinds: MarkdownBlockDocument.fromMarkdown(result.snapshot.markdown)
+        .getSnapshot()
+        .blocks.map((block) => `${block.kind}@${block.depth ?? "-"}`),
+    };
+  };
+
+  it("keeps a deeply nested item a list item when it moves to the top", () => {
+    // Four leading spaces at the start of a Page is an indented code block, so without re-indenting
+    // this drag silently turned a list item into raw code.
+    const result = move("- a\n  - b\n    - c\n\nTail\n", "- c", "- a");
+    expect(result.markdown).toBe("- c\n- a\n  - b\n\nTail\n");
+    expect(result.kinds).toEqual([
+      "bullet_list_item@0",
+      "bullet_list_item@0",
+      "bullet_list_item@1",
+      "paragraph@-",
+    ]);
+  });
+
+  it("clamps to one level deeper than the item it lands under", () => {
+    const result = move("- a\n\n- x\n  - y\n    - z\n", "- z", "- y");
+    expect(MarkdownBlockDocument.fromMarkdown(result.markdown).getSnapshot().blocks[3].depth).toBe(
+      1
+    );
+  });
+
+  it("preserves nesting inside the moved range", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("- p\n  - q\n    - r\n\nTail\n");
+    const blocks = document.getSnapshot().blocks;
+    const q = blocks.find((block) => block.raw.includes("- q"))!;
+    const r = blocks.find((block) => block.raw.includes("- r"))!;
+    const p = blocks.find((block) => block.raw.startsWith("- p"))!;
+    const result = document.apply({
+      type: "moveBlocks",
+      blockIds: [q.id, r.id],
+      beforeId: p.id,
+    });
+    // The range flattens by one so `q` is valid at top level, and `r` stays one level under it.
+    expect(
+      MarkdownBlockDocument.fromMarkdown(result.snapshot.markdown)
+        .getSnapshot()
+        .blocks.map((block) => `${block.kind}@${block.depth ?? "-"}`)
+    ).toEqual(["bullet_list_item@0", "bullet_list_item@1", "bullet_list_item@0", "paragraph@-"]);
+  });
+
+  it("leaves a paragraph move's own bytes untouched", () => {
+    const result = move("one\n\ntwo\n\nthree\n", "three", "one");
+    // The trailing blank line is `ensureBlockBoundary` normalising the new last Block, unrelated to
+    // re-indenting; what matters is that no indentation was added or removed.
+    expect(result.markdown).toBe("three\n\none\n\ntwo\n\n");
+    expect(result.kinds).toEqual(["paragraph@-", "paragraph@-", "paragraph@-"]);
+  });
+});
+
+describe("pasted Markdown keeps the depth the scanner measured", () => {
+  it.each([
+    ["two-space nesting", "- Parent\n  - Child\n    - Grandchild\n", [0, 1, 2]],
+    ["four levels", "- a\n  - b\n    - c\n      - d\n", [0, 1, 2, 3]],
+    ["ordered under bullet", "- a\n  1. b\n     - c\n", [0, 1, 2]],
+  ])("pastes %s at the right depths", (_label, markdown, depths) => {
+    const document = MarkdownBlockDocument.fromMarkdown("");
+    const blockId = document.getSnapshot().blocks[0].id;
+    const result = document.apply({
+      type: "replaceText",
+      blockId,
+      range: { from: 0, to: 0 },
+      text: markdown,
+    });
+    // A span classified on its own text loses its depth — `    - c` alone is an indented code
+    // block — so pasting a nested list used to drop its deepest items to raw source.
+    expect(result.snapshot.blocks.map((block) => block.depth)).toEqual(depths);
+    expect(
+      result.snapshot.blocks.every(
+        (block) => block.kind === "bullet_list_item" || block.kind === "ordered_list_item"
+      )
+    ).toBe(true);
+    expect(result.snapshot.markdown).toBe(markdown);
+    // And it matches what opening the same bytes from disk produces.
+    expect(
+      MarkdownBlockDocument.fromMarkdown(markdown)
+        .getSnapshot()
+        .blocks.map((b) => b.depth)
+    ).toEqual(depths);
+  });
+
+  it("still treats a genuine indented code block as raw", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("");
+    const blockId = document.getSnapshot().blocks[0].id;
+    const result = document.apply({
+      type: "replaceText",
+      blockId,
+      range: { from: 0, to: 0 },
+      text: "text\n\n    code line\n",
+    });
+    expect(result.snapshot.blocks.map((block) => block.kind)).toEqual(["paragraph", "unsupported"]);
+    expect(result.snapshot.markdown).toBe("text\n\n    code line\n");
+  });
+});
+
+describe("replaceBlocks converts a whole range in one revision", () => {
+  it("re-prefixes every Block and keeps source-only Blocks byte-identical", () => {
+    // This is the shape the Block-selection toolbar's Turn into produces: one command over the
+    // whole range, so a multi-Block conversion is a single undo step.
+    const markdown = "one\n\ntwo\n\n---\n\nthree\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+    const blockIds = before.blocks.map((block) => block.id);
+    const converted = before.blocks
+      .map((block) => (block.kind === "thematic_break" ? block.raw : `- ${block.raw.trim()}\n\n`))
+      .join("");
+    const result = document.apply({ type: "replaceBlocks", blockIds, markdown: converted });
+
+    expect(result.snapshot.blocks.map((block) => block.kind)).toEqual([
+      "bullet_list_item",
+      "bullet_list_item",
+      "thematic_break",
+      "bullet_list_item",
+    ]);
+    expect(result.snapshot.revision).toBe(before.revision + 1);
+    expect(document.undo().markdown).toBe(markdown);
   });
 });

@@ -40,6 +40,7 @@ import type {
   MarkdownBlockKind,
   MarkdownSettableBlockKind,
 } from "@/editor/markdown-block/markdown-block-document";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
@@ -106,7 +107,10 @@ export interface BlockGutterControlsProps {
   draggable?: boolean;
   buttonTabIndex?: number;
   describedBy?: string;
-  onAdd: () => void;
+  /** Lets the row pin the controls visible while this menu owns focus. */
+  onMenuOpenChange?: (open: boolean) => void;
+  /** `above` when the user Option/Alt-clicked, matching Notion's "⌥-click to add above". */
+  onAdd: (placement: "below" | "above") => void;
   onTurnInto: (kind: MarkdownSettableBlockKind, level?: HeadingLevel) => void;
   onCopyMarkdown: () => void | Promise<void>;
   onDuplicate: () => void;
@@ -127,6 +131,7 @@ export function BlockGutterControls({
   draggable = true,
   buttonTabIndex,
   describedBy,
+  onMenuOpenChange,
   onAdd,
   onTurnInto,
   onCopyMarkdown,
@@ -141,6 +146,7 @@ export function BlockGutterControls({
   const [query, setQuery] = useState("");
   const [turnIntoOpen, setTurnIntoOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const gripRef = useRef<HTMLButtonElement>(null);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const turnIntoOptions = useMemo(
     () =>
@@ -175,9 +181,13 @@ export function BlockGutterControls({
 
   const handleOpenChange = (open: boolean) => {
     setMenuOpen(open);
+    onMenuOpenChange?.(open);
     if (!open) {
       setQuery("");
       setTurnIntoOpen(false);
+      // Radix returns focus to the trigger for us in most paths, but not after an item that
+      // re-renders the row (Move up, Turn into). Without this the next keystroke goes to <body>.
+      window.setTimeout(() => gripRef.current?.focus({ preventScroll: true }), 0);
     }
   };
 
@@ -187,38 +197,65 @@ export function BlockGutterControls({
       aria-label="Block controls"
       className={cn("flex items-center gap-0.5", className)}
     >
-      <button
-        type="button"
-        aria-label="Add block"
-        aria-describedby={describedBy}
-        title="Add block"
-        tabIndex={buttonTabIndex}
-        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        onClick={onAdd}
+      <Tooltip
+        side="top"
+        delayDuration={320}
+        content={
+          <span className="block text-center">
+            Click to add below
+            <span className="block opacity-60">⌥-click to add above</span>
+          </span>
+        }
       >
-        <Plus className="h-4 w-4" aria-hidden="true" />
-      </button>
+        <button
+          type="button"
+          aria-label="Add block"
+          aria-describedby={describedBy}
+          tabIndex={buttonTabIndex}
+          // 20ms hover feedback, measured from Notion. Tailwind's default 150ms `transition-colors`
+          // makes a pointer-tracking control feel like it is lagging behind the cursor.
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          onClick={(event) => onAdd(event.altKey ? "above" : "below")}
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </Tooltip>
       <DropdownMenu open={menuOpen} onOpenChange={handleOpenChange}>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label="Block actions"
-            aria-describedby={describedBy}
-            title="Drag to move · Click for actions"
-            draggable={draggable}
-            tabIndex={buttonTabIndex}
-            className="flex h-7 w-7 cursor-grab items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring active:cursor-grabbing"
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-          >
-            <GripVertical className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </DropdownMenuTrigger>
+        <Tooltip
+          side="top"
+          delayDuration={320}
+          content={
+            <span className="block text-center">
+              Drag to move
+              <span className="block opacity-60">Click to open menu</span>
+            </span>
+          }
+        >
+          <DropdownMenuTrigger asChild>
+            <button
+              ref={gripRef}
+              type="button"
+              aria-label="Block actions"
+              aria-describedby={describedBy}
+              aria-keyshortcuts="Meta+/ Control+/"
+              draggable={draggable}
+              tabIndex={buttonTabIndex}
+              className="flex h-6 w-6 cursor-grab items-center justify-center rounded text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring active:cursor-grabbing data-[state=open]:bg-muted data-[state=open]:text-foreground"
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+            >
+              <GripVertical className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+        </Tooltip>
         <DropdownMenuContent
           align="start"
           sideOffset={6}
           aria-label="Block actions menu"
-          className="max-h-[min(28rem,calc(100vh-2rem))] w-60 rounded-xl border-border/80 bg-popover/95 p-1.5 shadow-xl backdrop-blur-xl"
+          // Notion's measured menu chrome: 265px wide, 10px radius, opaque surface, and a layered
+          // shadow whose outermost layer is a hairline ring instead of a border. No backdrop blur —
+          // blurring a menu that opens next to the caret costs a full-screen composite per frame.
+          className="max-h-[min(28rem,calc(100vh-2rem))] w-[265px] rounded-[10px] border-0 bg-popover p-1.5 shadow-[0_20px_24px_rgba(25,25,25,0.05),0_5px_8px_rgba(25,25,25,0.027),0_0_0_1px_hsl(var(--border))]"
         >
           <div className="p-1">
             <div className="flex h-9 items-center gap-2 rounded-lg border border-border/80 bg-background/70 px-2.5 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring/25">
@@ -251,7 +288,7 @@ export function BlockGutterControls({
                 type="button"
                 role="menuitem"
                 aria-label="Turn into"
-                className="flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
+                className="flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm outline-none transition-colors duration-[20ms] ease-in hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
                 onClick={() => setTurnIntoOpen(true)}
               >
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
@@ -268,7 +305,7 @@ export function BlockGutterControls({
               type="button"
               role="menuitem"
               aria-label="Back to block actions"
-              className="mb-1 flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
+              className="mb-1 flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm outline-none transition-colors duration-[20ms] ease-in hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
               onClick={() => setTurnIntoOpen(false)}
             >
               <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
@@ -288,7 +325,7 @@ export function BlockGutterControls({
                     aria-current={selected ? "true" : undefined}
                     disabled={!canTurnInto}
                     onClick={() => onTurnInto(option.kind, option.level)}
-                    className="h-8 gap-2.5 rounded-lg px-2.5"
+                    className="h-7 gap-2.5 rounded-md px-2 transition-colors duration-[20ms] ease-in"
                   >
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
                       <BlockTypeOptionIcon option={option} />
@@ -309,7 +346,7 @@ export function BlockGutterControls({
             <DropdownMenuItem
               aria-label="Copy Markdown"
               onClick={() => void onCopyMarkdown()}
-              className="h-8 gap-2.5 rounded-lg px-2.5"
+              className="h-7 gap-2.5 rounded-md px-2 transition-colors duration-[20ms] ease-in"
             >
               <ClipboardCopy className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               <span className="min-w-0 flex-1 text-left">Copy Markdown</span>
@@ -319,11 +356,11 @@ export function BlockGutterControls({
             <DropdownMenuItem
               aria-label="Duplicate"
               onClick={onDuplicate}
-              className="h-8 gap-2.5 rounded-lg px-2.5"
+              className="h-7 gap-2.5 rounded-md px-2 transition-colors duration-[20ms] ease-in"
             >
               <Copy className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               <span className="min-w-0 flex-1 text-left">Duplicate</span>
-              <kbd className="text-[10px] text-muted-foreground">⌘⇧D</kbd>
+              <kbd className="text-[10px] text-muted-foreground">⌘D</kbd>
             </DropdownMenuItem>
           ) : null}
           {showActions && matchingActions.moveUp ? (
@@ -331,7 +368,7 @@ export function BlockGutterControls({
               aria-label="Move up"
               disabled={!canMoveUp}
               onClick={onMoveUp}
-              className="h-8 gap-2.5 rounded-lg px-2.5"
+              className="h-7 gap-2.5 rounded-md px-2 transition-colors duration-[20ms] ease-in"
             >
               <ArrowUp className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               <span className="min-w-0 flex-1 text-left">Move up</span>
@@ -343,7 +380,7 @@ export function BlockGutterControls({
               aria-label="Move down"
               disabled={!canMoveDown}
               onClick={onMoveDown}
-              className="h-8 gap-2.5 rounded-lg px-2.5"
+              className="h-7 gap-2.5 rounded-md px-2 transition-colors duration-[20ms] ease-in"
             >
               <ArrowDown className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               <span className="min-w-0 flex-1 text-left">Move down</span>
@@ -356,7 +393,7 @@ export function BlockGutterControls({
               <DropdownMenuItem
                 aria-label="Delete"
                 onClick={onDelete}
-                className="h-8 gap-2.5 rounded-lg px-2.5 text-destructive focus-visible:ring-destructive"
+                className="h-7 gap-2.5 rounded-md px-2 text-destructive transition-colors duration-[20ms] ease-in focus-visible:ring-destructive"
               >
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
                 <span className="min-w-0 flex-1 text-left">Delete</span>

@@ -51,7 +51,11 @@ function buildAppMenu(deps) {
           click: () => require("./updater").checkForUpdatesInteractive(),
         },
         { type: "separator" },
-        { label: "Settings…", accelerator: "CmdOrCtrl+,", click: () => emitToFocused("menu://settings", null) },
+        {
+          label: "Settings…",
+          accelerator: "CmdOrCtrl+,",
+          click: () => emitToFocused("menu://settings", null),
+        },
         { type: "separator" },
         { role: "services" },
         { type: "separator" },
@@ -65,16 +69,40 @@ function buildAppMenu(deps) {
     {
       label: "File",
       submenu: [
-        { label: "New Page", accelerator: "CmdOrCtrl+N", click: () => focusThenEmitAll("menu://new-file") },
-        { label: "New Window", accelerator: "CmdOrCtrl+Shift+N", click: () => emitToAll("menu://new-window", null) },
+        {
+          label: "New Page",
+          accelerator: "CmdOrCtrl+N",
+          click: () => focusThenEmitAll("menu://new-file"),
+        },
+        {
+          label: "New Window",
+          accelerator: "CmdOrCtrl+Shift+N",
+          click: () => emitToAll("menu://new-window", null),
+        },
         { type: "separator" },
-        { label: "Open File…", accelerator: "CmdOrCtrl+O", click: () => focusThenEmitAll("menu://open-file") },
-        { label: "Open Folder…", accelerator: "CmdOrCtrl+Shift+O", click: () => focusThenEmitAll("menu://open-folder") },
+        {
+          label: "Open File…",
+          accelerator: "CmdOrCtrl+O",
+          click: () => focusThenEmitAll("menu://open-file"),
+        },
+        {
+          label: "Open Folder…",
+          accelerator: "CmdOrCtrl+Shift+O",
+          click: () => focusThenEmitAll("menu://open-folder"),
+        },
         { label: "Open Recent", submenu: appRecentSubmenu(recents, emitToAll) },
         { type: "separator" },
-        { label: "Save", accelerator: "CmdOrCtrl+S", click: () => emitToFocused("menu://save", null) },
+        {
+          label: "Save",
+          accelerator: "CmdOrCtrl+S",
+          click: () => emitToFocused("menu://save", null),
+        },
         { type: "separator" },
-        { label: "Reveal in Finder", accelerator: "CmdOrCtrl+Alt+R", click: () => emitToFocused("menu://reveal", null) },
+        {
+          label: "Reveal in Finder",
+          accelerator: "CmdOrCtrl+Alt+R",
+          click: () => emitToFocused("menu://reveal", null),
+        },
         { type: "separator" },
         { role: "close" },
       ],
@@ -82,24 +110,58 @@ function buildAppMenu(deps) {
     {
       label: "Edit",
       submenu: [
-        { label: "Undo", accelerator: "CmdOrCtrl+Z", click: () => emitToFocused("menu://undo", null) },
-        { label: "Redo", accelerator: "CmdOrCtrl+Shift+Z", click: () => emitToFocused("menu://redo", null) },
+        {
+          label: "Undo",
+          accelerator: "CmdOrCtrl+Z",
+          click: () => emitToFocused("menu://undo", null),
+        },
+        {
+          label: "Redo",
+          accelerator: "CmdOrCtrl+Shift+Z",
+          click: () => emitToFocused("menu://redo", null),
+        },
         { type: "separator" },
         { role: "cut" },
         { role: "copy" },
         { role: "paste" },
         { role: "selectAll" },
         { type: "separator" },
-        { label: "Find in Document…", accelerator: "CmdOrCtrl+F", click: () => emitToFocused("menu://find", null) },
-        { label: "Quick Switcher…", accelerator: "CmdOrCtrl+P", click: () => emitToFocused("menu://quick-switcher", null) },
-        { label: "Command Palette…", accelerator: "CmdOrCtrl+K", click: () => emitToFocused("menu://command-palette", null) },
+        {
+          label: "Find in Document…",
+          accelerator: "CmdOrCtrl+F",
+          click: () => emitToFocused("menu://find", null),
+        },
+        {
+          label: "Quick Switcher…",
+          accelerator: "CmdOrCtrl+P",
+          click: () => emitToFocused("menu://quick-switcher", null),
+        },
+        // `registerAccelerator: false` keeps the shortcut visible in the menu but leaves the key to
+        // the Renderer. A main-process accelerator fires before the page sees the event, so the
+        // editor could not claim Mod+K for its link editor while text is selected.
+        {
+          label: "Command Palette…",
+          accelerator: "CmdOrCtrl+K",
+          registerAccelerator: false,
+          click: () => emitToFocused("menu://command-palette", null),
+        },
       ],
     },
     {
       label: "View",
       submenu: [
-        { label: "Toggle Sidebar", accelerator: "CmdOrCtrl+B", click: () => emitToFocused("menu://toggle-sidebar", null) },
-        { label: "Toggle Focus Mode", accelerator: "F11", click: () => emitToFocused("menu://toggle-focus", null) },
+        // Same reason: Mod+B is bold inside the editor, so the Renderer decides.
+        {
+          label: "Toggle Sidebar",
+          accelerator: "CmdOrCtrl+B",
+          registerAccelerator: false,
+          click: () => emitToFocused("menu://toggle-sidebar", null),
+        },
+        {
+          label: "Toggle Focus Mode",
+          accelerator: "F11",
+          click: () => emitToFocused("menu://toggle-focus", null),
+        },
         { type: "separator" },
         { role: "togglefullscreen" },
       ],
@@ -110,14 +172,25 @@ function buildAppMenu(deps) {
         { role: "minimize" },
         { role: "zoom" },
         { type: "separator" },
-        { label: "New Window", accelerator: "CmdOrCtrl+Shift+N", click: () => emitToAll("menu://new-window", null) },
+        {
+          label: "New Window",
+          accelerator: "CmdOrCtrl+Shift+N",
+          click: () => emitToAll("menu://new-window", null),
+        },
       ],
     },
     {
       label: "Help",
       submenu: [
-        { label: "doXmind on GitHub", click: () => emitToAll("menu://open-url", "https://github.com/doXmind") },
-        { label: "Email Support", click: () => emitToAll("menu://open-url", "mailto:support@waxis.org?subject=doXmind%20Support") },
+        {
+          label: "doXmind on GitHub",
+          click: () => emitToAll("menu://open-url", "https://github.com/doXmind"),
+        },
+        {
+          label: "Email Support",
+          click: () =>
+            emitToAll("menu://open-url", "mailto:support@waxis.org?subject=doXmind%20Support"),
+        },
       ],
     },
   ]);
@@ -158,14 +231,39 @@ function buildTrayMenu(deps) {
       }))
     : [{ label: "No Recent Items", enabled: false }];
   return Menu.buildFromTemplate([
-    { label: "New Page", accelerator: "CmdOrCtrl+N", click: () => { focusMainWindow(); emitToAll("tray://new-file", null); } },
+    {
+      label: "New Page",
+      accelerator: "CmdOrCtrl+N",
+      click: () => {
+        focusMainWindow();
+        emitToAll("tray://new-file", null);
+      },
+    },
     { type: "separator" },
-    { label: "Open File…", click: () => { focusMainWindow(); emitToAll("tray://open-file", null); } },
-    { label: "Open Folder…", click: () => { focusMainWindow(); emitToAll("tray://open-folder", null); } },
+    {
+      label: "Open File…",
+      click: () => {
+        focusMainWindow();
+        emitToAll("tray://open-file", null);
+      },
+    },
+    {
+      label: "Open Folder…",
+      click: () => {
+        focusMainWindow();
+        emitToAll("tray://open-folder", null);
+      },
+    },
     { label: "Recent Files", submenu: recentItems },
     { type: "separator" },
     { label: "Open doXmind", click: () => focusMainWindow() },
-    { label: "Settings…", click: () => { focusMainWindow(); emitToAll("tray://settings", null); } },
+    {
+      label: "Settings…",
+      click: () => {
+        focusMainWindow();
+        emitToAll("tray://settings", null);
+      },
+    },
     { type: "separator" },
     { role: "quit", label: "Quit doXmind" },
   ]);
