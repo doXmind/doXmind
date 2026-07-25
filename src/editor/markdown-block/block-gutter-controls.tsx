@@ -214,7 +214,7 @@ export function BlockGutterControls({
           tabIndex={buttonTabIndex}
           // 20ms hover feedback, measured from Notion. Tailwind's default 150ms `transition-colors`
           // makes a pointer-tracking control feel like it is lagging behind the cursor.
-          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           onClick={(event) => onAdd(event.altKey ? "above" : "below")}
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
@@ -240,7 +240,7 @@ export function BlockGutterControls({
               aria-keyshortcuts="Meta+/ Control+/"
               draggable={draggable}
               tabIndex={buttonTabIndex}
-              className="flex h-7 w-7 cursor-grab items-center justify-center rounded-md text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring active:cursor-grabbing data-[state=open]:bg-muted data-[state=open]:text-foreground"
+              className="flex h-6 w-6 cursor-grab items-center justify-center rounded text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring active:cursor-grabbing data-[state=open]:bg-muted data-[state=open]:text-foreground"
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
             >

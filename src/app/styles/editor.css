@@ -25,8 +25,10 @@
 .markdown-page {
   @apply min-h-[500px] pb-[50vh] pt-4 outline-none;
   /* Left edge of the content column, measured from a row's own left edge:
-   * pl-1 (0.25rem) + gutter w-14 (3.5rem) + gap-1 (0.25rem). Hover tint, selection fill and the
-   * drop indicator all hang off this one value so they can never disagree. */
+   * pl-1 (4px) + gutter (54px) + row gap (6px) = 64px. Those two widths are chosen so the grip's
+   * right edge lands exactly 10px left of the first glyph, which is Notion's measured offset, while
+   * this rail stays a round 4rem. Hover tint, selection fill and the drop indicator all hang off
+   * this one value so they can never disagree. */
   --editor-content-rail: 4rem;
   font-size: 1rem;
   line-height: 1.75;
@@ -136,36 +138,64 @@
 /*
  * Vertical alignment of the gutter controls.
  *
- * The controls belong on the Block's first text line, not in the middle of the row — a 28px control
- * next to a 39px h1 line box sits 6px too high without this. Values are
- * `firstLineBoxHeight / 2 - controlHeight / 2` with the 28px control.
+ * The controls belong on the Block's first text line, not in the middle of the row. Values are
+ * `contentPaddingTop + (firstLineBoxHeight - controlHeight) / 2` with the 24px control and the
+ * content column's 4px `py-1`, then corrected against measured deltas in the running app — the
+ * arithmetic alone was 3-24px out per kind because container kinds add their own chrome.
  */
 .markdown-page [data-native-block-controls] {
-  padding-top: var(--controls-lead, 0px);
+  padding-top: var(--controls-lead, 6px);
 }
 
 .markdown-page [data-native-block-row][data-block-kind="heading"][data-block-level="1"] {
-  --controls-lead: 6px;
+  --controls-lead: 11.5px;
 }
 
 .markdown-page [data-native-block-row][data-block-kind="heading"][data-block-level="2"] {
+  --controls-lead: 7.5px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="heading"][data-block-level="3"] {
+  --controls-lead: 5px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="heading"][data-block-level="4"] {
+  --controls-lead: 4px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="heading"][data-block-level="5"] {
+  --controls-lead: 2.5px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="heading"][data-block-level="6"] {
+  --controls-lead: 1px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="blockquote"] {
   --controls-lead: 2px;
 }
 
 .markdown-page [data-native-block-row][data-block-kind="fenced_code"],
 .markdown-page [data-native-block-row][data-block-kind="mermaid"],
 .markdown-page [data-native-block-row][data-block-kind="unsupported"] {
-  --controls-lead: 13px;
+  --controls-lead: 12.5px;
 }
 
-.markdown-page [data-native-block-row][data-block-kind="block_math"],
+.markdown-page [data-native-block-row][data-block-kind="block_math"] {
+  --controls-lead: 24px;
+}
+
 .markdown-page [data-native-block-row][data-block-kind="callout"],
 .markdown-page [data-native-block-row][data-block-kind="toggle"] {
-  --controls-lead: 8px;
+  --controls-lead: 4.5px;
 }
 
 .markdown-page [data-native-block-row][data-block-kind="table"] {
-  --controls-lead: 20px;
+  --controls-lead: 27px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="thematic_break"] {
+  --controls-lead: 8px;
 }
 
 .editor-leading-compact .markdown-page {

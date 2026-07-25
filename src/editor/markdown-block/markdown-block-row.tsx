@@ -677,7 +677,7 @@ export function MarkdownBlockRow({
       ref={rowRef}
       // Hover tint and selection fill are drawn by `[data-native-block-row]::after` in editor.css
       // so they stay inside the content rail and never bleed across the control gutter.
-      className="group/native-block relative flex min-h-9 items-start gap-1 rounded-md py-0.5 pl-1 pr-1"
+      className="group/native-block relative flex min-h-9 items-start gap-[6px] rounded-md py-0.5 pl-1 pr-1"
       data-block-id={block.id}
       data-block-kind={block.kind}
       data-block-level={block.level}
@@ -736,7 +736,7 @@ export function MarkdownBlockRow({
       <div
         data-native-block-controls
         // Reveal/hide timing and first-line alignment live in editor.css.
-        className="flex w-14 shrink-0 items-start justify-end"
+        className="flex w-[54px] shrink-0 items-start justify-end"
         onPointerDownCapture={(event) => {
           const target = event.target as HTMLElement;
           if (target.closest('button[aria-label="Block actions"]')) {
@@ -1628,8 +1628,15 @@ function BlockPreview({
       .map((line) => line.replace(/^ {0,3}>[ \t]?/, ""))
       .join("\n");
     return (
-      <blockquote className="min-h-9 whitespace-pre-wrap border-l-4 border-muted-foreground/35 px-3 py-1 text-base italic leading-7 text-muted-foreground">
-        {text ? <InlineMarkdownPreview source={text} onOpenWikiLink={onOpenWikiLink} /> : " "}
+      // Chrome is byte-identical to `activeEditorSurfaceClass`'s blockquote arm. Previously the
+      // preview drew a 4px muted bar around 13px italic grey text while the editing surface drew a
+      // 3px foreground bar around 16px upright body text, so clicking a quote changed six things at
+      // once. Notion and Feishu both keep a quote at body size and upright.
+      <blockquote
+        data-editor-kind="blockquote"
+        className="min-h-9 whitespace-pre-wrap border-l-[3px] border-foreground py-1 pl-[14px] pr-0"
+      >
+        {text ? <InlineMarkdownPreview source={text} onOpenWikiLink={onOpenWikiLink} /> : null}
       </blockquote>
     );
   }

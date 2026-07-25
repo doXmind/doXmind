@@ -77,3 +77,47 @@ surface inherits `.markdown-page`'s 16px, so clicking a paragraph jumped it a wh
 reflowed the Page. Previews now carry the same `data-editor-kind`/`data-editor-level` attributes as
 the editing surface and both are sized once in `editor.css`. Do not reintroduce `text-*` utilities
 inside `BlockPreview`.
+
+## Verified in the running app (2026-07-24)
+
+Measured with a seeded 19-Block fixture covering every kind, in Chrome at 1440×1000.
+
+**Gutter geometry** — `+` 24×24, grip 24×24 (Notion: 24×24 and 18×24; the grip is kept square so
+the drag target is not the smallest thing on the row). Grip right edge to first glyph: **10px
+exactly**, matching Notion. Cluster is right-aligned in a 54px gutter with a 6px row gap, which is
+what keeps `--editor-content-rail` a round 4rem.
+
+**Control alignment to the Block's first text line** — measured `controlCentre − textCentre` per
+kind, after correcting `--controls-lead` against these numbers rather than trusting the arithmetic
+(the arithmetic alone was 3-24px out because container kinds add their own chrome):
+
+| kind                      | before             | after             |
+| ------------------------- | ------------------ | ----------------- |
+| paragraph, all list kinds | −4.0               | 0.0               |
+| heading 1 / 2 / 3         | −3.3 / −3.5 / −2.8 | +0.3 / 0.0 / +0.3 |
+| blockquote                | +0.5               | +0.5              |
+| fenced code               | +2.5               | 0.0               |
+| table                     | −5.0               | 0.0               |
+| block math                | −13.7              | +0.3              |
+| callout                   | +5.5               | 0.0               |
+
+**Hover band** — zero vertical gap between all 19 consecutive row boxes, so no pointer dead band
+exists anywhere in the column. Controls at rest: `opacity: 0`, `pointer-events: none`,
+`transition: opacity 110ms ease-out 90ms`; on hover `transition-duration: 0ms` — instant in,
+forgiving out. Button feedback `0.02s`, radius `4px` — both Notion's measured values.
+
+**Activation parity** — clicking into a Block must move nothing. Measured box x, first-glyph x,
+font-size, line-height, font-style, colour and border width before and after activation for all 18
+editable kinds: **17 report zero change on every axis.** The one exception is `block_math`
+(16px→12px), which is intentional: the content itself changes from rendered KaTeX to LaTeX source,
+and both Notion and Feishu also switch to a small mono input there.
+
+### Known gaps, measured not guessed
+
+- Fenced code previews still print their ``` delimiter lines, and there is no syntax highlighting or
+  language picker. Notion and Feishu show neither delimiter.
+- Inline `code` renders at 12px inside 16px text because `globals.css` routes `.markdown-page code`
+  to the chrome code-font slider. Deliberate product wiring, but it reads as shrunken next to body
+  text; revisit as a product decision, not a bug fix.
+- Callouts render a `CALLOUT` text label rather than a type icon and accent colour.
+- Tables are read-only; no cell navigation or row/column controls.
