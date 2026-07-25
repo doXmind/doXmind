@@ -111,6 +111,10 @@ export function InlineFormatToolbar({
       role="toolbar"
       aria-label="Text formatting"
       aria-orientation="horizontal"
+      // Portalled onto `document.body` when positioned, so the runtime's "pressed outside the
+      // editor, release the caret" listener has to skip it or formatting would tear down the Block
+      // whose text it is formatting.
+      data-native-editor-overlay
       style={positionStyle}
       className={cn(
         "z-50 flex h-10 items-center gap-0.5 rounded-xl border border-border/80 bg-popover/95 p-1 text-popover-foreground shadow-xl backdrop-blur-xl",

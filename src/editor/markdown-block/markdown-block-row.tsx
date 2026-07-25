@@ -802,8 +802,9 @@ export function MarkdownBlockRow({
   return (
     <div
       ref={rowRef}
-      // Hover tint and selection fill are drawn by `[data-native-block-row]::after` in editor.css
-      // so they stay inside the content rail and never bleed across the control gutter.
+      // The selection fill is drawn by `[data-native-block-row]::after` in editor.css so it starts
+      // at the content rail and never bleeds across the control gutter. Hovering paints nothing —
+      // see the note there for why the tint that used to live on that pseudo-element is gone.
       className="group/native-block relative flex min-h-9 items-start gap-[6px] rounded-md py-0.5 pl-1 pr-1"
       data-block-id={block.id}
       data-block-kind={block.kind}
@@ -1135,6 +1136,9 @@ export function MarkdownBlockRow({
                     ref={slashListRef}
                     role="listbox"
                     aria-label="Block commands"
+                    // Portalled onto `document.body`, so the runtime's "pressed outside the editor,
+                    // release the caret" listener would otherwise close the Block this panel edits.
+                    data-native-editor-overlay
                     style={{
                       position: "fixed",
                       top: slashPosition.top,

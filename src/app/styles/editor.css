@@ -81,10 +81,20 @@
 }
 
 /*
- * Hover tint and selection fill.
+ * Selection fill.
  *
- * Both are drawn on one pseudo-element confined to the content rail, so neither bleeds across the
- * control gutter (Notion tints nothing at all on a text Block; Feishu tints only the Block box).
+ * There is deliberately no hover tint. This pseudo-element used to paint one, and it was the single
+ * worst thing about the Block feel: bounded on the left by the content rail but running to
+ * `right: 0`, it turned every hovered row into a band the full width of the content column —
+ * measured at 1016×40px over a six-character paragraph, 73% of the row's pixels changing on hover.
+ * A six-character paragraph advertising a metre-wide button reads as the Block inflating, and it
+ * fires from anywhere in the row including the gutter.
+ *
+ * Neither reference product does that. Notion paints nothing at all on a text Block, and Feishu
+ * tints the Block box only. Picking Feishu's tint but stretching it across Notion's full column got
+ * us the behaviour of neither. The gutter controls appearing (below) are the whole hover
+ * affordance, which is exactly what Notion relies on.
+ *
  * `top: -1px / bottom: -1px` bridges the 2px inter-row gap so a multi-Block selection reads as one
  * continuous band instead of a stack of chips.
  */
@@ -97,14 +107,6 @@
   border-radius: 3px;
   content: "";
   pointer-events: none;
-}
-
-.markdown-page
-  > [data-native-block-row]:hover:not([data-active="true"]):not([data-block-selected])::after {
-  /* 80ms in, no delay: hover feedback has to feel like a state, not an animation. Notion uses
-   * 20ms on its own controls; anything near Tailwind's default 150ms reads as lag. */
-  background: hsl(var(--foreground) / 0.028);
-  transition: background-color 80ms ease-out;
 }
 
 .markdown-page > [data-native-block-row][data-block-selected="true"]::after {
@@ -432,7 +434,11 @@
   /* Let the browser size the field. The JS autosizer wrote `height: 0px`, read `scrollHeight`,
    * then wrote the real height — two forced full-page layouts per keystroke. */
   field-sizing: content;
-  min-height: 1.75rem;
+  /* One line of *this* surface's text, not one line of body text. As a fixed 1.75rem this was a
+   * no-op for 28px prose and a 10.6px inflation for a 12px/17.4px code Block, so focusing a code
+   * Block grew it and pushed the rest of the Page down — measured at +10.61px, which is exactly
+   * 28 - 17.4. */
+  min-height: 1lh;
   margin: 0;
   padding: 0;
   border: 0;

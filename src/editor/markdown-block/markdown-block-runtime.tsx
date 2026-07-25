@@ -1026,11 +1026,31 @@ export function MarkdownBlockRuntime({
   );
 
   /**
-   * Clicks that land on the Page but not on a Block.
+   * Presses that land in the editor but not on a Block.
    *
    * Notion and Feishu both treat the empty space below the last Block as a click-to-append target,
    * and both clear a stale Block selection when you click away. Without either, a click in the
    * margin left the selection highlighted and the keyboard dead.
+   *
+   * They also both *release* the caret. We did not: `activeBlockId` was only ever cleared by a
+   * pointer sweep of more than 4px, so a plain click anywhere off a Block left the pressed Block
+   * still rendering its editing surface — visibly mid-edit, with its language chip and raw
+   * delimiters showing — while `document.activeElement` had already fallen back to `<body>`. The
+   * Block looked focused and was not. Every way out was affected: the page margins, the space below
+   * the document, the chrome spacer, and Escape.
+   *
+   * Bound to the scroll container rather than to `.markdown-page`, because the frame is narrower
+   * than the viewport and centred, so the margins either side of it are not inside the Page at all
+   * and a press there used to reach no handler. Portalled UI — the slash panel, the inline toolbar,
+   * the Block menu — hangs off `document.body`, outside this container, so those never trip it and
+   * need no exception here.
+   *
+   * Releasing the caret is safe anywhere in that viewport. Arming a marquee and appending a Block
+   * are not, so both stay confined to the Page exactly as they were before the binding moved. That
+   * confinement is load-bearing, not tidiness: with the append reachable from the right-hand margin,
+   * one click 60px below a one-line Page appended an empty paragraph and autosave wrote it to disk —
+   * measured, `"Only paragraph.\n"` became `"Only paragraph.\n\n"`. Clicking away must never edit
+   * the file.
    */
   const handleDocumentPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1038,8 +1058,33 @@ export function MarkdownBlockRuntime({
       // as primary rather than being silently ignored.
       if (event.button > 0) return;
       const target = event.target as HTMLElement | null;
+      // React routes an event out of a portal up the *component* tree, not the DOM tree. The slash
+      // panel and the inline format toolbar are both `createPortal(…, document.body)` from inside a
+      // row, so their presses arrive here as though they were children of the Page while their DOM
+      // ancestors are `<body>` — which means no `[data-block-id]` to recognise them by. Releasing
+      // the caret on one tore the editing surface out from under the toolbar that was formatting it:
+      // clicking Bold deactivated the Block and applied nothing.
+      if (target?.closest("[data-native-editor-overlay], [data-radix-popper-content-wrapper]")) {
+        return;
+      }
+      // A classic (layout-occupying) scrollbar belongs to the scroll container, so a press on the
+      // thumb targets it with an offset past its content box. Dragging to scroll must not cost the
+      // caret. Where scrollbars are overlays `clientWidth` equals the border box and this can never
+      // match, so it costs nothing there.
+      if (
+        target &&
+        target === scrollElementRef.current &&
+        (event.nativeEvent.offsetX >= target.clientWidth ||
+          event.nativeEvent.offsetY >= target.clientHeight)
+      ) {
+        return;
+      }
+      const insidePage = !!target && !!documentElementRef.current?.contains(target);
       // Chrome for the Block itself owns its own gestures; a press there is not a selection sweep.
-      if (!target?.closest("[data-native-block-controls], a, button, input, label, summary")) {
+      if (
+        insidePage &&
+        !target?.closest("[data-native-block-controls], a, button, input, label, summary")
+      ) {
         pointerSelectRef.current = {
           originBlockId: target?.closest<HTMLElement>("[data-block-id]")?.dataset.blockId ?? null,
           x: event.clientX,
@@ -1049,10 +1094,15 @@ export function MarkdownBlockRuntime({
       }
       if (target?.closest("[data-block-id]")) return;
       setBlockSelection(null);
+      // Release the caret before deciding whether this press also appends. The append branch below
+      // re-assigns both, so clearing first costs it nothing.
+      setActiveBlockId(null);
+      setPendingSelection(null);
+      if (!insidePage) return;
       const blocks = documentRef.current.getSnapshot().blocks;
       const last = blocks[blocks.length - 1];
       if (!last) return;
-      const lastRow = event.currentTarget.querySelector<HTMLElement>(
+      const lastRow = documentElementRef.current?.querySelector<HTMLElement>(
         `[data-block-id="${CSS.escape(last.id)}"]`
       );
       if (!lastRow || event.clientY <= lastRow.getBoundingClientRect().bottom) return;
@@ -1069,6 +1119,37 @@ export function MarkdownBlockRuntime({
     },
     [apply]
   );
+
+  /**
+   * Releasing the caret when the press lands outside the editor altogether.
+   *
+   * The container handler above only sees presses inside the scroll area, so clicking the file
+   * sidebar or the window chrome still left the Block rendering its editing surface. Portalled
+   * editor UI — the slash panel, the inline format toolbar, every Radix menu — mounts on
+   * `document.body` and so counts as "outside" by DOM position while being very much inside the
+   * gesture; each has to be exempted or opening a Block menu would tear down the Block it acts on.
+   *
+   * Only the caret is released here. A Block *selection* is left alone: its toolbar lives inside
+   * the runtime and the in-editor handler already clears it, so touching it from here would only
+   * add ways for a selection to disappear from under its own buttons.
+   */
+  useEffect(() => {
+    const releaseCaret = (event: PointerEvent) => {
+      if (event.button > 0) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest(
+          "[data-native-markdown-runtime], [data-native-editor-overlay], [data-radix-popper-content-wrapper]"
+        )
+      ) {
+        return;
+      }
+      setActiveBlockId(null);
+      setPendingSelection(null);
+    };
+    document.addEventListener("pointerdown", releaseCaret);
+    return () => document.removeEventListener("pointerdown", releaseCaret);
+  }, []);
 
   useEffect(() => {
     if (!blockSelection) {
@@ -1899,6 +1980,7 @@ export function MarkdownBlockRuntime({
         ref={scrollElementRef}
         className="min-h-0 flex-1 overflow-y-auto"
         data-native-markdown-scroll
+        onPointerDown={handleDocumentPointerDown}
         onDragOver={handleBlockDragOver}
         onDrop={handleBlockDrop}
       >
@@ -1919,7 +2001,6 @@ export function MarkdownBlockRuntime({
             data-native-markdown-document
             data-file-id={file.id}
             data-revision={snapshot.revision}
-            onPointerDown={handleDocumentPointerDown}
             onCopy={(event) => {
               if (!blockSelection) return;
               const selectedIds = new Set(

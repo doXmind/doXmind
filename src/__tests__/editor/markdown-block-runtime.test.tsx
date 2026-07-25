@@ -2473,6 +2473,40 @@ describe("MarkdownBlockRuntime", () => {
     expect(container.querySelector("[data-native-block-marquee]")).not.toBeInTheDocument();
   });
 
+  it("releases the caret when a press lands outside every Block", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
+    );
+    fireEvent.click(screen.getByText("First"));
+    expect(container.querySelector('[data-native-block-row][data-active="true"]')).toBeTruthy();
+    expect(container.querySelector("[data-native-block-edit-surface]")).toBeInTheDocument();
+
+    // The scroll container is an ancestor of the Page, so this is the margin beside the frame —
+    // where the caret used to survive indefinitely, leaving the Block visibly mid-edit while
+    // `document.activeElement` had already fallen back to the body.
+    const scroll = container.querySelector<HTMLElement>("[data-native-markdown-scroll]")!;
+    firePointerAt(scroll, "pointerDown", 20, 110);
+
+    expect(container.querySelector('[data-native-block-row][data-active="true"]')).toBeNull();
+    expect(container.querySelector("[data-native-block-edit-surface]")).not.toBeInTheDocument();
+  });
+
+  it("never appends a Block from a press outside the Page", () => {
+    const { container } = render(<MarkdownBlockRuntime file={{ ...file, content: "Only\n" }} />);
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    stackRowRects(rows);
+    fireEvent.click(screen.getByText("Only"));
+
+    // Below the last row, but in the margin rather than in the Page. Reaching the append from here
+    // wrote an empty paragraph to disk: `"Only paragraph.\n"` became `"Only paragraph.\n\n"` in the
+    // browser, from a single click meant only to deselect.
+    const scroll = container.querySelector<HTMLElement>("[data-native-markdown-scroll]")!;
+    firePointerAt(scroll, "pointerDown", 900, 400);
+
+    expect(container.querySelectorAll("[data-native-block-row]")).toHaveLength(rows.length);
+    expect(container.querySelector('[data-native-block-row][data-active="true"]')).toBeNull();
+  });
+
   it("replaces a Block selection with the typed character in one undo step", () => {
     const { container } = render(
       <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />
