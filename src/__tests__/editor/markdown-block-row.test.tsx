@@ -675,6 +675,82 @@ describe("MarkdownBlockRow semantic previews", () => {
     expect(onSetCodeLanguage).toHaveBeenCalledWith(block.id, "python");
   });
 
+  it.each([
+    ["b", {}, "bold"],
+    ["i", {}, "italic"],
+    ["e", {}, "code"],
+    ["x", { shiftKey: true }, "strike"],
+  ] as const)("applies %s as an inline format shortcut", (key, extra, format) => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("Read the docs\n").getSnapshot().blocks;
+    const onApplyInlineFormat = vi.fn();
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active
+        {...slashHandlers()}
+        onApplyInlineFormat={onApplyInlineFormat}
+      />
+    );
+
+    const textarea = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Markdown block" });
+    textarea.setSelectionRange(9, 13);
+    const event = createEvent.keyDown(textarea, { key, metaKey: true, ...extra });
+    fireEvent(textarea, event);
+    // Both flags matter: the window handler owns Mod+K and the app menu binds Mod+B, so one
+    // keystroke must not also fire something else.
+    expect(event.defaultPrevented).toBe(true);
+    expect(onApplyInlineFormat).toHaveBeenCalledWith(block.id, 9, 13, format);
+  });
+
+  it("opens a link editor on Mod+K and commits a real destination", async () => {
+    const user = userEvent.setup();
+    const [block] = MarkdownBlockDocument.fromMarkdown("Read the docs\n").getSnapshot().blocks;
+    const onEditLink = vi.fn();
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active
+        {...slashHandlers()}
+        onEditLink={onEditLink}
+      />
+    );
+
+    const textarea = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Markdown block" });
+    textarea.setSelectionRange(9, 13);
+    fireEvent.keyDown(textarea, { key: "k", metaKey: true });
+
+    const field = screen.getByRole("textbox", { name: "Link URL" });
+    await user.type(field, "https://example.com{Enter}");
+    expect(onEditLink).toHaveBeenCalledWith(block.id, 9, 13, "https://example.com");
+    expect(screen.queryByRole("textbox", { name: "Link URL" })).not.toBeInTheDocument();
+  });
+
+  it("prefills the link editor from the link the selection sits inside", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown(
+      "see [docs](https://old.example) now\n"
+    ).getSnapshot().blocks;
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active
+        selection={{ anchor: 6, head: 6 }}
+        {...slashHandlers()}
+        onEditLink={vi.fn()}
+      />
+    );
+
+    const editor = screen.getByRole("textbox", { name: "Markdown block" });
+    // A collapsed caret inside the link is enough: Mod+K there edits its destination.
+    fireEvent.keyDown(editor, { key: "k", metaKey: true });
+    expect(screen.getByRole("textbox", { name: "Link URL" })).toHaveValue("https://old.example");
+  });
+
   it("keeps a semantic print preview beside the active source control", () => {
     const [block] =
       MarkdownBlockDocument.fromMarkdown("# Printable heading\n").getSnapshot().blocks;

@@ -35,7 +35,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { createMarkdownInlineFormatEdit } from "@/editor/markdown-block/markdown-inline-format";
+import {
+  createMarkdownInlineFormatEdit,
+  createMarkdownLinkEdit,
+} from "@/editor/markdown-block/markdown-inline-format";
 import { editableMarkdownBlockSource } from "@/editor/markdown-block/markdown-block-source";
 import {
   MarkdownBlockRow,
@@ -2129,6 +2132,31 @@ export function MarkdownBlockRuntime({
                     createBlockEditingProjection(current).editorText
                   );
                   const edit = createMarkdownInlineFormatEdit(editorSource, from, to, format);
+                  if (!edit) return;
+                  const lineEnding = preferredSourceLineEnding(current.raw, snapshot.markdown);
+                  const result = documentRef.current.apply({
+                    type: "replaceText",
+                    blockId,
+                    range: {
+                      from: blockSourceOffsetForEditorOffset(current, edit.from),
+                      to: blockSourceOffsetForEditorOffset(current, edit.to),
+                    },
+                    text: edit.text.replace(/\n/g, lineEnding),
+                  });
+                  publish(result, false);
+                  setActiveBlockId(blockId);
+                  setBlockSelection(null);
+                  setPendingSelection({ blockId, ...edit.selection });
+                }}
+                onEditLink={(blockId, from, to, url) => {
+                  const current = documentRef.current
+                    .getSnapshot()
+                    .blocks.find((candidate) => candidate.id === blockId);
+                  if (!current) return;
+                  const editorSource = normalizeEditorLineEndings(
+                    createBlockEditingProjection(current).editorText
+                  );
+                  const edit = createMarkdownLinkEdit(editorSource, from, to, url);
                   if (!edit) return;
                   const lineEnding = preferredSourceLineEnding(current.raw, snapshot.markdown);
                   const result = documentRef.current.apply({

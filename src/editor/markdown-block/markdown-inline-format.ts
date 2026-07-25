@@ -133,6 +133,7 @@ function createLinkEdit(source: string, from: number, to: number): MarkdownInlin
   const close = linkCloseAfter(source, to);
   if (isImageLabel(source, from) && close !== null) return null;
   if (from > 0 && source[from - 1] === "[" && !isImageLabel(source, from) && close !== null) {
+    // Toggling off an existing link unwraps it back to its label.
     return {
       from: from - 1,
       to: close,
@@ -140,12 +141,56 @@ function createLinkEdit(source: string, from: number, to: number): MarkdownInlin
       selection: { anchor: from - 1, head: from - 1 + selected.length },
     };
   }
+  // Applying a link needs a destination, which only the user has. `createMarkdownLinkEdit` takes
+  // one; writing `[label](https://)` here produced a link that goes nowhere and, worse, put the
+  // selection over the label so the next keystroke rewrote the text instead of the URL.
+  return null;
+}
+
+/**
+ * Wrap a selection in a link with a real destination.
+ *
+ * Separate from the toggle path in `createMarkdownInlineFormatEdit` because applying a link is the
+ * one inline format that needs input beyond the selection itself.
+ */
+export function createMarkdownLinkEdit(
+  source: string,
+  from: number,
+  to: number,
+  url: string
+): MarkdownInlineFormatEdit | null {
+  if (from < 0 || to < from || to > source.length) return null;
+  const destination = url.trim();
+  if (!destination) return null;
+  const selected = source.slice(from, to);
+  if (hasUnescapedCharacter(selected, "]")) return null;
+  if (inlineCodeSpanOverlappingSelection(source, from, to)) return null;
+  const existing = inlineResourceOverlappingSelection(source, from, to);
+  if (existing) {
+    // Retarget a link the selection already sits inside, rather than nesting one inside another.
+    if (existing.kind === "image") return null;
+    const label = source.slice(existing.labelFrom, existing.labelTo);
+    const text = `[${label}](${encodeLinkDestination(destination)})`;
+    return {
+      from: existing.from,
+      to: existing.to,
+      text,
+      selection: { anchor: existing.from, head: existing.from + text.length },
+    };
+  }
+  const label = selected || destination;
+  const text = `[${label}](${encodeLinkDestination(destination)})`;
   return {
     from,
     to,
-    text: `[${selected}](https://)`,
-    selection: { anchor: from + 1, head: to + 1 },
+    text,
+    selection: { anchor: from + 1, head: from + 1 + label.length },
   };
+}
+
+/** Wrap a destination in angle brackets when it contains characters that would end it early. */
+function encodeLinkDestination(url: string): string {
+  return /[\s()<>]/.test(url) ? `<${url.replace(/[<>]/g, "")}>` : url;
 }
 
 function isImageLabel(source: string, from: number): boolean {

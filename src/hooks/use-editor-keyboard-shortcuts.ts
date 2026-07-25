@@ -9,8 +9,8 @@ import { useLayoutStore } from "@/stores/layout-store";
  * Handles:
  * - Ctrl+? / Cmd+? - Toggle keyboard shortcuts modal
  * - Ctrl+K / Cmd+K - Toggle command palette. With text selected in the editor
- *   this never fires: the editor claims the key first and adds a link instead,
- *   which is what the bubble menu and the shortcuts panel advertise.
+ *   this never fires: the editor stops the event and opens its link editor
+ *   instead, which is what the bubble menu and the shortcuts panel advertise.
  * - Ctrl+F / Cmd+F - Find in document
  */
 export function useEditorKeyboardShortcuts() {
@@ -34,6 +34,19 @@ export function useEditorKeyboardShortcuts() {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "?") {
         e.preventDefault();
         setKeyboardShortcutsOpen(!isKeyboardShortcutsOpen);
+        return;
+      }
+
+      // The editor claims a few Mod shortcuts when a text selection is live — Mod+K adds a link,
+      // Mod+B/I/E apply marks — and signals that by calling `stopPropagation` and `preventDefault`.
+      // Honouring `defaultPrevented` here is what stops one keystroke doing two things.
+      if (e.defaultPrevented) return;
+
+      // Ctrl+B or Cmd+B - Toggle the files sidebar. Owned here rather than by a main-process
+      // accelerator so the editor can claim it for bold while text is selected.
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        useLayoutStore.getState().toggleFilesSidebar();
         return;
       }
 

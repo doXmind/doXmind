@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Loader2, type LucideIcon } from "lucide-react";
+import { FileText, Link as LinkIcon, Loader2, type LucideIcon } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { createPortal } from "react-dom";
 import {
@@ -105,6 +105,8 @@ interface MarkdownBlockRowProps {
     to: number,
     format: MarkdownInlineFormat
   ) => void;
+  /** Commits a link with a destination the user typed, over the given source range. */
+  onEditLink?: (blockId: string, from: number, to: number, url: string) => void;
   onImportImages?: (blockId: string, from: number, to: number, files: readonly File[]) => void;
   onCompositionStart: (blockId: string) => void;
   onCompositionEnd: (blockId: string) => void;
@@ -181,6 +183,7 @@ export function MarkdownBlockRow({
   onChange,
   onPaste,
   onApplyInlineFormat,
+  onEditLink,
   onImportImages,
   onCompositionStart,
   onCompositionEnd,
@@ -230,6 +233,12 @@ export function MarkdownBlockRow({
   const [dismissedSlashStart, setDismissedSlashStart] = useState<number | null>(null);
   const [slashPosition, setSlashPosition] = useState<SlashMenuPosition | null>(null);
   const slashListRef = useRef<HTMLDivElement>(null);
+  const [linkEditor, setLinkEditor] = useState<{
+    from: number;
+    to: number;
+    url: string;
+    position: { top: number; left: number };
+  } | null>(null);
   const [inlineSelection, setInlineSelection] = useState<{
     from: number;
     to: number;
@@ -441,6 +450,30 @@ export function MarkdownBlockRow({
       event.preventDefault();
       onSelectBlock?.(block.id);
       return;
+    }
+    if ((event.metaKey || event.ctrlKey) && !event.altKey) {
+      // Inline formatting shortcuts. `stopPropagation` matters as much as `preventDefault`: the
+      // window-level handler owns Mod+K for the command palette and the app menu shows Mod+B for
+      // the sidebar, so without it one keystroke would fire two things.
+      const shortcut = inlineFormatShortcut(event);
+      // Mod+K also works from a collapsed caret inside an existing link, which is how you edit its
+      // destination. Every other format needs something selected to act on.
+      if (
+        shortcut === "link" &&
+        onEditLink &&
+        (from < to || existingLinkDestination(source, from, to))
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        openLinkEditor(from, to);
+        return;
+      }
+      if (shortcut && shortcut !== "link" && onApplyInlineFormat && from < to) {
+        event.preventDefault();
+        event.stopPropagation();
+        onApplyInlineFormat(block.id, from, to, shortcut);
+        return;
+      }
     }
     if (
       (event.metaKey || event.ctrlKey) &&
@@ -699,6 +732,23 @@ export function MarkdownBlockRow({
       to,
       position: domSelectionToolbarPosition(editor),
     });
+  };
+
+  /**
+   * Open the link editor over a selection.
+   *
+   * Prefilled from the link the selection already sits inside, so Mod+K on an existing link edits
+   * its destination instead of nesting a new link inside it.
+   */
+  const openLinkEditor = (from: number, to: number) => {
+    const surface = rowRef.current?.querySelector<HTMLElement>("[data-native-block-editor]");
+    const position = surface
+      ? surface instanceof HTMLTextAreaElement
+        ? textareaSelectionToolbarPosition(surface, from, to)
+        : domSelectionToolbarPosition(surface)
+      : { top: 0, left: 0 };
+    setInlineSelection(null);
+    setLinkEditor({ from, to, url: existingLinkDestination(source, from, to), position });
   };
 
   const openBlockActionsMenu = () => {
@@ -961,6 +1011,17 @@ export function MarkdownBlockRow({
                 />
               )}
             </div>
+            {linkEditor ? (
+              <LinkEditPopover
+                url={linkEditor.url}
+                position={linkEditor.position}
+                onCancel={() => setLinkEditor(null)}
+                onCommit={(url) => {
+                  setLinkEditor(null);
+                  if (url.trim()) onEditLink?.(block.id, linkEditor.from, linkEditor.to, url);
+                }}
+              />
+            ) : null}
             <InlineFormatToolbar
               visible={inlineSelection !== null}
               position={inlineSelection?.position}
@@ -1004,10 +1065,7 @@ export function MarkdownBlockRow({
                 }
               }}
               onLink={() => {
-                if (inlineSelection) {
-                  onApplyInlineFormat?.(block.id, inlineSelection.from, inlineSelection.to, "link");
-                  setInlineSelection(null);
-                }
+                if (inlineSelection) openLinkEditor(inlineSelection.from, inlineSelection.to);
               }}
               onCode={() => {
                 if (inlineSelection) {
@@ -1274,6 +1332,98 @@ function autosizeTextarea(textarea: HTMLTextAreaElement): void {
   textarea.style.height = "auto";
   const next = `${Math.max(textarea.scrollHeight, 36)}px`;
   if (textarea.style.height !== next) textarea.style.height = next;
+}
+
+/** Destination of the link the selection already sits inside, or "" when there is none. */
+function existingLinkDestination(source: string, from: number, to: number): string {
+  const pattern = /\[(?:\\.|[^\]\\])*\]\(([^)]*)\)/g;
+  for (let match = pattern.exec(source); match; match = pattern.exec(source)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (from >= start && to <= end) return match[1].replace(/^<|>$/g, "");
+  }
+  return "";
+}
+
+/**
+ * A small popover for a link's destination.
+ *
+ * The toolbar's Link button used to write `[label](https://)` straight into the source: a link that
+ * goes nowhere, with the selection left over the *label*, so the next keystroke rewrote the text
+ * instead of the URL. Both reference products ask for the destination first.
+ */
+function LinkEditPopover({
+  url,
+  position,
+  onCommit,
+  onCancel,
+}: {
+  url: string;
+  position: { top: number; left: number };
+  onCommit: (url: string) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState(url);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.select();
+  }, []);
+
+  return (
+    <div
+      role="group"
+      aria-label="Link destination"
+      style={{
+        position: "fixed",
+        top: position.top - 8,
+        left: position.left,
+        transform: "translate(-50%, -100%)",
+        zIndex: 50,
+      }}
+      className="flex h-9 items-center gap-1 rounded-[10px] bg-popover p-1 text-popover-foreground shadow-[0_20px_24px_rgba(25,25,25,0.05),0_5px_8px_rgba(25,25,25,0.027),0_0_0_1px_hsl(var(--border))]"
+    >
+      <LinkIcon className="ml-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <input
+        ref={inputRef}
+        aria-label="Link URL"
+        placeholder="Paste or type a link"
+        value={draft}
+        spellCheck={false}
+        className="h-7 w-56 bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground/70"
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Enter") {
+            event.preventDefault();
+            onCommit(draft);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            onCancel();
+          }
+        }}
+      />
+      <button
+        type="button"
+        aria-label="Apply link"
+        className="flex h-7 items-center rounded-md px-2 text-xs font-medium transition-colors duration-[20ms] ease-in hover:bg-accent hover:text-accent-foreground"
+        onClick={() => onCommit(draft)}
+      >
+        Link
+      </button>
+    </div>
+  );
+}
+
+/** Which inline format a Mod-shortcut asks for, if any. */
+function inlineFormatShortcut(event: KeyboardEvent<HTMLElement>): MarkdownInlineFormat | null {
+  const key = event.key.toLowerCase();
+  if (event.shiftKey) return key === "x" ? "strike" : null;
+  if (key === "b") return "bold";
+  if (key === "i") return "italic";
+  if (key === "e") return "code";
+  if (key === "k") return "link";
+  return null;
 }
 
 /**

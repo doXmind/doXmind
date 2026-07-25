@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createMarkdownInlineFormatEdit,
+  createMarkdownLinkEdit,
   markdownInlineFormatState,
 } from "@/editor/markdown-block/markdown-inline-format";
 
@@ -22,10 +23,14 @@ describe("Markdown inline formatting", () => {
   });
 
   it("creates portable links and code spans", () => {
-    expect(createMarkdownInlineFormatEdit("Read docs", 5, 9, "link")).toEqual({
+    // Applying a link needs a destination, which only the user has: this used to write
+    // `[docs](https://)` — a link that goes nowhere, with the selection over the label so the next
+    // keystroke rewrote the text rather than the URL.
+    expect(createMarkdownInlineFormatEdit("Read docs", 5, 9, "link")).toBeNull();
+    expect(createMarkdownLinkEdit("Read docs", 5, 9, "https://example.com")).toEqual({
       from: 5,
       to: 9,
-      text: "[docs](https://)",
+      text: "[docs](https://example.com)",
       selection: { anchor: 6, head: 10 },
     });
     expect(createMarkdownInlineFormatEdit("Use `code`", 4, 10, "code")).toEqual({
@@ -149,5 +154,37 @@ describe("Markdown inline formatting", () => {
       text: "bold",
       selection: { anchor: 2, head: 6 },
     });
+  });
+});
+
+describe("createMarkdownLinkEdit", () => {
+  it("wraps a selection with a real destination", () => {
+    expect(createMarkdownLinkEdit("see here", 4, 8, "https://example.com")).toMatchObject({
+      text: "[here](https://example.com)",
+    });
+  });
+
+  it("uses the destination as the label when nothing is selected", () => {
+    expect(createMarkdownLinkEdit("see ", 4, 4, "https://example.com")).toMatchObject({
+      text: "[https://example.com](https://example.com)",
+    });
+  });
+
+  it("retargets a link the selection already sits inside instead of nesting one", () => {
+    const source = "see [docs](https://old.example) now";
+    const edit = createMarkdownLinkEdit(source, 6, 9, "https://new.example");
+    expect(edit).toMatchObject({ from: 4, to: 31, text: "[docs](https://new.example)" });
+  });
+
+  it("angle-brackets a destination containing characters that would end it early", () => {
+    expect(createMarkdownLinkEdit("x", 0, 1, "https://e.com/a b")).toMatchObject({
+      text: "[x](<https://e.com/a b>)",
+    });
+  });
+
+  it("refuses an empty destination, a label with an unescaped bracket, and inline code", () => {
+    expect(createMarkdownLinkEdit("word", 0, 4, "   ")).toBeNull();
+    expect(createMarkdownLinkEdit("a]b", 0, 3, "https://e.com")).toBeNull();
+    expect(createMarkdownLinkEdit("`code`", 1, 5, "https://e.com")).toBeNull();
   });
 });
