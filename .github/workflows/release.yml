@@ -36,6 +36,37 @@ jobs:
           node-version: 22
           cache: npm
 
+      # Fails in seconds on a misconfigured runner instead of ten minutes later inside
+      # electron-builder. With an empty CSC_LINK, electron-builder reports only
+      # `⨯ <workspace> not a file`, which says nothing about the missing secret — three
+      # consecutive release runs failed that way before anyone read the log closely.
+      - name: Require the signing and publishing secrets
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          missing=()
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD \
+            APPLE_TEAM_ID RELEASES_TOKEN; do
+            # Presence only. A value is never echoed, so a log cannot leak a credential.
+            if [ -z "${!name}" ]; then missing+=("${name}"); fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            {
+              echo "Cannot build a signed candidate: ${#missing[@]} secret(s) are not set on this repository."
+              printf '  - %s\n' "${missing[@]}"
+              echo
+              echo "An unsigned build is never an acceptable candidate, so this stops here rather than"
+              echo "producing bytes that could not pass Gatekeeper or notarization."
+              echo "See docs/releases/README.md for how to set them."
+            } >&2
+            exit 1
+          fi
+
       - name: Require main and refuse to replace an existing candidate
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
