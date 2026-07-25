@@ -95,6 +95,8 @@ interface MarkdownBlockRowProps {
   onActivate: (blockId: string, selection?: { anchor: number; head: number }) => void;
   onSelectBlock?: (blockId: string, extend?: boolean) => void;
   onBlockSelectionKeyDown?: (blockId: string, event: KeyboardEvent<HTMLDivElement>) => void;
+  /** Grows a text selection past the Block boundary into a Block selection. */
+  onExtendSelectionToBlock?: (blockId: string, direction: -1 | 1) => boolean;
   onChange: (blockId: string, source: string) => void;
   onPaste: (blockId: string, from: number, to: number, text: string) => void;
   onApplyInlineFormat?: (
@@ -175,6 +177,7 @@ export function MarkdownBlockRow({
   onActivate,
   onSelectBlock,
   onBlockSelectionKeyDown,
+  onExtendSelectionToBlock,
   onChange,
   onPaste,
   onApplyInlineFormat,
@@ -207,7 +210,7 @@ export function MarkdownBlockRow({
   const rowRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editorId = `native-block-editor-${block.id}`;
-  const descriptionId = `native-block-description-${block.id}`;
+  const descriptionId = NATIVE_BLOCK_SHORTCUTS_ID;
   const rawSource = editableMarkdownBlockSource(block.raw);
   const editingProjection = useMemo(() => createBlockEditingProjection(block), [block]);
   const source = editingProjection.editorText;
@@ -452,12 +455,8 @@ export function MarkdownBlockRow({
         return;
       }
     }
-    if (
-      (event.metaKey || event.ctrlKey) &&
-      event.shiftKey &&
-      !event.altKey &&
-      event.key.toLowerCase() === "d"
-    ) {
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "d") {
+      // Both Mod+D (Notion, Feishu) and Mod+Shift+D (what this editor shipped) duplicate.
       event.preventDefault();
       if (!event.repeat) onDuplicate(block.id);
       return;
@@ -514,6 +513,20 @@ export function MarkdownBlockRow({
           onPaste(block.id, shifted.from, shifted.to, shifted.text);
         }
       }
+      return;
+    }
+    if (
+      onExtendSelectionToBlock &&
+      event.shiftKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      ((event.key === "ArrowUp" && visibleRange.from === 0) ||
+        (event.key === "ArrowDown" && visibleRange.to === visibleLength))
+    ) {
+      // The head has run out of text in this direction, so keep extending into the next Block.
+      const direction = event.key === "ArrowUp" ? -1 : 1;
+      if (onExtendSelectionToBlock(block.id, direction)) event.preventDefault();
       return;
     }
     if (
@@ -709,7 +722,7 @@ export function MarkdownBlockRow({
       data-drop-before={dropBefore ? "true" : undefined}
       data-controls-open={controlsMenuOpen ? "true" : undefined}
       role="group"
-      aria-label={`Block ${index + 1} of ${count}`}
+      aria-label={`${blockTypeLabel(block)}, block ${index + 1} of ${count}`}
       aria-describedby={descriptionId}
       aria-current={active ? "true" : undefined}
       tabIndex={blockSelectionFocus || (!active && block.editable && keyboardEntry) ? 0 : -1}
@@ -744,9 +757,6 @@ export function MarkdownBlockRow({
       }}
       onDrop={handleDrop}
     >
-      <span id={descriptionId} className="sr-only">
-        {`Block ${index + 1} of ${count}. Press Enter to edit. Use Alt plus Arrow keys to move, Mod plus Shift plus D to duplicate, and Mod plus Shift plus Backspace to delete.`}
-      </span>
       <div
         data-native-block-controls
         // Reveal/hide timing and first-line alignment live in editor.css.
@@ -811,7 +821,9 @@ export function MarkdownBlockRow({
           pendingClickOffsetRef.current = offset;
         }}
         onClick={(event) => {
-          if (event.shiftKey) {
+          // Inside the Block being edited, Shift+click is the browser's own "extend the text
+          // selection to here". Hijacking it tore down the editor mid-gesture.
+          if (event.shiftKey && !active) {
             event.preventDefault();
             onSelectBlock?.(block.id, true);
             return;
@@ -910,7 +922,7 @@ export function MarkdownBlockRow({
                   id={editorId}
                   aria-label="Markdown block"
                   aria-describedby={descriptionId}
-                  aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Meta+Shift+D Control+Shift+D Meta+Shift+Backspace Control+Shift+Backspace"
+                  aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Meta+D Control+D Meta+Shift+Backspace Control+Shift+Backspace"
                   data-native-block-editor
                   className={`native-block-textarea block min-w-0 flex-1 resize-none overflow-hidden bg-transparent outline-none ${
                     sourceOnly ? "font-mono" : ""
@@ -1099,6 +1111,14 @@ export function MarkdownBlockRow({
 /** `/` is the Notion trigger; `、` is the fullwidth one Feishu accepts, so a CJK keyboard needs no
  * mode switch to reach the menu. */
 const SLASH_TRIGGER_PATTERN = /[/、]/;
+
+/**
+ * Id of the one shortcut legend, rendered by the runtime.
+ *
+ * Every row used to render its own copy in an `sr-only` span. A DOM Range spanning two rows picked
+ * those up, so copying across Blocks pasted "Press Enter to edit…" into the user's clipboard.
+ */
+export const NATIVE_BLOCK_SHORTCUTS_ID = "native-block-shortcuts";
 
 export interface MarkdownSlashRun {
   /** Offset of the trigger character in the Block's editor source. */

@@ -87,7 +87,7 @@ describe("MarkdownBlockRow semantic previews", () => {
 
     render(<MarkdownBlockRow {...props} />);
 
-    const row = screen.getByRole("group", { name: "Block 1 of 2" });
+    const row = screen.getByRole("group", { name: "Text, block 1 of 2" });
     expect(row).toHaveAttribute("tabindex", "0");
     expect(row).toHaveAttribute("data-active", "false");
     expect(screen.getByRole("button", { name: "Add block" })).toHaveAttribute("tabindex", "-1");
@@ -128,7 +128,7 @@ describe("MarkdownBlockRow semantic previews", () => {
       />
     );
 
-    const row = screen.getByRole("group", { name: "Block 1 of 2" });
+    const row = screen.getByRole("group", { name: "Text, block 1 of 2" });
     const add = screen.getByRole("button", { name: "Add block" });
     const handle = screen.getByRole("button", { name: "Block actions" });
     const textarea = screen.getByRole("textbox", { name: "Markdown block" });
@@ -137,7 +137,7 @@ describe("MarkdownBlockRow semantic previews", () => {
     expect(textarea).toHaveFocus();
     expect(textarea).toHaveAttribute(
       "aria-keyshortcuts",
-      "Alt+ArrowUp Alt+ArrowDown Meta+Shift+D Control+Shift+D Meta+Shift+Backspace Control+Shift+Backspace"
+      "Alt+ArrowUp Alt+ArrowDown Meta+D Control+D Meta+Shift+Backspace Control+Shift+Backspace"
     );
     // Tab is a structural key inside the editor (indent / insert spaces), matching Notion and
     // Feishu, so it must not walk focus out to the gutter buttons.

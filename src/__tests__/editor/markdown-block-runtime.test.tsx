@@ -1,4 +1,4 @@
-import { act, createEvent, fireEvent, render, screen } from "@testing-library/react";
+import { act, createEvent, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -63,6 +63,22 @@ function fireDragAt(
   const event = createEvent[type](target, { dataTransfer });
   Object.defineProperty(event, "clientY", { value: clientY, configurable: true });
   return fireEvent(target, event);
+}
+
+/**
+ * jsdom implements neither `DragEvent` nor `PointerEvent`, so Testing Library falls back to a plain
+ * `Event` and the coordinates never arrive. Define them explicitly.
+ */
+function firePointerAt(
+  target: Window | HTMLElement,
+  type: "pointerDown" | "pointerMove" | "pointerUp",
+  clientX: number,
+  clientY: number
+) {
+  const event = createEvent[type](target as Element, { button: 0 });
+  Object.defineProperty(event, "clientX", { value: clientX, configurable: true });
+  Object.defineProperty(event, "clientY", { value: clientY, configurable: true });
+  return fireEvent(target as Element, event);
 }
 
 /** Stack rows vertically so the drop-boundary table has real geometry to pick from. */
@@ -705,7 +721,7 @@ describe("MarkdownBlockRuntime", () => {
   it("keeps only one inactive Block in the document tab order", () => {
     render(<MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />);
 
-    const rows = screen.getAllByRole("group", { name: /Block \d of 3/ });
+    const rows = screen.getAllByRole("group", { name: /block \d of 3/ });
     expect(rows.map((row) => row.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
   });
 
@@ -1387,7 +1403,7 @@ describe("MarkdownBlockRuntime", () => {
           })
         ).toBe(false);
       } else {
-        const row = screen.getByRole("group", { name: "Block 1 of 1" });
+        const row = screen.getByRole("group", { name: "Text, block 1 of 1" });
         expect(
           fireEvent.drop(row, {
             dataTransfer: {
@@ -2406,6 +2422,127 @@ describe("MarkdownBlockRuntime", () => {
       expect.objectContaining({ content: "Third\n\nFirst\n\nSecond\n\nFourth\n" })
     );
     expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+  });
+
+  it("turns a cross-Block pointer drag into a Block selection", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />
+    );
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    stackRowRects(rows);
+
+    // Press inside "First" at y=110, sweep to y=195 — a band that covers all three rows.
+    firePointerAt(rows[0], "pointerDown", 300, 110);
+    firePointerAt(window, "pointerMove", 300, 195);
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(3);
+    expect(container.querySelector(".markdown-page")).toHaveAttribute("data-block-marquee", "true");
+    // No marquee rectangle: the sweep started on a Block, so only the fill is shown.
+    expect(container.querySelector("[data-native-block-marquee]")).not.toBeInTheDocument();
+
+    fireEvent.pointerUp(window);
+    expect(container.querySelector(".markdown-page")).not.toHaveAttribute("data-block-marquee");
+  });
+
+  it("leaves a sweep inside one Block to the browser's own text selection", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
+    );
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    stackRowRects(rows);
+
+    firePointerAt(rows[0], "pointerDown", 300, 110);
+    firePointerAt(window, "pointerMove", 420, 120);
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(0);
+    expect(container.querySelector(".markdown-page")).not.toHaveAttribute("data-block-marquee");
+    fireEvent.pointerUp(window);
+  });
+
+  it("marquee-selects from the page margin", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />
+    );
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    stackRowRects(rows);
+    const page = container.querySelector<HTMLElement>(".markdown-page")!;
+
+    firePointerAt(page, "pointerDown", 20, 105);
+    firePointerAt(window, "pointerMove", 60, 175);
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+    expect(container.querySelector("[data-native-block-marquee]")).toBeInTheDocument();
+    fireEvent.pointerUp(window);
+    expect(container.querySelector("[data-native-block-marquee]")).not.toBeInTheDocument();
+  });
+
+  it("replaces a Block selection with the typed character in one undo step", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n\nThird\n" }} />
+    );
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+
+    fireEvent.keyDown(container.querySelectorAll("[data-native-block-row]")[0], { key: "x" });
+    expect(container.querySelectorAll("[data-native-block-row]")).toHaveLength(2);
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("x");
+
+    act(() => useEditorRefStore.getState().requestUndo?.());
+    expect(container.querySelectorAll("[data-native-block-row]")).toHaveLength(3);
+  });
+
+  it("collapses a Block selection back to a caret on ArrowLeft and ArrowRight", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
+    );
+    fireEvent.click(screen.getByText("First"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+
+    fireEvent.keyDown(container.querySelectorAll("[data-native-block-row]")[0], {
+      key: "ArrowRight",
+    });
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(0);
+    const editor = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    expect(editor).toHaveValue("Second");
+    expect(editor.selectionStart).toBe("Second".length);
+  });
+
+  it("surfaces a toolbar for a multi-Block selection and acts on the whole range", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "one\n\ntwo\n\nthree\n" }} />
+    );
+    fireEvent.click(screen.getByText("one"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+    // Focus follows the selection's focus edge, so the next key goes to that row.
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown", shiftKey: true });
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(3);
+
+    const toolbar = screen.getByRole("toolbar", { name: "3 blocks selected" });
+    expect(within(toolbar).getByText("Turn into")).toBeInTheDocument();
+    expect(within(toolbar).getByText("Duplicate")).toBeInTheDocument();
+
+    fireEvent.click(within(toolbar).getByRole("button", { name: "Delete selected blocks" }));
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith("page-1", expect.objectContaining({ content: "" }));
+  });
+
+  it("keeps the shortcut legend out of a cross-Block copy", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
+    );
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    const range = document.createRange();
+    range.setStartBefore(rows[0]);
+    range.setEndAfter(rows[1]);
+    expect(range.toString()).not.toContain("Press Enter to edit");
+    // One legend for the whole document, referenced by every row.
+    expect(container.querySelectorAll("#native-block-shortcuts")).toHaveLength(1);
   });
 
   it("picks the nearest drop boundary wherever the pointer is", () => {

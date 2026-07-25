@@ -428,6 +428,11 @@
   pointer-events: none;
 }
 
+/* While a selection sweep is in flight, nothing should also be selecting text. */
+.markdown-page[data-block-marquee] {
+  user-select: none;
+}
+
 /*
  * The Block being dragged fades, so the insertion line reads as "this goes here" rather than the
  * Page having two copies of the same content.

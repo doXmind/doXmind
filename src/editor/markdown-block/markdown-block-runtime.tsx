@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronDown, ClipboardCopy, Copy, Trash2 } from "lucide-react";
 import {
   type CSSProperties,
   type DragEvent,
@@ -13,19 +14,32 @@ import {
 } from "react";
 
 import {
+  isMarkdownSourceOnlyBlockKind,
   MarkdownBlockDocument,
   type MarkdownBlockApplyResult,
   type MarkdownBlockCommand,
   type MarkdownBlockView,
+  type MarkdownSettableBlockKind,
 } from "@/editor/markdown-block/markdown-block-document";
 import {
   createBlockEditingProjection,
   splitDelimitedBlockSource,
 } from "@/editor/markdown-block/block-editing-projection";
+import {
+  BlockTypeOptionIcon,
+  TURN_INTO_OPTIONS,
+} from "@/editor/markdown-block/block-gutter-controls";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { createMarkdownInlineFormatEdit } from "@/editor/markdown-block/markdown-inline-format";
 import { editableMarkdownBlockSource } from "@/editor/markdown-block/markdown-block-source";
 import {
   MarkdownBlockRow,
+  NATIVE_BLOCK_SHORTCUTS_ID,
   sourceOffsetAtPoint,
   type MarkdownCollectionContext,
   type MarkdownImageContext,
@@ -177,6 +191,28 @@ export function MarkdownBlockRuntime({
     clientY: 0,
   });
   const dragGhostRef = useRef<HTMLElement | null>(null);
+  /**
+   * One pointer gesture, from press to release, that may become a Block selection.
+   *
+   * The browser's own text selection cannot span two Blocks here: each Block is its own editing
+   * surface, so dragging from the middle of one into another produced a range the editor could not
+   * represent and selected nothing at all. Past a 4px threshold this takes over and turns the gesture
+   * into a Block selection — starting from a Block if the press landed on one, or as a marquee if it
+   * landed in the margin.
+   */
+  const pointerSelectRef = useRef<{
+    originBlockId: string | null;
+    x: number;
+    y: number;
+    engaged: boolean;
+  } | null>(null);
+  const [marqueeRect, setMarqueeRect] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [blockSelectionAnnouncement, setBlockSelectionAnnouncement] = useState("");
   // The drag image lives in `document.body` because Chromium will not snapshot a detached node, so
   // it has to be torn down explicitly — including when the editor unmounts mid-drag.
   useEffect(
@@ -995,8 +1031,19 @@ export function MarkdownBlockRuntime({
    */
   const handleDocumentPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0) return;
+      // Primary button only. Written as `> 0` so a synthesised event with no `button` still counts
+      // as primary rather than being silently ignored.
+      if (event.button > 0) return;
       const target = event.target as HTMLElement | null;
+      // Chrome for the Block itself owns its own gestures; a press there is not a selection sweep.
+      if (!target?.closest("[data-native-block-controls], a, button, input, label, summary")) {
+        pointerSelectRef.current = {
+          originBlockId: target?.closest<HTMLElement>("[data-block-id]")?.dataset.blockId ?? null,
+          x: event.clientX,
+          y: event.clientY,
+          engaged: false,
+        };
+      }
       if (target?.closest("[data-block-id]")) return;
       setBlockSelection(null);
       const blocks = documentRef.current.getSnapshot().blocks;
@@ -1019,6 +1066,66 @@ export function MarkdownBlockRuntime({
     },
     [apply]
   );
+
+  useEffect(() => {
+    if (!blockSelection) {
+      setBlockSelectionAnnouncement("");
+      return;
+    }
+    const count = selectedBlockIdsWithSubtrees(
+      documentRef.current.getSnapshot().blocks,
+      blockSelection
+    ).length;
+    setBlockSelectionAnnouncement(count === 1 ? "1 block selected" : `${count} blocks selected`);
+  }, [blockSelection, snapshot.revision]);
+
+  /**
+   * Where to float the Block-selection toolbar: above the union of the selected rows.
+   *
+   * Recomputed from the DOM whenever the selection or the document changes, and hidden while a
+   * pointer sweep is still in flight so it cannot flicker under the cursor mid-gesture.
+   */
+  const [blockSelectionToolbar, setBlockSelectionToolbar] = useState<{
+    top: number;
+    left: number;
+    count: number;
+  } | null>(null);
+
+  // Measured after commit rather than during render: the rows have to exist before their union can
+  // be read, and reading layout from a render pass is how you get a frame of stale geometry.
+  useEffect(() => {
+    const host = documentElementRef.current;
+    if (!blockSelection || marqueeRect || !host || typeof CSS === "undefined") {
+      setBlockSelectionToolbar(null);
+      return;
+    }
+    const ids = selectedBlockIdsWithSubtrees(
+      documentRef.current.getSnapshot().blocks,
+      blockSelection
+    );
+    if (ids.length < 2) {
+      setBlockSelectionToolbar(null);
+      return;
+    }
+    let top = Number.POSITIVE_INFINITY;
+    let left = Number.POSITIVE_INFINITY;
+    let right = Number.NEGATIVE_INFINITY;
+    for (const id of ids) {
+      const rect = host
+        .querySelector<HTMLElement>(`[data-block-id="${CSS.escape(id)}"]`)
+        ?.getBoundingClientRect();
+      if (!rect) continue;
+      top = Math.min(top, rect.top);
+      left = Math.min(left, rect.left);
+      right = Math.max(right, rect.right);
+    }
+    setBlockSelectionToolbar(
+      Number.isFinite(top) && Number.isFinite(left)
+        ? { top, left: (left + right) / 2, count: ids.length }
+        : null
+    );
+    // `snapshot.revision` keeps the measurement fresh after a bulk command reflows the rows.
+  }, [blockSelection, marqueeRect, snapshot.revision]);
 
   const applyBlockSelectionCommand = useCallback(
     (command: MarkdownBlockCommand, selectedLength = 1) => {
@@ -1153,6 +1260,50 @@ export function MarkdownBlockRuntime({
         applyBlockSelectionCommand({ type: "deleteBlocks", blockIds });
         return;
       }
+      if (
+        (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey
+      ) {
+        // Collapse the Block selection back to a caret, at the near edge of the near Block.
+        const blocks = documentRef.current.getSnapshot().blocks;
+        const currentSelection = blockSelection ?? { anchorId: blockId, focusId: blockId };
+        const selected = selectedBlockIdsWithSubtrees(blocks, currentSelection);
+        const targetId = event.key === "ArrowLeft" ? selected[0] : selected[selected.length - 1];
+        const target = blocks.find((block) => block.id === targetId);
+        if (!target?.editable) return;
+        event.preventDefault();
+        const source = normalizeEditorLineEndings(createBlockEditingProjection(target).editorText);
+        const offset = event.key === "ArrowLeft" ? 0 : source.length;
+        setBlockSelection(null);
+        setActiveBlockId(target.id);
+        setPendingSelection({ blockId: target.id, anchor: offset, head: offset });
+        return;
+      }
+      if (
+        event.key.length === 1 &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.nativeEvent.isComposing
+      ) {
+        // Typing over a Block selection replaces it, the way typing over selected text does. This
+        // used to be a dead keystroke: the selection stayed and the character went nowhere.
+        const blocks = documentRef.current.getSnapshot().blocks;
+        const currentSelection = blockSelection ?? { anchorId: blockId, focusId: blockId };
+        const blockIds = selectedBlockIdsWithSubtrees(blocks, currentSelection);
+        if (blockIds.length === 0) return;
+        event.preventDefault();
+        apply({
+          type: "replaceBlocks",
+          blockIds,
+          markdown:
+            event.key + preferredSourceLineEnding(documentRef.current.getSnapshot().markdown),
+        });
+        return;
+      }
       if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const blocks = documentRef.current.getSnapshot().blocks;
@@ -1166,8 +1317,154 @@ export function MarkdownBlockRuntime({
         focusId: target.id,
       }));
     },
-    [applyBlockSelectionCommand, blockSelection, redo, undo]
+    [apply, applyBlockSelectionCommand, blockSelection, redo, undo]
   );
+
+  /**
+   * Turn into, applied to every selected Block.
+   *
+   * With several Blocks selected this used to convert only the one whose menu was open, silently
+   * ignoring the rest of the selection. Source-only kinds are skipped byte-identically rather than
+   * rejected, so one unconvertible Block in the range does not abandon the whole command.
+   */
+  const setBlockKind = useCallback(
+    (blockId: string, kind: MarkdownSettableBlockKind, level?: 1 | 2 | 3 | 4 | 5 | 6) => {
+      const blocks = documentRef.current.getSnapshot().blocks;
+      const selected = blockSelection ? selectedBlockIdsWithSubtrees(blocks, blockSelection) : [];
+      if (!selected.includes(blockId) || selected.length <= 1) {
+        apply({ type: "setKind", blockId, kind, level });
+        return;
+      }
+      const lineEnding = preferredSourceLineEnding(documentRef.current.getSnapshot().markdown);
+      const markdown = selected
+        .map((id) => {
+          const block = blocks.find((candidate) => candidate.id === id);
+          if (!block) return "";
+          if (isMarkdownSourceOnlyBlockKind(block.kind)) return block.raw;
+          const content = normalizeEditorLineEndings(
+            createBlockEditingProjection(block).editorText
+          ).replace(/\n/g, lineEnding);
+          return `${settableKindPrefix(kind, level)}${content}${lineEnding}${lineEnding}`;
+        })
+        .join("");
+      applyBlockSelectionCommand(
+        { type: "replaceBlocks", blockIds: selected, markdown },
+        selected.length
+      );
+    },
+    [apply, applyBlockSelectionCommand, blockSelection]
+  );
+
+  /**
+   * Grow a text selection into a Block selection.
+   *
+   * Shift+Down at the end of a Block's text should keep extending, into the next Block. Without this
+   * the selection simply stopped at the Block boundary with no way to continue by keyboard.
+   */
+  const extendSelectionToBlock = useCallback((blockId: string, direction: -1 | 1) => {
+    const blocks = documentRef.current.getSnapshot().blocks;
+    const index = blocks.findIndex((block) => block.id === blockId);
+    const neighbour = blocks[index + direction];
+    if (index < 0 || !neighbour) return false;
+    setActiveBlockId(null);
+    setPendingSelection(null);
+    window.getSelection()?.removeAllRanges();
+    setBlockSelection({ anchorId: blockId, focusId: neighbour.id });
+    return true;
+  }, []);
+
+  /** Ids of the rows whose vertical extent intersects a viewport rectangle. */
+  const blockIdsIntersecting = useCallback((top: number, bottom: number): string[] => {
+    const host = documentElementRef.current;
+    if (!host) return [];
+    const hit: string[] = [];
+    for (const row of Array.from(host.querySelectorAll<HTMLElement>("[data-native-block-row]"))) {
+      const rect = row.getBoundingClientRect();
+      const id = row.dataset.blockId;
+      if (id && rect.bottom > top && rect.top < bottom) hit.push(id);
+    }
+    return hit;
+  }, []);
+
+  const endPointerSelect = useCallback(() => {
+    pointerSelectRef.current = null;
+    setMarqueeRect(null);
+    documentElementRef.current?.removeAttribute("data-block-marquee");
+  }, []);
+
+  /**
+   * Extend a Block selection as the pointer sweeps.
+   *
+   * Resolved from the rows' own vertical bands rather than from `elementFromPoint`, so it works over
+   * the page margins as well as over text — which is what Notion does, and is also the only thing
+   * that works when the pointer is beyond the content column.
+   */
+  const handleSelectionPointerMove = useCallback(
+    (event: PointerEvent) => {
+      const gesture = pointerSelectRef.current;
+      if (!gesture) return;
+      if (
+        !gesture.engaged &&
+        Math.abs(event.clientY - gesture.y) < 4 &&
+        Math.abs(event.clientX - gesture.x) < 4
+      ) {
+        return;
+      }
+      const top = Math.min(gesture.y, event.clientY);
+      const bottom = Math.max(gesture.y, event.clientY);
+      const ids = blockIdsIntersecting(top, bottom);
+      const startedInABlock = gesture.originBlockId !== null;
+      // Inside a Block, the browser's own text selection stays in charge until the sweep reaches a
+      // second Block. From the margin there is no text selection to respect, so a marquee starts
+      // as soon as the threshold is crossed.
+      if (startedInABlock && ids.length < 2) return;
+      if (!gesture.engaged) {
+        gesture.engaged = true;
+        documentElementRef.current?.setAttribute("data-block-marquee", "true");
+        setActiveBlockId(null);
+        setPendingSelection(null);
+        window.getSelection()?.removeAllRanges();
+      }
+      if (!startedInABlock) {
+        const left = Math.min(gesture.x, event.clientX);
+        const right = Math.max(gesture.x, event.clientX);
+        setMarqueeRect({ top, left, width: right - left, height: bottom - top });
+      }
+      setBlockSelection(
+        ids.length === 0
+          ? null
+          : {
+              anchorId: event.clientY >= gesture.y ? ids[0] : ids[ids.length - 1],
+              focusId: event.clientY >= gesture.y ? ids[ids.length - 1] : ids[0],
+            }
+      );
+    },
+    [blockIdsIntersecting]
+  );
+
+  useEffect(() => {
+    const handleUp = () => {
+      const gesture = pointerSelectRef.current;
+      endPointerSelect();
+      if (gesture?.engaged) {
+        // Keyboard follows the pointer: focus the row so Escape, arrows and Backspace work at once.
+        const focusId = blockSelection?.focusId;
+        if (focusId && typeof CSS !== "undefined") {
+          documentElementRef.current
+            ?.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(focusId)}"]`)
+            ?.focus({ preventScroll: true });
+        }
+      }
+    };
+    window.addEventListener("pointermove", handleSelectionPointerMove);
+    window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleUp);
+    return () => {
+      window.removeEventListener("pointermove", handleSelectionPointerMove);
+      window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handleUp);
+    };
+  }, [blockSelection?.focusId, endPointerSelect, handleSelectionPointerMove]);
 
   /** Would moving the dragged Blocks before `beforeId` change the document at all? */
   const blockDropWouldMove = useCallback((beforeId: string | null): boolean => {
@@ -1665,6 +1962,77 @@ export function MarkdownBlockRuntime({
               });
             }}
           >
+            {blockSelectionToolbar ? (
+              <BlockSelectionToolbar
+                position={blockSelectionToolbar}
+                count={blockSelectionToolbar.count}
+                onTurnInto={(kind, level) => {
+                  const focus = blockSelection?.focusId;
+                  if (focus) setBlockKind(focus, kind, level);
+                }}
+                onCopyMarkdown={() => {
+                  const blocks = documentRef.current.getSnapshot().blocks;
+                  const ids = new Set(
+                    blockSelection ? selectedBlockIdsWithSubtrees(blocks, blockSelection) : []
+                  );
+                  void navigator.clipboard?.writeText(
+                    blocks
+                      .filter((block) => ids.has(block.id))
+                      .map((block) => block.raw)
+                      .join("")
+                  );
+                }}
+                onDuplicate={() => {
+                  const blockIds = blockSelection
+                    ? selectedBlockIdsWithSubtrees(
+                        documentRef.current.getSnapshot().blocks,
+                        blockSelection
+                      )
+                    : [];
+                  if (blockIds.length) {
+                    applyBlockSelectionCommand(
+                      { type: "duplicateBlocks", blockIds },
+                      blockIds.length
+                    );
+                  }
+                }}
+                onDelete={() => {
+                  const blockIds = blockSelection
+                    ? selectedBlockIdsWithSubtrees(
+                        documentRef.current.getSnapshot().blocks,
+                        blockSelection
+                      )
+                    : [];
+                  if (blockIds.length)
+                    applyBlockSelectionCommand({ type: "deleteBlocks", blockIds });
+                }}
+              />
+            ) : null}
+            {marqueeRect ? (
+              <div
+                aria-hidden
+                data-native-block-marquee
+                style={{
+                  position: "fixed",
+                  top: marqueeRect.top,
+                  left: marqueeRect.left,
+                  width: marqueeRect.width,
+                  height: marqueeRect.height,
+                  background: "rgba(35, 131, 226, 0.08)",
+                  border: "1px solid rgba(35, 131, 226, 0.5)",
+                  borderRadius: "2px",
+                  pointerEvents: "none",
+                  zIndex: 40,
+                }}
+              />
+            ) : null}
+            <span id={NATIVE_BLOCK_SHORTCUTS_ID} className="sr-only">
+              Press Enter to edit. Use Alt plus Arrow keys to move, Mod plus Shift plus D to
+              duplicate, and Mod plus Shift plus Backspace to delete.
+            </span>
+            <span role="status" aria-live="polite" className="sr-only">
+              {blockSelectionAnnouncement}
+            </span>
             {snapshot.blocks.map((block, index) => (
               <MarkdownBlockRow
                 key={block.id}
@@ -1685,11 +2053,17 @@ export function MarkdownBlockRuntime({
                   setPendingSelection(clickedSelection ? { blockId, ...clickedSelection } : null);
                 }}
                 onSelectBlock={(blockId, extend = false) => {
+                  const caretBlockId = activeBlockId;
                   setActiveBlockId(null);
                   setPendingSelection(null);
                   setBlockSelection((current) => {
                     if (extend && current) {
                       return { anchorId: current.anchorId, focusId: blockId };
+                    }
+                    // Shift+click while a caret is live extends from the caret's Block, so the
+                    // gesture selects a range instead of collapsing to the one Block clicked.
+                    if (extend && caretBlockId && caretBlockId !== blockId) {
+                      return { anchorId: caretBlockId, focusId: blockId };
                     }
                     if (
                       current &&
@@ -1701,6 +2075,7 @@ export function MarkdownBlockRuntime({
                   });
                 }}
                 onBlockSelectionKeyDown={handleBlockSelectionKeyDown}
+                onExtendSelectionToBlock={extendSelectionToBlock}
                 onChange={(blockId, source) => {
                   const current = documentRef.current
                     .getSnapshot()
@@ -1881,9 +2256,7 @@ export function MarkdownBlockRuntime({
                   }
                 }}
                 onNavigate={navigateBlock}
-                onSetKind={(blockId, kind, level) =>
-                  apply({ type: "setKind", blockId, kind, level })
-                }
+                onSetKind={(blockId, kind, level) => setBlockKind(blockId, kind, level)}
                 onUndo={undo}
                 onRedo={redo}
                 onDragStart={startBlockDrag}
@@ -2219,6 +2592,112 @@ function buildBlockDragGhost(
   }
   document.body.append(ghost);
   return ghost;
+}
+
+/**
+ * Floating actions for a multi-Block selection.
+ *
+ * A Block selection has no active editor, so the inline formatting toolbar — which is anchored to a
+ * text range inside one Block — never appeared for it. Feishu shows a toolbar for a multi-Block
+ * selection offering Turn into, Copy, Duplicate and Delete; this is that, using the same chrome as
+ * the Notion-measured Block menu.
+ */
+function BlockSelectionToolbar({
+  position,
+  count,
+  onTurnInto,
+  onCopyMarkdown,
+  onDuplicate,
+  onDelete,
+}: {
+  position: { top: number; left: number };
+  count: number;
+  onTurnInto: (kind: MarkdownSettableBlockKind, level?: 1 | 2 | 3 | 4 | 5 | 6) => void;
+  onCopyMarkdown: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  const action =
+    "flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors duration-[20ms] ease-in hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+  return (
+    <div
+      role="toolbar"
+      aria-label={`${count} blocks selected`}
+      style={{
+        position: "fixed",
+        top: position.top - 8,
+        left: position.left,
+        transform: "translate(-50%, -100%)",
+        zIndex: 50,
+      }}
+      className="flex h-9 items-center gap-0.5 rounded-[10px] bg-popover p-1 text-popover-foreground shadow-[0_20px_24px_rgba(25,25,25,0.05),0_5px_8px_rgba(25,25,25,0.027),0_0_0_1px_hsl(var(--border))]"
+    >
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" className={action}>
+            Turn into
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          sideOffset={8}
+          aria-label="Turn selected blocks into"
+          className="max-h-[min(24rem,calc(100vh-2rem))] w-52 rounded-[10px] border-0 bg-popover p-1.5 shadow-[0_20px_24px_rgba(25,25,25,0.05),0_5px_8px_rgba(25,25,25,0.027),0_0_0_1px_hsl(var(--border))]"
+        >
+          {TURN_INTO_OPTIONS.map((option) => (
+            <DropdownMenuItem
+              key={`${option.kind}-${option.level ?? "base"}`}
+              aria-label={option.label}
+              className="h-7 gap-2.5 rounded-md px-2 transition-colors duration-[20ms] ease-in"
+              onClick={() => onTurnInto(option.kind, option.level)}
+            >
+              <BlockTypeOptionIcon option={option} />
+              <span className="min-w-0 flex-1 truncate text-left">{option.label}</span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <button type="button" className={action} onClick={onCopyMarkdown}>
+        <ClipboardCopy className="h-3.5 w-3.5" aria-hidden="true" />
+        Copy
+      </button>
+      <button type="button" className={action} onClick={onDuplicate}>
+        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+        Duplicate
+      </button>
+      <button
+        type="button"
+        className={`${action} text-destructive`}
+        aria-label="Delete selected blocks"
+        onClick={onDelete}
+      >
+        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+        Delete
+      </button>
+    </div>
+  );
+}
+
+/** Source marker for a settable Block kind, e.g. `"## "` or `"- [ ] "`. */
+function settableKindPrefix(
+  kind: MarkdownSettableBlockKind,
+  level?: 1 | 2 | 3 | 4 | 5 | 6
+): string {
+  switch (kind) {
+    case "heading":
+      return `${"#".repeat(level ?? 1)} `;
+    case "bullet_list_item":
+      return "- ";
+    case "ordered_list_item":
+      return "1. ";
+    case "task_list_item":
+      return "- [ ] ";
+    case "blockquote":
+      return "> ";
+    default:
+      return "";
+  }
 }
 
 function findMarkdownSearchMatches(

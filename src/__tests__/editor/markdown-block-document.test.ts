@@ -272,6 +272,29 @@ describe("MarkdownBlockDocument", () => {
     expect(result.snapshot.blocks.map((block) => block.depth)).toEqual([0, 1, 2, 2, 0]);
   });
 
+  it("keeps tab-indented list depths after an edit reprojects the hierarchy", () => {
+    const markdown = "- a\n\t- b\n\t\t- c\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    expect(before.blocks.map(({ kind, depth }) => ({ kind, depth }))).toEqual([
+      { kind: "bullet_list_item", depth: 0 },
+      { kind: "bullet_list_item", depth: 1 },
+      { kind: "bullet_list_item", depth: 2 },
+    ]);
+    expect(before.markdown).toBe(markdown);
+
+    const result = document.apply({
+      type: "replaceText",
+      blockId: before.blocks[2].id,
+      range: { from: "\t\t- c".length, to: "\t\t- c".length },
+      text: " edited",
+    });
+
+    expect(result.snapshot.markdown).toBe("- a\n\t- b\n\t\t- c edited\n");
+    expect(result.snapshot.blocks.map((block) => block.depth)).toEqual([0, 1, 2]);
+  });
+
   it("projects an explicit multi-line blockquote as one editable source-backed Block", () => {
     const markdown = "> quoted\r\n> second line\r\n\r\nAfter\r\n";
 
@@ -1690,5 +1713,74 @@ describe("moveBlocks re-indents what it moves", () => {
     // re-indenting; what matters is that no indentation was added or removed.
     expect(result.markdown).toBe("three\n\none\n\ntwo\n\n");
     expect(result.kinds).toEqual(["paragraph@-", "paragraph@-", "paragraph@-"]);
+  });
+});
+
+describe("pasted Markdown keeps the depth the scanner measured", () => {
+  it.each([
+    ["two-space nesting", "- Parent\n  - Child\n    - Grandchild\n", [0, 1, 2]],
+    ["four levels", "- a\n  - b\n    - c\n      - d\n", [0, 1, 2, 3]],
+    ["ordered under bullet", "- a\n  1. b\n     - c\n", [0, 1, 2]],
+  ])("pastes %s at the right depths", (_label, markdown, depths) => {
+    const document = MarkdownBlockDocument.fromMarkdown("");
+    const blockId = document.getSnapshot().blocks[0].id;
+    const result = document.apply({
+      type: "replaceText",
+      blockId,
+      range: { from: 0, to: 0 },
+      text: markdown,
+    });
+    // A span classified on its own text loses its depth — `    - c` alone is an indented code
+    // block — so pasting a nested list used to drop its deepest items to raw source.
+    expect(result.snapshot.blocks.map((block) => block.depth)).toEqual(depths);
+    expect(
+      result.snapshot.blocks.every(
+        (block) => block.kind === "bullet_list_item" || block.kind === "ordered_list_item"
+      )
+    ).toBe(true);
+    expect(result.snapshot.markdown).toBe(markdown);
+    // And it matches what opening the same bytes from disk produces.
+    expect(
+      MarkdownBlockDocument.fromMarkdown(markdown)
+        .getSnapshot()
+        .blocks.map((b) => b.depth)
+    ).toEqual(depths);
+  });
+
+  it("still treats a genuine indented code block as raw", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("");
+    const blockId = document.getSnapshot().blocks[0].id;
+    const result = document.apply({
+      type: "replaceText",
+      blockId,
+      range: { from: 0, to: 0 },
+      text: "text\n\n    code line\n",
+    });
+    expect(result.snapshot.blocks.map((block) => block.kind)).toEqual(["paragraph", "unsupported"]);
+    expect(result.snapshot.markdown).toBe("text\n\n    code line\n");
+  });
+});
+
+describe("replaceBlocks converts a whole range in one revision", () => {
+  it("re-prefixes every Block and keeps source-only Blocks byte-identical", () => {
+    // This is the shape the Block-selection toolbar's Turn into produces: one command over the
+    // whole range, so a multi-Block conversion is a single undo step.
+    const markdown = "one\n\ntwo\n\n---\n\nthree\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+    const blockIds = before.blocks.map((block) => block.id);
+    const converted = before.blocks
+      .map((block) => (block.kind === "thematic_break" ? block.raw : `- ${block.raw.trim()}\n\n`))
+      .join("");
+    const result = document.apply({ type: "replaceBlocks", blockIds, markdown: converted });
+
+    expect(result.snapshot.blocks.map((block) => block.kind)).toEqual([
+      "bullet_list_item",
+      "bullet_list_item",
+      "thematic_break",
+      "bullet_list_item",
+    ]);
+    expect(result.snapshot.revision).toBe(before.revision + 1);
+    expect(document.undo().markdown).toBe(markdown);
   });
 });

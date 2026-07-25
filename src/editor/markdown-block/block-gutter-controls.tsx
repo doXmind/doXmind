@@ -360,7 +360,7 @@ export function BlockGutterControls({
             >
               <Copy className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               <span className="min-w-0 flex-1 text-left">Duplicate</span>
-              <kbd className="text-[10px] text-muted-foreground">⌘⇧D</kbd>
+              <kbd className="text-[10px] text-muted-foreground">⌘D</kbd>
             </DropdownMenuItem>
           ) : null}
           {showActions && matchingActions.moveUp ? (

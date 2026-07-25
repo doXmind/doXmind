@@ -189,7 +189,12 @@ interface ListItemSourceSyntax {
   prefix: string;
   nextPrefix: string;
   nestingIndent: string;
+  /** Leading indentation in characters, for slicing source. */
   indent: number;
+  /** Leading indentation in Markdown columns, for measuring nesting against a parent. */
+  indentColumns: number;
+  /** Column where this item's content starts — the column a child item nests against. */
+  contentIndent: number;
   contentFrom: number;
   checked?: boolean;
   checkboxOffset?: number;
@@ -1066,13 +1071,16 @@ export class MarkdownBlockDocument {
     const raw =
       block.raw.slice(0, command.range.from) + command.text + block.raw.slice(command.range.to);
     if (raw === block.raw) return { snapshot: this.getSnapshot() };
-    const rescanned = scanMarkdownSource(raw).map((span) => span.raw);
+    // Keep the whole span, not just its text: the scan is the only thing that knows a line's list
+    // depth, because depth is measured against the *previous* item's content column. Classifying a
+    // span on its own text loses that — `    - c` in isolation is an indented code block.
+    const rescanned = scanMarkdownSource(raw);
     // Reclassification is pure, so the resulting kind can be known before anything is mutated. A
     // Markdown autoformat (`# ` becoming a heading) has to be its own undo step, or one Mod+Z would
     // take back both the transform and the words typed after it.
     const structureUnchanged =
       rescanned.length <= 1 &&
-      reclassifyEditableSource(block, rescanned[0] ?? raw).kind === block.kind;
+      reclassifyEditableSource(block, rescanned[0]?.raw ?? raw).kind === block.kind;
     const continuesRun = this.continuesTypingRun(
       block.id,
       command.range,
@@ -1083,19 +1091,19 @@ export class MarkdownBlockDocument {
     this.lastTypedEdit = structureUnchanged
       ? { blockId: block.id, sourceEnd: command.range.from + command.text.length }
       : null;
-    const replacementSources = (rescanned.length > 0 ? rescanned : [raw]).map(
-      (source, replacementIndex) => {
-        if (replacementIndex === 0) return reclassifyEditableSource(block, source);
-        const seed: MarkdownBlockSource = {
-          id: `block-${this.nextBlockNumber}`,
-          kind: "paragraph",
-          raw: source,
-          editable: true,
-        };
-        this.nextBlockNumber += 1;
-        return reclassifyEditableSource(seed, source);
-      }
-    );
+    const spans =
+      rescanned.length > 0
+        ? rescanned
+        : [{ raw, listDepth: undefined } as (typeof rescanned)[number]];
+    const replacementSources = spans.map((span, replacementIndex) => {
+      // The host Block keeps going through reclassification, which is what makes an autoformat
+      // preserve its identity while typing. Spans split off by this edit are built the way
+      // `fromMarkdown` builds them, carrying the depth the scan measured.
+      if (replacementIndex === 0) return reclassifyEditableSource(block, span.raw);
+      const id = `block-${this.nextBlockNumber}`;
+      this.nextBlockNumber += 1;
+      return blockFromSource(span.raw, id, span.listDepth);
+    });
     sourceBlocks.splice(index, 1, ...replacementSources);
     this.commitSources(sourceBlocks);
     this.revision += 1;
@@ -1281,8 +1289,11 @@ function reprojectListDepths(blocks: MarkdownBlockSource[]): void {
     let depth = -1;
     for (let parentDepth = stack.length - 1; parentDepth >= 0; parentDepth -= 1) {
       const parent = stack[parentDepth];
-      const parentContentIndent = parent.indent + parent.nestingIndent.length;
-      if (syntax.indent >= parentContentIndent && syntax.indent <= parentContentIndent + 3) {
+      const parentContentIndent = parent.contentIndent;
+      if (
+        syntax.indentColumns >= parentContentIndent &&
+        syntax.indentColumns <= parentContentIndent + 3
+      ) {
         depth = parentDepth + 1;
         break;
       }
@@ -1650,9 +1661,10 @@ function isUnsupportedBlockSource(raw: string): boolean {
 function listItemSyntax(raw: string, allowNested = false): ListItemSourceSyntax | null {
   const { content } = splitBlockSource(raw);
 
-  const task = content.match(/^( *)([-+*])([ \t]+)\[([ xX])\]([ \t]+|$)/);
+  const task = content.match(/^([ \t]*)([-+*])([ \t]+)\[([ xX])\]([ \t]+|$)/);
   if (task) {
-    if (!allowNested && task[1].length > 3) return null;
+    const indentColumns = advanceMarkdownColumns(0, task[1]);
+    if (!allowNested && indentColumns > 3) return null;
     const prefix = task[0];
     const checkboxOffset = task[1].length + task[2].length + task[3].length + 1;
     const uncheckedPrefix =
@@ -1663,15 +1675,18 @@ function listItemSyntax(raw: string, allowNested = false): ListItemSourceSyntax 
       nextPrefix: uncheckedPrefix.endsWith("]") ? `${uncheckedPrefix} ` : uncheckedPrefix,
       nestingIndent: " ".repeat(task[2].length + task[3].length),
       indent: task[1].length,
+      indentColumns,
+      contentIndent: advanceMarkdownColumns(indentColumns + task[2].length, task[3]),
       contentFrom: prefix.length,
       checked: task[4].toLowerCase() === "x",
       checkboxOffset,
     };
   }
 
-  const bullet = content.match(/^( *)([-+*])([ \t]+|$)/);
+  const bullet = content.match(/^([ \t]*)([-+*])([ \t]+|$)/);
   if (bullet) {
-    if (!allowNested && bullet[1].length > 3) return null;
+    const indentColumns = advanceMarkdownColumns(0, bullet[1]);
+    if (!allowNested && indentColumns > 3) return null;
     const prefix = bullet[0];
     return {
       kind: "bullet_list_item",
@@ -1679,13 +1694,16 @@ function listItemSyntax(raw: string, allowNested = false): ListItemSourceSyntax 
       nextPrefix: bullet[3] ? prefix : `${prefix} `,
       nestingIndent: " ".repeat(bullet[2].length + bullet[3].length),
       indent: bullet[1].length,
+      indentColumns,
+      contentIndent: advanceMarkdownColumns(indentColumns + bullet[2].length, bullet[3]),
       contentFrom: prefix.length,
     };
   }
 
-  const ordered = content.match(/^( *)(\d{1,9})([.)])([ \t]+|$)/);
+  const ordered = content.match(/^([ \t]*)(\d{1,9})([.)])([ \t]+|$)/);
   if (ordered) {
-    if (!allowNested && ordered[1].length > 3) return null;
+    const indentColumns = advanceMarkdownColumns(0, ordered[1]);
+    if (!allowNested && indentColumns > 3) return null;
     const prefix = ordered[0];
     const ordinal = Number(ordered[2]);
     const nextOrdinal = ordinal < 999_999_999 ? ordinal + 1 : ordinal;
@@ -1695,10 +1713,27 @@ function listItemSyntax(raw: string, allowNested = false): ListItemSourceSyntax 
       nextPrefix: `${ordered[1]}${nextOrdinal}${ordered[3]}${ordered[4] || " "}`,
       nestingIndent: " ".repeat(ordered[2].length + ordered[3].length + ordered[4].length),
       indent: ordered[1].length,
+      indentColumns,
+      contentIndent: advanceMarkdownColumns(
+        indentColumns + ordered[2].length + ordered[3].length,
+        ordered[4]
+      ),
       contentFrom: prefix.length,
     };
   }
   return null;
+}
+
+/**
+ * Advance a Markdown column position across literal indentation, expanding tabs to the next tab
+ * stop. Mirrors the source scanner so Block depths survive a reprojection unchanged.
+ */
+function advanceMarkdownColumns(startColumn: number, source: string): number {
+  let column = startColumn;
+  for (const character of source) {
+    column = character === "\t" ? column + 4 - (column % 4) : column + 1;
+  }
+  return column;
 }
 
 function blockquoteSyntax(raw: string): BlockquoteSourceSyntax | null {

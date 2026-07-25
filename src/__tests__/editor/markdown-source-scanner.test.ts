@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { MarkdownBlockDocument } from "@/editor/markdown-block/markdown-block-document";
 import { scanMarkdownSource } from "@/editor/markdown-block/markdown-source-scanner";
 
 describe("scanMarkdownSource", () => {
@@ -196,6 +197,97 @@ describe("scanMarkdownSource", () => {
     ]);
     expect(spans.map((span) => span.listDepth)).toEqual([0, 1, 0]);
     expect(spans.map((span) => span.raw).join("")).toBe(markdown);
+  });
+
+  it.each<[string, string, string[], number[]]>([
+    [
+      "two-space steps past the two-level limit",
+      "- a\n  - b\n    - c\n      - d\n        - e\n",
+      ["- a\n", "  - b\n", "    - c\n", "      - d\n", "        - e\n"],
+      [0, 1, 2, 3, 4],
+    ],
+    [
+      "one tab per level",
+      "- a\n\t- b\n\t\t- c\n\t\t\t- d\n",
+      ["- a\n", "\t- b\n", "\t\t- c\n", "\t\t\t- d\n"],
+      [0, 1, 2, 3],
+    ],
+    ["a tab that finishes a partial space indent", "- a\n \t- b\n", ["- a\n", " \t- b\n"], [0, 1]],
+    ["mixed bullet markers", "* a\n  + b\n    - c\n", ["* a\n", "  + b\n", "    - c\n"], [0, 1, 2]],
+    [
+      "ordered items whose content column is three wide",
+      "1. a\n   1. b\n      1. c\n",
+      ["1. a\n", "   1. b\n", "      1. c\n"],
+      [0, 1, 2],
+    ],
+    [
+      "a four-space child of a three-wide ordered parent",
+      "1. a\n    - b\n",
+      ["1. a\n", "    - b\n"],
+      [0, 1],
+    ],
+    ["a tab child of a three-wide ordered parent", "1. a\n\t- b\n", ["1. a\n", "\t- b\n"], [0, 1]],
+    [
+      "task items indented with tabs",
+      "- [ ] a\n\t- [x] b\n\t\t- [ ] c\n",
+      ["- [ ] a\n", "\t- [x] b\n", "\t\t- [ ] c\n"],
+      [0, 1, 2],
+    ],
+    [
+      "markers followed by extra spaces that push the content column right",
+      "-   wide\n    -   deeper\n        -   deepest\n",
+      ["-   wide\n", "    -   deeper\n", "        -   deepest\n"],
+      [0, 1, 2],
+    ],
+    [
+      "tab nesting with CRLF line endings",
+      "- a\r\n\t- b\r\n\t\t- c\r\n",
+      ["- a\r\n", "\t- b\r\n", "\t\t- c\r\n"],
+      [0, 1, 2],
+    ],
+  ])("measures %s against the parent content column", (_name, markdown, raws, depths) => {
+    const spans = scanMarkdownSource(markdown);
+
+    expect(spans.map((span) => span.raw)).toEqual(raws);
+    expect(spans.map((span) => span.listDepth)).toEqual(depths);
+    expect(spans.map((span) => span.raw).join("")).toBe(markdown);
+
+    const snapshot = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot();
+    expect(snapshot.blocks.map((block) => block.depth)).toEqual(depths);
+    expect(snapshot.blocks.every((block) => block.kind.endsWith("list_item"))).toBe(true);
+    expect(snapshot.markdown).toBe(markdown);
+  });
+
+  it.each<[string, string]>([
+    ["after a paragraph and a blank line", "text\n\n    code line\n"],
+    ["at the very start of the source", "    code at the very start\n"],
+    ["as a tab-indented list marker with no parent item", "\t- tab at the very start\n"],
+    ["as a tab-indented code line after a paragraph", "text\n\n\t- code line\n"],
+  ])("keeps a genuine indented code block %s out of the list hierarchy", (_name, markdown) => {
+    const spans = scanMarkdownSource(markdown);
+
+    expect(spans.map((span) => span.listDepth)).toEqual(spans.map(() => undefined));
+    expect(spans.map((span) => span.raw).join("")).toBe(markdown);
+
+    const snapshot = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot();
+    expect(snapshot.blocks.some((block) => block.kind.endsWith("list_item"))).toBe(false);
+    expect(snapshot.blocks.at(-1)?.kind).toBe("unsupported");
+    expect(snapshot.markdown).toBe(markdown);
+  });
+
+  it("keeps a tab-indented continuation line attached to its owning item", () => {
+    const markdown = "- a\n  - b\n\tcontinuation of b\n- next\n";
+
+    const spans = scanMarkdownSource(markdown);
+
+    expect(spans.map((span) => span.raw)).toEqual([
+      "- a\n",
+      "  - b\n\tcontinuation of b\n",
+      "- next\n",
+    ]);
+    expect(spans.map((span) => span.listDepth)).toEqual([0, 1, 0]);
+    expect(spans.map((span) => span.raw).join("")).toBe(markdown);
+    expect(MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot().markdown).toBe(markdown);
   });
 
   it("preserves leading and trailing blank lines byte-for-byte", () => {

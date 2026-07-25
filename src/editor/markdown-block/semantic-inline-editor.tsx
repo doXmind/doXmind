@@ -243,7 +243,7 @@ export function SemanticInlineEditor({
       aria-label="Markdown block"
       aria-describedby={describedBy}
       aria-multiline="true"
-      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Meta+Shift+D Control+Shift+D Meta+Shift+Backspace Control+Shift+Backspace"
+      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Meta+D Control+D Meta+Shift+Backspace Control+Shift+Backspace"
       data-native-block-editor
       data-native-semantic-editor
       data-placeholder={placeholder}

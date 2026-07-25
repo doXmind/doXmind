@@ -16,6 +16,10 @@ interface FenceOpening {
   length: number;
 }
 
+/**
+ * `indent` and `contentIndent` are Markdown *columns*, not character counts, because a nested item's
+ * indentation is measured against its parent's content column and a tab counts as up to four columns.
+ */
 interface ListOpening {
   indent: number;
   contentIndent: number;
@@ -31,6 +35,7 @@ interface RawBlockOpening {
   canInterruptParagraph: boolean;
 }
 
+const TAB_STOP = 4;
 const HTML_BLOCK_TAGS =
   "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
 const HTML_BLOCK_TAG = new RegExp(`^ {0,3}</?(?:${HTML_BLOCK_TAGS})(?:[ \\t]+|/?>|$)`, "i");
@@ -364,12 +369,13 @@ function indentedCodeBlockEnd(
 }
 
 function listOpening(line: SourceLine, allowNested = false): ListOpening | null {
-  const match = line.body.match(/^( *)([-+*]|(\d{1,9})[.)])([ \t]+|$)/);
+  const match = line.body.match(/^([ \t]*)([-+*]|(\d{1,9})[.)])([ \t]+|$)/);
   if (!match) return null;
-  if (!allowNested && match[1].length > 3) return null;
+  const indent = advanceColumns(0, match[1]);
+  if (!allowNested && indent > 3) return null;
   return {
-    indent: match[1].length,
-    contentIndent: match[1].length + match[2].length + match[4].length,
+    indent,
+    contentIndent: advanceColumns(indent + match[2].length, match[4]),
     ordered: match[3] !== undefined,
     start: match[3] === undefined ? null : Number(match[3]),
   };
@@ -386,7 +392,7 @@ function listItemEnd(
     const line = lines[lineIndex];
     const relativeLine = {
       ...line,
-      body: line.body.slice(Math.min(opening.indent, leadingIndent(line.body))),
+      body: stripIndentColumns(line.body, opening.indent),
     };
     if (fence) {
       if (isClosingFence(relativeLine, fence)) fence = null;
@@ -406,7 +412,7 @@ function listItemEnd(
       sawBlank = true;
       continue;
     }
-    if (sawBlank && leadingIndent(line.body) <= opening.indent) {
+    if (sawBlank && leadingIndentColumns(line.body) <= opening.indent) {
       return { to: line.from, nextLineIndex: lineIndex, continuesList: false };
     }
     sawBlank = false;
@@ -414,8 +420,35 @@ function listItemEnd(
   return { to: lines.at(-1)?.to ?? 0, nextLineIndex: lines.length, continuesList: false };
 }
 
-function leadingIndent(source: string): number {
-  return source.match(/^[ \t]*/)?.[0].length ?? 0;
+function leadingIndentColumns(source: string): number {
+  return advanceColumns(0, source.match(/^[ \t]*/)?.[0] ?? "");
+}
+
+/** Advance a column position across literal indentation, expanding each tab to the next tab stop. */
+function advanceColumns(startColumn: number, source: string): number {
+  let column = startColumn;
+  for (const character of source) {
+    column = character === "\t" ? column + TAB_STOP - (column % TAB_STOP) : column + 1;
+  }
+  return column;
+}
+
+/**
+ * Drop up to `columns` worth of leading indentation so a line can be read relative to its owning
+ * list item. A tab that straddles the target is dropped whole; the scanner only uses the result to
+ * recognize fences, where over-stripping keeps fenced content attached to its item.
+ */
+function stripIndentColumns(source: string, columns: number): string {
+  let column = 0;
+  let offset = 0;
+  while (offset < source.length && column < columns) {
+    const character = source[offset];
+    if (character === " ") column += 1;
+    else if (character === "\t") column += TAB_STOP - (column % TAB_STOP);
+    else break;
+    offset += 1;
+  }
+  return source.slice(offset);
 }
 
 function splitSourceLines(source: string): SourceLine[] {
