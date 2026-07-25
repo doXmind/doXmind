@@ -934,9 +934,34 @@ export function MarkdownBlockRow({
             return;
           }
           if (!active && block.editable) {
-            const offset = pendingClickOffsetRef.current;
+            const anchor = pendingClickOffsetRef.current;
             pendingClickOffsetRef.current = null;
-            onActivate(block.id, offset === null ? undefined : { anchor: offset, head: offset });
+            if (anchor === null) {
+              onActivate(block.id);
+              return;
+            }
+            // Press, drag, release is how text gets selected. Activating with a collapsed caret at
+            // the press point threw the drag away, so selecting a word in a Block you were not
+            // already editing selected nothing at all — the gesture worked only on the second try,
+            // once the Block happened to be active. The release point is this event's own
+            // coordinates, and the preview is still mounted here, so it can still be hit-tested.
+            //
+            // A table is excluded: its cells carry their own source offsets precisely because a
+            // rendered grid has no linear mapping from a point to a source offset, so a range
+            // measured across it would not mean anything.
+            const fromTableCell = (event.target as HTMLElement | null)?.closest(
+              "[data-table-cell]"
+            );
+            const head = fromTableCell
+              ? anchor
+              : (sourceOffsetAtPoint(
+                  event.clientX,
+                  event.clientY,
+                  event.currentTarget,
+                  source,
+                  sourceOnly ? null : inlineProjection
+                ) ?? anchor);
+            onActivate(block.id, { anchor, head });
           }
         }}
       >
