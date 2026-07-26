@@ -31,8 +31,15 @@ const PIXEL_PNG = Buffer.from(
 interface InPlaceCase {
   readonly label: string;
   readonly source: string;
-  /** An element that must be present whether or not the Block is being edited. */
-  readonly rendered: string;
+  /**
+   * An element that must be present whether or not the Block is being edited.
+   *
+   * Only for kinds whose rendered form is a distinct artefact — an `img`, a `.katex`, a `table`, a
+   * highlighted `pre`. A paragraph's rendered form is its own text, and the attribute that marks it
+   * sits on the editing surface too, so there is nothing here that a swap could not also satisfy.
+   * Those kinds carry `hidden` alone, which is the assertion that actually guards them.
+   */
+  readonly rendered?: string;
   /** Markdown that must never appear as visible text, in either state. */
   readonly hidden: readonly string[];
   /** Files the Block needs in the workspace to render at all. */
@@ -83,6 +90,22 @@ const CASES: readonly InPlaceCase[] = [
     rendered: "table",
     hidden: ["| head", "| - |", "|\n"],
   },
+
+  // The text kinds. Their delimiters are a line prefix rather than a wrapper, which made them feel
+  // like a different problem and left them out of this list while it was being written — but a
+  // heading that shows `##` when you click it is the same bug as an image that shows `![`, and the
+  // whole point of one table is that a kind cannot quietly sit outside it.
+  { label: "heading 1", source: "# Heading one", hidden: ["#"] },
+  { label: "heading 2", source: "## Heading two", hidden: ["#"] },
+  { label: "heading 3", source: "### Heading three", hidden: ["#"] },
+  { label: "heading 4", source: "#### Heading four", hidden: ["#"] },
+  { label: "heading 5", source: "##### Heading five", hidden: ["#"] },
+  { label: "heading 6", source: "###### Heading six", hidden: ["#"] },
+  { label: "bulleted list", source: "- Bulleted item", hidden: ["- ", "-\u00a0"] },
+  { label: "numbered list", source: "1. Numbered item", hidden: ["1. "] },
+  { label: "to-do", source: "- [ ] Unchecked item", hidden: ["- ", "[ ]", "[x]"] },
+  { label: "to-do checked", source: "- [x] Checked item", hidden: ["- ", "[ ]", "[x]"] },
+  { label: "quote", source: "> Quoted text", hidden: ["> ", ">\u00a0"] },
 ];
 
 /** Everything the row shows a reader, with the gutter controls' own labels excluded. */
@@ -102,21 +125,24 @@ async function visibleText(row: Locator): Promise<string> {
 }
 
 for (const testCase of CASES) {
-  test(`${testCase.label}: stays rendered when it is being edited`, async ({ page }) => {
-    // A lead paragraph so the Block under test is never the Page's first, where a lone `---` would
-    // be frontmatter rather than a divider.
-    await openPage(page, "InPlace", `Lead paragraph.\n\n${testCase.source}\n`, testCase.assets);
-    const row = rows(page).nth(1);
+  const rendered = testCase.rendered;
+  if (rendered) {
+    test(`${testCase.label}: stays rendered when it is being edited`, async ({ page }) => {
+      // A lead paragraph so the Block under test is never the Page's first, where a lone `---` would
+      // be frontmatter rather than a divider.
+      await openPage(page, "InPlace", `Lead paragraph.\n\n${testCase.source}\n`, testCase.assets);
+      const row = rows(page).nth(1);
 
-    await clickAway(page);
-    await expect(row.locator(testCase.rendered).first()).toBeAttached();
+      await clickAway(page);
+      await expect(row.locator(rendered).first()).toBeAttached();
 
-    await activate(row);
-    await expect(
-      row.locator(testCase.rendered).first(),
-      "the rendered Block was replaced when it was activated"
-    ).toBeAttached();
-  });
+      await activate(row);
+      await expect(
+        row.locator(rendered).first(),
+        "the rendered Block was replaced when it was activated"
+      ).toBeAttached();
+    });
+  }
 
   test(`${testCase.label}: never shows its own Markdown`, async ({ page }) => {
     await openPage(page, "InPlace", `Lead paragraph.\n\n${testCase.source}\n`, testCase.assets);
