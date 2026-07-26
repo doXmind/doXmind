@@ -204,21 +204,23 @@ describe("MarkdownBlockRuntime", () => {
     const { container } = render(<MarkdownBlockRuntime file={{ ...file, content: "/tog\r\n" }} />);
 
     fireEvent.click(screen.getByText("/tog"));
-    let textarea = screen.getByLabelText("Markdown block");
-    fireEvent.keyDown(textarea, { key: "Enter" });
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Enter" });
 
-    textarea = screen.getByLabelText("Markdown block");
-    expect(textarea).toHaveValue(
-      "<details>\n<summary>Toggle</summary>\n\nWrite something…\n\n</details>"
-    );
+    // The command inserts a toggle, and a toggle renders as a disclosure rather than as its own
+    // `<details>` scaffolding — so what proves the insertion is the rendered Block, not raw source
+    // in a field. The scaffolding still has to reach the file, which the save assertion below covers.
+    expect(screen.getByTestId("toggle-block")).toBeInTheDocument();
+    expect(screen.getByTestId("toggle-block").textContent).not.toContain("<summary>");
     expect(container.querySelector("[data-native-markdown-document]")).toHaveAttribute(
       "data-revision",
       "1"
     );
 
-    fireEvent.keyDown(textarea, { key: "z", metaKey: true });
+    // Undo from wherever the command left the caret, which is inside the Block it created.
+    const undoFrom = () => document.activeElement ?? document.body;
+    fireEvent.keyDown(undoFrom(), { key: "z", metaKey: true });
     expect(screen.getByLabelText("Markdown block")).toHaveValue("/tog");
-    fireEvent.keyDown(screen.getByLabelText("Markdown block"), {
+    fireEvent.keyDown(undoFrom(), {
       key: "z",
       metaKey: true,
       shiftKey: true,

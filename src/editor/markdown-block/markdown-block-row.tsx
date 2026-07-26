@@ -65,6 +65,10 @@ import {
   resolveCodeLanguage,
   type CodeToken,
 } from "@/editor/markdown-block/code-highlight";
+import { MarkdownCodeBlock } from "@/editor/markdown-block/markdown-code-block";
+import { MarkdownContainerBlock } from "@/editor/markdown-block/markdown-container-block";
+import { MarkdownFigureBlock } from "@/editor/markdown-block/markdown-figure-block";
+import { MarkdownStaticBlock } from "@/editor/markdown-block/markdown-static-block";
 import { MarkdownTableBlock } from "@/editor/markdown-block/markdown-table-block";
 import { parseMarkdownToggle, type MarkdownToggle } from "@/editor/markdown-block/markdown-toggle";
 import {
@@ -331,6 +335,109 @@ export function MarkdownBlockRow({
   // Parsed once per render and addressed by row and column, never held as state: a cell's offsets
   // shift as soon as an earlier cell grows by a character.
   const tableGeometry = block.kind === "table" ? parseMarkdownTableSource(source) : null;
+
+  /**
+   * The Block-level keys an in-place surface must not swallow.
+   *
+   * Every kind that edits inside its rendered form owns its own keys — a cell owns Tab, a code Block
+   * owns Enter — and would otherwise absorb the Block's as well. That is how a table became the one
+   * Block you could edit and not undo. Listed explicitly rather than delegated to the text-surface
+   * handler, which is built around a caret in the Block's own source and cannot read a cell's or a
+   * cell-free shell's offsets.
+   */
+  const handleInPlaceKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    const mod = event.metaKey || event.ctrlKey;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onSelectBlock?.(block.id);
+      return;
+    }
+    if (mod && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      if (event.repeat) return;
+      if (event.shiftKey) onRedo();
+      else onUndo();
+      return;
+    }
+    if (mod && !event.altKey && event.key.toLowerCase() === "d") {
+      event.preventDefault();
+      if (!event.repeat) onDuplicate(block.id);
+      return;
+    }
+    if (mod && event.shiftKey && (event.key === "Backspace" || event.key === "Delete")) {
+      event.preventDefault();
+      if (!event.repeat) onDelete(block.id);
+      return;
+    }
+    // A Block with nothing to type into is selected rather than edited, so a bare Backspace has no
+    // text to remove and means "remove this Block" — which is what pressing it on a selected image
+    // does in both reference products. A Block that holds text must never be deleted this way.
+    if (
+      !mod &&
+      !event.altKey &&
+      (event.key === "Backspace" || event.key === "Delete") &&
+      (block.kind === "image" || block.kind === "thematic_break" || block.kind === "collection")
+    ) {
+      event.preventDefault();
+      if (!event.repeat) onDelete(block.id);
+      return;
+    }
+    if (event.altKey && !mod && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+      if (onMove(block.id, event.key === "ArrowUp" ? -1 : 1) !== false) {
+        event.preventDefault();
+      }
+    }
+  };
+
+  /**
+   * The rendered Block, in both states, for every kind that has one.
+   *
+   * Deliberately computed here and rendered from ONE slot below rather than from the two arms of the
+   * active/preview ternary. Rendering it from both arms would look equivalent and would not be: React
+   * would unmount and remount it on activation, which is precisely the thing that used to drop a
+   * table's borders, a code Block's highlighting and an image's rendering. `null` means the kind is
+   * prose and takes the ordinary text surface.
+   */
+  const inPlaceCommon = {
+    blockId: block.id,
+    // The Block's own source, not the projected editor text. A delimited kind's projection has
+    // already stripped the fences by the time it reaches `source`, so a component asking
+    // `splitDelimitedBlockSource` for its info string found nothing and a code Block lost its
+    // language chip. These components render the whole Block, so they need the whole Block.
+    source: rawSource,
+    editable: active && block.editable,
+    // ...and hand back a whole Block, which has to be projected before the runtime sees it, or the
+    // runtime would wrap an already-complete source in its delimiters a second time.
+    onChange: (blockId: string, nextRaw: string) =>
+      onChange(
+        blockId,
+        createBlockEditingProjection({ kind: block.kind, raw: nextRaw }).editorText
+      ),
+    onKeyDown: handleInPlaceKeyDown,
+    renderInline: (markdown: string) => (
+      <InlineMarkdownPreview source={markdown} onOpenWikiLink={onOpenWikiLink} />
+    ),
+  };
+  const inPlaceBlock: ReactNode =
+    block.kind === "image" || block.kind === "thematic_break" || block.kind === "collection" ? (
+      <MarkdownStaticBlock {...inPlaceCommon} kind={block.kind}>
+        <BlockPreview
+          block={block}
+          readOnly
+          onSetTaskChecked={onSetTaskChecked}
+          onOpenWikiLink={onOpenWikiLink}
+          wikiEmbedContext={wikiEmbedContext}
+          collectionContext={collectionContext}
+          imageContext={imageContext}
+        />
+      </MarkdownStaticBlock>
+    ) : block.kind === "fenced_code" ? (
+      <MarkdownCodeBlock {...inPlaceCommon} onSetLanguage={onSetCodeLanguage} />
+    ) : block.kind === "block_math" || block.kind === "mermaid" ? (
+      <MarkdownFigureBlock {...inPlaceCommon} kind={block.kind} />
+    ) : block.kind === "callout" || block.kind === "toggle" ? (
+      <MarkdownContainerBlock {...inPlaceCommon} kind={block.kind} />
+    ) : null;
 
   useEffect(() => {
     setSlashIndex(0);
@@ -1007,47 +1114,13 @@ export function MarkdownBlockRow({
             geometry={tableGeometry}
             editable={active && block.editable}
             onChange={onChange}
-            onCellKeyDown={(event) => {
-              // The Block-level shortcuts, which a cell would otherwise swallow. Undo was the one
-              // that mattered: with the caret in a cell, Ctrl/Cmd+Z reached nothing at all, so a
-              // table was the one Block you could edit and not take back.
-              //
-              // Listed explicitly rather than delegated to the surface handler, because that one is
-              // built around a caret in the Block's own source and a cell's offsets are not in that
-              // space.
-              const mod = event.metaKey || event.ctrlKey;
-              if (event.key === "Escape") {
-                event.preventDefault();
-                onSelectBlock?.(block.id);
-                return;
-              }
-              if (mod && event.key.toLowerCase() === "z") {
-                event.preventDefault();
-                if (event.repeat) return;
-                if (event.shiftKey) onRedo();
-                else onUndo();
-                return;
-              }
-              if (mod && !event.altKey && event.key.toLowerCase() === "d") {
-                event.preventDefault();
-                if (!event.repeat) onDuplicate(block.id);
-                return;
-              }
-              if (mod && event.shiftKey && (event.key === "Backspace" || event.key === "Delete")) {
-                event.preventDefault();
-                if (!event.repeat) onDelete(block.id);
-                return;
-              }
-              if (event.altKey && !mod && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
-                if (onMove(block.id, event.key === "ArrowUp" ? -1 : 1) !== false) {
-                  event.preventDefault();
-                }
-              }
-            }}
+            onCellKeyDown={handleInPlaceKeyDown}
             renderCell={(text) => (
               <InlineMarkdownPreview source={text} onOpenWikiLink={onOpenWikiLink} />
             )}
           />
+        ) : inPlaceBlock ? (
+          inPlaceBlock
         ) : active && block.editable ? (
           <>
             <div

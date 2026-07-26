@@ -18,7 +18,8 @@
  */
 
 import { expect, type Locator, type Page } from "@playwright/test";
-import { mkdtemp, writeFile, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, readFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -29,11 +30,27 @@ export interface OpenedPage {
   readonly path: string;
 }
 
-/** Write a one-Page workspace and open it, returning the file path for byte assertions. */
-export async function openPage(page: Page, name: string, source: string): Promise<OpenedPage> {
+/**
+ * Write a one-Page workspace and open it, returning the file path for byte assertions.
+ *
+ * `assets` writes extra files into the workspace first. An image Block whose file is missing renders
+ * a placeholder rather than an `<img>` — correctly — so a test about how an image behaves has to
+ * provide a real one or it measures the placeholder instead.
+ */
+export async function openPage(
+  page: Page,
+  name: string,
+  source: string,
+  assets: Readonly<Record<string, Buffer | string>> = {}
+): Promise<OpenedPage> {
   const dir = await mkdtemp(join(tmpdir(), "doxmind-block-ux-"));
   const path = join(dir, `${name}.md`);
   await writeFile(path, source, "utf8");
+  for (const [relative, contents] of Object.entries(assets)) {
+    const target = join(dir, relative);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, contents);
+  }
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/editor?folder=${encodeURIComponent(dir)}`);
   await page.getByText(name, { exact: true }).first().click();

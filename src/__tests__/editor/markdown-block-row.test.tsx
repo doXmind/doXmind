@@ -419,7 +419,13 @@ describe("MarkdownBlockRow semantic previews", () => {
         onDragEnd={vi.fn()}
       />
     );
-    expect(screen.getByRole("textbox", { name: "Markdown block" })).toHaveValue(source.trimEnd());
+    // Activating a toggle no longer replaces it with `<details>` and `<summary>` tags. The rendered
+    // disclosure stays, its title and body are edited in place, and the scaffolding is never shown.
+    const toggle = screen.getByTestId("toggle-block");
+    expect(toggle).toHaveTextContent("Project details");
+    expect(toggle.textContent).not.toContain("<summary>");
+    expect(toggle.textContent).not.toContain("<details>");
+    expect(screen.getByRole("textbox", { name: "Toggle summary" })).toBeInTheDocument();
   });
 
   it("opens and executes the native slash menu without editor-framework state", () => {
@@ -577,10 +583,14 @@ describe("MarkdownBlockRow semantic previews", () => {
       <MarkdownBlockRow block={block} index={0} count={1} active {...slashHandlers()} />
     );
 
-    const surface = container.querySelector("[data-native-block-edit-surface]");
-    expect(surface?.className).toContain("bg-muted");
-    expect(surface?.className).toContain("p-4");
-    expect(screen.getByRole("textbox", { name: "Markdown block" })).toHaveAttribute(
+    // The code Block keeps its own rendered box while it is edited rather than being replaced by a
+    // bare field: the highlighted `<pre>` is still mounted, and the caret is in a surface laid over
+    // it. Activation used to swap the whole thing for a plain textarea, which dropped every colour.
+    const pre = screen.getByTestId("fenced-code-block");
+    expect(pre).toBeInTheDocument();
+    expect(pre.className).toContain("bg-muted");
+    expect(pre.textContent).not.toContain("```");
+    expect(container.querySelector("[data-code-editing-surface]")).toHaveAttribute(
       "spellcheck",
       "false"
     );
@@ -806,9 +816,9 @@ describe("MarkdownBlockRow semantic previews", () => {
     expect(screen.getByTestId("callout-block").className).toContain("amber");
 
     rerender(<MarkdownBlockRow block={block} index={0} count={1} active {...slashHandlers()} />);
-    expect(container.querySelector("[data-native-block-edit-surface]")?.className).toContain(
-      "amber"
-    );
+    // The rendered callout is what stays on screen now, so the accent lives on it rather than on a
+    // separate editing surface that replaced it.
+    expect(screen.getByTestId("callout-block").className).toContain("amber");
   });
 
   it("honours column alignment and puts the caret in the cell that was clicked", () => {
@@ -1219,10 +1229,10 @@ describe("MarkdownBlockRow semantic previews", () => {
     await waitFor(() =>
       expect(renderMermaidSvg).toHaveBeenCalledWith(expect.stringContaining("https://"))
     );
-    // The editing surface shows the diagram payload; the ``` delimiters are projected out.
-    expect(screen.getByRole("textbox", { name: "Markdown block" })).toHaveValue(
-      'flowchart LR\nA@{ img: "https://example.com/private.png" }'
-    );
+    // A diagram the renderer refuses still shows what the user wrote, in a source field beside the
+    // Block rather than by replacing it — the ``` delimiters stay out of sight either way.
+    const surface = screen.getByRole("textbox", { name: "Mermaid source" });
+    expect(surface).toHaveValue('flowchart LR\nA@{ img: "https://example.com/private.png" }');
     expect(screen.queryByRole("img", { name: "Mermaid diagram" })).not.toBeInTheDocument();
     expect(screen.getByTestId("mermaid-block")).toHaveTextContent(
       "https://example.com/private.png"
