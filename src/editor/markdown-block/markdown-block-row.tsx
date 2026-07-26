@@ -275,6 +275,8 @@ export function MarkdownBlockRow({
   const sourceLengthRef = useRef(source.length);
   sourceLengthRef.current = source.length;
   const pendingClickOffsetRef = useRef<number | null>(null);
+  /** Where a press landed when it hit the row's own spacing rather than any child of it. */
+  const rowPressRef = useRef<{ x: number; y: number } | null>(null);
   const composingRef = useRef(false);
   /**
    * The textarea's own value while an IME composition is open.
@@ -839,6 +841,26 @@ export function MarkdownBlockRow({
           event.preventDefault();
           onActivate(block.id);
         }
+      }}
+      onPointerDown={(event) => {
+        rowPressRef.current =
+          event.target === event.currentTarget ? { x: event.clientX, y: event.clientY } : null;
+      }}
+      onClick={(event) => {
+        // The row's leading spacing is `padding-top` on the row itself — up to 28px above an h1 —
+        // so it belongs to the row and to no child, while every handler that activates a Block sits
+        // on the content box. The strip therefore hovered like a live part of the Block, revealed
+        // its controls, and then swallowed the press. A reader sees that gap as part of the heading
+        // under it and expects a caret from it.
+        const press = rowPressRef.current;
+        rowPressRef.current = null;
+        if (!press || event.target !== event.currentTarget) return;
+        if (active || !block.editable) return;
+        // A sweep that begins in this strip is a Block-selection gesture: the container engages a
+        // marquee past 4px of travel, and activating on the click that follows would tear the
+        // selection down again.
+        if (Math.abs(event.clientX - press.x) > 4 || Math.abs(event.clientY - press.y) > 4) return;
+        onActivate(block.id);
       }}
       onDragOver={(event) => {
         // Only image files are a row-level concern. Block reordering is decided once, at the
