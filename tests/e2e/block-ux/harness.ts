@@ -132,6 +132,27 @@ export async function activate(row: Locator, anchorText?: string): Promise<void>
   await expect(row.locator("[data-native-block-editor]")).toBeFocused();
 }
 
+/**
+ * Activate the surface that actually holds `anchor`.
+ *
+ * A Block used to have exactly one editing surface, so activating the row and activating the text
+ * you meant were the same act. They are not any more: a table edits one cell at a time and a callout
+ * has a title and a body, so activating the row lands in the first of them and a test looking for a
+ * word in the second reports a defect that is not there. Clicking the rendered word puts the caret in
+ * whichever surface owns it.
+ */
+export async function activateAt(row: Locator, anchor: string): Promise<void> {
+  await row.scrollIntoViewIfNeeded();
+  const rect = await rectOfText(row, anchor);
+  if (rect) {
+    await row.page().mouse.click(rect.x + Math.min(6, rect.w / 2), rect.y + rect.h / 2);
+    await expect(row).toHaveAttribute("data-active", "true");
+    await expect(row.locator("[data-native-block-editor]").first()).toBeFocused();
+    return;
+  }
+  await activate(row, anchor);
+}
+
 /** Client rect of the row's first non-empty rendered text, ignoring the gutter controls. */
 export async function firstTextRect(
   row: Locator
@@ -143,7 +164,14 @@ export async function firstTextRect(
     while (node) {
       const value = (node.nodeValue ?? "").trim();
       const owner = node.parentElement;
-      if (value && owner && !owner.closest("[data-native-block-controls], .sr-only")) {
+      // `aria-hidden` text is decoration the Block derives, not content: a callout's type label, a
+      // list bullet, an ordinal. Aiming at it activates whichever region happens to own the
+      // decoration instead of the text the caller meant.
+      if (
+        value &&
+        owner &&
+        !owner.closest('[data-native-block-controls], .sr-only, [aria-hidden="true"]')
+      ) {
         const range = document.createRange();
         range.selectNodeContents(node);
         const r = range.getBoundingClientRect();
@@ -197,16 +225,23 @@ export async function selectWord(
   row: Locator,
   word: string
 ): Promise<{ technique: "drag" | "keyboard" | "unavailable" }> {
-  // A table edits one cell at a time, so a drag aimed at a word in some *other* cell only moves the
-  // active cell — the press lands on a rendered cell, not on an editing surface, and nothing gets
-  // selected. Put the caret in the cell that holds the word first, then select inside it.
-  const cell = row.locator("th,td").filter({ hasText: word }).first();
-  if (
-    (await cell.count()) > 0 &&
-    (await cell.locator("[data-native-block-editor]").count()) === 0
-  ) {
-    await cell.click();
-    await expect(cell.locator("[data-native-block-editor]")).toBeFocused();
+  // A Block can have more than one editing surface — a table edits one cell at a time, a callout has
+  // a title and a body — and only one of them is active at a time. A drag aimed at a word in a
+  // different surface lands on rendered text rather than on an editor and selects nothing. Move into
+  // whichever surface holds the word first, by pressing the word itself.
+  const current = row.locator("[data-native-block-editor]").first();
+  const holdsWord =
+    (await current.count()) > 0 &&
+    (await current.evaluate(
+      (el, needle) => ((el as HTMLTextAreaElement).value ?? el.textContent ?? "").includes(needle),
+      word
+    ));
+  if (!holdsWord) {
+    const target = await rectOfText(row, word);
+    if (target) {
+      await page.mouse.click(target.x + Math.min(6, target.w / 2), target.y + target.h / 2);
+      await expect(row.locator("[data-native-block-editor]").first()).toBeFocused();
+    }
   }
   const rect = await rectOfText(row, word);
   if (rect) {
@@ -474,6 +509,15 @@ export interface KindFixture {
   readonly sourceOnly: boolean;
   /** What the inline toolbar's type chip says for this kind, in the product's own wording. */
   readonly toolbarType?: string;
+  /**
+   * Whether the kind has anything to type into.
+   *
+   * A divider, an image and a collection are selected rather than edited: they render a focusable
+   * shell so the Block still answers Escape and Backspace, but there is no caret in them and never
+   * should be. Tests about typing, caret offsets and undo-of-a-keystroke do not apply, and asserting
+   * them anyway reports a defect against behaviour that is correct.
+   */
+  readonly textSurface?: boolean;
 }
 
 export const KIND_FIXTURES: readonly KindFixture[] = [
@@ -582,7 +626,7 @@ export const KIND_FIXTURES: readonly KindFixture[] = [
   {
     kind: "callout",
     label: "callout",
-    source: "> [!NOTE]\n> Callout citem alpha",
+    source: "> [!NOTE] Titled\n> Callout citem alpha",
     word: "citem",
     sourceOnly: true,
   },
@@ -600,7 +644,14 @@ export const KIND_FIXTURES: readonly KindFixture[] = [
     word: "cellword",
     sourceOnly: true,
   },
-  { kind: "thematic_break", label: "divider", source: "---", word: null, sourceOnly: true },
+  {
+    kind: "thematic_break",
+    label: "divider",
+    source: "---",
+    word: null,
+    sourceOnly: true,
+    textSurface: false,
+  },
   {
     kind: "unsupported",
     label: "unsupported",

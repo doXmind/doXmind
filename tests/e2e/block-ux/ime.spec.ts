@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   KIND_FIXTURES,
   activate,
+  activateAt,
   caretOffset,
   pressLineStart,
   surfaceTextOf,
@@ -168,22 +169,6 @@ async function expectSource(opened: OpenedPage, expected: string, why: string): 
  * pipes — all came back unchanged. The revision delta proves the editor spoke to the document once
  * rather than once per keystroke, which is the whole reason the composing value is held locally.
  */
-/**
- * Activate the surface that actually holds `anchor`.
- *
- * A table edits one cell at a time, so activating the row lands in its first cell — the header — and
- * the anchor the test is about sits in a different surface entirely. For every other kind, which has
- * a single surface, this is the same thing as activating the row.
- */
-async function activateAnchor(row: Locator, anchor: string): Promise<void> {
-  const cell = row.locator("th,td").filter({ hasText: anchor }).first();
-  if ((await cell.count()) > 0) {
-    await cell.click();
-    await expect(cell.locator("[data-native-block-editor]")).toBeFocused();
-    return;
-  }
-  await activate(row);
-}
 
 for (const { fixture, anchor } of IME_TARGETS) {
   test(`${fixture.label}: composing after existing text commits the settled word once`, async ({
@@ -191,7 +176,7 @@ for (const { fixture, anchor } of IME_TARGETS) {
   }) => {
     const opened = await openPage(page, "Ime", `${fixture.source}\n`);
     const row = rows(page).first();
-    await activateAnchor(row, anchor);
+    await activateAt(row, anchor);
 
     const before = await editorValue(row);
     const at = before.indexOf(anchor);
@@ -236,7 +221,7 @@ for (const { fixture, anchor } of IME_TARGETS) {
     const source = `${fixture.source}\n`;
     const opened = await openPage(page, "Ime", source);
     const row = rows(page).first();
-    await activateAnchor(row, anchor);
+    await activateAt(row, anchor);
 
     const before = await editorValue(row);
     const at = before.indexOf(anchor);

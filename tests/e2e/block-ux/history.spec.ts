@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   KIND_FIXTURES,
   activate,
+  activateAt,
   expectSourceUnchanged,
   openBlockMenu,
   activeSurfaceText,

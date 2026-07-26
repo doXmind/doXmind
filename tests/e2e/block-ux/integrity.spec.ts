@@ -72,11 +72,7 @@ async function readSourceAfterEdit(opened: OpenedPage, before: string): Promise<
  * gesture opens the Block.
  */
 async function activateForEditing(row: Locator, kind: string): Promise<void> {
-  if (kind === "toggle") {
-    await row.press("Enter");
-    await expect(row).toHaveAttribute("data-active", "true");
-    return;
-  }
+  void kind;
   await activate(row);
 }
 
@@ -114,7 +110,9 @@ for (const fixture of KIND_FIXTURES) {
     await expect(gutter(row)).toHaveCSS("opacity", "1");
 
     await activateForEditing(row, fixture.kind);
-    await moveCaretWithin(page, row);
+    // A divider is selected rather than edited: it renders a focusable shell so the Block still
+    // answers Escape and Backspace, but there is no caret in it and there should not be.
+    if (fixture.textSurface !== false) await moveCaretWithin(page, row);
     await clickAway(page);
 
     await expectSourceStable(opened, source);
@@ -136,7 +134,7 @@ test("every kind at once: one row per Block, in the order the document declares"
   await expectSourceStable(opened, source);
 });
 
-for (const fixture of KIND_FIXTURES) {
+for (const fixture of KIND_FIXTURES.filter((candidate) => candidate.textSurface !== false)) {
   test(`${fixture.label}: one keystroke and one undo returns the exact original bytes`, async ({
     page,
   }) => {
