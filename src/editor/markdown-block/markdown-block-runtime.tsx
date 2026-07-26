@@ -2404,17 +2404,28 @@ export function MarkdownBlockRuntime({
                   publish(result, false);
                   // Land the caret inside the template — on a code fence's body line, in a table's
                   // first cell — instead of after its closing delimiter.
-                  const caret = from + markdownSlashCommandCaret(commandId, lineEnding);
-                  const insertedBlock = result.snapshot.blocks.find(
-                    (candidate) => candidate.from <= caret && caret <= candidate.to
+                  //
+                  // `from` and therefore `caret` are Block-relative, because that is the space
+                  // `replaceText` validates against (`range.to > block.raw.length`). Block spans are
+                  // document-relative (`raw: markdown.slice(block.from, block.to)`). Comparing the
+                  // two found whichever Block happened to span that small number, which is always
+                  // the first one, so running a slash command in any Block but the first left the
+                  // caret in Block 1 — and everything typed next went into Block 1's text.
+                  const edited = result.snapshot.blocks.find(
+                    (candidate) => candidate.id === blockId
                   );
-                  const targetBlock =
-                    insertedBlock ??
-                    result.snapshot.blocks.find((candidate) => candidate.id === blockId);
+                  const documentCaret =
+                    (edited?.from ?? current.from) +
+                    from +
+                    markdownSlashCommandCaret(commandId, lineEnding);
+                  const insertedBlock = result.snapshot.blocks.find(
+                    (candidate) => candidate.from <= documentCaret && documentCaret <= candidate.to
+                  );
+                  const targetBlock = insertedBlock ?? edited;
                   if (!targetBlock) return;
                   const offset = editorOffsetForBlockSourceOffset(
                     targetBlock,
-                    caret - targetBlock.from
+                    documentCaret - targetBlock.from
                   );
                   setActiveBlockId(targetBlock.id);
                   setBlockSelection(null);

@@ -108,6 +108,11 @@ export async function activate(row: Locator, anchorText?: string): Promise<void>
     if (box) await page.mouse.click(box.x + 100, box.y + box.height / 2);
   }
   await expect(row).toHaveAttribute("data-active", "true");
+  // `data-active` flips when React re-renders the row, which is BEFORE the editing surface has
+  // mounted and taken focus. Returning there let the next keystroke go to the document instead of
+  // the Block: a test that pressed End and typed "/" produced "P /aragraph…" rather than a trailing
+  // slash, and read as nine kinds unable to reach the slash menu. Wait for the surface to hold focus.
+  await expect(row.locator("[data-native-block-editor]")).toBeFocused();
 }
 
 /** Client rect of the row's first non-empty rendered text, ignoring the gutter controls. */
@@ -274,6 +279,128 @@ export async function toolbarState(page: Page): Promise<ToolbarState> {
 /** The gutter controls for a row, which only exist while it is hovered, focused or menu-open. */
 export function gutter(row: Locator): Locator {
   return row.locator("[data-native-block-controls]");
+}
+
+/** Open a row's Block actions menu, revealing the gutter first the way a pointer would. */
+export async function openBlockMenu(row: Locator): Promise<Locator> {
+  await row.scrollIntoViewIfNeeded();
+  await row.hover();
+  await gutter(row).getByRole("button", { name: "Block actions" }).click();
+  const menu = row.page().getByRole("menu", { name: "Block actions menu" });
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+/**
+ * The caret offset inside the active surface, in that surface's own coordinates.
+ *
+ * A textarea counts raw source characters; the semantic editor counts *visible* characters, with
+ * Markdown delimiters hidden. The two are not comparable, so `space` says which one this is and any
+ * assertion has to respect it.
+ */
+export async function caretOffset(
+  page: Page
+): Promise<{ space: "source" | "visible" | "none"; offset: number | null; collapsed: boolean }> {
+  return page.evaluate(() => {
+    const active = document.activeElement as HTMLElement | null;
+    if (active?.tagName === "TEXTAREA") {
+      const ta = active as HTMLTextAreaElement;
+      return {
+        space: "source" as const,
+        offset: ta.selectionStart,
+        collapsed: ta.selectionStart === ta.selectionEnd,
+      };
+    }
+    if (active?.isContentEditable) {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        return { space: "visible" as const, offset: null, collapsed: true };
+      }
+      const range = selection.getRangeAt(0).cloneRange();
+      const measure = range.cloneRange();
+      measure.selectNodeContents(active);
+      measure.setEnd(range.startContainer, range.startOffset);
+      return {
+        space: "visible" as const,
+        offset: measure.toString().length,
+        collapsed: selection.isCollapsed,
+      };
+    }
+    return { space: "none" as const, offset: null, collapsed: true };
+  });
+}
+
+/**
+ * Type text through a real IME composition, as a Chinese or Japanese input method does.
+ *
+ * Playwright's `keyboard.type` produces one input event per character and never composes, so it
+ * cannot exercise the composition path at all — and that path is where a Block editor most easily
+ * breaks, because the editor must emit exactly one command at `compositionend` rather than one per
+ * intermediate candidate. This drives CDP directly: `imeSetComposition` for each in-flight state,
+ * then `insertText` to commit, which is the sequence Chromium itself produces.
+ */
+export async function typeWithIme(page: Page, text: string): Promise<void> {
+  const session = await page.context().newCDPSession(page);
+  try {
+    for (let length = 1; length <= text.length; length += 1) {
+      const partial = text.slice(0, length);
+      await session.send("Input.imeSetComposition", {
+        text: partial,
+        selectionStart: partial.length,
+        selectionEnd: partial.length,
+      });
+    }
+    await session.send("Input.insertText", { text });
+  } finally {
+    await session.detach();
+  }
+}
+
+/**
+ * Undo, or redo, through whatever the app left focused.
+ *
+ * The invariant worth holding is that a command leaves *some* keyboard route back, not that it leaves
+ * one particular kind of route. A gutter command leaves a caret in the Block, not a Block selection —
+ * measured: after Duplicate the row is `data-active="true"`, focus is on the Block's editor, nothing
+ * is `data-block-selected`, and Ctrl/Cmd+Z from there restores both the row count and the file.
+ * Helpers that insisted on a selected row instead reported 32 failures against behaviour that was
+ * correct. So this asserts the real requirement — focus is somewhere in the editor — and sends the
+ * keystroke there.
+ */
+export async function pressUndo(page: Page): Promise<void> {
+  await expect(page.locator("[data-native-markdown-runtime] :focus")).toHaveCount(1);
+  await page.keyboard.press("ControlOrMeta+z");
+}
+
+export async function pressRedo(page: Page): Promise<void> {
+  await expect(page.locator("[data-native-markdown-runtime] :focus")).toHaveCount(1);
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+}
+
+/**
+ * Move the caret to the start or end of its line using the binding the platform actually has.
+ *
+ * On macOS, `Home` and `End` do not move the caret in a text field at all — they are scroll keys, and
+ * end-of-line is Cmd+Right. Pressing `End` there is silently inert, which made nine kinds look unable
+ * to reach the slash menu: the test pressed End, typed "/", and the characters landed at offset 1, so
+ * the file read `P /aragraph…` instead of a trailing slash. The menu had opened correctly the whole
+ * time. Anything needing line-edge motion must go through these.
+ */
+export async function pressLineEnd(page: Page): Promise<void> {
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End");
+}
+
+export async function pressLineStart(page: Page): Promise<void> {
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowLeft" : "Home");
+}
+
+/** Every row's kind, in document order — the cheapest way to assert a structural change. */
+export async function kindsInOrder(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    [...document.querySelectorAll("[data-native-block-row]")].map(
+      (row) => (row as HTMLElement).dataset.blockKind ?? "?"
+    )
+  );
 }
 
 export async function readSource(opened: OpenedPage): Promise<string> {
