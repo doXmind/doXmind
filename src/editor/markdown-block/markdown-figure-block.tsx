@@ -111,6 +111,16 @@ function FigureSourceField({
   onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
 }) {
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  /**
+   * The in-flight IME value, held here and committed once.
+   *
+   * `onChange` fires for every candidate an input method offers, so committing from it turned one
+   * composed word into one command per keystroke: the document saw two edits where the user made
+   * one, and a single undo took back only the last of them. Every other surface in this editor holds
+   * the composing value locally and commits at `compositionend`; this one did not.
+   */
+  const [composingValue, setComposingValue] = useState<string | null>(null);
+  const composingRef = useRef(false);
 
   // The caret goes to the end of what is already written, which is where a person who just clicked an
   // equation to change it expects to continue. Doing it on mount rather than on every render matters:
@@ -145,8 +155,25 @@ function FigureSourceField({
         spellCheck={false}
         rows={Math.min(Math.max(lines, 2), 14)}
         readOnly={readOnly}
-        value={payload}
-        onChange={(event) => onPayloadChange(event.target.value)}
+        value={composingValue ?? payload}
+        onChange={(event) => {
+          if (composingRef.current) {
+            setComposingValue(event.target.value);
+            return;
+          }
+          onPayloadChange(event.target.value);
+        }}
+        onCompositionStart={(event) => {
+          composingRef.current = true;
+          setComposingValue(event.currentTarget.value);
+        }}
+        onCompositionUpdate={(event) => setComposingValue(event.currentTarget.value)}
+        onCompositionEnd={(event) => {
+          composingRef.current = false;
+          const settled = event.currentTarget.value;
+          setComposingValue(null);
+          if (settled !== payload) onPayloadChange(settled);
+        }}
         onKeyDown={(event) => {
           // Enter is the one key this field owns outright. Handing it back would reach the Block's
           // split handler, and splitting a figure in half leaves two fragments of a fence that are

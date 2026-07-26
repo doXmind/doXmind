@@ -75,6 +75,11 @@ for (const fixture of KIND_FIXTURES.filter((candidate) => candidate.word !== nul
     const row = rows(page).first();
     await activate(row);
 
+    // Move into the surface that holds the word before double-clicking it. A Block can have several
+    // surfaces and only one is active, so a double-click aimed at a word in another one spends its
+    // first press switching surfaces and its second on an editor that has only just mounted.
+    await selectWord(page, row, word);
+
     const rect = await rectOfText(row, word);
     const editor = row.locator("[data-native-block-editor]").first();
     const box = rect ?? (await editor.boundingBox());
