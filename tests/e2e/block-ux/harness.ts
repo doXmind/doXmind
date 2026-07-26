@@ -180,6 +180,17 @@ export async function selectWord(
   row: Locator,
   word: string
 ): Promise<{ technique: "drag" | "keyboard" | "unavailable" }> {
+  // A table edits one cell at a time, so a drag aimed at a word in some *other* cell only moves the
+  // active cell — the press lands on a rendered cell, not on an editing surface, and nothing gets
+  // selected. Put the caret in the cell that holds the word first, then select inside it.
+  const cell = row.locator("th,td").filter({ hasText: word }).first();
+  if (
+    (await cell.count()) > 0 &&
+    (await cell.locator("[data-native-block-editor]").count()) === 0
+  ) {
+    await cell.click();
+    await expect(cell.locator("[data-native-block-editor]")).toBeFocused();
+  }
   const rect = await rectOfText(row, word);
   if (rect) {
     await page.mouse.move(rect.x + 1, rect.y + rect.h / 2);
@@ -273,6 +284,29 @@ export async function toolbarState(page: Page): Promise<ToolbarState> {
       typeLabel: (type?.getAttribute("aria-label") ?? "").replace("Change block type: ", ""),
       pressed,
     };
+  });
+}
+
+/**
+ * The text an editing surface is showing, whichever kind of surface it is.
+ *
+ * `toHaveValue` throws "not an input element" on a contenteditable, and a table cell is one, so any
+ * assertion that has to hold for every kind goes through this instead.
+ */
+export async function surfaceTextOf(row: Locator): Promise<string> {
+  return row
+    .locator("[data-native-block-editor]")
+    .first()
+    .evaluate((el) => (el instanceof HTMLTextAreaElement ? el.value : (el.textContent ?? "")));
+}
+
+export async function activeSurfaceText(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const el = document.querySelector(
+      '[data-native-block-row][data-active="true"] [data-native-block-editor]'
+    );
+    if (!el) return "";
+    return el instanceof HTMLTextAreaElement ? el.value : (el.textContent ?? "");
   });
 }
 

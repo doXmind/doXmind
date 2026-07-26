@@ -3,6 +3,9 @@
 import { ChevronDown, GripVertical } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
+import { projectMarkdownInline } from "@/editor/markdown-block/markdown-inline-projection";
+import { SemanticInlineEditor } from "@/editor/markdown-block/semantic-inline-editor";
+
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,13 +40,50 @@ export interface MarkdownTableBlockProps {
    * the rest of the editor has — Escape to select the Block, undo, the Block menu — and leave the
    * only table in a Page unreachable by keyboard once the caret was inside it.
    */
-  readonly onCellKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  readonly onCellKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
   readonly renderCell: (text: string) => ReactNode;
 }
 
 export interface TableCellAddress {
   readonly row: number;
   readonly column: number;
+}
+
+/** The active cell, plus where its caret should land when the editor mounts. */
+interface ActiveCell extends TableCellAddress {
+  /** `"start"`, `"end"`, or an offset into the cell's payload source. */
+  readonly caret: "start" | "end" | number | null;
+}
+
+/**
+ * Offset of a point within an element's rendered text, skipping decoration.
+ *
+ * A press has to land the caret on the character under it, in a cell as much as in a paragraph.
+ * Without this the caret went to the start of whichever cell was pressed, so clicking the end of a
+ * word put you before the first letter of it.
+ */
+function visibleOffsetAtPoint(element: HTMLElement, x: number, y: number): number | null {
+  const host = document as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  const position = host.caretPositionFromPoint?.(x, y);
+  const range = position ? null : host.caretRangeFromPoint?.(x, y);
+  const node = position ? position.offsetNode : (range?.startContainer ?? null);
+  const offset = position ? position.offset : (range?.startOffset ?? 0);
+  if (!node || node.nodeType !== Node.TEXT_NODE || !element.contains(node)) return null;
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+    acceptNode: (candidate) =>
+      candidate.parentElement?.closest('[aria-hidden="true"]')
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT,
+  });
+  let total = 0;
+  for (let current = walker.nextNode(); current; current = walker.nextNode()) {
+    if (current === node) return total + offset;
+    total += (current.nodeValue ?? "").length;
+  }
+  return null;
 }
 
 /**
@@ -68,7 +108,7 @@ export function MarkdownTableBlock({
   onCellKeyDown,
   renderCell,
 }: MarkdownTableBlockProps) {
-  const [active, setActive] = useState<TableCellAddress | null>(null);
+  const [active, setActive] = useState<ActiveCell | null>(null);
   // The cell a press landed on, recorded before the Block is active.
   //
   // A press activates the Block, but `editable` is still false while it is being handled, so a
@@ -76,8 +116,7 @@ export function MarkdownTableBlock({
   // cell of an unfocused table put the caret in the header. A ref rather than state, because it must
   // survive the render that activation triggers without causing one of its own.
   const pendingCellRef = useRef<TableCellAddress | null>(null);
-  const pendingCaretRef = useRef<"start" | "end" | null>(null);
-  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const pendingCaretOffsetRef = useRef<ActiveCell["caret"]>(null);
 
   // A Block that is active must always own an editing surface: the runtime, the tests and the
   // caret-restore machinery all look for one. Landing on the first cell is the equivalent of a
@@ -88,26 +127,25 @@ export function MarkdownTableBlock({
       return;
     }
     if (active !== null) return;
-    setActive(pendingCellRef.current ?? { row: 0, column: 0 });
+    const pending = pendingCellRef.current;
+    const caret = pendingCaretOffsetRef.current;
     pendingCellRef.current = null;
+    pendingCaretOffsetRef.current = null;
+    setActive({ row: pending?.row ?? 0, column: pending?.column ?? 0, caret });
   }, [editable, active]);
 
-  // Focus follows the active cell. A Block that is active but whose surface holds no focus is the
-  // worst of both states — it renders as if it were being edited while every keystroke goes to the
-  // document — and it is what the rest of the editor assumes cannot happen.
-  //
-  // Keyed on the address rather than the source, so a keystroke does not re-run this and fight the
-  // caret the user is moving.
+  // The caret directive is one-shot. It is a prop, so leaving it set re-applied it on every render —
+  // and a render happens on every keystroke, which pinned the caret to the position the press landed
+  // on and made typing come out backwards: "xyz" reached the file as "zyx".
   useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    if (document.activeElement !== editor) editor.focus();
-    if (pendingCaretRef.current !== null) {
-      const at = pendingCaretRef.current === "start" ? 0 : editor.value.length;
-      editor.setSelectionRange(at, at);
-      pendingCaretRef.current = null;
-    }
+    if (active === null || active.caret === null) return;
+    setActive({ row: active.row, column: active.column, caret: null });
   }, [active]);
+
+  // Focus follows the active cell without any help here: moving cells mounts a different editor at a
+  // different position in the tree, and it takes focus itself. The caret it should land on is passed
+  // as a selection rather than set imperatively afterwards, so there is no frame where the cell is
+  // focused with the caret still at the wrong end.
 
   const cellAt = (row: number, column: number): MarkdownTableCell | undefined =>
     geometry.cells.find((candidate) => candidate.row === row && candidate.column === column);
@@ -122,10 +160,49 @@ export function MarkdownTableBlock({
     commit(source.slice(0, cell.payloadFrom) + payload + source.slice(cell.payloadTo));
   };
 
+  /**
+   * Record which cell a press landed on, and where in it.
+   *
+   * The offset is measured against the cell's *rendered* text and mapped back through the payload's
+   * own inline projection, so a press inside `**bold**` lands on the character shown rather than
+   * somewhere inside the delimiters that are not.
+   */
+  const pressCell = (
+    event: PointerEvent,
+    element: HTMLElement,
+    address: TableCellAddress,
+    cell: MarkdownTableCell | undefined
+  ) => {
+    if (!cell) return;
+    // A press already inside an editing surface belongs to that surface: it is how the caret is
+    // placed and how a drag-selection starts, and taking it over here would break both.
+    if ((event.target as HTMLElement | null)?.closest("[data-native-block-editor]")) return;
+    // A `<td>` cannot hold focus, so the browser's default action walks up to the row's `tabindex`
+    // and focuses *that* — after this handler has already moved the editor to the pressed cell. The
+    // editor would mount, focus itself, and then lose focus to the row in the same gesture, leaving
+    // a Block that looks focused with every keystroke going to the document. Placing the caret is
+    // this handler's job, so the default focus is not wanted.
+    event.preventDefault();
+    let caret: ActiveCell["caret"] = null;
+    const visible = visibleOffsetAtPoint(element, event.clientX, event.clientY);
+    if (visible !== null) {
+      const payload = source.slice(cell.payloadFrom, cell.payloadTo);
+      // The preview renders the trimmed text, so the leading padding the payload carries has to be
+      // added back before the projection can be asked anything.
+      const lead = payload.length - payload.trimStart().length;
+      caret = projectMarkdownInline(payload).visibleOffsetToSource(
+        Math.min(visible + lead, payload.length),
+        "forward"
+      );
+    }
+    pendingCellRef.current = address;
+    pendingCaretOffsetRef.current = caret;
+    if (editable) setActive({ ...address, caret });
+  };
+
   const moveTo = (row: number, column: number, caret: "start" | "end") => {
     if (!cellAt(row, column)) return false;
-    pendingCaretRef.current = caret;
-    setActive({ row, column });
+    setActive({ row, column, caret });
     return true;
   };
 
@@ -140,7 +217,7 @@ export function MarkdownTableBlock({
     return moveTo(next.row, next.column, direction === 1 ? "end" : "end");
   };
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>, address: TableCellAddress) => {
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>, address: TableCellAddress) => {
     if (event.key === "Tab") {
       event.preventDefault();
       // Tab out of the last cell appends a row, the way a spreadsheet does, rather than escaping the
@@ -148,8 +225,7 @@ export function MarkdownTableBlock({
       if (!step(address, event.shiftKey ? -1 : 1) && !event.shiftKey) {
         const next = markdownTableInsertRow(source, geometry, geometry.rowCount - 1, "below");
         if (next) {
-          pendingCaretRef.current = "end";
-          setActive({ row: geometry.rowCount, column: 0 });
+          setActive({ row: geometry.rowCount, column: 0, caret: "end" });
           commit(next);
         }
       }
@@ -162,18 +238,21 @@ export function MarkdownTableBlock({
       if (!moveTo(address.row + 1, address.column, "end")) {
         const next = markdownTableInsertRow(source, geometry, geometry.rowCount - 1, "below");
         if (next) {
-          pendingCaretRef.current = "end";
-          setActive({ row: geometry.rowCount, column: address.column });
+          setActive({ row: geometry.rowCount, column: address.column, caret: "end" });
           commit(next);
         }
       }
       return;
     }
-    if (event.key === "ArrowDown" && moveTo(address.row + 1, address.column, "end")) {
+    // Bare arrows only. A modifier turns these into something else entirely — Cmd+Up is
+    // start-of-field, Alt+Up moves the Block — and treating them as cell navigation moved the caret
+    // a row up instead, so pressing Cmd+Up in a body cell landed in the header.
+    const plainArrow = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
+    if (plainArrow && event.key === "ArrowDown" && moveTo(address.row + 1, address.column, "end")) {
       event.preventDefault();
       return;
     }
-    if (event.key === "ArrowUp" && moveTo(address.row - 1, address.column, "end")) {
+    if (plainArrow && event.key === "ArrowUp" && moveTo(address.row - 1, address.column, "end")) {
       event.preventDefault();
       return;
     }
@@ -193,18 +272,22 @@ export function MarkdownTableBlock({
     const isActive = editable && active?.row === address.row && active?.column === address.column;
     if (!isActive) return renderCell(source.slice(cell.from, cell.to));
     return (
-      <textarea
-        ref={editorRef}
-        data-native-block-editor
-        data-native-table-cell-editor
-        aria-label="Table cell"
-        rows={1}
+      <SemanticInlineEditor
+        label="Table cell"
         // The payload, padding and all. See `MarkdownTableCell.payloadFrom` for why a trimmed value
-        // makes the caret lie.
-        value={source.slice(cell.payloadFrom, cell.payloadTo)}
-        className="native-block-textarea block w-full resize-none bg-transparent outline-none"
-        onChange={(event) => commitCell(cell, sanitiseCellPayload(event.target.value))}
+        // makes the caret lie — the argument holds whichever surface renders it.
+        source={source.slice(cell.payloadFrom, cell.payloadTo)}
+        selection={cellSelection(active?.caret ?? null, cell)}
+        autoFocus
+        className="native-block-editor-surface block w-full whitespace-pre-wrap break-words bg-transparent outline-none"
+        onSourceChange={(next) => commitCell(cell, sanitiseCellPayload(next))}
         onKeyDown={(event) => handleKeyDown(event, address)}
+        onPasteText={(text) => {
+          // A pipe row is one line, so pasted newlines are flattened here rather than left to break
+          // the row apart.
+          const payload = source.slice(cell.payloadFrom, cell.payloadTo);
+          commitCell(cell, sanitiseCellPayload(payload + text));
+        }}
       />
     );
   };
@@ -226,10 +309,9 @@ export function MarkdownTableBlock({
                   key={`header-${column}`}
                   data-table-cell={cell ? `${cell.from}` : undefined}
                   className={`relative border border-border bg-muted/50 px-2 py-1.5 font-medium ${alignmentClass(column)}`}
-                  onPointerDown={() => {
-                    pendingCellRef.current = { row: 0, column };
-                    if (editable) setActive({ row: 0, column });
-                  }}
+                  onPointerDown={(event) =>
+                    pressCell(event.nativeEvent, event.currentTarget, { row: 0, column }, cell)
+                  }
                 >
                   {editable ? (
                     <TableAxisMenu
@@ -265,11 +347,9 @@ export function MarkdownTableBlock({
                     key={`cell-${row}-${column}`}
                     data-table-cell={cell ? `${cell.from}` : undefined}
                     className={`relative border border-border px-2 py-1.5 ${alignmentClass(column)}`}
-                    onPointerDown={() => {
-                      if (!cell) return;
-                      pendingCellRef.current = { row, column };
-                      if (editable) setActive({ row, column });
-                    }}
+                    onPointerDown={(event) =>
+                      pressCell(event.nativeEvent, event.currentTarget, { row, column }, cell)
+                    }
                   >
                     {editable && column === 0 ? (
                       <TableAxisMenu
@@ -306,6 +386,21 @@ export function MarkdownTableBlock({
  * the row: both turn one keystroke into a structural change nobody asked for. Escaping and flattening
  * keeps what the user typed visible in the cell where they typed it.
  */
+/** Where the caret goes when a cell's editor mounts, in the payload's own source offsets. */
+function cellSelection(
+  caret: ActiveCell["caret"],
+  cell: MarkdownTableCell
+): { anchor: number; head: number } | undefined {
+  const length = cell.payloadTo - cell.payloadFrom;
+  if (caret === "end") return { anchor: length, head: length };
+  if (caret === "start") return { anchor: 0, head: 0 };
+  if (typeof caret === "number") {
+    const at = Math.max(0, Math.min(caret, length));
+    return { anchor: at, head: at };
+  }
+  return undefined;
+}
+
 function sanitiseCellPayload(value: string): string {
   return value.replace(/\r\n|\n|\r/g, " ").replace(/(^|[^\\])\|/g, "$1\\|");
 }

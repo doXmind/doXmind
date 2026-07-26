@@ -51,6 +51,30 @@ function slashHandlers() {
   } satisfies Partial<ComponentProps<typeof MarkdownBlockRow>>;
 }
 
+/**
+ * Type into a contenteditable the way the semantic editor observes it: the browser mutates the DOM
+ * and then reports one `input`. Setting a `value` would do nothing — the element has no value.
+ */
+function typeInto(editor: HTMLElement, text: string) {
+  const walker = editor.ownerDocument.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  let target = walker.nextNode() as Text | null;
+  if (!target) {
+    target = editor.ownerDocument.createTextNode("");
+    editor.append(target);
+  }
+  // Replace the whole run rather than appending: the editor reads the DOM back, so a stray second
+  // text node reads as the user having typed the new text after the old.
+  target.nodeValue = text;
+  for (let extra = walker.nextNode(); extra; extra = walker.nextNode()) extra.nodeValue = "";
+  const selection = editor.ownerDocument.defaultView?.getSelection();
+  const range = editor.ownerDocument.createRange();
+  range.setStart(target, text.length);
+  range.collapse(true);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  fireEvent.input(editor, { inputType: "insertText" });
+}
+
 describe("MarkdownBlockRow semantic previews", () => {
   beforeEach(() => {
     mermaidTheme.value = "test-light";
@@ -833,20 +857,18 @@ describe("MarkdownBlockRow semantic previews", () => {
       />
     );
 
-    // The grid is the editing surface. Activation no longer replaces it with the raw pipe source,
-    // so the table element is still here and the caret lives in one cell of it.
+    // The grid is the editing surface. Activation no longer replaces it with the raw pipe source, so
+    // the table element is still here and the caret lives in one cell of it.
     expect(container.querySelector("table")).toBeInTheDocument();
-    const cell = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Table cell" });
+    const cell = screen.getByRole("textbox", { name: "Table cell" });
     // The value is the payload between the pipes, padding included, so an edit is a verbatim splice.
-    expect(cell.value).toBe(" A ");
+    expect(cell).toHaveTextContent("A");
 
-    fireEvent.change(cell, { target: { value: " Alpha " } });
+    typeInto(cell, " Alpha ");
     expect(onChange).toHaveBeenCalledWith(block.id, "| Alpha | B |\n| --- | --- |\n| a1 | b1 |");
 
     fireEvent.keyDown(cell, { key: "Tab" });
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Table cell" }).value).toBe(
-      " B "
-    );
+    expect(screen.getByRole("textbox", { name: "Table cell" })).toHaveTextContent("B");
   });
 
   it("keeps a pipe typed into a cell inside that cell", () => {
@@ -864,10 +886,21 @@ describe("MarkdownBlockRow semantic previews", () => {
       />
     );
 
-    const cell = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Table cell" });
     // Unescaped, this would end the cell and give one row a column the others do not have.
-    fireEvent.change(cell, { target: { value: " a|b " } });
+    typeInto(screen.getByRole("textbox", { name: "Table cell" }), " a|b ");
     expect(onChange).toHaveBeenCalledWith(block.id, "| a\\|b | B |\n| --- | --- |\n| a1 | b1 |");
+  });
+
+  it("renders a table cell's inline Markdown instead of its delimiters", () => {
+    const source = "| **bold** | B |\n| --- | --- |\n| a1 | b1 |\n";
+    const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
+    render(<MarkdownBlockRow block={block} index={0} count={1} active {...slashHandlers()} />);
+
+    // The cell being edited shows what the cell means, not the syntax that spells it — the same
+    // promise every prose Block makes, which a raw payload field could not keep.
+    const cell = screen.getByRole("textbox", { name: "Table cell" });
+    expect(cell).not.toHaveTextContent("**");
+    expect(cell.querySelector("strong")).toHaveTextContent("bold");
   });
 
   it("keeps a semantic print preview beside the active source control", () => {

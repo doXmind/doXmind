@@ -1008,11 +1008,40 @@ export function MarkdownBlockRow({
             editable={active && block.editable}
             onChange={onChange}
             onCellKeyDown={(event) => {
-              // Escape leaves the grid the same way it leaves any other Block: the caret becomes a
-              // Block selection. Without this the caret could enter a table and never come back out.
+              // The Block-level shortcuts, which a cell would otherwise swallow. Undo was the one
+              // that mattered: with the caret in a cell, Ctrl/Cmd+Z reached nothing at all, so a
+              // table was the one Block you could edit and not take back.
+              //
+              // Listed explicitly rather than delegated to the surface handler, because that one is
+              // built around a caret in the Block's own source and a cell's offsets are not in that
+              // space.
+              const mod = event.metaKey || event.ctrlKey;
               if (event.key === "Escape") {
                 event.preventDefault();
                 onSelectBlock?.(block.id);
+                return;
+              }
+              if (mod && event.key.toLowerCase() === "z") {
+                event.preventDefault();
+                if (event.repeat) return;
+                if (event.shiftKey) onRedo();
+                else onUndo();
+                return;
+              }
+              if (mod && !event.altKey && event.key.toLowerCase() === "d") {
+                event.preventDefault();
+                if (!event.repeat) onDuplicate(block.id);
+                return;
+              }
+              if (mod && event.shiftKey && (event.key === "Backspace" || event.key === "Delete")) {
+                event.preventDefault();
+                if (!event.repeat) onDelete(block.id);
+                return;
+              }
+              if (event.altKey && !mod && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+                if (onMove(block.id, event.key === "ArrowUp" ? -1 : 1) !== false) {
+                  event.preventDefault();
+                }
               }
             }}
             renderCell={(text) => (

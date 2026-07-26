@@ -29,6 +29,8 @@ export interface SemanticInlineSelection {
 
 export interface SemanticInlineEditorProps {
   readonly source: string;
+  /** Accessible name. A table cell is one of these too, and is not "the Markdown block". */
+  readonly label?: string;
   readonly id?: string;
   readonly describedBy?: string;
   readonly className?: string;
@@ -65,6 +67,7 @@ export interface SemanticInlineEditorProps {
  */
 export function SemanticInlineEditor({
   source,
+  label = "Markdown block",
   id,
   describedBy,
   className,
@@ -240,7 +243,7 @@ export function SemanticInlineEditor({
       ref={editorRef}
       id={id}
       role="textbox"
-      aria-label="Markdown block"
+      aria-label={label}
       aria-describedby={describedBy}
       aria-multiline="true"
       aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Meta+D Control+D Meta+Shift+Backspace Control+Shift+Backspace"

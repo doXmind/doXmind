@@ -5,6 +5,8 @@ import {
   activate,
   expectSourceUnchanged,
   openBlockMenu,
+  activeSurfaceText,
+  surfaceTextOf,
   openPage,
   readSource,
   rowWith,
@@ -94,7 +96,7 @@ for (const fixture of TYPING_FIXTURES) {
     await expectSavedSource(opened, source);
     // The view has to follow the file, or the next keystroke edits a Block that no longer says what
     // the screen shows.
-    await expect(activeEditor(page)).not.toHaveValue(new RegExp(RUN));
+    await expect.poll(() => activeSurfaceText(page)).not.toMatch(new RegExp(RUN));
   });
 
   test(`${fixture.label}: moving the caret between two runs makes two undo steps`, async ({
@@ -153,8 +155,8 @@ for (const fixture of TYPING_FIXTURES) {
     // That is the decisive check: polling the file can only prove a state arrived, never that one
     // stayed away, because autosave has a second of debounce to hide it in.
     const editor = activeEditor(page);
-    await expect(editor).toHaveValue(new RegExp(`${word}${SECOND_RUN}`));
-    await expect(editor).not.toHaveValue(new RegExp(RUN));
+    await expect.poll(() => surfaceTextOf(row)).toMatch(new RegExp(`${word}${SECOND_RUN}`));
+    await expect.poll(() => surfaceTextOf(row)).not.toMatch(new RegExp(RUN));
     expect(await readSource(opened), "redo resurrected a discarded state").toBe(branched);
   });
 }
@@ -257,7 +259,7 @@ for (const fixture of TEXT_FIXTURES) {
     // contenteditable, which would report a real regression as a broken test.
     expect(await surfaceOf(row), "undo left the semantic surface mounted").toBe("textarea");
     // And the delimiters have to be gone from the surface itself, not merely hidden by a projection.
-    await expect(activeEditor(page)).not.toHaveValue(/\*\*/);
+    await expect.poll(() => activeSurfaceText(page)).not.toMatch(/\*\*/);
   });
 }
 
@@ -279,7 +281,7 @@ test("undo with nothing to undo neither edits the file nor raises a runtime erro
   // Inert, not merely harmless: the caret stays where it was and the Block keeps its text, because
   // an exception thrown out of a key handler tears down the editing surface under the user.
   await expect(row).toHaveAttribute("data-active", "true");
-  await expect(activeEditor(page)).toHaveValue("Paragraph alpha bravo charlie.");
+  await expect.poll(() => activeSurfaceText(page)).toBe("Paragraph alpha bravo charlie.");
   await expectSourceUnchanged(opened, source);
   expect(runtimeErrors, "undo with an empty history logged a runtime error").toEqual([]);
 });
