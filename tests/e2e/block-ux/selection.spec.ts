@@ -26,11 +26,6 @@ for (const fixture of KIND_FIXTURES.filter((candidate) => candidate.word !== nul
   test(`${fixture.label}: a drag across a word selects it when the Block is already active`, async ({
     page,
   }) => {
-    // Known defect, tracked rather than asserted away: a toggle's whole `<summary>` is the
-    // disclosure control, so pressing its text opens and closes the toggle instead of activating the
-    // Block, and no editing surface ever appears. Delete this annotation when the toggle separates
-    // its triangle from its label.
-    if (fixture.kind === "toggle") test.fail();
     await openPage(page, "Sel", `${fixture.source}\n`);
     const row = rows(page).first();
     await activate(row);
@@ -47,16 +42,11 @@ for (const fixture of KIND_FIXTURES.filter((candidate) => candidate.word !== nul
   test(`${fixture.label}: a drag across a word selects it when the Block is NOT yet active`, async ({
     page,
   }) => {
-    // Known defects for the three kinds whose preview is not a linear rendering of their source, so
-    // a point in the preview cannot be mapped to a source offset the way it can for prose:
-    //   toggle   - the press never activates the Block at all (see the note above)
-    //   callout  - the icon and "Note" label shift the mapping, so the range comes back short
-    //              ("Callo" when asked for "citem")
-    //   table    - a grid has no linear point-to-offset mapping; cells carry their own offsets
-    //              instead, which gives a caret but not a range
-    // All three are the same underlying gap: these kinds swap their rendered view for raw Markdown
-    // on activation. Delete each annotation as that kind gains in-place editing.
-    if (fixture.kind === "toggle" || fixture.kind === "callout" || fixture.kind === "table") {
+    // A table is the last kind whose preview is not a linear rendering of its source: a grid has no
+    // point-to-offset mapping, and its cells carry individual offsets instead, which yields a caret
+    // but not a range. The callout and toggle that used to sit here now declare per-fragment source
+    // offsets and pass. Delete this when the table gains in-place cell editing.
+    if (fixture.kind === "table") {
       test.fail();
     }
     await openPage(page, "Sel", `${fixture.source}\n`);
@@ -81,8 +71,6 @@ for (const fixture of KIND_FIXTURES.filter((candidate) => candidate.word !== nul
   });
 
   test(`${fixture.label}: a double-click selects a word`, async ({ page }) => {
-    // Same toggle defect: without activation there is no surface to double-click into.
-    if (fixture.kind === "toggle") test.fail();
     await openPage(page, "Sel", `${fixture.source}\n`);
     const row = rows(page).first();
     await activate(row);

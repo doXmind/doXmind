@@ -15,20 +15,24 @@ describe("portable Markdown toggle", () => {
     expect(parseMarkdownToggle(source)).toEqual({
       open: false,
       summary: "Toggle",
+      summaryFrom: 20,
       markdown: "Write something…",
     });
+    // The offset has to survive CRLF, where assuming a one-character terminator drifts by a
+    // character per line and the caret lands inside the tag rather than on the title.
+    expect(source.slice(20, 20 + "Toggle".length)).toBe("Toggle");
   });
 
   it("accepts the portable open attribute but rejects lookalike raw HTML", () => {
-    expect(
-      parseMarkdownToggle(
-        "<details open>\n<summary>Release notes</summary>\n\n- shipped\n- local\n\n</details>\n"
-      )
-    ).toEqual({
+    const open =
+      "<details open>\n<summary>Release notes</summary>\n\n- shipped\n- local\n\n</details>\n";
+    expect(parseMarkdownToggle(open)).toEqual({
       open: true,
       summary: "Release notes",
+      summaryFrom: 24,
       markdown: "- shipped\n- local",
     });
+    expect(open.slice(24, 24 + "Release notes".length)).toBe("Release notes");
     expect(parseMarkdownToggle("<details>not a toggle</details>\n")).toBeNull();
     expect(parseMarkdownToggle("<div>\n<summary>No</summary>\n</div>\n")).toBeNull();
   });

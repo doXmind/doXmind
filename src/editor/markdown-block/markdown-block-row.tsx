@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ChevronRight,
   FileText,
   Info,
   Lightbulb,
@@ -64,7 +65,7 @@ import {
   resolveCodeLanguage,
   type CodeToken,
 } from "@/editor/markdown-block/code-highlight";
-import { parseMarkdownToggle } from "@/editor/markdown-block/markdown-toggle";
+import { parseMarkdownToggle, type MarkdownToggle } from "@/editor/markdown-block/markdown-toggle";
 import {
   markdownTableBlankRow,
   markdownTableCellAt,
@@ -292,10 +293,16 @@ export function MarkdownBlockRow({
   // content was the query — you could not type `Next steps: /table`, and no list item, heading or
   // quote could reach it at all.
   const [caretOffset, setCaretOffset] = useState<number | null>(null);
-  const noteCaretOffset = (offset: number) => {
+  const noteCaretOffset = (offset: number, text: string = source) => {
     // Only the slash run needs a live caret. Storing it unconditionally would re-render the row on
     // every arrow key; `null` short-circuits to React's bail-out when no trigger char is present.
-    setCaretOffset(SLASH_TRIGGER_PATTERN.test(source) ? offset : null);
+    //
+    // `text` defaults to the render's `source`, but a caller that already holds the newer text must
+    // pass it. A committing IME hands over its result before React has re-rendered, so testing the
+    // closure's `source` tested the text as it was *before* the commit: composing 、 into an empty
+    // Block tested "", found no trigger, and stored `null`. The insert panel then never opened, which
+    // made the fullwidth trigger unreachable from the CJK keyboards it exists for.
+    setCaretOffset(SLASH_TRIGGER_PATTERN.test(text) ? offset : null);
   };
   // While an IME composition is open the model deliberately lags the DOM, so the menu filters on the
   // live text. That is what makes `/` + pinyin narrow as you type, the way Feishu's insert panel
@@ -417,7 +424,7 @@ export function MarkdownBlockRow({
       anchor: event.target.selectionStart,
       head: event.target.selectionEnd,
     };
-    noteCaretOffset(event.target.selectionEnd);
+    noteCaretOffset(event.target.selectionEnd, event.target.value);
     onChange(block.id, event.target.value);
     autosizeTextarea(event.target);
   };
@@ -1031,7 +1038,7 @@ export function MarkdownBlockRow({
                   className="native-block-textarea block min-w-0 flex-1 whitespace-pre-wrap break-words bg-transparent outline-none"
                   onSourceChange={(nextSource, nextSelection) => {
                     editorSelectionRef.current = nextSelection;
-                    noteCaretOffset(nextSelection.head);
+                    noteCaretOffset(nextSelection.head, nextSource);
                     setInlineSelection(null);
                     onChange(block.id, nextSource);
                   }}
@@ -1096,8 +1103,18 @@ export function MarkdownBlockRow({
                   onCompositionEnd={(event) => {
                     composingRef.current = false;
                     const settled = event.currentTarget.value;
+                    const caret = event.currentTarget.selectionEnd;
                     setComposingValue(null);
                     onCompositionEnd(block.id);
+                    // Every other input path mirrors the caret before issuing its command; this one
+                    // did not, so after a composition the slash run fell back to a selection last
+                    // written before the composition began — offset 0 on a Block that now held the
+                    // trigger. Both have to be told about the committed text, not the stale one.
+                    editorSelectionRef.current = {
+                      anchor: event.currentTarget.selectionStart,
+                      head: caret,
+                    };
+                    noteCaretOffset(caret, settled);
                     if (settled !== source) onChange(block.id, settled);
                   }}
                   onKeyDown={handleTextareaKeyDown}
@@ -1391,6 +1408,19 @@ export function sourceOffsetAtPoint(
     offset = range.startOffset;
   }
   if (!node || node.nodeType !== Node.TEXT_NODE || !container.contains(node)) return null;
+  // A preview that is not a verbatim rendering of its source can declare where one of its fragments
+  // begins, and a point inside that fragment is then exact rather than counted from the top of a
+  // Block that also renders chrome of its own. This is the general form of the `data-table-cell`
+  // offsets a table already carries; a callout uses it per line, because each line loses a `>`
+  // prefix of its own width.
+  const anchor = node.parentElement?.closest<HTMLElement>("[data-source-offset]");
+  if (anchor && container.contains(anchor)) {
+    const within = textOffsetWithin(anchor, node, offset);
+    const base = Number(anchor.dataset.sourceOffset);
+    if (within !== null && Number.isFinite(base)) {
+      return Math.min(base + within, source.length);
+    }
+  }
   const visibleOffset = textOffsetWithin(container, node, offset);
   if (visibleOffset === null) return null;
   if (!projection || projection.visibleText === source) {
@@ -1953,18 +1983,7 @@ function BlockPreview({
         ? MarkdownBlockDocument.fromMarkdown(toggle.markdown).getSnapshot().blocks
         : [];
       return (
-        <details
-          data-testid="toggle-block"
-          data-native-toggle
-          open={toggle.open}
-          className="my-1 min-h-9 rounded-lg border border-border bg-muted/20"
-        >
-          <summary
-            className="cursor-pointer select-none break-words px-3 py-2 text-sm font-medium"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <InlineMarkdownPreview source={toggle.summary} onOpenWikiLink={onOpenWikiLink} />
-          </summary>
+        <TogglePreviewShell toggle={toggle} source={source} onOpenWikiLink={onOpenWikiLink}>
           <div
             data-native-toggle-content
             className="space-y-0.5 border-t border-border/70 px-3 py-2"
@@ -1986,7 +2005,7 @@ function BlockPreview({
               <p className="text-sm text-muted-foreground">Empty toggle</p>
             )}
           </div>
-        </details>
+        </TogglePreviewShell>
       );
     }
   }
@@ -2071,13 +2090,28 @@ function BlockPreview({
           <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${style.accent}`} aria-hidden="true" />
           <div className="min-w-0 flex-1">
             {callout.title ? (
-              <div className="font-semibold">{callout.title}</div>
+              <div className="font-semibold" data-source-offset={callout.titleFrom}>
+                {callout.title}
+              </div>
             ) : (
-              <div className={`font-semibold ${style.accent}`}>{style.label}</div>
+              // Derived from `[!TYPE]`, present in no byte of the file. Hidden from the caret
+              // mapping the same way the icon is, and from screen readers too, since the `<aside>`
+              // above already announces the type.
+              <div className={`font-semibold ${style.accent}`} aria-hidden="true">
+                {style.label}
+              </div>
             )}
-            {callout.body ? (
+            {callout.body.length ? (
               <div className="whitespace-pre-wrap break-words">
-                <InlineMarkdownPreview source={callout.body} onOpenWikiLink={onOpenWikiLink} />
+                {callout.body.map((line, index) => (
+                  <div key={`callout-line-${index}`} data-source-offset={line.from}>
+                    {line.text ? (
+                      <InlineMarkdownPreview source={line.text} onOpenWikiLink={onOpenWikiLink} />
+                    ) : (
+                      <br />
+                    )}
+                  </div>
+                ))}
               </div>
             ) : null}
           </div>
@@ -2755,14 +2789,106 @@ function MermaidBlockPreview({ source }: { source: string }) {
   );
 }
 
-function calloutPreview(source: string): { type: string; title: string; body: string } | null {
-  const lines = source.split(/\r\n|\n|\r/).map((line) => line.replace(/^ {0,3}>[ \t]?/, ""));
-  const header = lines[0]?.match(/^\[!([A-Za-z][A-Za-z0-9_-]*)\][+-]?(?:[ \t]+(.*))?$/);
+/**
+ * A toggle's chrome, with the disclosure separated from the title.
+ *
+ * A `<summary>` natively owns every press inside it, and this one also stopped the press
+ * propagating so the disclosure could keep it. Since a closed `<details>` shows nothing but its
+ * summary, that left a toggle with no pixel a pointer could use to edit it: its title was reachable
+ * from the keyboard only. Notion draws the same distinction the other way round — the triangle
+ * toggles, the text is text — so the chevron takes the gesture and the title is left alone.
+ *
+ * The open state is view state, not document state. `<details open>` in the file is the initial
+ * value, and expanding a toggle to read it must not rewrite the user's Markdown, so the override
+ * lives here and is dropped whenever the source changes underneath it.
+ */
+function TogglePreviewShell({
+  toggle,
+  source,
+  onOpenWikiLink,
+  children,
+}: {
+  toggle: MarkdownToggle;
+  source: string;
+  onOpenWikiLink?: (target: string) => void;
+  children: ReactNode;
+}) {
+  const [override, setOverride] = useState<boolean | null>(null);
+  useEffect(() => setOverride(null), [source]);
+  const open = override ?? toggle.open;
+  return (
+    <details
+      data-testid="toggle-block"
+      data-native-toggle
+      open={open}
+      className="my-1 min-h-9 rounded-lg border border-border bg-muted/20"
+    >
+      <summary
+        className="flex list-none items-start gap-1.5 break-words px-3 py-2 text-sm font-medium [&::-webkit-details-marker]:hidden"
+        // Cancel the native disclosure but let the press keep travelling, so the row can activate
+        // the Block the way it does for every other kind.
+        onClick={(event) => event.preventDefault()}
+      >
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={open ? "Collapse toggle" : "Expand toggle"}
+          className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-muted hover:text-foreground"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setOverride(!open);
+          }}
+        >
+          <ChevronRight
+            className={`h-3.5 w-3.5 transition-transform duration-150 ${open ? "rotate-90" : ""}`}
+            aria-hidden="true"
+          />
+        </button>
+        <span className="min-w-0 flex-1" data-source-offset={toggle.summaryFrom}>
+          <InlineMarkdownPreview source={toggle.summary} onOpenWikiLink={onOpenWikiLink} />
+        </span>
+      </summary>
+      {children}
+    </details>
+  );
+}
+
+interface CalloutPreviewLine {
+  readonly text: string;
+  /** Where this line's text begins in the Block's source, past its `>` prefix. */
+  readonly from: number;
+}
+
+/**
+ * A callout's parts, each carrying the source offset its text starts at.
+ *
+ * The offsets are the point. A callout's preview is not a verbatim rendering of its source: every
+ * line loses a `>` prefix whose width varies, and the Block gains an icon and a type label that
+ * exist nowhere in the file. Counting rendered characters to find a source position therefore lands
+ * short by everything the preview added and by every prefix it removed, which is why pressing a
+ * word in a callout used to put the caret several characters before it.
+ */
+function calloutPreview(
+  source: string
+): { type: string; title: string; titleFrom: number; body: CalloutPreviewLine[] } | null {
+  const lines: CalloutPreviewLine[] = [];
+  let offset = 0;
+  for (const raw of source.split(/\r\n|\n|\r/)) {
+    const prefix = /^ {0,3}>[ \t]?/.exec(raw)?.[0] ?? "";
+    lines.push({ text: raw.slice(prefix.length), from: offset + prefix.length });
+    // Splitting on the union of terminators loses which one matched, so read it back off the source
+    // rather than assuming `\n` and drifting by one character per line in a CRLF file.
+    offset += raw.length + (source.startsWith("\r\n", offset + raw.length) ? 2 : 1);
+  }
+  const header = lines[0]?.text.match(/^\[!([A-Za-z][A-Za-z0-9_-]*)\][+-]?(?:[ \t]+(.*))?$/);
   if (!header) return null;
+  const title = header[2] ?? "";
   return {
     type: header[1].toUpperCase(),
-    title: header[2] ?? "",
-    body: lines.slice(1).join("\n"),
+    title,
+    titleFrom: lines[0].from + (title ? lines[0].text.length - title.length : 0),
+    body: lines.slice(1),
   };
 }
 
