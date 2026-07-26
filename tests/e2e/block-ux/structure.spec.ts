@@ -190,15 +190,16 @@ for (const fixture of TEXT_BLOCKS) {
       await expect(rows(page)).toHaveCount(1);
       expect(await kindsInOrder(page)).toEqual(["blockquote"]);
       await expectSource(opened, `> ${left}\n> ${right}\n`);
-      // The caret sits after the `> ` the split inserted, so typing continues the second quote line.
-      // The Block is multi-line now, so `createBlockEditingProjection` stops projecting the marker
-      // away and the surface holds the whole editable source. The offset therefore counts the
-      // marker, the payload before the cut, and the inserted newline and prefix — which is only a
-      // comparable number because the surface is still the raw textarea, asserted here rather than
-      // assumed.
+      // The caret sits at the start of the second quote line, so typing continues it.
+      //
+      // This offset used to count the `> ` markers as well, because a multi-line quote gave up on
+      // projecting and put its raw source in the surface. It no longer does — every line's marker is
+      // hidden now — so the caret is measured where the user sees it: the text before the cut, plus
+      // the newline. The surface is still a textarea (a quote holding a newline cannot use the
+      // semantic editor), which is asserted rather than assumed, but what it holds is the projection.
       const caret = await caretOffset(page);
-      expect(caret.space, "a multi-line quote must still edit as raw source").toBe("source");
-      expect(caret.offset).toBe(fixture.marker.length + left.length + 3);
+      expect(caret.space, "a multi-line quote still edits in a textarea").toBe("source");
+      expect(caret.offset).toBe(left.length + 1);
       return;
     }
 
