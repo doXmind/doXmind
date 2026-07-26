@@ -19,12 +19,14 @@ export interface MarkdownTableCell {
   /**
    * Source range of everything between this cell's pipes, padding included.
    *
-   * This, and not the trimmed range, is what a cell editor must show and replace. The rule that
-   * matters is that the string in the DOM equals the string the next render will produce, or the
-   * caret lies. With a trimmed value, typing a space at the end of `| a |` commits `| a  |`, the
-   * re-parse trims it back to `a`, React rewrites the field, and the space the user just typed
-   * disappears from the editor while sitting in the file as padding. A payload value makes the edit
-   * a verbatim splice and the round-trip an identity.
+   * For the structural operations, which rewrite whole rows and columns and so have to know where
+   * each cell's slot begins and ends, not just where its text sits.
+   *
+   * The cell editor deliberately shows the trimmed range instead: a payload value put the padding on
+   * screen the instant a cell was clicked, shifting the line sideways. The round-trip is stable
+   * anyway, because the editor's content is keyed by the trimmed text — committing `| a  |` reparses
+   * to the same `a`, so React never rewrites the field and a just-typed trailing space survives in
+   * the DOM until it becomes real text.
    */
   readonly payloadFrom: number;
   readonly payloadTo: number;

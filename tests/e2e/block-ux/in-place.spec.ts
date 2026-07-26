@@ -1,6 +1,6 @@
 import { expect, test, type Locator } from "@playwright/test";
 
-import { activate, clickAway, openPage, rows } from "./harness";
+import { activate, clickAway, openPage, rows, settledHeight } from "./harness";
 
 /** A 1x1 PNG, so the image Block has a real file to render instead of a missing-asset placeholder. */
 const PIXEL_PNG = Buffer.from(
@@ -146,16 +146,15 @@ for (const testCase of CASES) {
     const row = rows(page).nth(1);
 
     await clickAway(page);
-    const before = await row.boundingBox();
+    // Settled, so an equation still typesetting is not mistaken for activation resizing the Block.
+    const before = await settledHeight(row);
     await activate(row);
-    const after = await row.boundingBox();
+    const after = (await row.boundingBox())?.height ?? 0;
 
-    expect(before).not.toBeNull();
-    expect(after).not.toBeNull();
     // Anything an editing surface adds is either present in both states or out of flow. Every
     // version of this that mounted controls only while active grew the Block under the pointer.
     expect(
-      Math.abs((after?.height ?? 0) - (before?.height ?? 0)),
+      Math.abs(after - before),
       `activating a ${testCase.label} changed its height`
     ).toBeLessThanOrEqual(1);
   });

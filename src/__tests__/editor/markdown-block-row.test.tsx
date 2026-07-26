@@ -871,10 +871,11 @@ describe("MarkdownBlockRow semantic previews", () => {
     // the table element is still here and the caret lives in one cell of it.
     expect(container.querySelector("table")).toBeInTheDocument();
     const cell = screen.getByRole("textbox", { name: "Table cell" });
-    // The value is the payload between the pipes, padding included, so an edit is a verbatim splice.
+    // The cell holds its text, not the padding around it: holding the padding made it visible the
+    // moment a cell was clicked, and the line jumped sideways.
     expect(cell).toHaveTextContent("A");
 
-    typeInto(cell, " Alpha ");
+    typeInto(cell, "Alpha");
     expect(onChange).toHaveBeenCalledWith(block.id, "| Alpha | B |\n| --- | --- |\n| a1 | b1 |");
 
     fireEvent.keyDown(cell, { key: "Tab" });
@@ -897,7 +898,7 @@ describe("MarkdownBlockRow semantic previews", () => {
     );
 
     // Unescaped, this would end the cell and give one row a column the others do not have.
-    typeInto(screen.getByRole("textbox", { name: "Table cell" }), " a|b ");
+    typeInto(screen.getByRole("textbox", { name: "Table cell" }), "a|b");
     expect(onChange).toHaveBeenCalledWith(block.id, "| a\\|b | B |\n| --- | --- |\n| a1 | b1 |");
   });
 

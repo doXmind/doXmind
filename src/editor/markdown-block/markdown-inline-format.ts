@@ -40,14 +40,37 @@ export function createMarkdownInlineFormatEdit(
   format: MarkdownInlineFormat
 ): MarkdownInlineFormatEdit | null {
   if (from < 0 || to <= from || to > source.length) return null;
-  const activeFence = codeFenceAround(source, from, to);
   const codeSpan = inlineCodeSpanOverlappingSelection(source, from, to);
-  if (
-    codeSpan &&
-    (format !== "code" || (!activeFence && (from !== codeSpan.from || to !== codeSpan.to)))
-  ) {
-    return null;
+  // Toggling code off. The toolbar reports code for any selection the span contains, including one
+  // whose ends straddle a delimiter — an inline code chip is drawn with padding, so a drag beginning
+  // a pixel inside its left edge anchors outside the opening backtick. The untoggle has to accept the
+  // same set the toolbar lights up for; a pressed button that does nothing is worse than an unlit one.
+  //
+  // Unwrap the span, not the selection: the selection's ends are exactly what is unreliable here, so
+  // the delimiters are found from the span. This is also why a selection covering a whole chip removes
+  // its code rather than nesting a longer fence around the literal backticks — the semantic editor
+  // hides the delimiters, so a drag over a chip means "this chip", never "these six characters".
+  if (format === "code" && codeSpan && selectionIsInlineCode(source, from, to)) {
+    const fence = backtickRunLength(source, codeSpan.from);
+    const content = source.slice(codeSpan.from + fence, codeSpan.to - fence);
+    // A multi-backtick fence pads its content by one space either side so the content's own backticks
+    // cannot close it. Those spaces belong to the fence, so they leave with it.
+    const bare =
+      fence > 1 && content.startsWith(" ") && content.endsWith(" ")
+        ? content.slice(1, -1)
+        : content;
+    return {
+      from: codeSpan.from,
+      to: codeSpan.to,
+      text: bare,
+      selection: { anchor: codeSpan.from, head: codeSpan.from + bare.length },
+    };
   }
+
+  // Every legitimate code selection has returned by now. Anything else that touches a span would
+  // rewrite one end of it and leave the other, so refuse rather than corrupt the source.
+  if (codeSpan) return null;
+
   const resource = inlineResourceOverlappingSelection(source, from, to);
   if (
     resource &&
@@ -59,25 +82,12 @@ export function createMarkdownInlineFormatEdit(
     return null;
   }
   if (format === "link") return createLinkEdit(source, from, to);
-  if (format === "code") {
-    if (activeFence) {
-      const before = source.slice(0, from).match(/(`+)[ ]?$/)?.[0] ?? activeFence;
-      const after = source.slice(to).match(/^[ ]?(`+)/)?.[0] ?? activeFence;
-      const editFrom = from - before.length;
-      const selected = source.slice(from, to);
-      return {
-        from: editFrom,
-        to: to + after.length,
-        text: selected,
-        selection: { anchor: editFrom, head: editFrom + selected.length },
-      };
-    }
-  }
-
   const wrapper = format === "code" ? codeWrapper(source.slice(from, to)) : SIMPLE_WRAPPERS[format];
   const selected = source.slice(from, to);
+  // Code is fully handled above; the arithmetic here removes exactly `wrapper.open.length` characters
+  // either side of the selection, which only holds for wrappers that abut it.
   const activeState = markdownInlineFormatState(source, from, to);
-  if (activeState[format]) {
+  if (format !== "code" && activeState[format]) {
     const editFrom = from - wrapper.open.length;
     return {
       from: editFrom,
@@ -117,7 +127,7 @@ export function markdownInlineFormatState(
     italic: stars % 2 === 1,
     strike: wraps(SIMPLE_WRAPPERS.strike),
     link: from > 0 && source[from - 1] === "[" && !isImageLabel(source, from) && linkClose !== null,
-    code: codeFenceAround(source, from, to) !== null,
+    code: selectionIsInlineCode(source, from, to),
   };
 }
 
@@ -278,11 +288,29 @@ function codeWrapper(selected: string): Wrapper {
   return { open: fence, close: fence };
 }
 
-function codeFenceAround(source: string, from: number, to: number): string | null {
-  const before = source.slice(0, from).match(/(`+)[ ]?$/);
-  if (!before) return null;
-  const after = source.slice(to).match(/^[ ]?(`+)/);
-  return after && before[1] === after[1] ? before[1] : null;
+/**
+ * Whether a selection is inside a code span, allowing its ends to sit on the delimiters.
+ *
+ * The question the toolbar asks is what the selection is already in, which is looser than what the
+ * edit path used to test — that the selection is *exactly* a span's content. An inline code chip is drawn with padding, so a drag that begins a pixel inside its
+ * left edge anchors in the *preceding* text node, one character before the opening backtick, and the
+ * strict test then reported no code at all: selecting a `project-collage-v3.json` chip left the
+ * toolbar's code button unlit even though the whole chip was highlighted.
+ *
+ * Anything the span fully contains counts, and so does a selection that swallows the delimiters
+ * themselves, which is what a drag from just outside either edge produces.
+ */
+function selectionIsInlineCode(source: string, from: number, to: number): boolean {
+  const span = inlineCodeSpanOverlappingSelection(source, from, to);
+  if (!span) return false;
+  const fence = backtickRunLength(source, span.from);
+  const contentFrom = span.from + fence;
+  const contentTo = span.to - fence;
+  // Inside the content, or a selection that reaches out over the delimiters but no further.
+  const insideContent = from >= contentFrom && to <= contentTo;
+  const wrapsWholeSpan =
+    from >= span.from && to <= span.to && from <= contentFrom && to >= contentTo;
+  return insideContent || wrapsWholeSpan;
 }
 
 function inlineCodeSpanOverlappingSelection(

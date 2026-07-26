@@ -82,6 +82,25 @@ export async function rowIndexWith(page: Page, text: string): Promise<number> {
  * so they span it, and not the sidebar either, which would move focus out of the editor entirely and
  * make the next assertion about a different surface.
  */
+/**
+ * The Block's height once it has stopped changing on its own.
+ *
+ * Equations typeset asynchronously, so a height read the instant a Page opens can be the height of
+ * the un-typeset source. Comparing that against a later read makes activation look like it resized
+ * the Block when all that happened was KaTeX finishing: the equation height test failed once in a
+ * full run and passed every time it was run alone.
+ */
+export async function settledHeight(row: Locator): Promise<number> {
+  let previous = -1;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const height = (await row.boundingBox())?.height ?? 0;
+    if (height === previous) return height;
+    previous = height;
+    await row.page().waitForTimeout(50);
+  }
+  return previous;
+}
+
 export async function clickAway(page: Page): Promise<void> {
   const geom = await page.evaluate(() => {
     const scroll = document.querySelector("[data-native-markdown-scroll]") as HTMLElement | null;

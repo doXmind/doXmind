@@ -1,5 +1,6 @@
 "use client";
 
+import { GripHorizontal, GripVertical } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { projectMarkdownInline } from "@/editor/markdown-block/markdown-inline-projection";
@@ -114,6 +115,15 @@ export function MarkdownTableBlock({
   // handler guarded on it records nothing and activation falls back to the first cell: clicking any
   // cell of an unfocused table put the caret in the header. A ref rather than state, because it must
   // survive the render that activation triggers without causing one of its own.
+  /**
+   * The row and column under the pointer, and the axis whose menu is open.
+   *
+   * Revealing every handle at once whenever the pointer was anywhere in the table put a dot on every
+   * row and every column simultaneously, which is nothing like the reference product: there, the
+   * handle belongs to the one row or column you are on, and pressing it outlines that row or column.
+   */
+  const [hovered, setHovered] = useState<{ row: number; column: number } | null>(null);
+  const [openAxis, setOpenAxis] = useState<{ axis: "row" | "column"; index: number } | null>(null);
   const pendingCellRef = useRef<TableCellAddress | null>(null);
   const pendingCaretOffsetRef = useRef<ActiveCell["caret"]>(null);
 
@@ -154,9 +164,11 @@ export function MarkdownTableBlock({
     onChange?.(blockId, next);
   };
 
-  /** Replace one cell's payload, which is a verbatim splice into the Block's source. */
-  const commitCell = (cell: MarkdownTableCell, payload: string) => {
-    commit(source.slice(0, cell.payloadFrom) + payload + source.slice(cell.payloadTo));
+  /**
+   * Replace one cell's text, leaving the padding either side of it exactly as the user aligned it.
+   */
+  const commitCell = (cell: MarkdownTableCell, text: string) => {
+    commit(source.slice(0, cell.from) + text + source.slice(cell.to));
   };
 
   /**
@@ -185,12 +197,9 @@ export function MarkdownTableBlock({
     let caret: ActiveCell["caret"] = null;
     const visible = visibleOffsetAtPoint(element, event.clientX, event.clientY);
     if (visible !== null) {
-      const payload = source.slice(cell.payloadFrom, cell.payloadTo);
-      // The preview renders the trimmed text, so the leading padding the payload carries has to be
-      // added back before the projection can be asked anything.
-      const lead = payload.length - payload.trimStart().length;
-      caret = projectMarkdownInline(payload).visibleOffsetToSource(
-        Math.min(visible + lead, payload.length),
+      const text = source.slice(cell.from, cell.to);
+      caret = projectMarkdownInline(text).visibleOffsetToSource(
+        Math.min(visible, text.length),
         "forward"
       );
     }
@@ -259,6 +268,19 @@ export function MarkdownTableBlock({
     onCellKeyDown?.(event);
   };
 
+  /** A ring on every cell of the row or column whose menu is open, drawn with no layout cost. */
+  const axisOutline = (row: number, column: number) => {
+    if (!openAxis) return "";
+    const inAxis = openAxis.axis === "row" ? openAxis.index === row : openAxis.index === column;
+    return inAxis ? "ring-2 ring-inset ring-primary/70" : "";
+  };
+
+  const handleVisible = (axis: "row" | "column", index: number) => {
+    if (openAxis && openAxis.axis === axis && openAxis.index === index) return true;
+    if (!hovered) return false;
+    return axis === "row" ? hovered.row === index : hovered.column === index;
+  };
+
   const alignmentClass = (column: number) => {
     const alignment = geometry.alignments[column];
     if (alignment === "center") return "text-center";
@@ -273,9 +295,15 @@ export function MarkdownTableBlock({
     return (
       <SemanticInlineEditor
         label="Table cell"
-        // The payload, padding and all. See `MarkdownTableCell.payloadFrom` for why a trimmed value
-        // makes the caret lie — the argument holds whichever surface renders it.
-        source={source.slice(cell.payloadFrom, cell.payloadTo)}
+        // The cell's text, without the padding that surrounds it in the source. Holding the padding
+        // instead made it visible the instant a cell was clicked: the line gained a leading space and
+        // shifted almost six pixels sideways, which is the first thing anyone notices.
+        //
+        // The reason the padding was there was to keep a typed trailing space from disappearing. That
+        // was the wrong trade: a pipe table cannot express trailing whitespace at all — `| a  |` and
+        // `| a |` are the same cell to every reader of the format — so there is nothing to preserve,
+        // and paying for it with a visible jump on every click was never worth it.
+        source={source.slice(cell.from, cell.to)}
         selection={cellSelection(active?.caret ?? null, cell)}
         autoFocus
         className="native-block-editor-surface block w-full whitespace-pre-wrap break-words bg-transparent outline-none"
@@ -284,8 +312,8 @@ export function MarkdownTableBlock({
         onPasteText={(text) => {
           // A pipe row is one line, so pasted newlines are flattened here rather than left to break
           // the row apart.
-          const payload = source.slice(cell.payloadFrom, cell.payloadTo);
-          commitCell(cell, sanitiseCellPayload(payload + text));
+          const current = source.slice(cell.from, cell.to);
+          commitCell(cell, sanitiseCellPayload(current + text));
         }}
       />
     );
@@ -300,7 +328,8 @@ export function MarkdownTableBlock({
     <div className="min-h-9 overflow-x-auto py-1 pl-3 pt-3">
       <table
         aria-label="Markdown table"
-        className="w-full border-collapse text-left text-sm [&:hover_[data-axis-handle]]:opacity-100 [&_[data-axis-handle]]:opacity-0"
+        className="w-full border-collapse text-left text-sm"
+        onPointerLeave={() => setHovered(null)}
       >
         <thead>
           <tr>
@@ -310,7 +339,8 @@ export function MarkdownTableBlock({
                 <th
                   key={`header-${column}`}
                   data-table-cell={cell ? `${cell.from}` : undefined}
-                  className={`relative border border-border bg-muted/50 px-2 py-1.5 font-medium ${alignmentClass(column)}`}
+                  className={`relative border border-border bg-muted/50 px-2 py-1.5 font-medium ${alignmentClass(column)} ${axisOutline(0, column)}`}
+                  onPointerEnter={() => setHovered({ row: 0, column })}
                   onPointerDown={(event) =>
                     pressCell(event.nativeEvent, event.currentTarget, { row: 0, column }, cell)
                   }
@@ -321,6 +351,10 @@ export function MarkdownTableBlock({
                         enabled={editable}
                         axis="column"
                         label={`Column ${column + 1} actions`}
+                        visible={handleVisible("column", column)}
+                        onOpenChange={(open) =>
+                          setOpenAxis(open ? { axis: "column", index: column } : null)
+                        }
                         canDelete={geometry.columnCount > 1}
                         onInsertBefore={() =>
                           commit(markdownTableInsertColumn(source, geometry, column, "left"))
@@ -351,7 +385,8 @@ export function MarkdownTableBlock({
                   <td
                     key={`cell-${row}-${column}`}
                     data-table-cell={cell ? `${cell.from}` : undefined}
-                    className={`relative border border-border px-2 py-1.5 ${alignmentClass(column)}`}
+                    className={`relative border border-border px-2 py-1.5 ${alignmentClass(column)} ${axisOutline(row, column)}`}
+                    onPointerEnter={() => setHovered({ row, column })}
                     onPointerDown={(event) =>
                       pressCell(event.nativeEvent, event.currentTarget, { row, column }, cell)
                     }
@@ -362,6 +397,10 @@ export function MarkdownTableBlock({
                           enabled={editable}
                           axis="row"
                           label={`Row ${row + 1} actions`}
+                          visible={handleVisible("row", row)}
+                          onOpenChange={(open) =>
+                            setOpenAxis(open ? { axis: "row", index: row } : null)
+                          }
                           canDelete
                           onInsertBefore={() =>
                             commit(markdownTableInsertRow(source, geometry, row, "above"))
@@ -401,7 +440,7 @@ function cellSelection(
   caret: ActiveCell["caret"],
   cell: MarkdownTableCell
 ): { anchor: number; head: number } | undefined {
-  const length = cell.payloadTo - cell.payloadFrom;
+  const length = cell.to - cell.from;
   if (caret === "end") return { anchor: length, head: length };
   if (caret === "start") return { anchor: 0, head: 0 };
   if (typeof caret === "number") {
@@ -424,6 +463,8 @@ function sanitiseCellPayload(value: string): string {
  */
 function TableAxisMenu({
   enabled,
+  visible,
+  onOpenChange,
   axis,
   label,
   canDelete,
@@ -440,6 +481,9 @@ function TableAxisMenu({
    * exists to prevent. The same tree in both states is the only way to be sure.
    */
   enabled: boolean;
+  /** Whether this row's or column's handle is the one the pointer is on. */
+  visible: boolean;
+  onOpenChange: (open: boolean) => void;
   axis: "row" | "column";
   label: string;
   canDelete: boolean;
@@ -452,7 +496,7 @@ function TableAxisMenu({
   onDelete: () => void;
 }) {
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -464,20 +508,48 @@ function TableAxisMenu({
           // Absolutely positioned so the handle cannot contribute height or width. Mounting it in
           // flow grew the gutter row from 13px to 37px the moment the Block was activated — the same
           // grow-on-focus this whole component exists to make impossible.
-          className="pointer-events-auto absolute rounded-full bg-border/70 transition-opacity duration-[20ms] ease-in hover:bg-primary/60 focus-visible:opacity-100"
-          // Inline rather than utility classes: the offsets have to be exact for the bar to sit in
-          // the margin instead of over the cell's first characters, and a class that silently fails
-          // to generate puts it back inside the text — which is the whole complaint.
+          className={`pointer-events-auto absolute flex items-center justify-center rounded-[3px] text-white transition-opacity duration-[20ms] ease-in focus-visible:opacity-100 ${
+            visible ? "opacity-100" : "opacity-0"
+          }`}
+          // Inline rather than utility classes, and measured rather than derived. The offsets have to
+          // be exact for the pill to sit in the margin instead of over the cell's first characters,
+          // and a class assembled at runtime can silently fail to generate and drop it back into the
+          // text — which is the whole complaint. Derivation does not work either: the containing block
+          // is the overlay inside the cell's padding, not the cell, so arithmetic from the cell's own
+          // box is off by the padding and the border, and the column pill landed 11.5px *below* the
+          // cell's top edge, on top of the header text, until it was measured in the running app.
+          //
+          // The blue is the one the Block selection fill uses, which is the reference product's
+          // measured accent; `bg-primary` is near-black in this theme and read as a smudge.
           style={
             axis === "row"
-              ? { top: -4, bottom: -4, left: -14, width: 6 }
-              : { left: -4, right: -4, top: -14, height: 6 }
+              ? {
+                  top: "50%",
+                  left: -14,
+                  width: 9,
+                  height: 22,
+                  transform: "translateY(-50%)",
+                  backgroundColor: "rgb(35, 131, 226)",
+                }
+              : {
+                  left: "50%",
+                  top: -29,
+                  height: 9,
+                  width: 22,
+                  transform: "translateX(-50%)",
+                  backgroundColor: "rgb(35, 131, 226)",
+                }
           }
           onPointerDown={(event) => event.stopPropagation()}
         >
-          {/* The bar is the affordance; the button already carries `aria-label`. A visually
-              hidden label here was real text inside the cell, and the caret mapping counted it —
-              every press in a column landed several characters off. */}
+          {/* No text inside: a visually hidden label here would be real text inside the cell, and the
+              caret mapping counts it — every press in that column then lands several characters off.
+              The accessible name is on the button itself. */}
+          {axis === "row" ? (
+            <GripVertical className="h-3 w-3" aria-hidden="true" />
+          ) : (
+            <GripHorizontal className="h-3 w-3" aria-hidden="true" />
+          )}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent

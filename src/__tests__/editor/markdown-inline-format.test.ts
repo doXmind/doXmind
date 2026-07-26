@@ -33,11 +33,29 @@ describe("Markdown inline formatting", () => {
       text: "[docs](https://example.com)",
       selection: { anchor: 6, head: 10 },
     });
+    // Selecting a whole chip, delimiters included, takes the code off it. The semantic editor hides
+    // the backticks, so this range only ever arises from a drag over a rendered chip, which means
+    // "this chip" — not "wrap these six literal characters in a longer fence".
     expect(createMarkdownInlineFormatEdit("Use `code`", 4, 10, "code")).toEqual({
       from: 4,
       to: 10,
-      text: "`` `code` ``",
-      selection: { anchor: 7, head: 13 },
+      text: "code",
+      selection: { anchor: 4, head: 8 },
+    });
+    // The longer fence still exists for text carrying a backtick that closes nothing, which is the
+    // only way to select backticks that are not already a span.
+    expect(createMarkdownInlineFormatEdit("Use a ` b here", 6, 9, "code")).toEqual({
+      from: 6,
+      to: 9,
+      text: "`` ` b ``",
+      selection: { anchor: 9, head: 12 },
+    });
+    // Round trip: a padded fence gives its content back without the spaces that held it open.
+    expect(createMarkdownInlineFormatEdit("Use `` ` b `` here", 4, 13, "code")).toEqual({
+      from: 4,
+      to: 13,
+      text: "` b",
+      selection: { anchor: 4, head: 7 },
     });
   });
 
@@ -52,6 +70,39 @@ describe("Markdown inline formatting", () => {
     expect(markdownInlineFormatState("[local](https://example.test)", 1, 6)).toMatchObject({
       link: true,
     });
+  });
+
+  it("reports inline code when the selection reaches onto the delimiters", () => {
+    // An inline code chip is drawn with padding. A drag that begins a pixel inside its left edge
+    // anchors in the preceding text node, so the source offsets straddle a backtick even though the
+    // selected text is exactly the chip. Reporting no code there left the toolbar button unlit while
+    // the whole chip was visibly highlighted.
+    const source = "Run `codetoken` now";
+    const open = source.indexOf("`");
+    const contentFrom = open + 1;
+    const contentTo = source.indexOf("`", contentFrom);
+    const close = contentTo + 1;
+
+    for (const [from, to, label] of [
+      [contentFrom, contentTo, "exactly the content"],
+      [open, contentTo, "anchored on the opening backtick"],
+      [contentFrom, close, "extended over the closing backtick"],
+      [open, close, "the whole span, delimiters included"],
+      [contentFrom + 1, contentTo - 1, "a fragment inside the content"],
+    ] as [number, number, string][]) {
+      expect(markdownInlineFormatState(source, from, to).code, label).toBe(true);
+    }
+  });
+
+  it("does not report inline code for a selection that leaves the span", () => {
+    const source = "Run `codetoken` now";
+
+    // Plain text either side, and a drag that starts in the prose and ends inside the chip: part of
+    // the selection is not code, so the toolbar must not claim the selection is.
+    expect(markdownInlineFormatState(source, 0, 3).code, "prose before").toBe(false);
+    expect(markdownInlineFormatState(source, 16, 19).code, "prose after").toBe(false);
+    expect(markdownInlineFormatState(source, 1, 8).code, "prose into the chip").toBe(false);
+    expect(markdownInlineFormatState(source, 8, 18).code, "chip into the prose").toBe(false);
   });
 
   it("never treats image alt text as a link that can be toggled", () => {
