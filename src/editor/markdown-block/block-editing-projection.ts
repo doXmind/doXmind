@@ -32,6 +32,17 @@ export function createBlockEditingProjection(
     );
   }
 
+  // A quote repeats its marker on every line, so it needs the per-line projection rather than the
+  // prefix one. Single-line quotes go through it too — one line is just the degenerate case, and one
+  // path is easier to trust than two.
+  if (block.kind === "blockquote") {
+    return projectionFromStrippedLines(
+      editableSource,
+      (line) => line.match(/^ {0,3}>[ \t]?/)?.[0] ?? "",
+      sourceSuffix
+    );
+  }
+
   if (!usesPayloadProjection(block.kind, editableSource)) {
     return projectionFromParts(editableSource, "", sourceSuffix);
   }
@@ -160,19 +171,105 @@ function projectionFromParts(
   };
 }
 
+/**
+ * A projection that strips a prefix from *every* line, not just the first.
+ *
+ * `projectionFromParts` can only take characters off the front and back, which is all a list marker
+ * or a code fence needs. A quote is the one kind whose delimiter repeats: `> One\n> Two` carries a
+ * marker per line, so the prefix model gave up on it entirely and put the raw `>`s in the editing
+ * surface — the Block showed its own Markdown the moment it was clicked, which is the one thing the
+ * in-place contract exists to prevent.
+ *
+ * Offsets are mapped through a table rather than arithmetic because the shift is no longer constant:
+ * it grows by one prefix at every line boundary.
+ */
+function projectionFromStrippedLines(
+  editableSource: string,
+  prefixOf: (line: string) => string,
+  sourceSuffix: string
+): BlockEditingProjection {
+  const prefixes: string[] = [];
+  /** Source offset for each editor offset, plus one end sentinel. */
+  const editorToSource: number[] = [];
+  let editorText = "";
+
+  // Terminators are carried through verbatim rather than normalised. A CRLF file that came back as
+  // LF would be a rewrite of bytes the user never touched, which the storage model forbids.
+  const terminator = /\r\n|\n|\r/g;
+  for (let index = 0; index <= editableSource.length;) {
+    terminator.lastIndex = index;
+    const match = terminator.exec(editableSource);
+    const lineEnd = match ? match.index : editableSource.length;
+    const line = editableSource.slice(index, lineEnd);
+    const prefix = prefixOf(line);
+    prefixes.push(prefix);
+
+    for (let cursor = prefix.length; cursor < line.length; cursor += 1) {
+      editorText += line[cursor];
+      editorToSource.push(index + cursor);
+    }
+    if (!match) break;
+    for (let cursor = 0; cursor < match[0].length; cursor += 1) {
+      editorText += match[0][cursor];
+      editorToSource.push(lineEnd + cursor);
+    }
+    index = lineEnd + match[0].length;
+  }
+  editorToSource.push(editableSource.length);
+
+  const sourceToEditor = (offset: number) => {
+    const target = clampOffset(offset, editableSource.length);
+    // First editor offset whose source position has reached the target. A source offset inside a
+    // stripped prefix has no editor position of its own, so it resolves to the start of its text.
+    for (let index = 0; index < editorToSource.length; index += 1) {
+      if (editorToSource[index] >= target) return index;
+    }
+    return editorText.length;
+  };
+  const editorToSourceAt = (offset: number) =>
+    editorToSource[clampOffset(offset, editorText.length)] ?? editableSource.length;
+
+  return {
+    editorText,
+    sourcePrefix: prefixes[0] ?? "",
+    sourceSuffix,
+    toSource(nextEditorText) {
+      // Line i keeps the prefix it had. A line the user has just added has none of its own, so it
+      // takes the last one, which is what makes Enter inside a quote produce another quoted line.
+      // Splitting on a capturing group keeps each terminator with the line it ended.
+      const parts = nextEditorText.split(/(\r\n|\n|\r)/);
+      const fallback = prefixes[prefixes.length - 1] ?? "";
+      let rebuilt = "";
+      for (let part = 0, line = 0; part < parts.length; part += 2, line += 1) {
+        rebuilt += `${prefixes[line] ?? fallback}${parts[part]}${parts[part + 1] ?? ""}`;
+      }
+      return `${rebuilt}${sourceSuffix}`;
+    },
+    editorOffsetToSource: editorToSourceAt,
+    sourceOffsetToEditor: sourceToEditor,
+    editorRangeToSource(range) {
+      return { from: editorToSourceAt(range.from), to: editorToSourceAt(range.to) };
+    },
+    sourceRangeToEditor(range) {
+      return { from: sourceToEditor(range.from), to: sourceToEditor(range.to) };
+    },
+  };
+}
+
 function clampOffset(offset: number, length: number): number {
   return Math.min(length, Math.max(0, offset));
 }
 
 function usesPayloadProjection(kind: MarkdownBlockView["kind"], source: string): boolean {
   if (kind === "paragraph" || kind === "heading") return true;
-  if (
-    kind === "bullet_list_item" ||
-    kind === "ordered_list_item" ||
-    kind === "task_list_item" ||
-    kind === "blockquote"
-  ) {
-    return !/[\r\n]/.test(source);
+  if (kind === "bullet_list_item" || kind === "ordered_list_item" || kind === "task_list_item") {
+    // Multi-line items included. A list marker is a prefix of the first line and nothing else, which
+    // is exactly what this projection can express, so the only thing the old single-line guard bought
+    // was a Block that showed its own Markdown: a hand-wrapped `- First line\n  second line` gave up
+    // on the projection entirely and put `- ` in the editing surface, beside the bullet the preview
+    // was already drawing. Continuation lines keep their indentation, which is structural rather than
+    // a delimiter — it is part of the payload and rides along untouched.
+    return true;
   }
   return false;
 }
@@ -187,9 +284,6 @@ function sourcePrefixFor(kind: MarkdownBlockView["kind"], source: string): strin
   }
   if (kind === "ordered_list_item") {
     return source.match(/^[ \t]*\d{1,9}[.)](?:[ \t]+|$)/)?.[0] ?? "";
-  }
-  if (kind === "blockquote" && !/[\r\n]/.test(source)) {
-    return source.match(/^ {0,3}>[ \t]?/)?.[0] ?? "";
   }
   return "";
 }
