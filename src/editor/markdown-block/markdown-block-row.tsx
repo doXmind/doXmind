@@ -43,7 +43,10 @@ import {
   createBlockEditingProjection,
   splitDelimitedBlockSource,
 } from "@/editor/markdown-block/block-editing-projection";
-import { editableMarkdownBlockSource } from "@/editor/markdown-block/markdown-block-source";
+import {
+  editableMarkdownBlockSource,
+  orderedListDisplayOrdinals,
+} from "@/editor/markdown-block/markdown-block-source";
 import { isMarkdownSourceOnlyBlockKind } from "@/editor/markdown-block/markdown-block-document";
 import { InlineFormatToolbar } from "@/editor/markdown-block/inline-format-toolbar";
 import {
@@ -111,6 +114,11 @@ interface MarkdownBlockRowProps {
   block: MarkdownBlockView;
   index: number;
   count: number;
+  /**
+   * The ordinal to draw on an ordered list item, counted across its run rather than read from its
+   * own source. Computed by the runtime, which is the only place that can see the siblings.
+   */
+  listOrdinal?: number;
   active: boolean;
   autoFocusEditor?: boolean;
   highlightSelection?: boolean;
@@ -239,6 +247,7 @@ export function MarkdownBlockRow({
   collectionContext,
   imageContext,
   onRunSlashCommand,
+  listOrdinal,
 }: MarkdownBlockRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -331,7 +340,7 @@ export function MarkdownBlockRow({
   );
   // Stays open with zero matches so Enter cannot silently split the Block behind an open menu.
   const slashMenuOpen = slashStart !== null && dismissedSlashStart !== slashStart;
-  const activeListItem = listItemPreview(rawSource, block.kind);
+  const activeListItem = listItemPreview(rawSource, block.kind, listOrdinal);
   // Parsed once per render and addressed by row and column, never held as state: a cell's offsets
   // shift as soon as an earlier cell grows by a character.
   const tableGeometry = block.kind === "table" ? parseMarkdownTableSource(source) : null;
@@ -423,6 +432,7 @@ export function MarkdownBlockRow({
       <MarkdownStaticBlock {...inPlaceCommon} kind={block.kind}>
         <BlockPreview
           block={block}
+          listOrdinal={listOrdinal}
           readOnly
           onSetTaskChecked={onSetTaskChecked}
           onOpenWikiLink={onOpenWikiLink}
@@ -1390,6 +1400,7 @@ export function MarkdownBlockRow({
             <div data-native-block-print-preview className="hidden">
               <BlockPreview
                 block={block}
+                listOrdinal={listOrdinal}
                 onSetTaskChecked={onSetTaskChecked}
                 onSetCodeLanguage={onSetCodeLanguage}
                 onOpenWikiLink={onOpenWikiLink}
@@ -1402,6 +1413,7 @@ export function MarkdownBlockRow({
         ) : (
           <BlockPreview
             block={block}
+            listOrdinal={listOrdinal}
             onSetTaskChecked={onSetTaskChecked}
             onSetCodeLanguage={onSetCodeLanguage}
             onOpenWikiLink={onOpenWikiLink}
@@ -2075,8 +2087,10 @@ function BlockPreview({
   collectionContext,
   imageContext,
   readOnly = false,
+  listOrdinal,
 }: {
   block: MarkdownBlockView;
+  listOrdinal?: number;
   onSetTaskChecked: (blockId: string, checked: boolean) => void;
   onSetCodeLanguage?: (blockId: string, language: string) => void;
   onOpenWikiLink?: (target: string) => void;
@@ -2109,6 +2123,7 @@ function BlockPreview({
       const nestedBlocks = toggle.markdown
         ? MarkdownBlockDocument.fromMarkdown(toggle.markdown).getSnapshot().blocks
         : [];
+      const nestedOrdinals = orderedListDisplayOrdinals(nestedBlocks);
       return (
         <TogglePreviewShell toggle={toggle} source={source} onOpenWikiLink={onOpenWikiLink}>
           <div
@@ -2119,6 +2134,7 @@ function BlockPreview({
               nestedBlocks.map((nested) => (
                 <BlockPreview
                   key={nested.id}
+                  listOrdinal={nestedOrdinals.get(nested.id)}
                   block={nested}
                   readOnly
                   onSetTaskChecked={() => undefined}
@@ -2302,7 +2318,7 @@ function BlockPreview({
       </blockquote>
     );
   }
-  const listItem = listItemPreview(source, block.kind);
+  const listItem = listItemPreview(source, block.kind, listOrdinal);
   if (listItem) {
     const content = listItem.content ? (
       <InlineMarkdownPreview source={listItem.content} onOpenWikiLink={onOpenWikiLink} />
@@ -2556,6 +2572,10 @@ function WikiEmbedPreview({
         : [],
     [projection?.markdown, projection?.status]
   );
+  const embeddedOrdinals = useMemo(
+    () => orderedListDisplayOrdinals(embeddedBlocks),
+    [embeddedBlocks]
+  );
   const target = projection?.target ?? null;
   const label = reference.label ?? target?.title ?? reference.target;
   const loading = context?.status === "loading";
@@ -2625,6 +2645,7 @@ function WikiEmbedPreview({
             {embeddedBlocks.map((block) => (
               <BlockPreview
                 key={block.id}
+                listOrdinal={embeddedOrdinals.get(block.id)}
                 block={block}
                 readOnly
                 onSetTaskChecked={() => undefined}
@@ -2670,7 +2691,8 @@ function wikiTargetPageText(rawTarget: string): string {
 
 function listItemPreview(
   source: string,
-  kind: MarkdownBlockView["kind"]
+  kind: MarkdownBlockView["kind"],
+  ordinal?: number
 ): { marker: string; content: string } | null {
   if (kind === "task_list_item") {
     const match = source.match(/^[ \t]*[-+*][ \t]+\[[ xX]\]([ \t]+|$)/);
@@ -2681,8 +2703,12 @@ function listItemPreview(
     return match ? { marker: "•", content: source.slice(match[0].length) } : null;
   }
   if (kind === "ordered_list_item") {
-    const match = source.match(/^[ \t]*(\d{1,9}[.)])([ \t]+|$)/);
-    return match ? { marker: match[1], content: source.slice(match[0].length) } : null;
+    const match = source.match(/^[ \t]*(\d{1,9})([.)])([ \t]+|$)/);
+    if (!match) return null;
+    // The counted ordinal, falling back to the source's own when there is no run context — the
+    // separator stays whatever the file used, so a `1)` list keeps its parentheses.
+    const number = ordinal ?? match[1];
+    return { marker: `${number}${match[2]}`, content: source.slice(match[0].length) };
   }
   return null;
 }

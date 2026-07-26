@@ -39,7 +39,10 @@ import {
   createMarkdownInlineFormatEdit,
   createMarkdownLinkEdit,
 } from "@/editor/markdown-block/markdown-inline-format";
-import { editableMarkdownBlockSource } from "@/editor/markdown-block/markdown-block-source";
+import {
+  editableMarkdownBlockSource,
+  orderedListDisplayOrdinals,
+} from "@/editor/markdown-block/markdown-block-source";
 import {
   MarkdownBlockRow,
   NATIVE_BLOCK_SHORTCUTS_ID,
@@ -153,6 +156,12 @@ export function MarkdownBlockRuntime({
   const initialMarkdown = file.content;
   const documentRef = useRef(MarkdownBlockDocument.fromMarkdown(initialMarkdown));
   const [snapshot, setSnapshot] = useState(documentRef.current.getSnapshot());
+  // Markdown does not renumber, so the ordinal on disk is not the one to draw. Counted here because
+  // this is the only place that can see an item's siblings.
+  const listOrdinals = useMemo(
+    () => orderedListDisplayOrdinals(snapshot.blocks),
+    [snapshot.blocks]
+  );
   const [activeBlockId, setActiveBlockId] = useState<string | null>(
     file.id.startsWith(TRANSIENT_ID_PREFIX) ? (snapshot.blocks[0]?.id ?? null) : null
   );
@@ -2130,6 +2139,7 @@ export function MarkdownBlockRuntime({
                 key={block.id}
                 block={block}
                 index={index}
+                listOrdinal={listOrdinals.get(block.id)}
                 count={snapshot.blocks.length}
                 active={activeBlockId === block.id}
                 autoFocusEditor={!isSearchBarOpen}
