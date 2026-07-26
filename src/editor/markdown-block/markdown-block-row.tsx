@@ -65,6 +65,7 @@ import {
   resolveCodeLanguage,
   type CodeToken,
 } from "@/editor/markdown-block/code-highlight";
+import { MarkdownTableBlock } from "@/editor/markdown-block/markdown-table-block";
 import { parseMarkdownToggle, type MarkdownToggle } from "@/editor/markdown-block/markdown-toggle";
 import {
   markdownTableBlankRow,
@@ -327,6 +328,9 @@ export function MarkdownBlockRow({
   // Stays open with zero matches so Enter cannot silently split the Block behind an open menu.
   const slashMenuOpen = slashStart !== null && dismissedSlashStart !== slashStart;
   const activeListItem = listItemPreview(rawSource, block.kind);
+  // Parsed once per render and addressed by row and column, never held as state: a cell's offsets
+  // shift as soon as an earlier cell grows by a character.
+  const tableGeometry = block.kind === "table" ? parseMarkdownTableSource(source) : null;
 
   useEffect(() => {
     setSlashIndex(0);
@@ -994,7 +998,28 @@ export function MarkdownBlockRow({
           }
         }}
       >
-        {active && block.editable ? (
+        {tableGeometry ? (
+          // Rendered from one place in both states, so the grid is never unmounted and the Block
+          // cannot lose its borders, its height or its alignment row on activation.
+          <MarkdownTableBlock
+            blockId={block.id}
+            source={source}
+            geometry={tableGeometry}
+            editable={active && block.editable}
+            onChange={onChange}
+            onCellKeyDown={(event) => {
+              // Escape leaves the grid the same way it leaves any other Block: the caret becomes a
+              // Block selection. Without this the caret could enter a table and never come back out.
+              if (event.key === "Escape") {
+                event.preventDefault();
+                onSelectBlock?.(block.id);
+              }
+            }}
+            renderCell={(text) => (
+              <InlineMarkdownPreview source={text} onOpenWikiLink={onOpenWikiLink} />
+            )}
+          />
+        ) : active && block.editable ? (
           <>
             <div
               data-native-block-edit-surface

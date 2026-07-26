@@ -818,39 +818,56 @@ describe("MarkdownBlockRow semantic previews", () => {
     });
   });
 
-  it("moves between table cells with Tab and adds a row at the end", () => {
+  it("edits a table cell in place and moves between cells with Tab", () => {
     const source = "| A | B |\n| --- | --- |\n| a1 | b1 |\n";
     const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
-    const onSelectCellRange = vi.fn();
-    const onPaste = vi.fn();
+    const onChange = vi.fn();
+    const { container } = render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active
+        {...slashHandlers()}
+        onChange={onChange}
+      />
+    );
+
+    // The grid is the editing surface. Activation no longer replaces it with the raw pipe source,
+    // so the table element is still here and the caret lives in one cell of it.
+    expect(container.querySelector("table")).toBeInTheDocument();
+    const cell = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Table cell" });
+    // The value is the payload between the pipes, padding included, so an edit is a verbatim splice.
+    expect(cell.value).toBe(" A ");
+
+    fireEvent.change(cell, { target: { value: " Alpha " } });
+    expect(onChange).toHaveBeenCalledWith(block.id, "| Alpha | B |\n| --- | --- |\n| a1 | b1 |");
+
+    fireEvent.keyDown(cell, { key: "Tab" });
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Table cell" }).value).toBe(
+      " B "
+    );
+  });
+
+  it("keeps a pipe typed into a cell inside that cell", () => {
+    const source = "| A | B |\n| --- | --- |\n| a1 | b1 |\n";
+    const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
+    const onChange = vi.fn();
     render(
       <MarkdownBlockRow
         block={block}
         index={0}
         count={1}
         active
-        selection={{ anchor: 2, head: 2 }}
         {...slashHandlers()}
-        onPaste={onPaste}
-        onSelectCellRange={onSelectCellRange}
+        onChange={onChange}
       />
     );
 
-    const editor = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Markdown block" });
-    editor.setSelectionRange(2, 2);
-    fireEvent.keyDown(editor, { key: "Tab" });
-    // From "A" to "B".
-    expect(onSelectCellRange).toHaveBeenCalledWith(block.id, 6, 7);
-
-    // From the last cell, Tab appends a blank row with the same column count.
-    editor.setSelectionRange(source.trimEnd().length - 3, source.trimEnd().length - 3);
-    fireEvent.keyDown(editor, { key: "Tab" });
-    expect(onPaste).toHaveBeenCalledWith(
-      block.id,
-      source.trimEnd().length,
-      source.trimEnd().length,
-      "\n|  |  |"
-    );
+    const cell = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Table cell" });
+    // Unescaped, this would end the cell and give one row a column the others do not have.
+    fireEvent.change(cell, { target: { value: " a|b " } });
+    expect(onChange).toHaveBeenCalledWith(block.id, "| a\\|b | B |\n| --- | --- |\n| a1 | b1 |");
   });
 
   it("keeps a semantic print preview beside the active source control", () => {
