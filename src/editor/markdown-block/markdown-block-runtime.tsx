@@ -1137,6 +1137,13 @@ export function MarkdownBlockRuntime({
     const releaseCaret = (event: PointerEvent) => {
       if (event.button > 0) return;
       const target = event.target as HTMLElement | null;
+      // A press that has already been detached from the document cannot be asked where it happened.
+      // A Block that edits in place swaps the region under the pointer during the press — a pointer
+      // event is discrete, so React re-renders synchronously — and a listener running afterwards
+      // sees a target whose `closest` finds nothing and concludes the press was outside the editor.
+      // That is how pressing a callout's body deactivated the whole Block: the caret could reach the
+      // title and never the body.
+      if (target && !target.isConnected) return;
       if (
         target?.closest(
           "[data-native-markdown-runtime], [data-native-editor-overlay], [data-radix-popper-content-wrapper]"
@@ -1147,8 +1154,9 @@ export function MarkdownBlockRuntime({
       setActiveBlockId(null);
       setPendingSelection(null);
     };
-    document.addEventListener("pointerdown", releaseCaret);
-    return () => document.removeEventListener("pointerdown", releaseCaret);
+    // Capture, so the decision is made while the DOM still looks the way the user pressed it.
+    document.addEventListener("pointerdown", releaseCaret, true);
+    return () => document.removeEventListener("pointerdown", releaseCaret, true);
   }, []);
 
   useEffect(() => {
