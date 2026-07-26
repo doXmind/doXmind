@@ -241,20 +241,50 @@ export async function selectWord(
     if (target) {
       await page.mouse.click(target.x + Math.min(6, target.w / 2), target.y + target.h / 2);
       await expect(row.locator("[data-native-block-editor]").first()).toBeFocused();
+      // Break the click sequence before dragging. A press at nearly the same point moments later is
+      // a double- or triple-click as far as the platform is concerned, and the drag then becomes a
+      // word- or paragraph-extend gesture instead: a drag across "citem" came back as "item", and
+      // repeating it alternated between right and wrong on every other attempt. Moving away and
+      // waiting out the interval is the only thing that resets the count.
+      await page.mouse.move(target.x, target.y - 40);
+      await page.waitForTimeout(400);
     }
   }
   const rect = await rectOfText(row, word);
   if (rect) {
-    await page.mouse.move(rect.x + 1, rect.y + rect.h / 2);
+    // On the word's boundaries. Starting outside them would be more forgiving about capturing the
+    // first letter, but it also swallows the neighbouring space, and a space lying outside a `**bold**`
+    // run is enough to make the toolbar report no bold at all — so the drag stays exact and the
+    // result is checked instead.
+    await page.mouse.move(rect.x, rect.y + rect.h / 2);
     await page.mouse.down();
     await page.mouse.move(rect.x + rect.w * 0.5, rect.y + rect.h / 2, { steps: 5 });
-    await page.mouse.move(rect.x + rect.w - 1, rect.y + rect.h / 2, { steps: 5 });
+    await page.mouse.move(rect.x + rect.w, rect.y + rect.h / 2, { steps: 5 });
     await page.mouse.up();
-    return { technique: "drag" };
+    const dragged = await selectionState(page);
+    if (dragged.text.includes(word)) return { technique: "drag" };
+    // Hit-testing at a glyph boundary occasionally anchors one character in — a drag across "citem"
+    // comes back as "item" — and which side it lands on is not something a test can control. Rather
+    // than loosen every assertion that depends on the exact word, fall back to the keyboard path,
+    // which addresses offsets directly, and report that it was used.
+    return selectWordByKeyboard(page, row, word);
   }
-  // A textarea's value is not in the DOM, so there are no glyph rects to drag across. Aiming a
-  // double-click at a guessed offset just selects whichever word happens to be there — it reported
-  // "Paragraph" when asked for "bravo". Real arrow keys reach an exact range in either surface.
+  return selectWordByKeyboard(page, row, word);
+}
+
+/**
+ * Select a word with real arrow keys, which addresses offsets rather than pixels.
+ *
+ * A textarea's value is not in the DOM, so there are no glyph rects to drag across, and aiming a
+ * double-click at a guessed offset selects whichever word happens to be there — it reported
+ * "Paragraph" when asked for "bravo". This is also the fallback when a drag's hit-testing anchors a
+ * character off.
+ */
+async function selectWordByKeyboard(
+  page: Page,
+  row: Locator,
+  word: string
+): Promise<{ technique: "keyboard" | "unavailable" }> {
   const editor = row.locator("[data-native-block-editor]").first();
   if ((await editor.count()) === 0) return { technique: "unavailable" };
   const at = await editor.evaluate((el, text) => {
@@ -267,12 +297,16 @@ export async function selectWord(
   // To the very start of the field, then forward by exact offsets. Cmd+Up is the macOS binding and
   // Control+Home the other one; the caret is read back rather than assumed.
   await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home");
-  let start = await editor.evaluate((el) => (el as HTMLTextAreaElement).selectionStart ?? -1);
+  // Read the caret through `caretOffset`, not `selectionStart`. A contenteditable has no
+  // `selectionStart` at all, so reading it there yielded `undefined`, the retry could not help, and a
+  // callout body reported that there was no way to select in it — from a helper that had simply asked
+  // the wrong question.
+  let start = (await caretOffset(page)).offset;
   if (start !== 0) {
     const box = await editor.boundingBox();
     if (box) await page.mouse.click(box.x + 1, box.y + 2);
-    await page.keyboard.press("Home");
-    start = await editor.evaluate((el) => (el as HTMLTextAreaElement).selectionStart ?? -1);
+    await pressLineStart(page);
+    start = (await caretOffset(page)).offset;
   }
   if (start !== 0) return { technique: "unavailable" };
   for (let index = 0; index < at; index += 1) await page.keyboard.press("ArrowRight");

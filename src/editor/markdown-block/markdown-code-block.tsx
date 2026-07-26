@@ -7,6 +7,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type Ref,
 } from "react";
@@ -105,6 +106,8 @@ export function MarkdownCodeBlock({
   // clicking line 2 of an unfocused code Block would put the caret after the last character. A ref
   // rather than state, because it has to survive the render activation triggers without causing one.
   const pendingSelectionRef = useRef<PendingSelection | null>(null);
+  /** Where a press began, so its release can be read as a range rather than a caret. */
+  const dragOriginRef = useRef<{ at: number; x: number; y: number } | null>(null);
   const appliedActivationRef = useRef(false);
   const composingRef = useRef(false);
   const [composingValue, setComposingValue] = useState<string | null>(null);
@@ -199,6 +202,33 @@ export function MarkdownCodeBlock({
     event.preventDefault();
     const at = Math.min(offset, payload.length);
     pendingSelectionRef.current = { start: at, end: at };
+    dragOriginRef.current = { at, x: event.clientX, y: event.clientY };
+  };
+
+  /**
+   * Turn a press that travelled into a selection.
+   *
+   * The press mounts the editing surface over the rendered code, so the browser's own drag-selection
+   * has nothing left to act on by the time the pointer comes up: dragging across a word in a code
+   * Block that was not already being edited selected nothing. The release point is measured against
+   * the rendered code, which is still there — it is never unmounted — so the range is exact.
+   */
+  const releaseCode = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const origin = dragOriginRef.current;
+    dragOriginRef.current = null;
+    if (!origin) return;
+    // A click is not a drag; see the same guard in markdown-container-block.tsx.
+    if (Math.abs(event.clientX - origin.x) < 4 && Math.abs(event.clientY - origin.y) < 4) return;
+    const from = origin.at;
+    const code = codeRef.current;
+    if (!code) return;
+    const offset = payloadOffsetAtPoint(code, event.clientX, event.clientY);
+    if (offset === null) return;
+    const to = Math.min(offset, payload.length);
+    if (to === from) return;
+    pendingSelectionRef.current = { start: Math.min(from, to), end: Math.max(from, to) };
+    const textarea = textareaRef.current;
+    if (textarea) textarea.setSelectionRange(Math.min(from, to), Math.max(from, to));
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -255,7 +285,7 @@ export function MarkdownCodeBlock({
   };
 
   return (
-    <div className="relative" onPointerDown={pressCode}>
+    <div className="relative" onPointerDown={pressCode} onClick={releaseCode}>
       <pre
         data-testid="fenced-code-block"
         className="rounded-lg bg-muted"

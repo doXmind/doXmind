@@ -9,7 +9,15 @@ import {
   TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
-import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 import type { InPlaceBlockProps } from "@/editor/markdown-block/in-place-block";
 import { projectMarkdownInline } from "@/editor/markdown-block/markdown-inline-projection";
@@ -269,8 +277,15 @@ type ContainerRegion = "heading" | "body";
 
 interface ActiveRegion {
   readonly region: ContainerRegion;
-  /** `"start"`, `"end"`, or an offset into that region's own text. */
-  readonly caret: "start" | "end" | number | null;
+  /**
+   * `"start"`, `"end"`, an offset into that region's own text, or a range.
+   *
+   * A range is what a press-drag-release leaves behind. Activating with a collapsed caret at the
+   * press point threw the drag away, so selecting a word in a callout or a toggle you were not
+   * already editing selected nothing at all — the same defect the prose kinds had.
+   */
+  readonly caret:
+    "start" | "end" | number | { readonly anchor: number; readonly head: number } | null;
 }
 
 export interface MarkdownContainerBlockProps extends InPlaceBlockProps {
@@ -325,6 +340,14 @@ export function MarkdownContainerBlock({
   // and a handler guarded on it records nothing. A ref rather than state, because it has to survive
   // the render activation causes without causing one of its own.
   const pendingRegionRef = useRef<ContainerRegion | null>(null);
+  /** Where a press began, so its release can be read as a range rather than a caret. */
+  const dragOriginRef = useRef<{
+    region: ContainerRegion;
+    text: string;
+    at: number;
+    x: number;
+    y: number;
+  } | null>(null);
   const pendingCaretRef = useRef<ActiveRegion["caret"]>(null);
 
   const container = parseMarkdownContainer(kind, source);
@@ -437,7 +460,36 @@ export function MarkdownContainerBlock({
     }
     pendingRegionRef.current = region;
     pendingCaretRef.current = at;
+    dragOriginRef.current =
+      typeof at === "number" ? { region, text, at, x: event.clientX, y: event.clientY } : null;
     if (editable) focusRegion(region, at);
+  };
+
+  /**
+   * Turn a press that travelled into a selection.
+   *
+   * The press activates the region and swaps the rendered text for an editor, so the browser's own
+   * drag-selection has nothing left to work on by the time the pointer is released. The release point
+   * is this event's own coordinates, measured against the text that was under the pointer when the
+   * gesture began, so a drag ends up selecting what it crossed instead of collapsing to where it
+   * started.
+   */
+  const releaseRegion = (event: ReactMouseEvent<HTMLElement>, element: HTMLElement) => {
+    const origin = dragOriginRef.current;
+    dragOriginRef.current = null;
+    if (!origin) return;
+    // A click is not a drag. Measuring travel in offsets rather than in pixels turned an ordinary
+    // press into a one-character selection: the region swaps under the pointer between `pointerdown`
+    // and `click`, so the same screen position maps to a slightly different offset either side of the
+    // swap. Four pixels is the same threshold the container's own marquee uses.
+    if (Math.abs(event.clientX - origin.x) < 4 && Math.abs(event.clientY - origin.y) < 4) return;
+    const projection = projectMarkdownInline(origin.text);
+    if (visibleTextLength(element) !== projection.visibleText.length) return;
+    const visible = visibleOffsetAtPoint(element, event.clientX, event.clientY);
+    if (visible === null) return;
+    const head = projection.visibleOffsetToSource(visible, "forward");
+    if (head === origin.at) return;
+    focusRegion(origin.region, { anchor: origin.at, head });
   };
 
   const handleHeadingKeyDown = (event: KeyboardEvent<HTMLElement>) => {
@@ -573,6 +625,7 @@ export function MarkdownContainerBlock({
             onPointerDown={(event) =>
               pressRegion(event.nativeEvent, event.currentTarget, "heading", heading)
             }
+            onClick={(event) => releaseRegion(event, event.currentTarget)}
           >
             {activeRegion === "heading" ? (
               headingEditor("Callout title", style.label)
@@ -595,6 +648,7 @@ export function MarkdownContainerBlock({
               onPointerDown={(event) =>
                 pressRegion(event.nativeEvent, event.currentTarget, "body", body)
               }
+              onClick={(event) => releaseRegion(event, event.currentTarget)}
             >
               {activeRegion === "body" ? bodyEditor("Callout body") : bodyFlow(body)}
             </div>
@@ -650,6 +704,7 @@ export function MarkdownContainerBlock({
           onPointerDown={(event) =>
             pressRegion(event.nativeEvent, event.currentTarget, "heading", heading)
           }
+          onClick={(event) => releaseRegion(event, event.currentTarget)}
         >
           {activeRegion === "heading" ? headingEditor("Toggle summary") : renderInline(heading)}
         </span>
@@ -659,6 +714,7 @@ export function MarkdownContainerBlock({
         data-container-region="body"
         className="space-y-0.5 border-t border-border/70 px-3 py-2"
         onPointerDown={(event) => pressRegion(event.nativeEvent, event.currentTarget, "body", body)}
+        onClick={(event) => releaseRegion(event, event.currentTarget)}
       >
         {activeRegion === "body" ? (
           bodyEditor("Toggle body", "Write something…")
@@ -693,11 +749,15 @@ interface SourceSelection {
 
 /** Where the caret goes when a region's editor mounts, in that region's own text offsets. */
 function selectionFor(caret: ActiveRegion["caret"], length: number): SourceSelection | undefined {
+  const clamp = (at: number) => Math.max(0, Math.min(at, length));
   if (caret === "end") return { anchor: length, head: length };
   if (caret === "start") return { anchor: 0, head: 0 };
   if (typeof caret === "number") {
-    const at = Math.max(0, Math.min(caret, length));
+    const at = clamp(caret);
     return { anchor: at, head: at };
+  }
+  if (caret && typeof caret === "object") {
+    return { anchor: clamp(caret.anchor), head: clamp(caret.head) };
   }
   return undefined;
 }
