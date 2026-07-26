@@ -105,6 +105,38 @@ describe("Markdown inline formatting", () => {
     expect(markdownInlineFormatState(source, 8, 18).code, "chip into the prose").toBe(false);
   });
 
+  it("reports underscore emphasis, which is what a formatted file actually contains", () => {
+    // Prettier writes emphasis with `_`, so this is the common case, not the exotic one.
+    const italic = "This is _important_ text";
+    const from = italic.indexOf("important");
+    expect(markdownInlineFormatState(italic, from, from + 9)).toMatchObject({
+      italic: true,
+      bold: false,
+    });
+    // Toggling off is length arithmetic, so a one-character `_` unwraps like a one-character `*`.
+    expect(createMarkdownInlineFormatEdit(italic, from, from + 9, "italic")).toEqual({
+      from: from - 1,
+      to: from + 10,
+      text: "important",
+      selection: { anchor: from - 1, head: from + 8 },
+    });
+
+    const bold = "This is __strong__ text";
+    const boldFrom = bold.indexOf("strong");
+    expect(markdownInlineFormatState(bold, boldFrom, boldFrom + 6)).toMatchObject({ bold: true });
+  });
+
+  it("does not call an underscore inside a word emphasis", () => {
+    // CommonMark's rule, and already what the projection uses to decide what to render — the toolbar
+    // has to agree with the text under it.
+    const source = "call snake_case_name here";
+    const from = source.indexOf("case");
+    expect(markdownInlineFormatState(source, from, from + 4)).toMatchObject({
+      italic: false,
+      bold: false,
+    });
+  });
+
   it("never treats image alt text as a link that can be toggled", () => {
     const source = "See ![diagram](./assets/diagram.png)";
     const from = source.indexOf("diagram");

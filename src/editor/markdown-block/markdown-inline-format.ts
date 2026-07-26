@@ -121,20 +121,49 @@ export function markdownInlineFormatState(
     source.slice(from - wrapper.open.length, from) === wrapper.open &&
     source.slice(to, to + wrapper.close.length) === wrapper.close;
   const linkClose = linkCloseAfter(source, to);
-  const stars = starRunsAround(source, from, to);
+  const emphasis = emphasisRunsAround(source, from, to);
   return {
-    bold: stars >= 2,
-    italic: stars % 2 === 1,
+    bold: emphasis >= 2,
+    italic: emphasis % 2 === 1,
     strike: wraps(SIMPLE_WRAPPERS.strike),
     link: from > 0 && source[from - 1] === "[" && !isImageLabel(source, from) && linkClose !== null,
     code: selectionIsInlineCode(source, from, to),
   };
 }
 
-function starRunsAround(source: string, from: number, to: number): number {
-  const before = source.slice(0, from).match(/\*+$/)?.[0].length ?? 0;
-  const after = source.slice(to).match(/^\*+/)?.[0].length ?? 0;
-  return Math.min(before, after);
+/**
+ * Length of the emphasis run wrapping the selection, in either `*` or `_`.
+ *
+ * `_` used to be missing, which mattered more than it sounds: it is Prettier's default emphasis
+ * character, so `_italic_` is what most formatted files actually contain. The preview rendered those
+ * words in italics and the toolbar reported nothing, and pressing Italic on one wrapped it again —
+ * `_*important*_` — leaving the text looking unchanged and the source worse.
+ *
+ * The intraword rule is CommonMark's and, more to the point, is already what
+ * `markdown-inline-projection.ts` uses to decide what to render, so `snake_case_name` is not
+ * emphasis here either. The two have to agree; a toolbar that contradicts the text under it is the
+ * same defect in the other direction.
+ */
+function emphasisRunsAround(source: string, from: number, to: number): number {
+  for (const mark of ["*", "_"] as const) {
+    const opening = source.slice(0, from).match(mark === "*" ? /\*+$/ : /_+$/)?.[0].length ?? 0;
+    const closing = source.slice(to).match(mark === "*" ? /^\*+/ : /^_+/)?.[0].length ?? 0;
+    const run = Math.min(opening, closing);
+    if (run === 0) continue;
+    if (mark === "_") {
+      const beforeOpening = source[from - run - 1] ?? "";
+      const afterClosing = source[to + run] ?? "";
+      const intrawordOpen = isWordCharacter(beforeOpening) && isWordCharacter(source[from] ?? "");
+      const intrawordClose = isWordCharacter(source[to - 1] ?? "") && isWordCharacter(afterClosing);
+      if (intrawordOpen || intrawordClose) continue;
+    }
+    return run;
+  }
+  return 0;
+}
+
+function isWordCharacter(character: string): boolean {
+  return /[\p{L}\p{N}]/u.test(character);
 }
 
 function createLinkEdit(source: string, from: number, to: number): MarkdownInlineFormatEdit | null {
