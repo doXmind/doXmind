@@ -1,6 +1,5 @@
 "use client";
 
-import { ChevronDown, GripVertical } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { projectMarkdownInline } from "@/editor/markdown-block/markdown-inline-projection";
@@ -298,8 +297,11 @@ export function MarkdownTableBlock({
   );
 
   return (
-    <div className="min-h-9 overflow-x-auto py-1">
-      <table aria-label="Markdown table" className="w-full border-collapse text-left text-sm">
+    <div className="min-h-9 overflow-x-auto py-1 pl-3 pt-3">
+      <table
+        aria-label="Markdown table"
+        className="w-full border-collapse text-left text-sm [&:hover_[data-axis-handle]]:opacity-100 [&_[data-axis-handle]]:opacity-0"
+      >
         <thead>
           <tr>
             {geometry.alignments.map((_, column) => {
@@ -313,8 +315,9 @@ export function MarkdownTableBlock({
                     pressCell(event.nativeEvent, event.currentTarget, { row: 0, column }, cell)
                   }
                 >
-                  {editable ? (
+                  <span className="relative block">
                     <TableAxisMenu
+                      enabled={editable}
                       axis="column"
                       label={`Column ${column + 1} actions`}
                       canDelete={geometry.columnCount > 1}
@@ -330,8 +333,8 @@ export function MarkdownTableBlock({
                       onClear={() => commit(markdownTableClearColumn(source, geometry, column))}
                       onDelete={() => commit(markdownTableDeleteColumn(source, geometry, column))}
                     />
-                  ) : null}
-                  {renderBody(cell, { row: 0, column })}
+                    {renderBody(cell, { row: 0, column })}
+                  </span>
                 </th>
               );
             })}
@@ -351,23 +354,28 @@ export function MarkdownTableBlock({
                       pressCell(event.nativeEvent, event.currentTarget, { row, column }, cell)
                     }
                   >
-                    {editable && column === 0 ? (
-                      <TableAxisMenu
-                        axis="row"
-                        label={`Row ${row + 1} actions`}
-                        canDelete
-                        onInsertBefore={() =>
-                          commit(markdownTableInsertRow(source, geometry, row, "above"))
-                        }
-                        onInsertAfter={() =>
-                          commit(markdownTableInsertRow(source, geometry, row, "below"))
-                        }
-                        onDuplicate={() => commit(markdownTableDuplicateRow(source, geometry, row))}
-                        onClear={() => commit(markdownTableClearRow(source, geometry, row))}
-                        onDelete={() => commit(markdownTableDeleteRow(source, geometry, row))}
-                      />
-                    ) : null}
-                    {renderBody(cell, { row, column })}
+                    <span className="relative block">
+                      {column === 0 ? (
+                        <TableAxisMenu
+                          enabled={editable}
+                          axis="row"
+                          label={`Row ${row + 1} actions`}
+                          canDelete
+                          onInsertBefore={() =>
+                            commit(markdownTableInsertRow(source, geometry, row, "above"))
+                          }
+                          onInsertAfter={() =>
+                            commit(markdownTableInsertRow(source, geometry, row, "below"))
+                          }
+                          onDuplicate={() =>
+                            commit(markdownTableDuplicateRow(source, geometry, row))
+                          }
+                          onClear={() => commit(markdownTableClearRow(source, geometry, row))}
+                          onDelete={() => commit(markdownTableDeleteRow(source, geometry, row))}
+                        />
+                      ) : null}
+                      {renderBody(cell, { row, column })}
+                    </span>
                   </td>
                 );
               })}
@@ -413,18 +421,28 @@ function sanitiseCellPayload(value: string): string {
  * the table relative to the body text around it.
  */
 function TableAxisMenu({
+  enabled,
   axis,
   label,
   canDelete,
+  canInsertBefore = true,
   onInsertBefore,
   onInsertAfter,
   onDuplicate,
   onClear,
   onDelete,
 }: {
+  /**
+   * Whether the handle can be used. It is always *mounted*: rendering it only while the Block is
+   * active changed the gutter row's height on activation, which is the grow-on-focus this component
+   * exists to prevent. The same tree in both states is the only way to be sure.
+   */
+  enabled: boolean;
   axis: "row" | "column";
   label: string;
   canDelete: boolean;
+  /** A pipe table's first line is its header, so nothing can go above it. */
+  canInsertBefore?: boolean;
   onInsertBefore: () => void;
   onInsertAfter: () => void;
   onDuplicate: () => void;
@@ -438,18 +456,26 @@ function TableAxisMenu({
           type="button"
           aria-label={label}
           title={label}
-          className={`absolute z-10 flex items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity duration-[20ms] ease-in hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover/native-block:opacity-100 ${
+          disabled={!enabled}
+          tabIndex={enabled ? 0 : -1}
+          data-axis-handle
+          // Absolutely positioned so the handle cannot contribute height or width. Mounting it in
+          // flow grew the gutter row from 13px to 37px the moment the Block was activated — the same
+          // grow-on-focus this whole component exists to make impossible.
+          className="absolute rounded-full bg-border/70 transition-opacity duration-[20ms] ease-in hover:bg-primary/60 focus-visible:opacity-100"
+          // Inline rather than utility classes: the offsets have to be exact for the bar to sit in
+          // the margin instead of over the cell's first characters, and a class that silently fails
+          // to generate puts it back inside the text — which is the whole complaint.
+          style={
             axis === "row"
-              ? "left-0 top-1/2 h-5 w-3 -translate-y-1/2"
-              : "left-1/2 top-0 h-3 w-5 -translate-x-1/2"
-          }`}
+              ? { top: -4, bottom: -4, left: -14, width: 6 }
+              : { left: -4, right: -4, top: -14, height: 6 }
+          }
           onPointerDown={(event) => event.stopPropagation()}
         >
-          {axis === "row" ? (
-            <GripVertical className="h-3 w-3" aria-hidden="true" />
-          ) : (
-            <ChevronDown className="h-3 w-3" aria-hidden="true" />
-          )}
+          {/* The bar is the affordance; the button already carries `aria-label`. A visually
+              hidden label here was real text inside the cell, and the caret mapping counted it —
+              every press in a column landed several characters off. */}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -457,7 +483,11 @@ function TableAxisMenu({
         aria-label={label}
         className="w-48 rounded-xl border-border/80 bg-popover/95 p-1.5 shadow-xl backdrop-blur-xl"
       >
-        <DropdownMenuItem className="h-8 rounded-lg px-2.5" onClick={onInsertBefore}>
+        <DropdownMenuItem
+          className="h-8 rounded-lg px-2.5"
+          disabled={!canInsertBefore}
+          onClick={onInsertBefore}
+        >
           {axis === "row" ? "Insert above" : "Insert left"}
         </DropdownMenuItem>
         <DropdownMenuItem className="h-8 rounded-lg px-2.5" onClick={onInsertAfter}>
