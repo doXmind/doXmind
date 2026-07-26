@@ -316,23 +316,25 @@ export function MarkdownTableBlock({
                   }
                 >
                   <span className="relative block">
-                    <TableAxisMenu
-                      enabled={editable}
-                      axis="column"
-                      label={`Column ${column + 1} actions`}
-                      canDelete={geometry.columnCount > 1}
-                      onInsertBefore={() =>
-                        commit(markdownTableInsertColumn(source, geometry, column, "left"))
-                      }
-                      onInsertAfter={() =>
-                        commit(markdownTableInsertColumn(source, geometry, column, "right"))
-                      }
-                      onDuplicate={() =>
-                        commit(markdownTableDuplicateColumn(source, geometry, column))
-                      }
-                      onClear={() => commit(markdownTableClearColumn(source, geometry, column))}
-                      onDelete={() => commit(markdownTableDeleteColumn(source, geometry, column))}
-                    />
+                    <span className="pointer-events-none absolute inset-0">
+                      <TableAxisMenu
+                        enabled={editable}
+                        axis="column"
+                        label={`Column ${column + 1} actions`}
+                        canDelete={geometry.columnCount > 1}
+                        onInsertBefore={() =>
+                          commit(markdownTableInsertColumn(source, geometry, column, "left"))
+                        }
+                        onInsertAfter={() =>
+                          commit(markdownTableInsertColumn(source, geometry, column, "right"))
+                        }
+                        onDuplicate={() =>
+                          commit(markdownTableDuplicateColumn(source, geometry, column))
+                        }
+                        onClear={() => commit(markdownTableClearColumn(source, geometry, column))}
+                        onDelete={() => commit(markdownTableDeleteColumn(source, geometry, column))}
+                      />
+                    </span>
                     {renderBody(cell, { row: 0, column })}
                   </span>
                 </th>
@@ -462,7 +464,7 @@ function TableAxisMenu({
           // Absolutely positioned so the handle cannot contribute height or width. Mounting it in
           // flow grew the gutter row from 13px to 37px the moment the Block was activated — the same
           // grow-on-focus this whole component exists to make impossible.
-          className="absolute rounded-full bg-border/70 transition-opacity duration-[20ms] ease-in hover:bg-primary/60 focus-visible:opacity-100"
+          className="pointer-events-auto absolute rounded-full bg-border/70 transition-opacity duration-[20ms] ease-in hover:bg-primary/60 focus-visible:opacity-100"
           // Inline rather than utility classes: the offsets have to be exact for the bar to sit in
           // the margin instead of over the cell's first characters, and a class that silently fails
           // to generate puts it back inside the text — which is the whole complaint.
