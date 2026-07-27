@@ -1,7 +1,15 @@
 import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
-import { activate, clickAway, openPage, rows, settledHeight, type OpenedPage } from "./harness";
+import {
+  activate,
+  clickAway,
+  openPage,
+  pressLineStart,
+  rows,
+  settledHeight,
+  type OpenedPage,
+} from "./harness";
 
 /**
  * A callout's own controls: changing its type, and getting out of it with the keyboard.
@@ -53,8 +61,12 @@ test("Backspace at the start of a callout strips it, and only then merges", asyn
   await activate(row);
   // Into the title specifically. Activation alone does not say which of a container's two regions
   // took the caret, and this test is about the start of the *title*.
+  //
+  // `pressLineStart` rather than ⌘←, which is a macOS binding: on the Linux runner it moved nothing,
+  // so Backspace deleted the last character of the title instead and the test failed on CI having
+  // passed locally — `> [!TIP] Title her`.
   await row.locator("[aria-label='Callout title']").first().click();
-  await page.keyboard.press("Meta+ArrowLeft");
+  await pressLineStart(page);
 
   // First press: the container goes, the words stay, and the Block is ordinary text.
   await page.keyboard.press("Backspace");
@@ -63,7 +75,7 @@ test("Backspace at the start of a callout strips it, and only then merges", asyn
 
   // Second press, from the same place: now it merges upward. Two presses, never one — collapsing
   // them would take the Block above with a keystroke aimed at this one's styling.
-  await page.keyboard.press("Meta+ArrowLeft");
+  await pressLineStart(page);
   await page.keyboard.press("Backspace");
   await expectSource(opened, "Lead.Title here\nBody text.\n");
 });
