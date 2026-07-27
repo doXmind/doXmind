@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   markdownTableClearColumn,
+  markdownTableSetColumnAlignment,
   markdownTableClearRow,
   markdownTableDeleteColumn,
   markdownTableDeleteRow,
@@ -162,6 +163,29 @@ describe("markdown table cell payloads", () => {
     // The trimmed range is the text; the payload is the text plus the padding the user aligned.
     expect(AWKWARD.slice(cell!.from, cell!.to)).toBe("name");
     expect(AWKWARD.slice(cell!.payloadFrom, cell!.payloadTo)).toBe(" name  ");
+  });
+
+  it("writes a column's alignment into the delimiter and nowhere else", () => {
+    // The reader has honoured `:--`, `:-:` and `--:` since the grid existed, but nothing could write
+    // one, so the only way to right-align a column was to open the file in another editor.
+    const right = markdownTableSetColumnAlignment(SIMPLE, geometryOf(SIMPLE), 1, "right");
+    expect(right).toBe(["| a | b |", "| - | --: |", "| 1 | 2 |"].join("\n"));
+    expect(expectStillATable(right!).alignments).toEqual([null, "right"]);
+
+    // Content lines are untouched: alignment is structure. The awkward fixture's hand-aligned
+    // padding, its escaped pipe and its pipe-less last row all have to come back unchanged.
+    const centred = markdownTableSetColumnAlignment(AWKWARD, geometryOf(AWKWARD), 0, "center");
+    expect(centred).toBe(
+      ["| name  | note   |", "| :-: | -----: |", "| a\\|b  | wide   |", "c | d"].join("\n")
+    );
+    expect(expectStillATable(centred!).alignments).toEqual(["center", "right"]);
+
+    // Back to default, and a no-op when it is already what was asked for.
+    const cleared = markdownTableSetColumnAlignment(AWKWARD, geometryOf(AWKWARD), 1, null);
+    expect(expectStillATable(cleared!).alignments).toEqual(["left", null]);
+    expect(markdownTableSetColumnAlignment(SIMPLE, geometryOf(SIMPLE), 0, null)).toBeNull();
+    // A column the table does not have changes nothing.
+    expect(markdownTableSetColumnAlignment(SIMPLE, geometryOf(SIMPLE), 9, "left")).toBeNull();
   });
 
   it("gives an empty cell a payload a caret can sit in", () => {

@@ -22,6 +22,8 @@ import {
   markdownTableDuplicateRow,
   markdownTableInsertColumn,
   markdownTableInsertRow,
+  markdownTableSetColumnAlignment,
+  type MarkdownTableAlignment,
   type MarkdownTableCell,
   type MarkdownTableGeometry,
 } from "@/editor/markdown-block/markdown-table";
@@ -384,6 +386,10 @@ export function MarkdownTableBlock({
                           setOpenAxis(open ? { axis: "column", index: column } : null)
                         }
                         canDelete={geometry.columnCount > 1}
+                        alignment={geometry.alignments[column] ?? null}
+                        onSetAlignment={(next) =>
+                          commit(markdownTableSetColumnAlignment(source, geometry, column, next))
+                        }
                         onInsertBefore={() =>
                           commit(markdownTableInsertColumn(source, geometry, column, "left"))
                         }
@@ -499,6 +505,8 @@ function TableAxisMenu({
   axis,
   label,
   canDelete,
+  alignment,
+  onSetAlignment,
   canInsertBefore = true,
   onInsertBefore,
   onInsertAfter,
@@ -518,6 +526,12 @@ function TableAxisMenu({
   axis: "row" | "column";
   label: string;
   canDelete: boolean;
+  /**
+   * Only a column has an alignment. Passing nothing leaves the group out entirely rather than showing
+   * a disabled one on a row, where the idea does not apply.
+   */
+  alignment?: MarkdownTableAlignment;
+  onSetAlignment?: (next: MarkdownTableAlignment) => void;
   /** A pipe table's first line is its header, so nothing can go above it. */
   canInsertBefore?: boolean;
   onInsertBefore: () => void;
@@ -598,6 +612,34 @@ function TableAxisMenu({
         <DropdownMenuItem className="h-8 rounded-lg px-2.5" onClick={onInsertAfter}>
           {axis === "row" ? "Insert below" : "Insert right"}
         </DropdownMenuItem>
+        {onSetAlignment ? (
+          <>
+            <DropdownMenuSeparator />
+            {/* The grid has always honoured `:--`, `:-:` and `--:`; nothing could write one, so the
+                only way to align a column was to edit the file somewhere else. The current one is
+                ticked rather than hidden, so the menu says what the column already is. */}
+            {(
+              [
+                ["left", "Align left"],
+                ["center", "Align centre"],
+                ["right", "Align right"],
+                [null, "Default alignment"],
+              ] as [MarkdownTableAlignment, string][]
+            ).map(([value, text]) => (
+              <DropdownMenuItem
+                key={text}
+                className="h-8 rounded-lg px-2.5"
+                onClick={() => onSetAlignment(value)}
+              >
+                <span className="w-4 shrink-0 text-muted-foreground" aria-hidden="true">
+                  {alignment === value ? "✓" : ""}
+                </span>
+                {text}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         <DropdownMenuItem className="h-8 rounded-lg px-2.5" onClick={onDuplicate}>
           Duplicate
         </DropdownMenuItem>

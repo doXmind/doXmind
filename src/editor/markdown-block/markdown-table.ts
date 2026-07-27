@@ -341,6 +341,30 @@ export function markdownTableDuplicateColumn(
   });
 }
 
+/**
+ * Set one column's alignment, which lives entirely in the delimiter line.
+ *
+ * The reader has honoured `:--`, `:-:` and `--:` since the grid existed, and `markdownTableDuplicateColumn`
+ * even copies an alignment across — but nothing could write one, so the only way to right-align a
+ * column was to open the file in another editor. Content lines are untouched: alignment is structure.
+ */
+export function markdownTableSetColumnAlignment(
+  source: string,
+  geometry: MarkdownTableGeometry,
+  at: number,
+  alignment: MarkdownTableAlignment
+): string | null {
+  // Compared against the parsed alignment, not the payload text. A table written `| - | - |` already
+  // means default, so asking for default there must leave it alone rather than rewrite it to `---` —
+  // that is the delimiter style the user chose, and no alignment changed.
+  if ((geometry.alignments[at] ?? null) === alignment) return null;
+  return mapColumn(source, geometry, (payloads, isDelimiter) => {
+    if (!isDelimiter || at >= payloads.length) return false;
+    payloads[at] = delimiterPayload(alignment);
+    return true;
+  });
+}
+
 export function markdownTableClearColumn(
   source: string,
   geometry: MarkdownTableGeometry,
