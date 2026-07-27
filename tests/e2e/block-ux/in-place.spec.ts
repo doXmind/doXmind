@@ -44,6 +44,12 @@ interface InPlaceCase {
   readonly hidden: readonly string[];
   /** Files the Block needs in the workspace to render at all. */
   readonly assets?: Readonly<Record<string, Buffer>>;
+  /**
+   * A Block with no text surface anywhere in it, whose shell has to answer the keys a caret usually
+   * would. Set together with `blockKind`, the value the row reports in `data-block-kind`.
+   */
+  readonly cellFree?: boolean;
+  readonly blockKind?: string;
 }
 
 const CASES: readonly InPlaceCase[] = [
@@ -53,12 +59,16 @@ const CASES: readonly InPlaceCase[] = [
     rendered: "img, [data-testid='image-block'], figure",
     hidden: ["![", "](", ".png)"],
     assets: { "assets/diagram.png": PIXEL_PNG },
+    cellFree: true,
+    blockKind: "image",
   },
   {
     label: "divider",
     source: "---",
     rendered: "hr, [data-testid='thematic-break-block']",
     hidden: ["---"],
+    cellFree: true,
+    blockKind: "thematic_break",
   },
   {
     label: "code",
@@ -166,6 +176,39 @@ for (const testCase of CASES) {
       ).not.toContain(delimiter);
     }
   });
+
+  if (testCase.cellFree) {
+    test(`${testCase.label}: an arrow leaves it, in both directions`, async ({ page }) => {
+      // A Block with no text surface has no caret to move first, so unless its shell answers the
+      // arrow the key is simply swallowed and the only way out is the mouse. Pressing Down on a
+      // divider used to leave the divider active no matter how many times it was pressed.
+      await openPage(
+        page,
+        "InPlace",
+        `Lead paragraph.\n\n${testCase.source}\n\nTail.\n`,
+        testCase.assets
+      );
+      const activeKind = () =>
+        page.evaluate(
+          () =>
+            document.querySelector('[data-active="true"]')?.getAttribute("data-block-kind") ?? null
+        );
+
+      await activate(rows(page).first());
+      await page.keyboard.press("ArrowDown");
+      expect(await activeKind(), `ArrowDown did not reach the ${testCase.label}`).toBe(
+        testCase.blockKind
+      );
+
+      await page.keyboard.press("ArrowDown");
+      expect(await activeKind(), `ArrowDown could not leave the ${testCase.label}`).toBe(
+        "paragraph"
+      );
+
+      await page.keyboard.press("ArrowUp");
+      expect(await activeKind(), `ArrowUp could not come back`).toBe(testCase.blockKind);
+    });
+  }
 
   test(`${testCase.label}: activation does not change its height`, async ({ page }) => {
     await openPage(page, "InPlace", `Lead paragraph.\n\n${testCase.source}\n`, testCase.assets);

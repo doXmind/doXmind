@@ -163,6 +163,29 @@ for (const fixture of KIND_FIXTURES.filter((candidate) => candidate.textSurface 
   });
 }
 
+test("Tab in a ragged table never leaves the Block without an editor", async ({ page }) => {
+  // A row with more pipes than the delimiter declares columns is tolerated rather than normalised, so
+  // the parser keeps cells the grid does not draw. Tab walked into one: the address moved, no editor
+  // mounted at it, and focus fell to `<body>` while the row still called itself active — every
+  // keystroke after that went nowhere until the table was clicked again.
+  const source = ["| a | b | c |", "| - | - | - |", "| x | y | z | extra |", ""].join("\n");
+  await openPage(page, "Ragged tab", source);
+  const row = rows(page).first();
+  await activate(row);
+  await row.locator("td", { hasText: "z" }).first().click();
+  await page.keyboard.press("Tab");
+
+  await expect(
+    page.locator("[data-native-block-editor]"),
+    "Tab left the table with no editing surface"
+  ).toHaveCount(1);
+  await expect(row).toHaveAttribute("data-active", "true");
+
+  // The real symptom was silence, so prove a keystroke still reaches the document.
+  await page.keyboard.type("typed");
+  await expect(page.locator("[data-native-block-editor]").first()).toContainText("typed");
+});
+
 test("a ragged pipe table with bare edges and an escaped pipe survives activation", async ({
   page,
 }) => {

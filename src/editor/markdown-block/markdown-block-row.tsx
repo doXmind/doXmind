@@ -356,6 +356,10 @@ export function MarkdownBlockRow({
    */
   const handleInPlaceKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     const mod = event.metaKey || event.ctrlKey;
+    // A Block with no text surface at all. Its shell is the only thing that can answer a key, so the
+    // keys a caret would normally handle have to be answered here or not at all.
+    const cellFree =
+      block.kind === "image" || block.kind === "thematic_break" || block.kind === "collection";
     if (event.key === "Escape") {
       event.preventDefault();
       onSelectBlock?.(block.id);
@@ -385,10 +389,28 @@ export function MarkdownBlockRow({
       !mod &&
       !event.altKey &&
       (event.key === "Backspace" || event.key === "Delete") &&
-      (block.kind === "image" || block.kind === "thematic_break" || block.kind === "collection")
+      cellFree
     ) {
       event.preventDefault();
       if (!event.repeat) onDelete(block.id);
+      return;
+    }
+    // An arrow leaves the Block. There is no caret inside one of these to move first, so pressing
+    // Down on a divider simply did nothing — the Block swallowed the key and the only way out was the
+    // mouse. Every kind that *does* hold text keeps its arrows for its own caret, which is why this
+    // is gated rather than applied to every in-place surface.
+    if (
+      !mod &&
+      !event.altKey &&
+      !event.shiftKey &&
+      cellFree &&
+      (event.key === "ArrowUp" ||
+        event.key === "ArrowDown" ||
+        event.key === "ArrowLeft" ||
+        event.key === "ArrowRight")
+    ) {
+      const direction = event.key === "ArrowUp" || event.key === "ArrowLeft" ? -1 : 1;
+      if (onNavigate?.(block.id, direction)) event.preventDefault();
       return;
     }
     if (event.altKey && !mod && (event.key === "ArrowUp" || event.key === "ArrowDown")) {

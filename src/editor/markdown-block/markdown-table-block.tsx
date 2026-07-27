@@ -143,6 +143,19 @@ export function MarkdownTableBlock({
     setActive({ row: pending?.row ?? 0, column: pending?.column ?? 0, caret });
   }, [editable, active]);
 
+  // An address outside the drawn grid is indistinguishable from having no editing surface: the row
+  // still reports itself active while nothing holds focus. The effect above cannot catch it, because
+  // it returns early whenever there is already an address. Clamped on every render instead, so no
+  // route to a stale address — a Tab, a deleted column, a re-parse that narrows the table — can leave
+  // the Block without the one editor the contract requires it to have.
+  useEffect(() => {
+    if (!editable || active === null) return;
+    const row = Math.min(active.row, Math.max(geometry.rowCount - 1, 0));
+    const column = Math.min(active.column, Math.max(geometry.alignments.length - 1, 0));
+    if (row === active.row && column === active.column) return;
+    setActive({ row, column, caret: active.caret });
+  }, [editable, active, geometry.rowCount, geometry.alignments.length]);
+
   // The caret directive is one-shot. It is a prop, so leaving it set re-applied it on every render —
   // and a render happens on every keystroke, which pinned the caret to the position the press landed
   // on and made typing come out backwards: "xyz" reached the file as "zyx".
@@ -216,7 +229,14 @@ export function MarkdownTableBlock({
 
   /** The next or previous cell in reading order, wrapping across row boundaries. */
   const step = (from: TableCellAddress, direction: -1 | 1): boolean => {
-    const ordered = [...geometry.cells].sort((a, b) => a.row - b.row || a.column - b.column);
+    // Only cells the grid draws. A ragged row — more pipes than the delimiter declares columns, which
+    // the parser keeps rather than discarding the user's text — leaves extra cells in `geometry` that
+    // no `<tr>` renders, because both map over `alignments`. Tab used to walk into one: the address
+    // moved, no editor mounted at it, and focus fell to `<body>` with the row still marked active, so
+    // every keystroke after that went nowhere until the table was clicked again.
+    const ordered = geometry.cells
+      .filter((candidate) => candidate.column < geometry.alignments.length)
+      .sort((a, b) => a.row - b.row || a.column - b.column);
     const index = ordered.findIndex(
       (candidate) => candidate.row === from.row && candidate.column === from.column
     );
