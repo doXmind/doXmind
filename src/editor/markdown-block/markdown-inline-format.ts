@@ -209,7 +209,9 @@ export function createMarkdownLinkEdit(
     // Retarget a link the selection already sits inside, rather than nesting one inside another.
     if (existing.kind === "image") return null;
     const label = source.slice(existing.labelFrom, existing.labelTo);
-    const text = `[${label}](${encodeLinkDestination(destination)})`;
+    // A title belongs to the link, not to the destination being changed, so it survives a retarget.
+    const { title } = splitLinkDestination(source.slice(existing.labelTo + 2, existing.to - 1));
+    const text = `[${label}](${encodeLinkDestination(destination)}${title ? ` ${title}` : ""})`;
     return {
       from: existing.from,
       to: existing.to,
@@ -254,6 +256,40 @@ function parenthesizedClose(source: string, open: number): number | null {
     }
   }
   return null;
+}
+
+/**
+ * An existing link's destination and title, split apart.
+ *
+ * `[docs](https://e.com/p "Handbook")` is one destination and one title, and confusing the two is how
+ * the link editor came to show `https://e.com/p "Handbook"` in a URL field: pressing Enter on that
+ * wrote the whole string back as the destination and destroyed the title.
+ *
+ * The title keeps its quotes or parentheses so it can be re-emitted verbatim — it is the user's text
+ * and a retarget has no business reformatting it.
+ */
+function splitLinkDestination(inner: string): { destination: string; title: string } {
+  const trimmed = inner.trim();
+  // The `<...>` form first: it is the one that may legally contain spaces.
+  const angled = /^<((?:\\.|[^>\\])*)>\s*(.*)$/.exec(trimmed);
+  if (angled) return { destination: angled[1], title: angled[2].trim() };
+  const titled = /^(\S+)\s+("[^"]*"|'[^']*'|\([^)]*\))$/.exec(trimmed);
+  if (titled) return { destination: titled[1], title: titled[2] };
+  return { destination: trimmed, title: "" };
+}
+
+/**
+ * The destination of a link the selection sits inside, for prefilling the link editor.
+ *
+ * Uses the same balanced-parenthesis scan as everything else in this module. The link editor used to
+ * carry its own `\(([^)]*)\)` regex, which stopped at the first `)` and so handed back a truncated
+ * URL for anything like `https://en.wikipedia.org/wiki/Ruby_(gem)` — accepting the prefilled value
+ * unchanged then rewrote the file with a destination one character short of working.
+ */
+export function markdownLinkDestinationAt(source: string, from: number, to: number): string {
+  const resource = inlineResourceOverlappingSelection(source, from, to);
+  if (!resource || resource.kind !== "link") return "";
+  return splitLinkDestination(source.slice(resource.labelTo + 2, resource.to - 1)).destination;
 }
 
 function inlineResourceOverlappingSelection(

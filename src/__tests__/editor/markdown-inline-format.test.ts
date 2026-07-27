@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createMarkdownInlineFormatEdit,
+  markdownLinkDestinationAt,
   createMarkdownLinkEdit,
   markdownInlineFormatState,
 } from "@/editor/markdown-block/markdown-inline-format";
@@ -135,6 +136,33 @@ describe("Markdown inline formatting", () => {
       italic: false,
       bold: false,
     });
+  });
+
+  it("reads a destination with balanced parentheses whole, and keeps a title out of it", () => {
+    const parens = "See [wiki](https://en.wikipedia.org/wiki/Ruby_(gem)) now";
+    const at = parens.indexOf("wiki]");
+    // The old regex stopped at the first `)`, so the link editor prefilled a URL one character short
+    // of working and accepting it unchanged rewrote the file with the broken value.
+    expect(markdownLinkDestinationAt(parens, at, at + 4)).toBe(
+      "https://en.wikipedia.org/wiki/Ruby_(gem)"
+    );
+
+    const titled = '[docs](https://e.com/p "Handbook")';
+    expect(markdownLinkDestinationAt(titled, 1, 5)).toBe("https://e.com/p");
+
+    const angled = "[a](<https://e.com/a b>)";
+    expect(markdownLinkDestinationAt(angled, 1, 2)).toBe("https://e.com/a b");
+
+    // Nothing to prefill when the selection is not in a link, and an image is not one.
+    expect(markdownLinkDestinationAt("plain text", 0, 5)).toBe("");
+    expect(markdownLinkDestinationAt("![alt](a.png)", 2, 5)).toBe("");
+  });
+
+  it("keeps a link's title when only its destination is being changed", () => {
+    const source = '[docs](https://old.example "Handbook")';
+    const edit = createMarkdownLinkEdit(source, 1, 5, "https://new.example");
+
+    expect(edit?.text).toBe('[docs](https://new.example "Handbook")');
   });
 
   it("never treats image alt text as a link that can be toggled", () => {

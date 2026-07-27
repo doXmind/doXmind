@@ -52,6 +52,7 @@ import { isMarkdownSourceOnlyBlockKind } from "@/editor/markdown-block/markdown-
 import { InlineFormatToolbar } from "@/editor/markdown-block/inline-format-toolbar";
 import {
   markdownInlineFormatState,
+  markdownLinkDestinationAt,
   type MarkdownInlineFormat,
 } from "@/editor/markdown-block/markdown-inline-format";
 import { projectMarkdownInline } from "@/editor/markdown-block/markdown-inline-projection";
@@ -638,7 +639,7 @@ export function MarkdownBlockRow({
       if (
         shortcut === "link" &&
         onEditLink &&
-        (from < to || existingLinkDestination(source, from, to))
+        (from < to || markdownLinkDestinationAt(source, from, to))
       ) {
         event.preventDefault();
         event.stopPropagation();
@@ -944,7 +945,7 @@ export function MarkdownBlockRow({
         : domSelectionToolbarPosition(surface)
       : { top: 0, left: 0 };
     setInlineSelection(null);
-    setLinkEditor({ from, to, url: existingLinkDestination(source, from, to), position });
+    setLinkEditor({ from, to, url: markdownLinkDestinationAt(source, from, to), position });
   };
 
   const openBlockActionsMenu = () => {
@@ -1708,16 +1709,6 @@ function HighlightedCode({ code, language }: { code: string; language: string })
 }
 
 /** Destination of the link the selection already sits inside, or "" when there is none. */
-function existingLinkDestination(source: string, from: number, to: number): string {
-  const pattern = /\[(?:\\.|[^\]\\])*\]\(([^)]*)\)/g;
-  for (let match = pattern.exec(source); match; match = pattern.exec(source)) {
-    const start = match.index;
-    const end = start + match[0].length;
-    if (from >= start && to <= end) return match[1].replace(/^<|>$/g, "");
-  }
-  return "";
-}
-
 /**
  * A small popover for a link's destination.
  *
