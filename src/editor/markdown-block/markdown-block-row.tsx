@@ -135,7 +135,11 @@ interface MarkdownBlockRowProps {
   onBlockSelectionKeyDown?: (blockId: string, event: KeyboardEvent<HTMLDivElement>) => void;
   /** Grows a text selection past the Block boundary into a Block selection. */
   onExtendSelectionToBlock?: (blockId: string, direction: -1 | 1) => boolean;
-  onChange: (blockId: string, source: string) => void;
+  onChange: (
+    blockId: string,
+    source: string,
+    options?: { readonly surfaceChanges?: boolean; readonly caret?: number }
+  ) => void;
   onPaste: (blockId: string, from: number, to: number, text: string) => void;
   onApplyInlineFormat?: (
     blockId: string,
@@ -442,10 +446,15 @@ export function MarkdownBlockRow({
     editable: active && block.editable,
     // ...and hand back a whole Block, which has to be projected before the runtime sees it, or the
     // runtime would wrap an already-complete source in its delimiters a second time.
-    onChange: (blockId: string, nextRaw: string) =>
+    onChange: (
+      blockId: string,
+      nextRaw: string,
+      options?: { surfaceChanges?: boolean; caret?: number }
+    ) =>
       onChange(
         blockId,
-        createBlockEditingProjection({ kind: block.kind, raw: nextRaw }).editorText
+        createBlockEditingProjection({ kind: block.kind, raw: nextRaw }).editorText,
+        options
       ),
     onKeyDown: handleInPlaceKeyDown,
     renderInline: (markdown: string) => (

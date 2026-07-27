@@ -2178,7 +2178,7 @@ export function MarkdownBlockRuntime({
                 }}
                 onBlockSelectionKeyDown={handleBlockSelectionKeyDown}
                 onExtendSelectionToBlock={extendSelectionToBlock}
-                onChange={(blockId, source) => {
+                onChange={(blockId, source, options) => {
                   const current = documentRef.current
                     .getSnapshot()
                     .blocks.find((candidate) => candidate.id === blockId);
@@ -2201,8 +2201,18 @@ export function MarkdownBlockRuntime({
                       text: patch.text,
                       recordHistory: !composing || !compositionHasHistoryRef.current,
                     },
-                    false
+                    // A text edit leaves the caret to the surface that produced it. An edit that
+                    // replaces the surface has no such surface left, so the document's selection has
+                    // to be applied or the Block stays active with nothing focused.
+                    options?.surfaceChanges === true
                   );
+                  if (typeof options?.caret === "number") {
+                    setPendingSelection({
+                      blockId,
+                      anchor: options.caret,
+                      head: options.caret,
+                    });
+                  }
                   if (composing) compositionHasHistoryRef.current = true;
                   else scheduleTypingCheckpoint();
                 }}

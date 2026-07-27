@@ -34,7 +34,29 @@ export interface InPlaceBlockProps {
   readonly source: string;
   /** True only for the one Block being edited. A nested or printed Block is never editable. */
   readonly editable: boolean;
-  readonly onChange: (blockId: string, nextSource: string) => void;
+  readonly onChange: (
+    blockId: string,
+    nextSource: string,
+    options?: {
+      /**
+       * True when the edit replaces the Block's editing surface rather than changing text inside it —
+       * a callout losing its marker stops being a callout, so the container unmounts and its editor
+       * goes with it.
+       *
+       * A text edit deliberately does *not* apply the document's selection, because the surface that
+       * produced it still holds the caret. When the surface is about to be replaced there is nothing
+       * left holding anything: the row stayed marked active with `document.activeElement` on `<body>`,
+       * and every key after that went nowhere — the same dead end a ragged table's Tab used to reach.
+       */
+      readonly surfaceChanges?: boolean;
+      /**
+       * Where the caret belongs in the replaced surface. Without it the caret lands wherever the text
+       * patch happened to end, which for a Block that just lost its container is the middle of it —
+       * the user pressed Backspace at the very start and would find the caret somewhere else.
+       */
+      readonly caret?: number;
+    }
+  ) => void;
   /**
    * Keys the component does not own, handed back to the Block.
    *

@@ -19,6 +19,12 @@ import {
   type ReactNode,
 } from "react";
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { InPlaceBlockProps } from "@/editor/markdown-block/in-place-block";
 import { projectMarkdownInline } from "@/editor/markdown-block/markdown-inline-projection";
 import { SemanticInlineEditor } from "@/editor/markdown-block/semantic-inline-editor";
@@ -54,6 +60,19 @@ export interface MarkdownContainer {
   readonly open: boolean;
   withHeading(next: string): string;
   withBody(next: string): string;
+  /**
+   * The same source with a different callout type. Absent on a toggle, which has no type.
+   *
+   * `type` was readable and unwritable, so every callout in the app was permanently whatever the file
+   * said and there was no way to change one.
+   */
+  withType?(next: string): string;
+  /**
+   * The container's text with the container taken off — no `>` prefix, no `[!TYPE]`, no `<details>`
+   * scaffolding. What Backspace at the very start produces, in both reference products: the first
+   * press strips the styling and leaves the words, and only a second one merges upward.
+   */
+  withoutContainer(): string;
 }
 
 interface SourceLine {
@@ -117,6 +136,23 @@ function parseCalloutSource(source: string): MarkdownContainer | null {
       const rewritten = flat ? `${prefix}${marker}${gap || " "}${flat}` : `${prefix}${marker}`;
       return rewritten + source.slice(lines[0].raw.length);
     },
+    withType(next) {
+      const rewritten = `${prefix}[!${next.toUpperCase()}]${gap}${title}`;
+      return rewritten + source.slice(lines[0].raw.length);
+    },
+    withoutContainer() {
+      // Title and body as plain lines, each keeping its own line so a callout with both does not glue
+      // two sentences together. A blank body line is dropped: a bare `>` was scaffolding, not an
+      // empty paragraph anyone typed, and keeping it would split the result into two Blocks.
+      const kept = [title, ...lines.slice(1).map(bodyOf)].filter((text) => text.trim().length > 0);
+      return joinSourceLines(
+        (kept.length > 0 ? kept : [""]).map((raw, index) => ({
+          raw,
+          ending: lines[index]?.ending ?? "",
+        })),
+        fallbackEnding
+      );
+    },
     withBody(next) {
       const contents = next.length === 0 ? [] : next.split("\n");
       const rebuilt: SourceLine[] = [lines[0]];
@@ -172,6 +208,20 @@ function parseToggleSource(source: string): MarkdownContainer | null {
         ending: lines[1].ending,
       };
       return joinSourceLines(rebuilt, fallbackEnding);
+    },
+    withoutContainer() {
+      // Summary and body as plain lines. The `<details>`, `<summary>` and the blank lines that make a
+      // Markdown parser read the middle as Markdown are all scaffolding and all go.
+      const kept = [summary[2], ...bodyLines.map((line) => line.raw)].filter(
+        (text) => text.trim().length > 0
+      );
+      return joinSourceLines(
+        (kept.length > 0 ? kept : [""]).map((raw, index) => ({
+          raw,
+          ending: lines[index + 1]?.ending ?? "",
+        })),
+        fallbackEnding
+      );
     },
     withBody(next) {
       const contents = next.length === 0 ? [] : next.split("\n");
@@ -235,6 +285,9 @@ function firstLineEnding(source: string): string {
 function flattenToOneLine(value: string): string {
   return value.replace(/\r\n|\n|\r/g, " ");
 }
+
+/** Menu order, GitHub's own: the five alert types a portable callout can be. */
+const CALLOUT_TYPE_ORDER = ["note", "tip", "important", "warning", "caution"] as const;
 
 const CALLOUT_STYLES: Record<
   string,
@@ -417,6 +470,12 @@ export function MarkdownContainerBlock({
     onChange(blockId, next);
   };
 
+  /** A commit that stops this Block being a container, so the row has to re-place the caret. */
+  const commitLeavingContainer = (next: string, caret: number) => {
+    if (next === source) return;
+    onChange(blockId, next, { surfaceChanges: true, caret });
+  };
+
   const focusRegion = (region: ContainerRegion, at: ActiveRegion["caret"]) => {
     if (region === "body" && kind === "toggle" && !open) setOpenOverride(true);
     setActive({ region, caret: at });
@@ -492,7 +551,27 @@ export function MarkdownContainerBlock({
     focusRegion(origin.region, { anchor: origin.at, head });
   };
 
-  const handleHeadingKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+  const handleHeadingKeyDown = (event: KeyboardEvent<HTMLElement>, selection?: SourceSelection) => {
+    // Backspace at the very start takes the container off and leaves the words behind. Both reference
+    // products do this, and both make it two presses: the first strips the styling, and only then does
+    // a second Backspace at the start of the resulting text merge it upward. Handing the key on after
+    // the strip would collapse those two into one and swallow the previous Block by surprise.
+    const at = selection ? Math.max(selection.anchor, selection.head) : -1;
+    if (
+      event.key === "Backspace" &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      selection &&
+      at === 0 &&
+      Math.min(selection.anchor, selection.head) === 0
+    ) {
+      event.preventDefault();
+      // Caret at nought: the press was at the very start, and that is where it stays, which is
+      // also what lets a second Backspace mean "merge with the Block above".
+      if (!event.repeat) commitLeavingContainer(container.withoutContainer(), 0);
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       // A heading is one line, so a newline cannot go in it. Dropping into the body is what both
       // Notion and Feishu do with Enter on a callout's or a toggle's title, and it is the only
@@ -531,6 +610,22 @@ export function MarkdownContainerBlock({
     if (plainArrow && event.key === "ArrowUp" && (firstBreak === -1 || to <= firstBreak)) {
       event.preventDefault();
       focusRegion("heading", "end");
+      return;
+    }
+    if (event.key === "Backspace" && body.length > 0 && from === 0 && to === 0) {
+      // Joining the first body line onto the heading. The heading and the body are one container's
+      // two halves, so this is the ordinary "merge with the line above" — it was simply dead, because
+      // the Block-level handler has no bare-Backspace branch for a kind that holds text.
+      event.preventDefault();
+      if (event.repeat) return;
+      const firstLine = body.indexOf("\n");
+      const head = firstLine === -1 ? body : body.slice(0, firstLine);
+      const rest = firstLine === -1 ? "" : body.slice(firstLine + 1);
+      const merged = parseMarkdownContainer(kind, container.withHeading(heading + head));
+      if (merged) {
+        setActive({ region: "heading", caret: heading.length });
+        commit(merged.withBody(rest));
+      }
       return;
     }
     if (event.key === "Backspace" && body.length === 0 && from === 0 && to === 0) {
@@ -617,7 +712,52 @@ export function MarkdownContainerBlock({
         aria-label={`${container.type} callout`}
         className={`flex min-h-9 gap-2.5 rounded-md border px-3 py-2 ${style.container}`}
       >
-        <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${style.accent}`} aria-hidden="true" />
+        {/* The icon is the control, which is how the reference product does it: you press the thing
+            you want to change. It is always mounted and always the same box, so the callout cannot
+            change height or width when it takes the caret, and it holds no text — a label inside the
+            callout would be counted by the walker that maps a press to an offset, and every press in
+            the title would then land several characters off. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={`${style.label} callout, change type`}
+              disabled={!editable}
+              className={`mt-0.5 h-4 w-4 shrink-0 rounded transition-colors duration-[20ms] ease-in ${style.accent} ${
+                editable ? "hover:bg-foreground/10" : ""
+              }`}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <Icon className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            aria-label="Callout type"
+            className="w-44 rounded-xl border-border/80 bg-popover/95 p-1.5 shadow-xl backdrop-blur-xl"
+          >
+            {CALLOUT_TYPE_ORDER.map((name) => {
+              const option = CALLOUT_STYLES[name];
+              const OptionIcon = option.icon;
+              return (
+                <DropdownMenuItem
+                  key={name}
+                  className="h-8 gap-2 rounded-lg px-2.5"
+                  onClick={() => {
+                    const next = container.withType?.(name);
+                    if (next) commit(next);
+                  }}
+                >
+                  <span className="w-3 shrink-0 text-muted-foreground" aria-hidden="true">
+                    {container.type.toLowerCase() === name ? "✓" : ""}
+                  </span>
+                  <OptionIcon className={`h-4 w-4 shrink-0 ${option.accent}`} aria-hidden="true" />
+                  {option.label}
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <div className="min-w-0 flex-1">
           <div
             className="font-semibold"
