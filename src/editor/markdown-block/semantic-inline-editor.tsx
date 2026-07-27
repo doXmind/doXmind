@@ -378,7 +378,12 @@ function SemanticSegment({
     content = (
       <span
         data-markdown-inline-wiki={segment.wikiTarget}
-        className="rounded-sm bg-primary/10 px-0.5 text-primary"
+        // Underlined, matching the preview. Without it a wiki link lost the underline the instant the
+        // paragraph took a caret, and since `text-primary` resolves to the same near-black as body
+        // text here, the underline is the entire affordance — the link simply stopped looking like
+        // one. An ordinary Markdown link in the same sentence keeps its underline throughout, so the
+        // two link kinds disagreed within one line.
+        className="rounded-sm bg-primary/10 px-0.5 text-primary underline decoration-primary/30 underline-offset-2"
       >
         {content}
       </span>

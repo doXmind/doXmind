@@ -124,6 +124,98 @@ const CASES: readonly InPlaceCase[] = [
 ];
 
 /**
+ * Clicking a Block's *inner* line, not just the Block.
+ *
+ * The per-kind height test above presses the row, which for a toggle lands on the summary — so a
+ * toggle whose empty body grew 10.61px on click sat behind a green parity test for as long as it
+ * existed. 10.61 is 28 minus 17.4: the placeholder was `text-sm`, which globals.css pins to
+ * 12px/17.4px, and the surface replacing it inherits the page's 16px/28px. The same arithmetic is
+ * already recorded in editor.css for the code Block, which is how this one was recognised.
+ *
+ * Aimed at the placeholder itself, because that is the pixel the bug lived in.
+ */
+test("an empty toggle body does not grow when the body line itself is clicked", async ({
+  page,
+}) => {
+  await openPage(
+    page,
+    "EmptyToggle",
+    "Lead.\n\n<details open>\n<summary>T</summary>\n\n</details>\n"
+  );
+  const row = rows(page).nth(1);
+  await clickAway(page);
+
+  const placeholder = row.getByText("Empty toggle", { exact: true });
+  await expect(placeholder).toBeVisible();
+  const before = await settledHeight(row);
+  const box = await placeholder.boundingBox();
+  expect(box, "the empty-body placeholder has no box to aim at").not.toBeNull();
+
+  await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await expect(row).toHaveAttribute("data-active", "true");
+  const after = (await row.boundingBox())?.height ?? 0;
+
+  expect(
+    Math.abs(after - before),
+    "clicking the empty body resized the toggle"
+  ).toBeLessThanOrEqual(1);
+});
+
+/**
+ * An empty heading's placeholder is the same text in both states.
+ *
+ * It is the only thing an empty heading shows, and it is what every heading looks like for the first
+ * second of its life. The rendered one carried `font-normal` while the focused one inherits the
+ * heading's 600, so the grey label thickened and widened under the cursor — the same class of
+ * mismatch that `tracking-tight` caused in this exact element once before.
+ */
+test("an empty heading's placeholder does not change weight when clicked", async ({ page }) => {
+  await openPage(page, "EmptyHeading", "Lead.\n\n# \n");
+  const row = rows(page).nth(1);
+  await clickAway(page);
+
+  const resting = await row.evaluate((el) => {
+    const node = el.querySelector("[data-block-placeholder]");
+    return node ? window.getComputedStyle(node).fontWeight : null;
+  });
+  await activate(row);
+  const editing = await row.evaluate((el) => {
+    const node = el.querySelector("[data-native-block-editor]");
+    return node ? window.getComputedStyle(node, "::placeholder").fontWeight : null;
+  });
+
+  expect(resting, "no placeholder on an empty heading").not.toBeNull();
+  expect(editing, "the placeholder changed weight when the heading was clicked").toBe(resting);
+});
+
+/**
+ * A wiki link stays underlined while the paragraph is being edited.
+ *
+ * `text-primary` resolves to the same near-black as body text here, so the underline is the whole
+ * affordance. Dropping it on activation made the link stop looking like one, while the ordinary
+ * Markdown link beside it kept its underline — two link kinds disagreeing inside one sentence.
+ */
+test("a wiki link keeps its underline when the paragraph takes a caret", async ({ page }) => {
+  await openPage(page, "WikiUnderline", "Para with [[Wiki Target]] here.\n");
+  const row = rows(page).first();
+
+  const decoration = () =>
+    row.evaluate((el) => {
+      const painted = [
+        ...el.querySelectorAll("[data-wiki-link], [data-markdown-inline-wiki]"),
+      ].find((node) => node.getBoundingClientRect().width > 0);
+      return painted ? window.getComputedStyle(painted).textDecorationLine : null;
+    });
+
+  await clickAway(page);
+  const resting = await decoration();
+  expect(resting, "the unfocused wiki link is not underlined").toBe("underline");
+
+  await activate(row);
+  expect(await decoration(), "the wiki link lost its underline on activation").toBe(resting);
+});
+
+/**
  * An inline image is the same object before and after the click.
  *
  * Not in the table above because it is not a Block kind — it is a paragraph with an image inside a

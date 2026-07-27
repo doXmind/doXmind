@@ -666,7 +666,7 @@ export function MarkdownContainerBlock({
       className="my-1 min-h-9 rounded-lg border border-border bg-muted/20"
     >
       <summary
-        className="flex list-none items-start gap-1.5 break-words px-3 py-2 text-sm font-medium [&::-webkit-details-marker]:hidden"
+        className="flex list-none items-start gap-1.5 break-words px-3 py-2 font-medium [&::-webkit-details-marker]:hidden"
         // Cancel the native disclosure but let the press keep travelling, so the row can activate
         // the Block the way it does for every other kind. Without this, clicking the summary to put
         // a caret in it collapsed the toggle instead.
@@ -725,11 +725,7 @@ export function MarkdownContainerBlock({
           // unit the editing surface uses, because the two have to be the same line high to the
           // pixel: a class that silently failed to generate would make the toggle jump the moment
           // its empty body was clicked, which is the grow-on-focus this component exists to prevent.
-          <div
-            className="text-sm text-muted-foreground"
-            style={{ minHeight: "1lh" }}
-            aria-hidden="true"
-          >
+          <div className="text-muted-foreground" style={{ minHeight: "1lh" }} aria-hidden="true">
             Empty toggle
           </div>
         ) : renderBody ? (

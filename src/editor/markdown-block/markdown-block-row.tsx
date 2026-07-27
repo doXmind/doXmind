@@ -2396,7 +2396,11 @@ function BlockPreview({
   const body = text ? (
     inline
   ) : (
-    <span data-block-placeholder aria-hidden="true" className="select-none font-normal">
+    // No `font-normal`. The focused surface's `::placeholder` inherits the heading's 600 from
+    // `[data-editor-kind="heading"]`, so pinning this one to 400 made the grey "Heading 1" visibly
+    // thicken and widen the moment an empty heading was clicked — the same mismatch that
+    // `tracking-tight` caused here once already, in the property next door.
+    <span data-block-placeholder aria-hidden="true" className="select-none">
       {`Heading ${block.level ?? 1}`}
     </span>
   );
@@ -3000,7 +3004,7 @@ function TogglePreviewShell({
       className="my-1 min-h-9 rounded-lg border border-border bg-muted/20"
     >
       <summary
-        className="flex list-none items-start gap-1.5 break-words px-3 py-2 text-sm font-medium [&::-webkit-details-marker]:hidden"
+        className="flex list-none items-start gap-1.5 break-words px-3 py-2 font-medium [&::-webkit-details-marker]:hidden"
         // Cancel the native disclosure but let the press keep travelling, so the row can activate
         // the Block the way it does for every other kind.
         onClick={(event) => event.preventDefault()}
