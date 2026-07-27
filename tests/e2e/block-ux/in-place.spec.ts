@@ -123,6 +123,52 @@ const CASES: readonly InPlaceCase[] = [
   { label: "email autolink", source: "Mail <a@example.com> today", hidden: ["<", ">"] },
 ];
 
+/**
+ * An inline image is the same object before and after the click.
+ *
+ * Not in the table above because it is not a Block kind — it is a paragraph with an image inside a
+ * sentence, and it went wrong in a way the per-kind assertions cannot see. The preview drew the alt
+ * text in a pill and the editing surface drew a 24x24 icon, so activating the paragraph swapped one
+ * for the other and moved every word after it. Height never changed, which is why the parity test
+ * next door stayed green through all of it: the pill was shorter than the line box.
+ */
+test("an inline image keeps its size and position when the paragraph is clicked", async ({
+  page,
+}) => {
+  await openPage(page, "InlineImage", "Before ![Diagram](assets/d.png) after the image.\n", {
+    "assets/d.png": PIXEL_PNG,
+  });
+  const row = rows(page).first();
+
+  const chipBox = () =>
+    row.evaluate((el) => {
+      // Whatever is actually painted in this state: the other rendering is in a display:none subtree
+      // and reports a zero box, which is how they are told apart without naming either.
+      const painted = [...el.querySelectorAll("[aria-label='Diagram']")]
+        .map((node) => node.getBoundingClientRect())
+        .filter((box) => box.width > 0 && box.height > 0);
+      if (painted.length !== 1) return { count: painted.length };
+      const box = painted[0];
+      return {
+        count: 1,
+        x: Math.round(box.x * 10) / 10,
+        width: Math.round(box.width * 10) / 10,
+        height: Math.round(box.height * 10) / 10,
+      };
+    });
+
+  await clickAway(page);
+  const resting = await chipBox();
+  expect(resting.count, "exactly one inline image should be painted").toBe(1);
+
+  await activate(row);
+  const editing = await chipBox();
+
+  expect(editing, "the inline image changed shape or moved when the Block was clicked").toEqual(
+    resting
+  );
+});
+
 /** Everything the row shows a reader, with the gutter controls' own labels excluded. */
 async function visibleText(row: Locator): Promise<string> {
   return row.evaluate((el) => {

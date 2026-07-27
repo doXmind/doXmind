@@ -1,6 +1,6 @@
 "use client";
 
-import { ImageIcon } from "lucide-react";
+import { InlineImageChip } from "@/editor/markdown-block/inline-image-chip";
 import {
   type ClipboardEvent,
   type CompositionEvent,
@@ -319,10 +319,8 @@ function SemanticSegment({
       sourceSelection.from < segment.sourceTo &&
       sourceSelection.to > segment.sourceFrom;
     return (
-      <span
+      <InlineImageChip
         role="img"
-        aria-label={segment.imageAlt || "Markdown image"}
-        title={segment.imageAlt || segment.imageTarget}
         data-markdown-inline-segment=""
         data-markdown-inline-image={segment.imageTarget}
         data-source-from={segment.sourceFrom}
@@ -331,13 +329,12 @@ function SemanticSegment({
         data-visible-to={segment.visibleTo}
         data-native-search-selection={selected ? "" : undefined}
         contentEditable={false}
-        className={`mx-0.5 inline-flex h-6 w-6 select-all items-center justify-center rounded text-muted-foreground ${
-          selected ? "bg-primary/20 ring-2 ring-primary/40" : "bg-muted"
-        }`}
+        selected={selected}
+        alt={segment.imageAlt ?? ""}
+        target={segment.imageTarget}
       >
-        <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
         <span className="sr-only">{"\uFFFC"}</span>
-      </span>
+      </InlineImageChip>
     );
   }
 

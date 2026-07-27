@@ -47,6 +47,7 @@ import {
   editableMarkdownBlockSource,
   orderedListDisplayOrdinals,
 } from "@/editor/markdown-block/markdown-block-source";
+import { InlineImageChip } from "@/editor/markdown-block/inline-image-chip";
 import { isMarkdownSourceOnlyBlockKind } from "@/editor/markdown-block/markdown-block-document";
 import { InlineFormatToolbar } from "@/editor/markdown-block/inline-format-toolbar";
 import {
@@ -3131,16 +3132,11 @@ function renderInlineTokens(
           </span>
         );
       case "image":
-        return (
-          <span
-            key={key}
-            title={token.href}
-            aria-label={`Image: ${token.text || token.href || "attachment"}`}
-            className="rounded bg-muted px-1.5 py-0.5 text-sm text-muted-foreground"
-          >
-            {token.text || token.href || "Image"}
-          </span>
-        );
+        // The same chip the editing surface draws. These were written separately and drifted: this
+        // one was an alt-text pill at `text-sm`, which globals.css pins to 12px inside 16px prose, so
+        // clicking the sentence swapped a 59x19 label for a 24x24 icon and slid the rest of the line
+        // sideways under the pointer.
+        return <InlineImageChip key={key} alt={token.text ?? ""} target={token.href} />;
       case "br":
         return <br key={key} />;
       default:
