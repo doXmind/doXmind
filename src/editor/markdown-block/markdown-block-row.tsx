@@ -47,6 +47,7 @@ import {
   editableMarkdownBlockSource,
   orderedListDisplayOrdinals,
 } from "@/editor/markdown-block/markdown-block-source";
+import { hasDesktopBridge, invokeDesktop } from "@/lib/native-shell";
 import { InlineImageChip } from "@/editor/markdown-block/inline-image-chip";
 import { isMarkdownSourceOnlyBlockKind } from "@/editor/markdown-block/markdown-block-document";
 import { InlineFormatToolbar } from "@/editor/markdown-block/inline-format-toolbar";
@@ -3089,6 +3090,29 @@ function InlineMarkdownPreview({
   return <>{renderInlineTokens(tokens, "inline", onOpenWikiLink)}</>;
 }
 
+/**
+ * A destination this app will actually open, or null.
+ *
+ * Deliberately the same filter the main process applies in `shell_open_external` rather than a second
+ * policy that could drift from it. This preview is built from `marked` tokens, not from the inline
+ * projection, so nothing upstream has vetted the href — documents are untrusted input, and a
+ * `javascript:` destination reaching a real `href` is the exact shape that rule exists to prevent.
+ */
+function externallyOpenableHref(href: string | undefined): string | null {
+  const trimmed = href?.trim();
+  if (!trimmed) return null;
+  return /^(?:https?:|mailto:)/i.test(trimmed) ? trimmed : null;
+}
+
+/** Hand a vetted destination to the OS, or to a new tab when running in a browser. */
+async function openExternalHref(href: string): Promise<void> {
+  if (hasDesktopBridge()) {
+    await invokeDesktop("shell_open_external", { url: href });
+    return;
+  }
+  window.open(href, "_blank", "noopener,noreferrer");
+}
+
 function renderInlineTokens(
   tokens: InlinePreviewToken[],
   keyPrefix: string,
@@ -3115,17 +3139,47 @@ function renderInlineTokens(
             {token.text ?? ""}
           </code>
         );
-      case "link":
+      case "link": {
+        const href = externallyOpenableHref(token.href);
+        // Inert when the destination is not one this app will open. It keeps the label and the
+        // styling, because the text is the user's; what it loses is an `href`, which is the point.
+        if (!href) {
+          return (
+            <span
+              key={key}
+              title={token.href}
+              data-markdown-link
+              className="text-primary underline decoration-primary/40 underline-offset-2"
+            >
+              {children}
+            </span>
+          );
+        }
         return (
-          <span
+          <a
             key={key}
-            title={token.href}
+            href={href}
+            title={href}
             data-markdown-link
             className="text-primary underline decoration-primary/40 underline-offset-2"
+            // The unfocused preview is not an editing surface, so a press here has no caret to place
+            // and can mean what it looks like it means. A link was painted as a link in both states
+            // and openable in neither: this one was a `span` with no destination at all, and the
+            // editing surface's anchor cancels its own click so a press can put the caret in the
+            // label. Wiki links have always opened from the preview; ordinary links now match.
+            //
+            // `stopPropagation` keeps the press from also activating the Block, the way the to-do
+            // checkbox and the toggle chevron already do.
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void openExternalHref(href);
+            }}
           >
             {children}
-          </span>
+          </a>
         );
+      }
       case "image":
         // The same chip the editing surface draws. These were written separately and drifted: this
         // one was an alt-text pill at `text-sm`, which globals.css pins to 12px inside 16px prose, so

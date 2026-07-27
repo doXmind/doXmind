@@ -216,6 +216,58 @@ test("a wiki link keeps its underline when the paragraph takes a caret", async (
 });
 
 /**
+ * A link in the unfocused preview can actually be opened, and an unsafe one cannot.
+ *
+ * It was painted as a link in both states and openable in neither: the preview was a `span` with no
+ * destination, and the editing surface's anchor cancels its own click so a press can put the caret in
+ * the label. The preview is not an editing surface, so there a press can mean what it looks like it
+ * means — which is how wiki links have always behaved.
+ *
+ * The second half matters more than the first. This preview is built from `marked` tokens rather than
+ * the inline projection, so nothing upstream vetted the destination, and documents are untrusted
+ * input: only the schemes the main process will open become real anchors.
+ */
+test("a preview link opens, and a javascript: destination never becomes one", async ({ page }) => {
+  await openPage(
+    page,
+    "Links",
+    "Safe [docs](https://example.com/a) and [x](javascript:alert(1)) and [rel](./other.md).\n"
+  );
+  const row = rows(page).first();
+  await clickAway(page);
+
+  const links = await row.evaluate((el) =>
+    [...el.querySelectorAll("[data-markdown-link]")].map((node) => ({
+      tag: node.tagName,
+      href: node.getAttribute("href"),
+      text: node.textContent,
+    }))
+  );
+
+  expect(links).toEqual([
+    { tag: "A", href: "https://example.com/a", text: "docs" },
+    // Inert: it keeps the label, and loses the destination.
+    { tag: "SPAN", href: null, text: "x" },
+    { tag: "SPAN", href: null, text: "rel" },
+  ]);
+
+  // The press opens the link elsewhere. It must not navigate this window, and must not fall through
+  // and activate the Block the way any other press in the row would.
+  //
+  // Awaited alongside the click rather than polled after it: the popup arrives on its own schedule,
+  // and reading the list straight after the click just races it.
+  const before = page.url();
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup"),
+    row.locator("a[data-markdown-link]").first().click(),
+  ]);
+
+  expect(popup.url(), "the link opened the wrong destination").toBe("https://example.com/a");
+  expect(page.url(), "clicking a link navigated the editor itself").toBe(before);
+  await expect(page.locator('[data-native-block-row][data-active="true"]')).toHaveCount(0);
+});
+
+/**
  * An inline image is the same object before and after the click.
  *
  * Not in the table above because it is not a Block kind — it is a paragraph with an image inside a
