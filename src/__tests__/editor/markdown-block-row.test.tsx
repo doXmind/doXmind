@@ -51,6 +51,30 @@ function slashHandlers() {
   } satisfies Partial<ComponentProps<typeof MarkdownBlockRow>>;
 }
 
+/**
+ * Type into a contenteditable the way the semantic editor observes it: the browser mutates the DOM
+ * and then reports one `input`. Setting a `value` would do nothing — the element has no value.
+ */
+function typeInto(editor: HTMLElement, text: string) {
+  const walker = editor.ownerDocument.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  let target = walker.nextNode() as Text | null;
+  if (!target) {
+    target = editor.ownerDocument.createTextNode("");
+    editor.append(target);
+  }
+  // Replace the whole run rather than appending: the editor reads the DOM back, so a stray second
+  // text node reads as the user having typed the new text after the old.
+  target.nodeValue = text;
+  for (let extra = walker.nextNode(); extra; extra = walker.nextNode()) extra.nodeValue = "";
+  const selection = editor.ownerDocument.defaultView?.getSelection();
+  const range = editor.ownerDocument.createRange();
+  range.setStart(target, text.length);
+  range.collapse(true);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  fireEvent.input(editor, { inputType: "insertText" });
+}
+
 describe("MarkdownBlockRow semantic previews", () => {
   beforeEach(() => {
     mermaidTheme.value = "test-light";
@@ -395,7 +419,13 @@ describe("MarkdownBlockRow semantic previews", () => {
         onDragEnd={vi.fn()}
       />
     );
-    expect(screen.getByRole("textbox", { name: "Markdown block" })).toHaveValue(source.trimEnd());
+    // Activating a toggle no longer replaces it with `<details>` and `<summary>` tags. The rendered
+    // disclosure stays, its title and body are edited in place, and the scaffolding is never shown.
+    const toggle = screen.getByTestId("toggle-block");
+    expect(toggle).toHaveTextContent("Project details");
+    expect(toggle.textContent).not.toContain("<summary>");
+    expect(toggle.textContent).not.toContain("<details>");
+    expect(screen.getByRole("textbox", { name: "Toggle summary" })).toBeInTheDocument();
   });
 
   it("opens and executes the native slash menu without editor-framework state", () => {
@@ -553,10 +583,14 @@ describe("MarkdownBlockRow semantic previews", () => {
       <MarkdownBlockRow block={block} index={0} count={1} active {...slashHandlers()} />
     );
 
-    const surface = container.querySelector("[data-native-block-edit-surface]");
-    expect(surface?.className).toContain("bg-muted");
-    expect(surface?.className).toContain("p-4");
-    expect(screen.getByRole("textbox", { name: "Markdown block" })).toHaveAttribute(
+    // The code Block keeps its own rendered box while it is edited rather than being replaced by a
+    // bare field: the highlighted `<pre>` is still mounted, and the caret is in a surface laid over
+    // it. Activation used to swap the whole thing for a plain textarea, which dropped every colour.
+    const pre = screen.getByTestId("fenced-code-block");
+    expect(pre).toBeInTheDocument();
+    expect(pre.className).toContain("bg-muted");
+    expect(pre.textContent).not.toContain("```");
+    expect(container.querySelector("[data-code-editing-surface]")).toHaveAttribute(
       "spellcheck",
       "false"
     );
@@ -782,9 +816,9 @@ describe("MarkdownBlockRow semantic previews", () => {
     expect(screen.getByTestId("callout-block").className).toContain("amber");
 
     rerender(<MarkdownBlockRow block={block} index={0} count={1} active {...slashHandlers()} />);
-    expect(container.querySelector("[data-native-block-edit-surface]")?.className).toContain(
-      "amber"
-    );
+    // The rendered callout is what stays on screen now, so the accent lives on it rather than on a
+    // separate editing surface that replaced it.
+    expect(screen.getByTestId("callout-block").className).toContain("amber");
   });
 
   it("honours column alignment and puts the caret in the cell that was clicked", () => {
@@ -818,39 +852,111 @@ describe("MarkdownBlockRow semantic previews", () => {
     });
   });
 
-  it("moves between table cells with Tab and adds a row at the end", () => {
-    const source = "| A | B |\n| --- | --- |\n| a1 | b1 |\n";
+  it("pastes into a table cell once, at the caret, escaping every pipe", () => {
+    const source = "| abc | B |\n| --- | --- |\n| a1 | b1 |\n";
     const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
-    const onSelectCellRange = vi.fn();
-    const onPaste = vi.fn();
+    const onChange = vi.fn();
     render(
       <MarkdownBlockRow
         block={block}
         index={0}
         count={1}
         active
-        selection={{ anchor: 2, head: 2 }}
         {...slashHandlers()}
-        onPaste={onPaste}
-        onSelectCellRange={onSelectCellRange}
+        onChange={onChange}
+      />
+    );
+    const cell = screen.getByRole("textbox", { name: "Table cell" });
+
+    // Caret at the very start of the cell, which is where the old handler ignored it and appended.
+    const range = document.createRange();
+    const text = cell.firstChild ?? cell;
+    range.setStart(text, 0);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    fireEvent.paste(cell, {
+      clipboardData: {
+        files: [],
+        items: [],
+        getData: (type: string) => (type === "text/plain" ? "X ||" : ""),
+      },
+    });
+
+    // One commit, not two: the handler returns `true`, so the editor does not also run its own
+    // insert. Two commits gave one paste two undo steps, and the intermediate state showed text that
+    // had never been on screen.
+    expect(onChange).toHaveBeenCalledTimes(1);
+    // Inserted at the caret, and both pipes escaped — the old pattern consumed the character before
+    // each pipe, so a run kept every other one and the survivor ended the cell.
+    expect(onChange).toHaveBeenCalledWith(
+      block.id,
+      "| X \\|\\|abc | B |\n| --- | --- |\n| a1 | b1 |"
+    );
+  });
+
+  it("edits a table cell in place and moves between cells with Tab", () => {
+    const source = "| A | B |\n| --- | --- |\n| a1 | b1 |\n";
+    const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
+    const onChange = vi.fn();
+    const { container } = render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active
+        {...slashHandlers()}
+        onChange={onChange}
       />
     );
 
-    const editor = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Markdown block" });
-    editor.setSelectionRange(2, 2);
-    fireEvent.keyDown(editor, { key: "Tab" });
-    // From "A" to "B".
-    expect(onSelectCellRange).toHaveBeenCalledWith(block.id, 6, 7);
+    // The grid is the editing surface. Activation no longer replaces it with the raw pipe source, so
+    // the table element is still here and the caret lives in one cell of it.
+    expect(container.querySelector("table")).toBeInTheDocument();
+    const cell = screen.getByRole("textbox", { name: "Table cell" });
+    // The cell holds its text, not the padding around it: holding the padding made it visible the
+    // moment a cell was clicked, and the line jumped sideways.
+    expect(cell).toHaveTextContent("A");
 
-    // From the last cell, Tab appends a blank row with the same column count.
-    editor.setSelectionRange(source.trimEnd().length - 3, source.trimEnd().length - 3);
-    fireEvent.keyDown(editor, { key: "Tab" });
-    expect(onPaste).toHaveBeenCalledWith(
-      block.id,
-      source.trimEnd().length,
-      source.trimEnd().length,
-      "\n|  |  |"
+    typeInto(cell, "Alpha");
+    expect(onChange).toHaveBeenCalledWith(block.id, "| Alpha | B |\n| --- | --- |\n| a1 | b1 |");
+
+    fireEvent.keyDown(cell, { key: "Tab" });
+    expect(screen.getByRole("textbox", { name: "Table cell" })).toHaveTextContent("B");
+  });
+
+  it("keeps a pipe typed into a cell inside that cell", () => {
+    const source = "| A | B |\n| --- | --- |\n| a1 | b1 |\n";
+    const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
+    const onChange = vi.fn();
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active
+        {...slashHandlers()}
+        onChange={onChange}
+      />
     );
+
+    // Unescaped, this would end the cell and give one row a column the others do not have.
+    typeInto(screen.getByRole("textbox", { name: "Table cell" }), "a|b");
+    expect(onChange).toHaveBeenCalledWith(block.id, "| a\\|b | B |\n| --- | --- |\n| a1 | b1 |");
+  });
+
+  it("renders a table cell's inline Markdown instead of its delimiters", () => {
+    const source = "| **bold** | B |\n| --- | --- |\n| a1 | b1 |\n";
+    const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
+    render(<MarkdownBlockRow block={block} index={0} count={1} active {...slashHandlers()} />);
+
+    // The cell being edited shows what the cell means, not the syntax that spells it — the same
+    // promise every prose Block makes, which a raw payload field could not keep.
+    const cell = screen.getByRole("textbox", { name: "Table cell" });
+    expect(cell).not.toHaveTextContent("**");
+    expect(cell.querySelector("strong")).toHaveTextContent("bold");
   });
 
   it("keeps a semantic print preview beside the active source control", () => {
@@ -1169,10 +1275,10 @@ describe("MarkdownBlockRow semantic previews", () => {
     await waitFor(() =>
       expect(renderMermaidSvg).toHaveBeenCalledWith(expect.stringContaining("https://"))
     );
-    // The editing surface shows the diagram payload; the ``` delimiters are projected out.
-    expect(screen.getByRole("textbox", { name: "Markdown block" })).toHaveValue(
-      'flowchart LR\nA@{ img: "https://example.com/private.png" }'
-    );
+    // A diagram the renderer refuses still shows what the user wrote, in a source field beside the
+    // Block rather than by replacing it — the ``` delimiters stay out of sight either way.
+    const surface = screen.getByRole("textbox", { name: "Mermaid source" });
+    expect(surface).toHaveValue('flowchart LR\nA@{ img: "https://example.com/private.png" }');
     expect(screen.queryByRole("img", { name: "Mermaid diagram" })).not.toBeInTheDocument();
     expect(screen.getByTestId("mermaid-block")).toHaveTextContent(
       "https://example.com/private.png"

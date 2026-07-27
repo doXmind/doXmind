@@ -7,19 +7,33 @@ two products differ, the "ours" column records which one we took and why.
 
 ## Hover affordances and the control gutter
 
-|                       | Notion                                                                                       | Feishu Doc                                                                                                           | Ours                                                                                    |
-| --------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Controls              | `+` 24×24 then 6-dot grip 18×24, both `border-radius: 4px`                                   | one 42×26 pill, `border-radius: 6px`, holding a block-type icon + grip                                               | Notion's pair — a separate `+` is a bigger, more discoverable target than a type chip   |
-| Offset from text      | grip right edge 10px left of the text; `+` right edge 28px further left                      | pill right edge 4px left of the text                                                                                 | Notion's, via `--editor-content-rail: 4rem`                                             |
-| Vertical alignment    | centered on the Block's **first line box**, not the row                                      | top-aligned to the Block box                                                                                         | Notion's, via `--controls-lead` per kind                                                |
-| Reveal                | opacity, no perceptible fade                                                                 | never fades — one shared overlay _slides_ between rows (`transition: left .04s, top .2s cubic-bezier(.34,.69,.1,1)`) | instant reveal (0ms), 110ms fade-out after a 90ms grace                                 |
-| Hover band            | full page width at the Block's y, so moving into the gutter never drops it                   | the whole Block box; the sliding overlay makes a gap impossible                                                      | contiguous row boxes (spacing is `padding-top`, never `margin-top`)                     |
-| Button hover feedback | `background 0.02s ease-in`                                                                   | `#292929` → `#373737`, instant                                                                                       | Notion's 20ms                                                                           |
-| Row hover tint        | **none** on a text Block                                                                     | a very subtle tint on the Block box only                                                                             | a 2.8% tint confined to the content rail — Feishu's discoverability, Notion's restraint |
-| Tooltips              | "Click to add below. Option-click to add a block above" / "Drag to move, click to open menu" | none                                                                                                                 | Notion's, as two-line app tooltips                                                      |
+|                       | Notion                                                                                       | Feishu Doc                                                                                                           | Ours                                                                                  |
+| --------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Controls              | `+` 24×24 then 6-dot grip 18×24, both `border-radius: 4px`                                   | one 42×26 pill, `border-radius: 6px`, holding a block-type icon + grip                                               | Notion's pair — a separate `+` is a bigger, more discoverable target than a type chip |
+| Offset from text      | grip right edge 10px left of the text; `+` right edge 28px further left                      | pill right edge 4px left of the text                                                                                 | Notion's, via `--editor-content-rail: 4rem`                                           |
+| Vertical alignment    | centered on the Block's **first line box**, not the row                                      | top-aligned to the Block box                                                                                         | Notion's, via `--controls-lead` per kind                                              |
+| Reveal                | opacity, no perceptible fade                                                                 | never fades — one shared overlay _slides_ between rows (`transition: left .04s, top .2s cubic-bezier(.34,.69,.1,1)`) | instant reveal (0ms), 110ms fade-out after a 90ms grace                               |
+| Hover band            | full page width at the Block's y, so moving into the gutter never drops it                   | the whole Block box; the sliding overlay makes a gap impossible                                                      | contiguous row boxes (spacing is `padding-top`, never `margin-top`)                   |
+| Button hover feedback | `background 0.02s ease-in`                                                                   | `#292929` → `#373737`, instant                                                                                       | Notion's 20ms                                                                         |
+| Row hover tint        | **none** on a text Block                                                                     | a very subtle tint on the Block box only                                                                             | **none**, Notion's — see below                                                        |
+| Tooltips              | "Click to add below. Option-click to add a block above" / "Drag to move, click to open menu" | none                                                                                                                 | Notion's, as two-line app tooltips                                                    |
 
 Feishu's Block box uses `padding: 0 2px; margin: 0 -2px` so its tint is 2px wider than the text with
 zero layout shift — worth copying if the tint ever needs more breathing room.
+
+We shipped a hover tint first and then removed it, so the reason is worth keeping. The cell above
+used to read "a 2.8% tint confined to the content rail — Feishu's discoverability, Notion's
+restraint", which was wrong twice. The rail was only the tint's _left_ bound; it ran to `right: 0`,
+so it was not confined to anything. And Feishu tints the Block box, which for a short paragraph is
+short — copying Feishu's tint at Notion's full column width produced a band belonging to neither
+product. Measured in the running app: hovering a six-character paragraph painted 1016×40px and
+changed 73% of the row's pixels, from anywhere in the row including the gutter. That reads as the
+Block inflating into a long clickable bar. The gutter controls appearing are the entire hover
+affordance in Notion, and they are enough here too.
+
+The click target is a separate question and was already right: pressing at 95% of the row width on a
+six-character paragraph puts the caret at offset 6, the end of the text, which is what Notion does
+across its own content column. Only the paint was wrong.
 
 ## Menus
 

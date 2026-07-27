@@ -790,7 +790,23 @@ export class MarkdownBlockDocument {
       this.recordHistory();
       const leftContent = content.slice(0, at);
       const rightContent = content.slice(splitTo);
-      const rightRaw = listItem ? listItem.nextPrefix + rightContent : rightContent;
+      // Dividing a heading has to leave two headings. Only a list item carried its marker across, so
+      // the tail of a heading arrived as bare text and reclassified itself as a paragraph — splitting
+      // "## Heading two" in the middle silently demoted the half the caret moved into.
+      //
+      // Deliberately not applied when the tail is empty: Enter at the END of a heading should start
+      // an ordinary paragraph, which is the authoring flow both reference products have, and which
+      // this already did correctly. Nor when the caret sits inside the `##` marker itself, where
+      // there is no body to carry.
+      const headingMarker =
+        block.kind === "heading" ? (/^#{1,6}[ \t]+/.exec(content)?.[0] ?? "") : "";
+      const carriesHeading =
+        headingMarker.length > 0 && at >= headingMarker.length && rightContent.trim().length > 0;
+      const rightRaw = listItem
+        ? listItem.nextPrefix + rightContent
+        : carriesHeading
+          ? headingMarker + rightContent
+          : rightContent;
       let left = reclassifyEditableSource(block, leftContent);
       const right = blockFromSource(
         rightRaw + separator,
@@ -853,10 +869,15 @@ export class MarkdownBlockDocument {
       const previousParts = splitBlockSource(previous.raw);
       const currentParts = splitBlockSource(block.raw);
       const cursor = previousParts.content.length;
+      // What joins the previous Block is this one's *text*, never its Markdown marker. Slicing at
+      // `contentFrom` only knew how to drop a list marker, so backspacing at the start of a heading
+      // merged the literal `## ` into the paragraph above it: "Alpha" and "## Heading" became
+      // "Alpha## Heading" on disk. `plainBlockContent` is the function that already answers this for
+      // every kind, and is what the unwrap branch above uses.
       const merged = reclassifyEditableSource(
         previous,
         previousParts.content +
-          currentParts.content.slice(currentListItem?.contentFrom ?? 0) +
+          plainBlockContent(block, currentParts.content) +
           currentParts.separator
       );
       sourceBlocks.splice(index - 1, 2, merged);

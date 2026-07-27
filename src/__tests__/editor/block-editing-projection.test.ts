@@ -83,7 +83,7 @@ describe("BlockEditingProjection", () => {
     expect(projection.toSource("Changed")).toBe(`${prefix}Changed${suffix}`);
   });
 
-  it.each(["[reference]: /target\r\n\r\n", "> first line\r\n> second line\r\n\r\n"])(
+  it.each(["[reference]: /target\r\n\r\n"])(
     "keeps a raw or structurally complex Page separator outside its editor",
     (source) => {
       const projection = createBlockEditingProjection(firstBlock(source));
@@ -98,6 +98,40 @@ describe("BlockEditingProjection", () => {
       expect(projection.sourceOffsetToEditor(source.length)).toBe(editableSource.length);
     }
   );
+
+  it("hides the marker on every line of a quote, not just the first", () => {
+    // A quote is the one kind whose delimiter repeats per line. The prefix projection could only take
+    // one off the front, so it gave up and showed the raw source — clicking a two-line quote turned it
+    // into `> One\n> Two`, which is the bug the in-place contract exists to prevent.
+    const source = "> first line\r\n> second line\r\n\r\n";
+    const projection = createBlockEditingProjection(firstBlock(source));
+
+    expect(projection.editorText).toBe("first line\r\nsecond line");
+    expect(projection.sourceSuffix).toBe("\r\n\r\n");
+    // Terminators survive verbatim: a CRLF file that came back as LF would rewrite bytes nobody
+    // touched.
+    expect(projection.toSource("first line\r\nsecond line")).toBe(source);
+    // A line the user adds inherits the marker, so Enter inside a quote stays inside the quote.
+    expect(projection.toSource("first line\r\nsecond line\r\nthird")).toBe(
+      "> first line\r\n> second line\r\n> third\r\n\r\n"
+    );
+  });
+
+  it("maps a quote's offsets across the marker on each line", () => {
+    const source = "> ab\n> cd\n\n";
+    const projection = createBlockEditingProjection(firstBlock(source));
+
+    expect(projection.editorText).toBe("ab\ncd");
+    // "a" is at source 2 and "c" at source 7 — the shift grows by one marker at the line boundary.
+    expect(projection.editorOffsetToSource(0)).toBe(2);
+    expect(projection.editorOffsetToSource(2)).toBe(4); // the newline itself
+    expect(projection.editorOffsetToSource(3)).toBe(7);
+    expect(projection.editorOffsetToSource(4)).toBe(8);
+    expect(projection.sourceOffsetToEditor(2)).toBe(0);
+    expect(projection.sourceOffsetToEditor(7)).toBe(3);
+    // An offset inside a stripped marker has no editor position; it resolves to its line's text.
+    expect(projection.sourceOffsetToEditor(6)).toBe(3);
+  });
 
   it("maps emoji and selection ranges with UTF-16 offsets across prefix and CRLF suffix", () => {
     const source = "## 🚀 launch\r\n\r\n";

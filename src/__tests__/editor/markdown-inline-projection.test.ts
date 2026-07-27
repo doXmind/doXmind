@@ -137,6 +137,47 @@ describe("Markdown inline projection", () => {
     ]);
   });
 
+  it("hides an autolink's angle brackets and links the URL it wraps", () => {
+    const projection = projectMarkdownInline("Visit <https://example.com> now");
+
+    expect(projection.visibleText).toBe("Visit https://example.com now");
+    expect(projection.segments).toEqual([
+      expect.objectContaining({ text: "Visit " }),
+      expect.objectContaining({
+        text: "https://example.com",
+        sourceFrom: "Visit <".length,
+        sourceTo: "Visit <https://example.com".length,
+        marks: expect.objectContaining({ link: true }),
+        linkTarget: "https://example.com",
+      }),
+      expect.objectContaining({ text: " now" }),
+    ]);
+  });
+
+  it("treats an email autolink as a mailto link", () => {
+    const projection = projectMarkdownInline("Mail <someone@example.com> today");
+
+    expect(projection.visibleText).toBe("Mail someone@example.com today");
+    expect(projection.segments).toContainEqual(
+      expect.objectContaining({
+        text: "someone@example.com",
+        linkTarget: "mailto:someone@example.com",
+      })
+    );
+  });
+
+  it("leaves angle brackets alone when they are not an autolink", () => {
+    // Prose comparisons and a bracketed word that names no scheme both have to survive verbatim, or
+    // the projection would eat text the user typed.
+    for (const source of [
+      "If a < b and c > d then stop",
+      "Tag <notaurl> here",
+      "Spaced <not a url> here",
+    ]) {
+      expect(projectMarkdownInline(source).visibleText, source).toBe(source);
+    }
+  });
+
   it("projects nested marks inside links with balanced destination parentheses", () => {
     const source = "Read [**API** docs](https://example.test/a_(b)) now";
     const projection = projectMarkdownInline(source);

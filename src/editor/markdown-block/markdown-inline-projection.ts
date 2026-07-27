@@ -282,6 +282,12 @@ class InlineParser {
         cursor = wiki.cursor;
         continue;
       }
+      const autolink = this.autolinkAt(cursor, to, marks);
+      if (autolink) {
+        pieces.push(...autolink.pieces);
+        cursor = autolink.cursor;
+        continue;
+      }
       const link = this.linkAt(cursor, to, marks);
       if (link) {
         pieces.push(...link.pieces);
@@ -396,6 +402,7 @@ class InlineParser {
         character === "`" ||
         character === "!" ||
         character === "[" ||
+        character === "<" ||
         character === "*" ||
         character === "_" ||
         character === "~"
@@ -525,6 +532,46 @@ class InlineParser {
         imageTarget: destination.target,
       },
       cursor: destination.cursor,
+    };
+  }
+
+  /**
+   * A CommonMark autolink: `<https://example.com>` or `<someone@example.com>`.
+   *
+   * Missing entirely, which cost more than a missing link style. The row only mounts the semantic
+   * editor when the projection hides something, so a paragraph whose only markup was an autolink
+   * projected to itself, failed that test, and fell back to the raw textarea — the angle brackets
+   * popped into view the moment the Block was clicked, on a Block that had been showing clean text a
+   * moment earlier.
+   */
+  private autolinkAt(cursor: number, to: number, marks: MarkdownInlineMarks): ParsedLink | null {
+    if (this.source[cursor] !== "<") return null;
+    const close = this.source.indexOf(">", cursor + 1);
+    if (close < 0 || close >= to) return null;
+
+    const body = this.source.slice(cursor + 1, close);
+    // No whitespace and no nested `<`: CommonMark's rule, and what keeps `a < b and c > d` prose from
+    // being swallowed as a link.
+    if (!body || /[\s<]/u.test(body)) return null;
+
+    const isUri = /^[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*$/u.test(body);
+    const isEmail =
+      /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/u.test(
+        body
+      );
+    if (!isUri && !isEmail) return null;
+
+    const target = isEmail ? `mailto:${body}` : body;
+    if (!isSafeLinkTarget(target)) return null;
+
+    // The brackets produce no piece, so they have no visible position — the same way `[[` and `]]`
+    // are hidden — and the visible text is the URL the user wrote.
+    return {
+      pieces: decodedLiteralPieces(this.source, cursor + 1, close, {
+        ...marks,
+        link: true,
+      }).map((piece) => ({ ...piece, linkTarget: target })),
+      cursor: close + 1,
     };
   }
 

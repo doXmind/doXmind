@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createMarkdownInlineFormatEdit,
+  markdownLinkDestinationAt,
   createMarkdownLinkEdit,
   markdownInlineFormatState,
 } from "@/editor/markdown-block/markdown-inline-format";
@@ -33,11 +34,29 @@ describe("Markdown inline formatting", () => {
       text: "[docs](https://example.com)",
       selection: { anchor: 6, head: 10 },
     });
+    // Selecting a whole chip, delimiters included, takes the code off it. The semantic editor hides
+    // the backticks, so this range only ever arises from a drag over a rendered chip, which means
+    // "this chip" — not "wrap these six literal characters in a longer fence".
     expect(createMarkdownInlineFormatEdit("Use `code`", 4, 10, "code")).toEqual({
       from: 4,
       to: 10,
-      text: "`` `code` ``",
-      selection: { anchor: 7, head: 13 },
+      text: "code",
+      selection: { anchor: 4, head: 8 },
+    });
+    // The longer fence still exists for text carrying a backtick that closes nothing, which is the
+    // only way to select backticks that are not already a span.
+    expect(createMarkdownInlineFormatEdit("Use a ` b here", 6, 9, "code")).toEqual({
+      from: 6,
+      to: 9,
+      text: "`` ` b ``",
+      selection: { anchor: 9, head: 12 },
+    });
+    // Round trip: a padded fence gives its content back without the spaces that held it open.
+    expect(createMarkdownInlineFormatEdit("Use `` ` b `` here", 4, 13, "code")).toEqual({
+      from: 4,
+      to: 13,
+      text: "` b",
+      selection: { anchor: 4, head: 7 },
     });
   });
 
@@ -52,6 +71,98 @@ describe("Markdown inline formatting", () => {
     expect(markdownInlineFormatState("[local](https://example.test)", 1, 6)).toMatchObject({
       link: true,
     });
+  });
+
+  it("reports inline code when the selection reaches onto the delimiters", () => {
+    // An inline code chip is drawn with padding. A drag that begins a pixel inside its left edge
+    // anchors in the preceding text node, so the source offsets straddle a backtick even though the
+    // selected text is exactly the chip. Reporting no code there left the toolbar button unlit while
+    // the whole chip was visibly highlighted.
+    const source = "Run `codetoken` now";
+    const open = source.indexOf("`");
+    const contentFrom = open + 1;
+    const contentTo = source.indexOf("`", contentFrom);
+    const close = contentTo + 1;
+
+    for (const [from, to, label] of [
+      [contentFrom, contentTo, "exactly the content"],
+      [open, contentTo, "anchored on the opening backtick"],
+      [contentFrom, close, "extended over the closing backtick"],
+      [open, close, "the whole span, delimiters included"],
+      [contentFrom + 1, contentTo - 1, "a fragment inside the content"],
+    ] as [number, number, string][]) {
+      expect(markdownInlineFormatState(source, from, to).code, label).toBe(true);
+    }
+  });
+
+  it("does not report inline code for a selection that leaves the span", () => {
+    const source = "Run `codetoken` now";
+
+    // Plain text either side, and a drag that starts in the prose and ends inside the chip: part of
+    // the selection is not code, so the toolbar must not claim the selection is.
+    expect(markdownInlineFormatState(source, 0, 3).code, "prose before").toBe(false);
+    expect(markdownInlineFormatState(source, 16, 19).code, "prose after").toBe(false);
+    expect(markdownInlineFormatState(source, 1, 8).code, "prose into the chip").toBe(false);
+    expect(markdownInlineFormatState(source, 8, 18).code, "chip into the prose").toBe(false);
+  });
+
+  it("reports underscore emphasis, which is what a formatted file actually contains", () => {
+    // Prettier writes emphasis with `_`, so this is the common case, not the exotic one.
+    const italic = "This is _important_ text";
+    const from = italic.indexOf("important");
+    expect(markdownInlineFormatState(italic, from, from + 9)).toMatchObject({
+      italic: true,
+      bold: false,
+    });
+    // Toggling off is length arithmetic, so a one-character `_` unwraps like a one-character `*`.
+    expect(createMarkdownInlineFormatEdit(italic, from, from + 9, "italic")).toEqual({
+      from: from - 1,
+      to: from + 10,
+      text: "important",
+      selection: { anchor: from - 1, head: from + 8 },
+    });
+
+    const bold = "This is __strong__ text";
+    const boldFrom = bold.indexOf("strong");
+    expect(markdownInlineFormatState(bold, boldFrom, boldFrom + 6)).toMatchObject({ bold: true });
+  });
+
+  it("does not call an underscore inside a word emphasis", () => {
+    // CommonMark's rule, and already what the projection uses to decide what to render — the toolbar
+    // has to agree with the text under it.
+    const source = "call snake_case_name here";
+    const from = source.indexOf("case");
+    expect(markdownInlineFormatState(source, from, from + 4)).toMatchObject({
+      italic: false,
+      bold: false,
+    });
+  });
+
+  it("reads a destination with balanced parentheses whole, and keeps a title out of it", () => {
+    const parens = "See [wiki](https://en.wikipedia.org/wiki/Ruby_(gem)) now";
+    const at = parens.indexOf("wiki]");
+    // The old regex stopped at the first `)`, so the link editor prefilled a URL one character short
+    // of working and accepting it unchanged rewrote the file with the broken value.
+    expect(markdownLinkDestinationAt(parens, at, at + 4)).toBe(
+      "https://en.wikipedia.org/wiki/Ruby_(gem)"
+    );
+
+    const titled = '[docs](https://e.com/p "Handbook")';
+    expect(markdownLinkDestinationAt(titled, 1, 5)).toBe("https://e.com/p");
+
+    const angled = "[a](<https://e.com/a b>)";
+    expect(markdownLinkDestinationAt(angled, 1, 2)).toBe("https://e.com/a b");
+
+    // Nothing to prefill when the selection is not in a link, and an image is not one.
+    expect(markdownLinkDestinationAt("plain text", 0, 5)).toBe("");
+    expect(markdownLinkDestinationAt("![alt](a.png)", 2, 5)).toBe("");
+  });
+
+  it("keeps a link's title when only its destination is being changed", () => {
+    const source = '[docs](https://old.example "Handbook")';
+    const edit = createMarkdownLinkEdit(source, 1, 5, "https://new.example");
+
+    expect(edit?.text).toBe('[docs](https://new.example "Handbook")');
   });
 
   it("never treats image alt text as a link that can be toggled", () => {

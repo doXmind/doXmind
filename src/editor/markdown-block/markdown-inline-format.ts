@@ -40,14 +40,37 @@ export function createMarkdownInlineFormatEdit(
   format: MarkdownInlineFormat
 ): MarkdownInlineFormatEdit | null {
   if (from < 0 || to <= from || to > source.length) return null;
-  const activeFence = codeFenceAround(source, from, to);
   const codeSpan = inlineCodeSpanOverlappingSelection(source, from, to);
-  if (
-    codeSpan &&
-    (format !== "code" || (!activeFence && (from !== codeSpan.from || to !== codeSpan.to)))
-  ) {
-    return null;
+  // Toggling code off. The toolbar reports code for any selection the span contains, including one
+  // whose ends straddle a delimiter — an inline code chip is drawn with padding, so a drag beginning
+  // a pixel inside its left edge anchors outside the opening backtick. The untoggle has to accept the
+  // same set the toolbar lights up for; a pressed button that does nothing is worse than an unlit one.
+  //
+  // Unwrap the span, not the selection: the selection's ends are exactly what is unreliable here, so
+  // the delimiters are found from the span. This is also why a selection covering a whole chip removes
+  // its code rather than nesting a longer fence around the literal backticks — the semantic editor
+  // hides the delimiters, so a drag over a chip means "this chip", never "these six characters".
+  if (format === "code" && codeSpan && selectionIsInlineCode(source, from, to)) {
+    const fence = backtickRunLength(source, codeSpan.from);
+    const content = source.slice(codeSpan.from + fence, codeSpan.to - fence);
+    // A multi-backtick fence pads its content by one space either side so the content's own backticks
+    // cannot close it. Those spaces belong to the fence, so they leave with it.
+    const bare =
+      fence > 1 && content.startsWith(" ") && content.endsWith(" ")
+        ? content.slice(1, -1)
+        : content;
+    return {
+      from: codeSpan.from,
+      to: codeSpan.to,
+      text: bare,
+      selection: { anchor: codeSpan.from, head: codeSpan.from + bare.length },
+    };
   }
+
+  // Every legitimate code selection has returned by now. Anything else that touches a span would
+  // rewrite one end of it and leave the other, so refuse rather than corrupt the source.
+  if (codeSpan) return null;
+
   const resource = inlineResourceOverlappingSelection(source, from, to);
   if (
     resource &&
@@ -59,25 +82,12 @@ export function createMarkdownInlineFormatEdit(
     return null;
   }
   if (format === "link") return createLinkEdit(source, from, to);
-  if (format === "code") {
-    if (activeFence) {
-      const before = source.slice(0, from).match(/(`+)[ ]?$/)?.[0] ?? activeFence;
-      const after = source.slice(to).match(/^[ ]?(`+)/)?.[0] ?? activeFence;
-      const editFrom = from - before.length;
-      const selected = source.slice(from, to);
-      return {
-        from: editFrom,
-        to: to + after.length,
-        text: selected,
-        selection: { anchor: editFrom, head: editFrom + selected.length },
-      };
-    }
-  }
-
   const wrapper = format === "code" ? codeWrapper(source.slice(from, to)) : SIMPLE_WRAPPERS[format];
   const selected = source.slice(from, to);
+  // Code is fully handled above; the arithmetic here removes exactly `wrapper.open.length` characters
+  // either side of the selection, which only holds for wrappers that abut it.
   const activeState = markdownInlineFormatState(source, from, to);
-  if (activeState[format]) {
+  if (format !== "code" && activeState[format]) {
     const editFrom = from - wrapper.open.length;
     return {
       from: editFrom,
@@ -111,20 +121,49 @@ export function markdownInlineFormatState(
     source.slice(from - wrapper.open.length, from) === wrapper.open &&
     source.slice(to, to + wrapper.close.length) === wrapper.close;
   const linkClose = linkCloseAfter(source, to);
-  const stars = starRunsAround(source, from, to);
+  const emphasis = emphasisRunsAround(source, from, to);
   return {
-    bold: stars >= 2,
-    italic: stars % 2 === 1,
+    bold: emphasis >= 2,
+    italic: emphasis % 2 === 1,
     strike: wraps(SIMPLE_WRAPPERS.strike),
     link: from > 0 && source[from - 1] === "[" && !isImageLabel(source, from) && linkClose !== null,
-    code: codeFenceAround(source, from, to) !== null,
+    code: selectionIsInlineCode(source, from, to),
   };
 }
 
-function starRunsAround(source: string, from: number, to: number): number {
-  const before = source.slice(0, from).match(/\*+$/)?.[0].length ?? 0;
-  const after = source.slice(to).match(/^\*+/)?.[0].length ?? 0;
-  return Math.min(before, after);
+/**
+ * Length of the emphasis run wrapping the selection, in either `*` or `_`.
+ *
+ * `_` used to be missing, which mattered more than it sounds: it is Prettier's default emphasis
+ * character, so `_italic_` is what most formatted files actually contain. The preview rendered those
+ * words in italics and the toolbar reported nothing, and pressing Italic on one wrapped it again —
+ * `_*important*_` — leaving the text looking unchanged and the source worse.
+ *
+ * The intraword rule is CommonMark's and, more to the point, is already what
+ * `markdown-inline-projection.ts` uses to decide what to render, so `snake_case_name` is not
+ * emphasis here either. The two have to agree; a toolbar that contradicts the text under it is the
+ * same defect in the other direction.
+ */
+function emphasisRunsAround(source: string, from: number, to: number): number {
+  for (const mark of ["*", "_"] as const) {
+    const opening = source.slice(0, from).match(mark === "*" ? /\*+$/ : /_+$/)?.[0].length ?? 0;
+    const closing = source.slice(to).match(mark === "*" ? /^\*+/ : /^_+/)?.[0].length ?? 0;
+    const run = Math.min(opening, closing);
+    if (run === 0) continue;
+    if (mark === "_") {
+      const beforeOpening = source[from - run - 1] ?? "";
+      const afterClosing = source[to + run] ?? "";
+      const intrawordOpen = isWordCharacter(beforeOpening) && isWordCharacter(source[from] ?? "");
+      const intrawordClose = isWordCharacter(source[to - 1] ?? "") && isWordCharacter(afterClosing);
+      if (intrawordOpen || intrawordClose) continue;
+    }
+    return run;
+  }
+  return 0;
+}
+
+function isWordCharacter(character: string): boolean {
+  return /[\p{L}\p{N}]/u.test(character);
 }
 
 function createLinkEdit(source: string, from: number, to: number): MarkdownInlineFormatEdit | null {
@@ -170,7 +209,9 @@ export function createMarkdownLinkEdit(
     // Retarget a link the selection already sits inside, rather than nesting one inside another.
     if (existing.kind === "image") return null;
     const label = source.slice(existing.labelFrom, existing.labelTo);
-    const text = `[${label}](${encodeLinkDestination(destination)})`;
+    // A title belongs to the link, not to the destination being changed, so it survives a retarget.
+    const { title } = splitLinkDestination(source.slice(existing.labelTo + 2, existing.to - 1));
+    const text = `[${label}](${encodeLinkDestination(destination)}${title ? ` ${title}` : ""})`;
     return {
       from: existing.from,
       to: existing.to,
@@ -215,6 +256,40 @@ function parenthesizedClose(source: string, open: number): number | null {
     }
   }
   return null;
+}
+
+/**
+ * An existing link's destination and title, split apart.
+ *
+ * `[docs](https://e.com/p "Handbook")` is one destination and one title, and confusing the two is how
+ * the link editor came to show `https://e.com/p "Handbook"` in a URL field: pressing Enter on that
+ * wrote the whole string back as the destination and destroyed the title.
+ *
+ * The title keeps its quotes or parentheses so it can be re-emitted verbatim — it is the user's text
+ * and a retarget has no business reformatting it.
+ */
+function splitLinkDestination(inner: string): { destination: string; title: string } {
+  const trimmed = inner.trim();
+  // The `<...>` form first: it is the one that may legally contain spaces.
+  const angled = /^<((?:\\.|[^>\\])*)>\s*(.*)$/.exec(trimmed);
+  if (angled) return { destination: angled[1], title: angled[2].trim() };
+  const titled = /^(\S+)\s+("[^"]*"|'[^']*'|\([^)]*\))$/.exec(trimmed);
+  if (titled) return { destination: titled[1], title: titled[2] };
+  return { destination: trimmed, title: "" };
+}
+
+/**
+ * The destination of a link the selection sits inside, for prefilling the link editor.
+ *
+ * Uses the same balanced-parenthesis scan as everything else in this module. The link editor used to
+ * carry its own `\(([^)]*)\)` regex, which stopped at the first `)` and so handed back a truncated
+ * URL for anything like `https://en.wikipedia.org/wiki/Ruby_(gem)` — accepting the prefilled value
+ * unchanged then rewrote the file with a destination one character short of working.
+ */
+export function markdownLinkDestinationAt(source: string, from: number, to: number): string {
+  const resource = inlineResourceOverlappingSelection(source, from, to);
+  if (!resource || resource.kind !== "link") return "";
+  return splitLinkDestination(source.slice(resource.labelTo + 2, resource.to - 1)).destination;
 }
 
 function inlineResourceOverlappingSelection(
@@ -278,11 +353,29 @@ function codeWrapper(selected: string): Wrapper {
   return { open: fence, close: fence };
 }
 
-function codeFenceAround(source: string, from: number, to: number): string | null {
-  const before = source.slice(0, from).match(/(`+)[ ]?$/);
-  if (!before) return null;
-  const after = source.slice(to).match(/^[ ]?(`+)/);
-  return after && before[1] === after[1] ? before[1] : null;
+/**
+ * Whether a selection is inside a code span, allowing its ends to sit on the delimiters.
+ *
+ * The question the toolbar asks is what the selection is already in, which is looser than what the
+ * edit path used to test — that the selection is *exactly* a span's content. An inline code chip is drawn with padding, so a drag that begins a pixel inside its
+ * left edge anchors in the *preceding* text node, one character before the opening backtick, and the
+ * strict test then reported no code at all: selecting a `project-collage-v3.json` chip left the
+ * toolbar's code button unlit even though the whole chip was highlighted.
+ *
+ * Anything the span fully contains counts, and so does a selection that swallows the delimiters
+ * themselves, which is what a drag from just outside either edge produces.
+ */
+function selectionIsInlineCode(source: string, from: number, to: number): boolean {
+  const span = inlineCodeSpanOverlappingSelection(source, from, to);
+  if (!span) return false;
+  const fence = backtickRunLength(source, span.from);
+  const contentFrom = span.from + fence;
+  const contentTo = span.to - fence;
+  // Inside the content, or a selection that reaches out over the delimiters but no further.
+  const insideContent = from >= contentFrom && to <= contentTo;
+  const wrapsWholeSpan =
+    from >= span.from && to <= span.to && from <= contentFrom && to >= contentTo;
+  return insideContent || wrapsWholeSpan;
 }
 
 function inlineCodeSpanOverlappingSelection(

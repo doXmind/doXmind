@@ -1,6 +1,6 @@
 "use client";
 
-import { ImageIcon } from "lucide-react";
+import { InlineImageChip } from "@/editor/markdown-block/inline-image-chip";
 import {
   type ClipboardEvent,
   type CompositionEvent,
@@ -29,6 +29,8 @@ export interface SemanticInlineSelection {
 
 export interface SemanticInlineEditorProps {
   readonly source: string;
+  /** Accessible name. A table cell is one of these too, and is not "the Markdown block". */
+  readonly label?: string;
   readonly id?: string;
   readonly describedBy?: string;
   readonly className?: string;
@@ -65,6 +67,7 @@ export interface SemanticInlineEditorProps {
  */
 export function SemanticInlineEditor({
   source,
+  label = "Markdown block",
   id,
   describedBy,
   className,
@@ -240,7 +243,7 @@ export function SemanticInlineEditor({
       ref={editorRef}
       id={id}
       role="textbox"
-      aria-label="Markdown block"
+      aria-label={label}
       aria-describedby={describedBy}
       aria-multiline="true"
       aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Meta+D Control+D Meta+Shift+Backspace Control+Shift+Backspace"
@@ -316,10 +319,8 @@ function SemanticSegment({
       sourceSelection.from < segment.sourceTo &&
       sourceSelection.to > segment.sourceFrom;
     return (
-      <span
+      <InlineImageChip
         role="img"
-        aria-label={segment.imageAlt || "Markdown image"}
-        title={segment.imageAlt || segment.imageTarget}
         data-markdown-inline-segment=""
         data-markdown-inline-image={segment.imageTarget}
         data-source-from={segment.sourceFrom}
@@ -328,13 +329,12 @@ function SemanticSegment({
         data-visible-to={segment.visibleTo}
         data-native-search-selection={selected ? "" : undefined}
         contentEditable={false}
-        className={`mx-0.5 inline-flex h-6 w-6 select-all items-center justify-center rounded text-muted-foreground ${
-          selected ? "bg-primary/20 ring-2 ring-primary/40" : "bg-muted"
-        }`}
+        selected={selected}
+        alt={segment.imageAlt ?? ""}
+        target={segment.imageTarget}
       >
-        <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
         <span className="sr-only">{"\uFFFC"}</span>
-      </span>
+      </InlineImageChip>
     );
   }
 
@@ -378,7 +378,12 @@ function SemanticSegment({
     content = (
       <span
         data-markdown-inline-wiki={segment.wikiTarget}
-        className="rounded-sm bg-primary/10 px-0.5 text-primary"
+        // Underlined, matching the preview. Without it a wiki link lost the underline the instant the
+        // paragraph took a caret, and since `text-primary` resolves to the same near-black as body
+        // text here, the underline is the entire affordance — the link simply stopped looking like
+        // one. An ordinary Markdown link in the same sentence keeps its underline throughout, so the
+        // two link kinds disagreed within one line.
+        className="rounded-sm bg-primary/10 px-0.5 text-primary underline decoration-primary/30 underline-offset-2"
       >
         {content}
       </span>
