@@ -116,6 +116,11 @@ const CASES: readonly InPlaceCase[] = [
   { label: "to-do", source: "- [ ] Unchecked item", hidden: ["- ", "[ ]", "[x]"] },
   { label: "to-do checked", source: "- [x] Checked item", hidden: ["- ", "[ ]", "[x]"] },
   { label: "quote", source: "> Quoted text", hidden: ["> ", ">\u00a0"] },
+  // An autolink's brackets are markup like any other delimiter. This Block showed clean text until
+  // it was clicked, then grew a pair of angle brackets, because the row only reaches for the semantic
+  // editor when the projection hides something and nothing knew autolinks existed.
+  { label: "autolink", source: "Visit <https://example.com> now", hidden: ["<", ">"] },
+  { label: "email autolink", source: "Mail <a@example.com> today", hidden: ["<", ">"] },
 ];
 
 /** Everything the row shows a reader, with the gutter controls' own labels excluded. */
