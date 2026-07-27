@@ -852,6 +852,51 @@ describe("MarkdownBlockRow semantic previews", () => {
     });
   });
 
+  it("pastes into a table cell once, at the caret, escaping every pipe", () => {
+    const source = "| abc | B |\n| --- | --- |\n| a1 | b1 |\n";
+    const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
+    const onChange = vi.fn();
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active
+        {...slashHandlers()}
+        onChange={onChange}
+      />
+    );
+    const cell = screen.getByRole("textbox", { name: "Table cell" });
+
+    // Caret at the very start of the cell, which is where the old handler ignored it and appended.
+    const range = document.createRange();
+    const text = cell.firstChild ?? cell;
+    range.setStart(text, 0);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    fireEvent.paste(cell, {
+      clipboardData: {
+        files: [],
+        items: [],
+        getData: (type: string) => (type === "text/plain" ? "X ||" : ""),
+      },
+    });
+
+    // One commit, not two: the handler returns `true`, so the editor does not also run its own
+    // insert. Two commits gave one paste two undo steps, and the intermediate state showed text that
+    // had never been on screen.
+    expect(onChange).toHaveBeenCalledTimes(1);
+    // Inserted at the caret, and both pipes escaped — the old pattern consumed the character before
+    // each pipe, so a run kept every other one and the survivor ended the cell.
+    expect(onChange).toHaveBeenCalledWith(
+      block.id,
+      "| X \\|\\|abc | B |\n| --- | --- |\n| a1 | b1 |"
+    );
+  });
+
   it("edits a table cell in place and moves between cells with Tab", () => {
     const source = "| A | B |\n| --- | --- |\n| a1 | b1 |\n";
     const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;

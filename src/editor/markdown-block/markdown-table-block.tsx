@@ -329,11 +329,19 @@ export function MarkdownTableBlock({
         className="native-block-editor-surface block w-full whitespace-pre-wrap break-words bg-transparent outline-none"
         onSourceChange={(next) => commitCell(cell, sanitiseCellPayload(next))}
         onKeyDown={(event) => handleKeyDown(event, address)}
-        onPasteText={(text) => {
+        onPasteText={(text, selection) => {
           // A pipe row is one line, so pasted newlines are flattened here rather than left to break
-          // the row apart.
+          // the row apart, and a pasted pipe is escaped so it cannot invent a column.
+          //
+          // Returning `true` is not optional. Without it the editor treats the paste as unhandled and
+          // runs its own insert as well, so one ⌘V produced two commits and two undo steps — the
+          // first of which appended to the end of the cell regardless of where the caret was, so the
+          // undo in between showed a string that had never been on screen.
           const current = source.slice(cell.from, cell.to);
-          commitCell(cell, sanitiseCellPayload(current + text));
+          const from = Math.min(selection.anchor, selection.head);
+          const to = Math.max(selection.anchor, selection.head);
+          commitCell(cell, sanitiseCellPayload(current.slice(0, from) + text + current.slice(to)));
+          return true;
         }}
       />
     );
@@ -471,7 +479,10 @@ function cellSelection(
 }
 
 function sanitiseCellPayload(value: string): string {
-  return value.replace(/\r\n|\n|\r/g, " ").replace(/(^|[^\\])\|/g, "$1\\|");
+  // Each pipe is judged on its own. The previous pattern matched the character *before* a pipe and so
+  // consumed it, which meant a run escaped only every other one: `a || b` came back `a \\|| b`, and
+  // that surviving pipe ended the cell and gave the row a column the delimiter never declared.
+  return value.replace(/\r\n|\n|\r/g, " ").replace(/(?<!\\)\|/g, "\\|");
 }
 
 /**
