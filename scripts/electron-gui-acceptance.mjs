@@ -1143,7 +1143,15 @@ async function waitForThemeMode(expected) {
 
 async function activateBlock(text) {
   let editor = page.locator("[data-native-block-editor]");
-  if ((await editor.count()) === 1 && (await editor.inputValue()) === text) {
+  const activeText =
+    (await editor.count()) === 1
+      ? await editor.evaluate((element) =>
+          element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
+            ? element.value
+            : (element.textContent ?? "")
+        )
+      : null;
+  if (activeText === text) {
     await editor.focus();
     await assertFocused(editor);
     return editor;
