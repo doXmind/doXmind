@@ -24,7 +24,10 @@ vi.mock("katex", () => ({
 }));
 
 import { MarkdownBlockDocument } from "@/editor/markdown-block/markdown-block-document";
-import { MarkdownBlockRow } from "@/editor/markdown-block/markdown-block-row";
+import {
+  MarkdownBlockRow,
+  MarkdownWikiLinkContext,
+} from "@/editor/markdown-block/markdown-block-row";
 import { wikiEmbedIdentity } from "@/editor/markdown-block/wiki-embed";
 import type { KnowledgeSourceIndex } from "@/lib/knowledge-index";
 
@@ -73,6 +76,31 @@ function typeInto(editor: HTMLElement, text: string) {
   selection?.removeAllRanges();
   selection?.addRange(range);
   fireEvent.input(editor, { inputType: "insertText" });
+}
+
+/**
+ * Put a collapsed caret `offset` characters into a contenteditable's own text.
+ *
+ * The row reads the caret straight off the DOM for the surfaces that hand every arrow back, so a
+ * test of that has to place a real Range rather than hand the editor a selection prop.
+ */
+function placeCaret(editor: HTMLElement, offset: number) {
+  const walker = editor.ownerDocument.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode() as Text | null;
+  let remaining = offset;
+  while (node && remaining > (node.nodeValue?.length ?? 0)) {
+    remaining -= node.nodeValue?.length ?? 0;
+    const next = walker.nextNode() as Text | null;
+    if (!next) break;
+    node = next;
+  }
+  const range = editor.ownerDocument.createRange();
+  if (node) range.setStart(node, Math.min(remaining, node.nodeValue?.length ?? 0));
+  else range.setStart(editor, 0);
+  range.collapse(true);
+  const selection = editor.ownerDocument.defaultView?.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
 }
 
 describe("MarkdownBlockRow semantic previews", () => {
@@ -493,6 +521,33 @@ describe("MarkdownBlockRow semantic previews", () => {
     expect(onRunSlashCommand).toHaveBeenCalledWith(block.id, expectedId, expectedRun);
   });
 
+  it("points the focused editor at the open slash menu and tracks the highlighted command", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("/\n").getSnapshot().blocks;
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active
+        {...slashHandlers()}
+        onRunSlashCommand={vi.fn()}
+      />
+    );
+
+    // jsdom implements no scrolling, and moving the highlight scrolls it into view.
+    Element.prototype.scrollIntoView = vi.fn();
+    const editor = screen.getByRole("textbox", { name: "Markdown block" });
+    const listbox = screen.getByRole("listbox", { name: "Block commands" });
+    const options = screen.getAllByRole("option");
+    expect(editor).toHaveAttribute("aria-haspopup", "listbox");
+    expect(editor).toHaveAttribute("aria-controls", listbox.id);
+    expect(editor).toHaveAttribute("aria-activedescendant", options[0].id);
+
+    // Focus never leaves the editor, so the moving highlight is only announceable through here.
+    fireEvent.keyDown(editor, { key: "ArrowDown" });
+    expect(editor).toHaveAttribute("aria-activedescendant", screen.getAllByRole("option")[1].id);
+  });
+
   it.each(["and/or", "src/lib", "2026/07"])(
     "leaves %s typeable without opening the slash menu",
     (source) => {
@@ -641,6 +696,141 @@ describe("MarkdownBlockRow semantic previews", () => {
     textarea.setSelectionRange(4, 4);
     fireEvent.keyDown(textarea, { key: "ArrowRight" });
     expect(onNavigate).toHaveBeenCalledWith(block.id, 1);
+  });
+
+  it("leaves a fenced Block on an arrow its own surface has already handed back", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("```js\nlet a = 1;\n```\n").getSnapshot()
+      .blocks;
+    const onNavigate = vi.fn(() => true);
+    const { container } = render(
+      <MarkdownBlockRow
+        block={block}
+        index={1}
+        count={3}
+        active
+        {...slashHandlers()}
+        onNavigate={onNavigate}
+      />
+    );
+
+    // The code Block only hands an arrow back once the caret is at the payload's own edge, so by
+    // the time the Block sees one it already means "leave". Dropping it made the Block a keyboard
+    // trap: neither the Block above nor the one below could be reached without the mouse.
+    const surface = container.querySelector<HTMLTextAreaElement>("[data-code-editing-surface]")!;
+    surface.setSelectionRange(0, 0);
+    fireEvent.keyDown(surface, { key: "ArrowUp" });
+    expect(onNavigate).toHaveBeenCalledWith(block.id, -1);
+
+    surface.setSelectionRange("let a = 1;".length, "let a = 1;".length);
+    fireEvent.keyDown(surface, { key: "ArrowDown" });
+    expect(onNavigate).toHaveBeenCalledWith(block.id, 1);
+  });
+
+  it("keeps an arrow inside a fenced Block when the caret is not at the payload edge", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown(
+      "```js\nlet a = 1;\nlet b = 2;\n```\n"
+    ).getSnapshot().blocks;
+    const onNavigate = vi.fn(() => true);
+    const { container } = render(
+      <MarkdownBlockRow
+        block={block}
+        index={1}
+        count={3}
+        active
+        {...slashHandlers()}
+        onNavigate={onNavigate}
+      />
+    );
+
+    const surface = container.querySelector<HTMLTextAreaElement>("[data-code-editing-surface]")!;
+    surface.setSelectionRange(0, 0);
+    fireEvent.keyDown(surface, { key: "ArrowDown" });
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
+  it("leaves a figure Block only when the caret is at the edge of its source", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("$$\nx^2\ny^2\n$$\n").getSnapshot().blocks;
+    const onNavigate = vi.fn(() => true);
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={1}
+        count={3}
+        active
+        {...slashHandlers()}
+        onNavigate={onNavigate}
+      />
+    );
+
+    // The field hands every key but Enter back, so unlike a code Block it makes no edge decision of
+    // its own. Without one made here the equation was a keyboard trap; with one made loosely the
+    // caret could not have reached the second line of it.
+    const field = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "LaTeX source" });
+    field.setSelectionRange(0, 0);
+    fireEvent.keyDown(field, { key: "ArrowDown" });
+    expect(onNavigate).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(field, { key: "ArrowUp" });
+    expect(onNavigate).toHaveBeenCalledWith(block.id, -1);
+
+    field.setSelectionRange(field.value.length, field.value.length);
+    fireEvent.keyDown(field, { key: "ArrowDown" });
+    expect(onNavigate).toHaveBeenCalledWith(block.id, 1);
+  });
+
+  it("leaves a callout downward from the last line of its body but not from the first", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown(
+      "> [!WARNING] Careful\n> Line one.\n> Line two.\n"
+    ).getSnapshot().blocks;
+    const onNavigate = vi.fn(() => true);
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={1}
+        count={3}
+        active
+        {...slashHandlers()}
+        onNavigate={onNavigate}
+      />
+    );
+
+    const body = screen.getByRole("textbox", { name: "Callout body" });
+    placeCaret(body, 0);
+    fireEvent.keyDown(body, { key: "ArrowDown" });
+    expect(onNavigate).not.toHaveBeenCalled();
+
+    placeCaret(body, "Line one.\nLine two.".length);
+    fireEvent.keyDown(body, { key: "ArrowDown" });
+    expect(onNavigate).toHaveBeenCalledWith(block.id, 1);
+  });
+
+  it("leaves a bodyless callout on the arrow its heading hands back", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("> [!NOTE] Careful\n").getSnapshot().blocks;
+    const onNavigate = vi.fn(() => true);
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={1}
+        count={3}
+        active
+        {...slashHandlers()}
+        onNavigate={onNavigate}
+      />
+    );
+
+    // A heading is one line, so there is no line below the caret to move to and Down means "leave",
+    // wherever in the title it was pressed. Left still means "leave" only at the very start.
+    const heading = screen.getByRole("textbox", { name: "Callout title" });
+    placeCaret(heading, 3);
+    fireEvent.keyDown(heading, { key: "ArrowLeft" });
+    expect(onNavigate).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(heading, { key: "ArrowDown" });
+    expect(onNavigate).toHaveBeenCalledWith(block.id, 1);
+
+    placeCaret(heading, 0);
+    fireEvent.keyDown(heading, { key: "ArrowLeft" });
+    expect(onNavigate).toHaveBeenCalledWith(block.id, -1);
   });
 
   it("merges the next Block up on forward Delete at the end", () => {
@@ -1332,5 +1522,29 @@ describe("MarkdownBlockRow semantic previews", () => {
     expect(screenImage?.src).toContain("Rendered%20diagram");
     expect(printImage?.src).toContain("Printable%20diagram");
     expect(renderMermaidSvgLight).toHaveBeenCalledWith("graph TD\nDark --> Print");
+  });
+});
+
+describe("MarkdownBlockRow wiki links", () => {
+  it("draws a link with no Page behind it apart and opens both through the context", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown(
+      "See [[Real]] and [[Ghost]].\n"
+    ).getSnapshot().blocks;
+    const open = vi.fn();
+
+    render(
+      <MarkdownWikiLinkContext.Provider value={{ open, resolves: (target) => target === "Real" }}>
+        <MarkdownBlockRow block={block} index={0} count={1} active={false} {...slashHandlers()} />
+      </MarkdownWikiLinkContext.Provider>
+    );
+
+    const resolved = screen.getByRole("button", { name: "Open Page: Real" });
+    const unresolved = screen.getByRole("button", { name: "Unresolved Page link: Ghost" });
+    expect(resolved).not.toHaveAttribute("data-wiki-link-unresolved");
+    expect(unresolved).toHaveAttribute("data-wiki-link-unresolved", "true");
+    expect(unresolved.className).not.toEqual(resolved.className);
+
+    fireEvent.click(unresolved);
+    expect(open).toHaveBeenCalledWith("Ghost");
   });
 });

@@ -60,6 +60,15 @@
     display: block !important;
   }
 
+  /* A collapsed toggle still belongs in the export. Chromium hides the closed subtree from the
+     ancestor pseudo-element (`details::details-content { content-visibility: hidden }`), which the
+     display override above cannot undo — without this the toggle's whole body is silently missing
+     from the PDF. */
+  details::details-content {
+    content-visibility: visible !important;
+    block-size: auto !important;
+  }
+
   .desktop-window-shell,
   .desktop-content-canvas,
   .desktop-content-surface,

@@ -181,7 +181,27 @@ async function walkDocuments(root, current, documents) {
     }
     if (!entry.isFile() || isHiddenSidecarName(entry.name)) continue;
     if (!DOCUMENT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
-    documents.push(await documentDtoForPath(root, absolute));
+    documents.push(await scanDocumentDto(root, absolute));
+  }
+}
+
+async function scanDocumentDto(root, absolute) {
+  try {
+    return await documentDtoForPath(root, absolute);
+  } catch (error) {
+    // One undecodable Page must not hide every healthy Page in the workspace.
+    // The scan falls back to path identity; `doc_read` still refuses the bytes.
+    if (error?.code !== "ERR_PAGE_NOT_UTF8") throw error;
+    const relPath = relativePath(root, absolute);
+    const extension = path.extname(absolute).toLowerCase();
+    return {
+      id: stablePathId(relPath),
+      idSource: "path",
+      path: relPath,
+      name: path.basename(absolute),
+      title: path.basename(absolute, extension),
+      documentType: documentTypeForExtension(extension),
+    };
   }
 }
 
@@ -217,6 +237,12 @@ async function documentDtoForPath(root, absolute) {
   }
   if (meta.cover_position !== undefined && meta.cover_position !== null) {
     dto.coverPosition = meta.cover_position;
+  }
+  // Aliases ride the scan because they are how a Wiki Link resolves. Resolution runs against the
+  // whole workspace, not the open Page, so leaving them behind meant `[[Alias]]` could only ever
+  // work for a Page the session had already opened — in a fresh window every alias link was dead.
+  if (Array.isArray(meta.aliases) && meta.aliases.every((value) => typeof value === "string")) {
+    dto.aliases = meta.aliases;
   }
   return dto;
 }
@@ -469,7 +495,15 @@ async function createWorkspacePage(rootValue, payload) {
   const relPath = String(payload.path || "");
   ensureMarkdownPath(relPath);
   const absolute = await resolveWorkspacePathForWrite(root, relPath);
-  if (fs.existsSync(absolute)) throw new Error(`document already exists: ${relPath}`);
+  // Creation refuses to overwrite unless the caller already collected the
+  // user's consent for this exact destination — the native Save panel asks
+  // "replace?" itself and only returns a path once the user said yes. Every
+  // other create path keeps the default refusal.
+  const replaceExisting = payload.replaceExisting === true;
+  const existing = await lstatIfPresent(absolute);
+  if (existing && !(replaceExisting && existing.isFile())) {
+    throw new Error(`document already exists: ${relPath}`);
+  }
   const meta = payload.meta && typeof payload.meta === "object" ? { ...payload.meta } : {};
   const pageId = String(meta.id || crypto.randomUUID());
   if (!pageId.trim() || !/^[A-Za-z0-9._:-]+$/.test(pageId)) {
@@ -478,7 +512,11 @@ async function createWorkspacePage(rootValue, payload) {
   meta.id = pageId;
   const prefix = patchFrontmatterPrefix(null, meta);
   const markdown = String(payload.markdown || "");
-  await atomicWrite(absolute, Buffer.from(`${prefix}${markdown}`, "utf8"), { exclusive: true });
+  await atomicWrite(
+    absolute,
+    Buffer.from(`${prefix}${markdown}`, "utf8"),
+    replaceExisting ? {} : { exclusive: true }
+  );
   const scan = await workspaceScan(root);
   const created = scan.documents.find(
     (document) => document.path === normalizeRelativePath(relPath)
@@ -498,7 +536,11 @@ async function moveDocumentPair(rootValue, oldRelPath, newRelPath, renamePath) {
   // at its original location.
   await documentDtoForPath(root, source);
   const destination = await resolveWorkspacePathForWrite(root, newRelPath);
-  if (fs.existsSync(destination)) throw new Error(`destination already exists: ${newRelPath}`);
+  // A case-only rename on a case-insensitive filesystem sees the moved
+  // Attachment itself at the destination; only a different entry collides.
+  if (fs.existsSync(destination) && !(await isSameFilesystemEntry(source, destination))) {
+    throw new Error(`destination already exists: ${newRelPath}`);
+  }
 
   const sourceSidecar = sidecarPathFor(source);
   const destinationSidecar = sidecarPathFor(destination);
@@ -656,7 +698,11 @@ async function relocatePage(rootValue, payload, renamePath, writePageBytes) {
   }
 
   const destination = await resolveWorkspacePathForWrite(root, newRelPath);
-  if (fs.existsSync(destination)) throw new Error(`destination already exists: ${newRelPath}`);
+  // A case-only rename on a case-insensitive filesystem sees the moved Page
+  // itself at the destination; only a different entry is a real collision.
+  if (fs.existsSync(destination) && !(await isSameFilesystemEntry(source, destination))) {
+    throw new Error(`destination already exists: ${newRelPath}`);
+  }
   const sourceSidecar = sidecarPathFor(source);
   const destinationSidecar = sidecarPathFor(destination);
   const sourceFamily = await sidecarFamilyPaths(source);
@@ -811,7 +857,11 @@ async function relocateFolder(rootValue, payload, renamePath, writePageBytes) {
     throw new Error(`folder is not a directory: ${oldRelPath}`);
   }
   const destination = await resolveWorkspacePathForWrite(root, newRelPath);
-  if (fs.existsSync(destination)) throw new Error(`destination already exists: ${newRelPath}`);
+  // A case-only rename on a case-insensitive filesystem sees the moved folder
+  // itself at the destination; only a different entry is a real collision.
+  if (fs.existsSync(destination) && !(await isSameFilesystemEntry(source, destination))) {
+    throw new Error(`destination already exists: ${newRelPath}`);
+  }
 
   const checkedPages = await prepareRelocationChecks(root, payload.checks, "Folder relocation");
 
@@ -1321,7 +1371,9 @@ function splitPageSource(raw) {
   while (offset <= raw.length) {
     const line = readLine(raw, offset);
     if (!line) break;
-    if (line.content === "---") {
+    // `...` is YAML's document-end marker and a conventional frontmatter
+    // terminator. Without it the scan runs past the block into body prose.
+    if (line.content === "---" || line.content === "...") {
       const headEnd = line.end - line.ending.length;
       let prefixEnd = line.end;
       const separator = readLine(raw, prefixEnd);
@@ -1354,11 +1406,12 @@ function readLine(source, start) {
 function parseMetadataLines(lines) {
   const meta = {};
   for (const line of lines) {
-    const separator = line.indexOf(":");
-    if (separator <= 0) continue;
-    const key = line.slice(0, separator).trim();
-    if (!key) continue;
-    meta[key] = parseYamlScalar(line.slice(separator + 1).trim());
+    // Only a top-level mapping entry — the exact shape the patch writer can
+    // target — becomes a Page property. Indented keys stay unknown-but-
+    // preserved source so an edit never lands on a different YAML node.
+    const match = /^([A-Za-z_][A-Za-z0-9_.-]*)\s*:/.exec(line);
+    if (!match) continue;
+    meta[match[1]] = parseYamlScalar(line.slice(match[0].length).trim());
   }
   return meta;
 }
@@ -1535,7 +1588,9 @@ function validatePagePropertyPatchSource(lines, patch) {
     const index = matches[0];
     const line = lines[index];
     const scalar = stripYamlInlineComment(line.slice(line.indexOf(":") + 1)).trim();
-    if (scalar) continue;
+    if (!yamlValueEndsOnLine(scalar)) {
+      throw new Error(`cannot safely patch Page property '${key}': nested YAML value`);
+    }
     for (const continuation of lines.slice(index + 1)) {
       if (!continuation.trim() || continuation.trimStart().startsWith("#")) continue;
       if (/^[ \t]/.test(continuation)) {
@@ -1544,6 +1599,40 @@ function validatePagePropertyPatchSource(lines, patch) {
       break;
     }
   }
+}
+
+// A patch rewrites exactly one line, so the existing value has to end on that
+// line. A block scalar (`|`, `>`) or an unterminated flow collection/quoted
+// scalar continues below and can only be patched by orphaning those bytes.
+function yamlValueEndsOnLine(scalar) {
+  if (!scalar) return true;
+  if (/^[|>][+-]?[0-9]*[+-]?$/.test(scalar)) return false;
+  const first = scalar[0];
+  if (first !== '"' && first !== "'" && first !== "[" && first !== "{") return true;
+  let quote = null;
+  let escaped = false;
+  let depth = 0;
+  for (let index = 0; index < scalar.length; index += 1) {
+    const char = scalar[index];
+    if (quote === '"') {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === quote) quote = null;
+      continue;
+    }
+    if (quote === "'") {
+      if (char === quote && scalar[index + 1] === quote) index += 1;
+      else if (char === quote) quote = null;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === "[" || char === "{") depth += 1;
+    else if (char === "]" || char === "}") depth -= 1;
+  }
+  return quote === null && depth === 0;
 }
 
 function pagePropertyLineKey(line) {
@@ -1615,6 +1704,9 @@ async function atomicWrite(target, bytes, options = {}) {
       .then((stat) => stat.mode & 0o777)
       .catch(() => 0o600);
     handle = await fsp.open(temporary, "wx", currentMode);
+    // `open`'s mode argument is masked by the process umask, so preserving the
+    // Page's permissions needs an explicit chmod before the rename commits.
+    await handle.chmod(currentMode);
     await handle.writeFile(bytes);
     await handle.sync();
     await handle.close();
@@ -1672,7 +1764,9 @@ function decodeUtf8(bytes, absolute) {
   try {
     return utf8.decode(bytes);
   } catch {
-    throw new Error(`Page is not valid UTF-8: ${absolute}`);
+    const error = new Error(`Page is not valid UTF-8: ${absolute}`);
+    error.code = "ERR_PAGE_NOT_UTF8";
+    throw error;
   }
 }
 
@@ -1781,6 +1875,12 @@ function isHiddenSidecarName(name) {
   if (markerIndex <= 1) return false;
   const tailIndex = markerIndex + marker.length;
   return tailIndex === name.length || name[tailIndex] === ".";
+}
+
+async function isSameFilesystemEntry(left, right) {
+  const [leftStat, rightStat] = await Promise.all([lstatIfPresent(left), lstatIfPresent(right)]);
+  if (!leftStat || !rightStat) return false;
+  return leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino;
 }
 
 async function lstatIfPresent(target) {

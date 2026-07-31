@@ -802,4 +802,51 @@ describe("projectPageCollection", () => {
       },
     ]);
   });
+
+  it("keeps a rollup diagnostic visible when its relation target is filtered out", () => {
+    const parsed = parsePageCollection(
+      block({
+        version: 2,
+        view: "table",
+        computed: {
+          version: 1,
+          properties: {
+            parent: { type: "relation" },
+            total: { type: "rollup", relation: "parent", property: "points", calculate: "sum" },
+          },
+        },
+        filters: [{ property: "status", operator: "equals", value: "active" }],
+        columns: ["total"],
+        sort: [],
+      })
+    );
+    if (!parsed.ok) throw new Error(parsed.diagnostics[0]?.message);
+
+    const projection = projectPageCollection(parsed.definition, [
+      {
+        id: "active",
+        path: "Active.md",
+        title: "Active",
+        properties: { status: "active", parent: "[[Archived]]" },
+      },
+      {
+        id: "archived",
+        path: "Archived.md",
+        title: "Archived",
+        properties: { status: "archived" },
+      },
+    ]);
+
+    expect(projection.rows.map(({ id }) => id)).toEqual(["active"]);
+    expect(projection.rows[0]?.properties).not.toHaveProperty("total");
+    expect(projection.computedDiagnostics).toEqual([
+      {
+        code: "missing-property",
+        rowId: "active",
+        rowPath: "Active.md",
+        property: "total",
+        message: "Page Archived.md has no source property points.",
+      },
+    ]);
+  });
 });

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -153,6 +153,58 @@ describe("BlockGutterControls", () => {
       "aria-describedby",
       "block-description"
     );
+  });
+
+  it("arrows onto the Turn into row instead of skipping it", async () => {
+    const user = userEvent.setup();
+    renderControls();
+
+    await user.click(screen.getByRole("button", { name: "Block actions" }));
+    await screen.findByRole("searchbox", { name: "Search block actions" });
+
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(screen.getByRole("menuitem", { name: "Turn into" })).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(screen.getByRole("menuitem", { name: "Copy Markdown" })).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "ArrowUp" });
+    expect(screen.getByRole("menuitem", { name: "Turn into" })).toHaveFocus();
+  });
+
+  it("arrows onto the back row at the top of the Turn into list", async () => {
+    const user = userEvent.setup();
+    renderControls();
+
+    await user.click(screen.getByRole("button", { name: "Block actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Turn into" }));
+
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(screen.getByRole("menuitem", { name: "Back to block actions" })).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(screen.getByRole("menuitem", { name: "Text" })).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "Home" });
+    expect(screen.getByRole("menuitem", { name: "Back to block actions" })).toHaveFocus();
+  });
+
+  it("walks the filtered rows in visual order once a query hides the navigation rows", async () => {
+    const user = userEvent.setup();
+    renderControls();
+
+    await user.click(screen.getByRole("button", { name: "Block actions" }));
+    await user.type(
+      await screen.findByRole("searchbox", { name: "Search block actions" }),
+      "heading"
+    );
+    expect(screen.queryByRole("menuitem", { name: "Turn into" })).not.toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(screen.getByRole("menuitem", { name: "Heading 1" })).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "End" });
+    expect(screen.getByRole("menuitem", { name: "Heading 6" })).toHaveFocus();
   });
 
   it("keeps Turn into unavailable for source-only Markdown blocks", async () => {

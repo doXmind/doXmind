@@ -315,3 +315,49 @@ def test_store_rejects_non_markdown_paths_without_modifying_them(tmp_path: Path,
         store.create(path, "page-1", "changed")
 
     assert path.read_bytes() == original
+
+
+def test_keys_nested_in_a_frontmatter_mapping_are_not_page_properties(tmp_path: Path) -> None:
+    page_path = tmp_path / "Nested.md"
+    source = "---\nid: page-5\nauthor:\n  name: Jane\n  status: done\n---\n\n# Body\n"
+    page_path.write_text(source, encoding="utf-8")
+    store = MarkdownPageStore()
+
+    page = store.read(page_path)
+
+    assert page.meta["id"] == "page-5"
+    assert page.meta["author"] == ""
+    assert "name" not in page.meta
+    assert "status" not in page.meta
+
+    with pytest.raises(ValueError, match="cannot safely patch Page property 'author'"):
+        store.write(page_path, page.markdown, {"author": "Jane"})
+    assert page_path.read_text(encoding="utf-8") == source
+
+
+def test_a_nested_id_is_not_the_page_identity(tmp_path: Path) -> None:
+    page_path = tmp_path / "Nested id.md"
+    page_path.write_text("---\nconfig:\n  id: nested-thing\n---\n\nBody\n", encoding="utf-8")
+
+    page = MarkdownPageStore().read(page_path)
+
+    assert "id" not in page.meta
+
+
+def test_document_end_marker_terminates_frontmatter_instead_of_swallowing_prose(
+    tmp_path: Path,
+) -> None:
+    page_path = tmp_path / "Pandoc.md"
+    page_path.write_text("---\nid: p\ntitle: T\n...\n\n# Body\n\n---\n\nAfter\n", encoding="utf-8")
+    store = MarkdownPageStore()
+
+    page = store.read(page_path)
+
+    assert page.markdown == "# Body\n\n---\n\nAfter\n"
+    assert page.meta["id"] == "p"
+    assert page.meta["title"] == "T"
+
+    store.write(page_path, page.markdown, {"favorite": True}, page.revision)
+    assert page_path.read_text(encoding="utf-8") == (
+        "---\nid: p\ntitle: T\nfavorite: true\n...\n\n# Body\n\n---\n\nAfter\n"
+    )

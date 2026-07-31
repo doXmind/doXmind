@@ -138,6 +138,30 @@ describe("MarkdownCodeBlock", () => {
     await settle();
   });
 
+  it("refuses an edit whose payload would close the Block's own fence", async () => {
+    const onChange = vi.fn();
+    render(<Harness initial={"```js\ncode\n```"} editable onChange={onChange} />);
+
+    // Typing the third backtick of a ``` line, or pasting a snippet that contains one. The payload
+    // can no longer be spliced between the delimiters the file has: the row re-projects whatever
+    // this hands back, and a source that no longer splits the same way comes back wrapped in its
+    // delimiters a second time — the opening fence is duplicated into the file.
+    fireEvent.change(editingSurface(), { target: { value: "code\n```" } });
+
+    expect(onChange).not.toHaveBeenCalled();
+    await settle();
+  });
+
+  it("takes a fence line that does not close the delimiter this Block opened with", async () => {
+    const onChange = vi.fn();
+    render(<Harness initial={"~~~md\ndocs\n~~~"} editable onChange={onChange} />);
+
+    fireEvent.change(editingSurface(), { target: { value: "docs\n```" } });
+
+    expect(onChange).toHaveBeenCalledWith("block-1", "~~~md\ndocs\n```\n~~~");
+    await settle();
+  });
+
   it("inserts an indent on Tab instead of moving focus", async () => {
     const onChange = vi.fn();
     const onKeyDown = vi.fn();

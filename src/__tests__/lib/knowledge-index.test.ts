@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildKnowledgeIndex,
   buildKnowledgeSourceCatalog,
+  createKnowledgeWikiResolver,
   resolveKnowledgeWikiPage,
+  type KnowledgePage,
 } from "@/lib/knowledge-index";
 import type {
   DocumentContent,
@@ -526,6 +528,37 @@ describe("buildKnowledgeIndex", () => {
     expect(from).toBe(3);
   });
 
+  it("keeps indexing links after a comment opener that only appears inside code", async () => {
+    const source = pageEntry("source", "Source.md");
+    const target = pageEntry("target", "Target.md");
+    const markdown = [
+      "```html",
+      "<!-- example",
+      "```",
+      "",
+      "See [[Target]].",
+      "",
+      "<!-- real note -->",
+      "",
+      "Use `<!--` to open a comment, then [[Target]] again.",
+    ].join("\n");
+    const adapter = adapterFixture(
+      [source, target],
+      new Map([
+        [source.handle.id, content(source, markdown)],
+        [target.handle.id, content(target, "Target")],
+      ])
+    );
+
+    const index = await buildKnowledgeIndex(adapter);
+
+    expect(index.links.map((link) => link.range.from)).toEqual([
+      markdown.indexOf("[[Target]]"),
+      markdown.lastIndexOf("[[Target]]"),
+    ]);
+    expect(index.links.every((link) => link.status === "resolved")).toBe(true);
+  });
+
   it("does not index escaped Wiki or Markdown link literals", async () => {
     const source = pageEntry("source", "Source.md");
     const target = pageEntry("target", "Target.md");
@@ -653,5 +686,86 @@ describe("buildKnowledgeIndex", () => {
       ["Zed.md", laterMarkdown.indexOf("[[Target]]")],
       ["Zed.md", laterMarkdown.lastIndexOf("[[Target]]")],
     ]);
+  });
+});
+
+describe("createKnowledgeWikiResolver", () => {
+  function countingPages(size: number, reads: { count: number }): KnowledgePage[] {
+    return Array.from({ length: size }, (_unused, index) => ({
+      id: `page-${index}`,
+      get path() {
+        reads.count += 1;
+        return `Notes/Page ${index}.md`;
+      },
+      get title() {
+        reads.count += 1;
+        return `Page ${index}`;
+      },
+      get aliases() {
+        reads.count += 1;
+        return [`Alias ${index}`];
+      },
+    }));
+  }
+
+  it("resolves exactly like the single-lookup helper", () => {
+    const pages = [
+      { id: "source", path: "Notes/Today.md", title: "Today", aliases: [] },
+      { id: "roadmap", path: "Notes/Roadmap.md", title: "产品路线", aliases: ["Plan"] },
+      { id: "other-plan", path: "Archive/Plan.md", title: "Old plan", aliases: [] },
+      { id: "secret", path: "Secret.md", title: "Secret", aliases: [] },
+    ];
+    const resolver = createKnowledgeWikiResolver(pages);
+
+    for (const [sourcePath, target] of [
+      ["Notes/Today.md", "Roadmap"],
+      ["Notes/Today.md", "ROADMAP"],
+      ["Notes/Today.md", "产品路线"],
+      ["Notes/Today.md", "Plan"],
+      ["Notes/Today.md", "./Plan"],
+      ["Notes/Today.md", "Archive/Plan.md"],
+      ["Notes/Today.md", "Notes/Roadmap"],
+      ["Notes/Today.md", "Missing"],
+      ["Today.md", "../Secret"],
+      ["Today.md", "../../Secret"],
+    ]) {
+      expect(resolver.resolve(sourcePath, target)).toEqual(
+        resolveKnowledgeWikiPage(pages, sourcePath, target)
+      );
+    }
+  });
+
+  it("indexes the catalog once instead of rescanning every Page per lookup", () => {
+    const reads = { count: 0 };
+    const size = 400;
+    const resolver = createKnowledgeWikiResolver(countingPages(size, reads));
+    const buildReads = reads.count;
+
+    for (let index = 0; index < size; index += 1) {
+      expect(resolver.resolve("Notes/Page 0.md", `Page ${index}`).page?.id).toBe(`page-${index}`);
+      expect(resolver.resolve("Notes/Page 0.md", `Alias ${index}`).page?.id).toBe(`page-${index}`);
+    }
+
+    // Building reads each Page's identity a fixed number of times; lookups read none.
+    expect(buildReads).toBeLessThanOrEqual(4 * size);
+    expect(reads.count).toBe(buildReads);
+  });
+
+  it("keeps whole-catalog resolution work linear in catalog size", () => {
+    const measure = (size: number) => {
+      const reads = { count: 0 };
+      const resolver = createKnowledgeWikiResolver(countingPages(size, reads));
+      for (let index = 0; index < size; index += 1) {
+        resolver.resolve("Notes/Page 0.md", `Page ${index}`);
+      }
+      return reads.count;
+    };
+
+    const small = measure(200);
+    const large = measure(400);
+
+    expect(large).toBeLessThanOrEqual(4 * 400);
+    // A per-lookup rescan would square, not double, the work across sizes.
+    expect(large).toBeLessThanOrEqual(small * 2.5);
   });
 });

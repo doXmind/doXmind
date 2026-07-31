@@ -31,6 +31,9 @@ const AWKWARD = ["| name  | note   |", "| :---- | -----: |", "| a\\|b  | wide   
   "\n"
 );
 
+/** A table written entirely without outer pipes, which GFM allows and `marked` reads as a table. */
+const BARE = ["Name | Role", "---- | ----", "Ada  | Eng", "Bob  | Ops"].join("\n");
+
 function geometryOf(source: string): MarkdownTableGeometry {
   const geometry = parseMarkdownTableSource(source);
   if (!geometry) throw new Error("fixture is not a table");
@@ -87,6 +90,36 @@ describe("markdown table column operations", () => {
     expect(markdownTableDeleteColumn(next!, single, 0)).toBeNull();
   });
 
+  it("leaves a one-column table behind when the rows omit their outer pipes", () => {
+    // `Name | Role` with its second column gone is `Name`, which has no pipe left and so is not a
+    // row at all — and the delimiter reduced to `----` reads as the underline of a setext heading,
+    // so the Block stops being a table and the whole grid is lost rather than one column.
+    const next = markdownTableDeleteColumn(BARE, geometryOf(BARE), 1);
+    expect(next).toBe(["|Name ", "|---- ", "|Ada  ", "|Bob  "].join("\n"));
+    expect(expectStillATable(next!).columnCount).toBe(1);
+
+    // The pipe goes in front of the surviving cell rather than after it, because the padding that
+    // cell keeps would otherwise be indentation: `     Role|` is an indented code block.
+    const first = markdownTableDeleteColumn(BARE, geometryOf(BARE), 0);
+    expect(first).toBe(["| Role", "| ----", "| Eng", "| Ops"].join("\n"));
+    expect(expectStillATable(first!).columnCount).toBe(1);
+  });
+
+  it("degrades the alignment row with the column it belongs to", () => {
+    const aligned = ["Name | Role", ":--- | ---:", "Ada  | Eng"].join("\n");
+    const next = markdownTableDeleteColumn(aligned, geometryOf(aligned), 1);
+    expect(next).toBe(["|Name ", "|:--- ", "|Ada  "].join("\n"));
+    expect(expectStillATable(next!).alignments).toEqual(["left"]);
+  });
+
+  it("keeps a one-column result a table when only the trailing pipe is written", () => {
+    const trailing = ["a | b |", "- | - |", "1 | 2 |"].join("\n");
+    const next = markdownTableDeleteColumn(trailing, geometryOf(trailing), 1);
+    // The trailing pipe the rows already had is the separator, so nothing is added to them.
+    expect(next).toBe(["a |", "- |", "1 |"].join("\n"));
+    expect(expectStillATable(next!).columnCount).toBe(1);
+  });
+
   it("keeps hand-aligned padding, escapes and a row that omits its outer pipes", () => {
     const next = markdownTableInsertColumn(AWKWARD, geometryOf(AWKWARD), 0, "right");
     expect(next).not.toBeNull();
@@ -97,6 +130,20 @@ describe("markdown table column operations", () => {
     expect(next).toContain("a\\|b");
     const geometry = expectStillATable(next!);
     expect(geometry.columnCount).toBe(3);
+  });
+
+  it("keeps a pipe-less row's last cell when a column operation blanks it", () => {
+    // Without a trailing pipe a blank last cell is not a cell at all: the row comes back one column
+    // short of the delimiter and the whole Block reparses as a paragraph of raw pipes.
+    const cleared = markdownTableClearColumn(BARE, geometryOf(BARE), 1);
+    expect(cleared).toBe(["Name |  |", "---- | ----", "Ada  |  |", "Bob  |  |"].join("\n"));
+    expect(expectStillATable(cleared!).columnCount).toBe(2);
+
+    const inserted = markdownTableInsertColumn(BARE, geometryOf(BARE), 1, "right");
+    expect(expectStillATable(inserted!).columnCount).toBe(3);
+    // The rows that still end in content stay bare; only the one that just lost its last cell's
+    // text gains the pipe it now needs.
+    expect(inserted!.split("\n")[1]).toBe("---- | ----| --- ");
   });
 });
 
@@ -144,6 +191,19 @@ describe("markdown table row operations", () => {
     const three = ["| a |", "| - |", "| 1 |", "| 2 |"].join("\n");
     const next = markdownTableDeleteRow(three, geometryOf(three), 2);
     expect(next).toBe(["| a |", "| - |", "| 1 |"].join("\n"));
+  });
+
+  it("gives a blank row every cell, even modelled on a row that omits its outer pipes", () => {
+    // A row of blank cells cannot be written without outer pipes: the last one is dropped on
+    // reparse, and the grid then draws a cell nothing can be typed into.
+    const next = markdownTableInsertRow(BARE, geometryOf(BARE), 2, "below");
+    expect(next!.split("\n")[4]).toBe("|  |  |");
+    const geometry = expectStillATable(next!);
+    expect(geometry.cells.some((cell) => cell.row === 3 && cell.column === 1)).toBe(true);
+
+    const cleared = markdownTableClearRow(BARE, geometryOf(BARE), 0);
+    expect(cleared!.split("\n")[0]).toBe("|  |  |");
+    expect(expectStillATable(cleared!).columnCount).toBe(2);
   });
 
   it("keeps CRLF terminators when a row is inserted", () => {

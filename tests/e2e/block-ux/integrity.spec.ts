@@ -212,10 +212,12 @@ test("a ragged pipe table with bare edges and an escaped pipe survives activatio
   await expectSourceStable(opened, source);
 });
 
-test("setext headings stay exactly as written, as unsupported Blocks", async ({ page }) => {
-  // `blockFromSource` models only ATX headings, so `Title` over `====` is not a heading Block. The
-  // intended outcome is the fail-closed one: it becomes `unsupported`, is shown and edited as its own
-  // exact raw Markdown, and is never rewritten into `# Title`.
+test("setext headings stay exactly as written, and are headings", async ({ page }) => {
+  // `Title` over `====` is a heading in CommonMark, and the scanner now says so: it used to fall to
+  // `unsupported`, which kept the bytes safe but left the heading out of the outline and unreachable
+  // as a `[[Page#Anchor]]` target. What has not changed, and is the point of this file, is that the
+  // underline is never rewritten into `# Title` — the Block reports a level and still owns its exact
+  // two lines.
   const source = "Setext title\n============\n\nSecond level\n------------\n\nBody paragraph.\n";
   const opened = await openPage(page, "Bytes setext", source);
 
@@ -223,10 +225,12 @@ test("setext headings stay exactly as written, as unsupported Blocks", async ({ 
   // `openPage` only waits for the first row: a Page whose content arrives after the first paint
   // would otherwise be measured mid-render and report a Block list that was never rendered.
   await expect(rows(page)).toHaveCount(3);
-  expect(await kindsInOrder(page)).toEqual(["unsupported", "unsupported", "paragraph"]);
+  expect(await kindsInOrder(page)).toEqual(["heading", "heading", "paragraph"]);
+  await expect(rows(page).nth(0)).toHaveAttribute("data-block-level", "1");
+  await expect(rows(page).nth(1)).toHaveAttribute("data-block-level", "2");
 
   const row = rows(page).first();
-  await activateForEditing(row, "unsupported");
+  await activateForEditing(row, "heading");
   await expect(row.locator("[data-native-block-editor]").first()).toHaveValue(
     "Setext title\n============"
   );

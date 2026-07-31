@@ -182,6 +182,34 @@ function splitRow(text: string, lineFrom: number): CellSpan[] {
 }
 
 /**
+ * A cell's text as every reader of the format sees it, with `\|` back to the pipe it escapes.
+ *
+ * The escape belongs to the table syntax, not to the inline syntax: it is resolved when the row is
+ * split into cells, before the cell's text is parsed as Markdown at all. That is why it also has to
+ * go inside a code span, where inline escapes do not apply — `marked`, which renders the same file
+ * for the preview and for export, reads `` `x \| y` `` as the code span `x | y`, while the grid was
+ * showing the backslash. Rendering only: the cell's source keeps its escapes, because that is what
+ * stops the pipe from ending the row.
+ */
+export function markdownTableCellText(cellSource: string): string {
+  return cellSource.replace(/\\\|/g, "|");
+}
+
+/**
+ * The offset in a cell's source that an offset in `markdownTableCellText` came from.
+ *
+ * A press is measured against the rendered text, which is now a character shorter for every escape
+ * before it, and the caret it asks for is a source offset.
+ */
+export function markdownTableCellSourceOffset(cellSource: string, offset: number): number {
+  let cursor = 0;
+  for (let index = 0; index < offset && cursor < cellSource.length; index += 1) {
+    cursor += cellSource.startsWith("\\|", cursor) ? 2 : 1;
+  }
+  return cursor;
+}
+
+/**
  * The cell the caret sits in, or the nearest one before it.
  *
  * Used to answer "which cell is Tab leaving?" without the caller needing the geometry.
@@ -238,14 +266,35 @@ function lineParts(source: string, line: MarkdownTableLine): TableLineParts | nu
 }
 
 function renderLine(parts: TableLineParts): string {
-  const text = parts.leading + parts.payloads.join("|") + parts.trailing;
+  let text = parts.leading + parts.payloads.join("|") + parts.trailing;
   // GFM lets a row omit its outer pipes, but such a row cannot express an *empty* first cell: with
   // no leading pipe the parser reads leading whitespace as indentation before the first pipe it
   // finds. Clearing the first cell of `c | d` therefore produced `  | d`, which reads as the single
   // cell `d` — the row silently lost a column while every other row kept it. A line that has just
   // acquired a blank first cell gets the pipe it now needs; one that never had a leading pipe and
   // still has content keeps its shape.
-  if (!parts.leading.includes("|") && parts.payloads[0]?.trim() === "") return `|${text}`;
+  if (!parts.leading.includes("|") && parts.payloads[0]?.trim() === "") text = `|${text}`;
+  // The same thing at the other end, for the same reason: a blank segment after the last pipe is
+  // whitespace, not a cell, so clearing or appending to the last column of a row that ends without a
+  // pipe dropped that column from the row and left the header one cell short of the delimiter — the
+  // Block stopped being a table and rendered as four lines of raw pipes.
+  if (!parts.trailing.includes("|") && parts.payloads[parts.payloads.length - 1]?.trim() === "") {
+    text = `${text}|`;
+  }
+  // A row that is down to one cell has no join left to write a pipe at, so a row with no outer
+  // pipes has none anywhere: deleting a column of `Name | Role` produced `Name`, and the delimiter
+  // `----` under it read as the underline of a setext heading — the Block stopped being a table and
+  // the user lost the whole grid rather than one column. The pipe goes in front of the cell rather
+  // than after it, because the padding the cell keeps would otherwise be indentation: `     Role|`
+  // is an indented code block, while `|     Role` is still a row.
+  if (
+    parts.payloads.length === 1 &&
+    parts.payloads[0].trim() !== "" &&
+    !parts.leading.includes("|") &&
+    !parts.trailing.includes("|")
+  ) {
+    text = `|${text}`;
+  }
   return text;
 }
 

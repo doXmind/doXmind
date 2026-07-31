@@ -131,7 +131,7 @@ def _source_page_id(frontmatter: str | None) -> str | None:
         return None
     token: str | None = None
     for line in frontmatter.splitlines()[1:-1]:
-        match = re.match(r"^\s*id\s*:\s*(.*?)\s*$", line)
+        match = re.match(r"^id\s*:\s*(.*?)\s*$", line)
         if match is not None:
             token = match.group(1)
     return portable_page_id_from_token(token) if token else None
@@ -183,7 +183,7 @@ def _split_frontmatter_source(raw: str) -> tuple[str | None, str]:
     offset = opening.end()
     for line in raw[offset:].splitlines(keepends=True):
         line_end = offset + len(line)
-        if line.rstrip("\r\n") == "---":
+        if line.rstrip("\r\n") in ("---", "..."):
             prefix_end = line_end
             # If the closing delimiter had a line ending, absorb exactly one
             # blank separator line. Additional blank lines remain Page source.
@@ -290,14 +290,57 @@ def _validate_page_property_patch_source(lines: list[str], patch: dict[str, Any]
         index = matches[0]
         line = lines[index]
         scalar = _strip_yaml_inline_comment(line.split(":", 1)[1]).strip()
-        if scalar:
-            continue
+        if not _yaml_value_ends_on_line(scalar):
+            raise ValueError(f"cannot safely patch Page property '{key}': nested YAML value")
         for continuation in lines[index + 1 :]:
             if not continuation.strip() or continuation.lstrip().startswith("#"):
                 continue
             if continuation.startswith((" ", "\t")):
                 raise ValueError(f"cannot safely patch Page property '{key}': nested YAML value")
             break
+
+
+_YAML_BLOCK_SCALAR = re.compile(r"^[|>][+-]?[0-9]*[+-]?$")
+
+
+def _yaml_value_ends_on_line(scalar: str) -> bool:
+    """A patch rewrites exactly one line, so the value must end on that line.
+
+    A block scalar (``|``, ``>``) or an unterminated flow collection/quoted
+    scalar continues below and can only be patched by orphaning those bytes.
+    """
+    if not scalar:
+        return True
+    if _YAML_BLOCK_SCALAR.fullmatch(scalar):
+        return False
+    if scalar[0] not in {'"', "'", "[", "{"}:
+        return True
+    quote: str | None = None
+    escaped = False
+    depth = 0
+    index = 0
+    while index < len(scalar):
+        char = scalar[index]
+        if quote == '"':
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif quote == "'":
+            if char == quote and index + 1 < len(scalar) and scalar[index + 1] == quote:
+                index += 1
+            elif char == quote:
+                quote = None
+        elif char in {'"', "'"}:
+            quote = char
+        elif char in {"[", "{"}:
+            depth += 1
+        elif char in {"]", "}"}:
+            depth -= 1
+        index += 1
+    return quote is None and depth == 0
 
 
 def _page_property_line_key(line: str) -> str | None:

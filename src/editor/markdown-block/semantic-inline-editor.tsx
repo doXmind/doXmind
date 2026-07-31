@@ -39,6 +39,16 @@ export interface SemanticInlineEditorProps {
   readonly placeholder?: string;
   readonly autoFocus?: boolean;
   readonly highlightSelection?: boolean;
+  /**
+   * The slash command panel this surface drives, when it has one. The panel never takes focus —
+   * the caret has to stay where the command will be written — so without these the panel is
+   * inaudible: a screen reader announces neither that it opened nor which command the arrows are
+   * moving over, because nothing on the focused element points at it. Omitted by the surfaces that
+   * have no such panel (table cells, container Blocks), which must not claim one.
+   */
+  readonly slashListboxId?: string;
+  readonly slashMenuOpen?: boolean;
+  readonly slashActiveOptionId?: string;
   readonly onSourceChange: (source: string, selection: SemanticInlineSelection) => void;
   readonly onSelectionChange?: (selection: SemanticInlineSelection, event?: Event) => void;
   readonly onKeyDown?: (
@@ -75,6 +85,9 @@ export function SemanticInlineEditor({
   placeholder,
   autoFocus = false,
   highlightSelection = false,
+  slashListboxId,
+  slashMenuOpen = false,
+  slashActiveOptionId,
   onSourceChange,
   onSelectionChange,
   onKeyDown,
@@ -247,6 +260,11 @@ export function SemanticInlineEditor({
       aria-describedby={describedBy}
       aria-multiline="true"
       aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Meta+D Control+D Meta+Shift+Backspace Control+Shift+Backspace"
+      // Deliberately no `role="combobox"` and no `aria-expanded`: this surface is a real
+      // multi-line textbox whose editing behaviour is the point, and the role does not support it.
+      aria-haspopup={slashListboxId ? "listbox" : undefined}
+      aria-controls={slashMenuOpen ? slashListboxId : undefined}
+      aria-activedescendant={slashMenuOpen ? slashActiveOptionId : undefined}
       data-native-block-editor
       data-native-semantic-editor
       data-placeholder={placeholder}

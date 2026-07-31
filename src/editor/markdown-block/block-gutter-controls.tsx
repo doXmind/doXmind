@@ -26,7 +26,15 @@ import {
   Trash2,
   type LucideIcon,
 } from "lucide-react";
-import { type DragEventHandler, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type DragEventHandler,
+  type ReactNode,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   DropdownMenu,
@@ -35,6 +43,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  useDropdownMenuItemFocus,
 } from "@/components/ui/dropdown-menu";
 import type {
   MarkdownBlockKind,
@@ -97,6 +106,42 @@ export function BlockTypeOptionIcon({
   return <Icon className={className} aria-hidden="true" />;
 }
 
+/**
+ * A menu row the gutter owns instead of delegating to `DropdownMenuItem`: picking one navigates
+ * within the open menu rather than closing it. It still has to join the menu's roving focus ring,
+ * or the arrow keys walk straight past it.
+ */
+function GutterMenuRow({
+  itemId,
+  label,
+  className,
+  onSelect,
+  children,
+}: {
+  itemId: string;
+  label: string;
+  className?: string;
+  onSelect: () => void;
+  children: ReactNode;
+}) {
+  const itemFocus = useDropdownMenuItemFocus(itemId);
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      aria-label={label}
+      className={cn(
+        "flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm outline-none transition-colors duration-[20ms] ease-in hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground",
+        className
+      )}
+      onClick={onSelect}
+      {...itemFocus}
+    >
+      {children}
+    </button>
+  );
+}
+
 export interface BlockGutterControlsProps {
   currentKind: MarkdownBlockKind;
   currentLevel?: HeadingLevel;
@@ -147,6 +192,7 @@ export function BlockGutterControls({
   const [turnIntoOpen, setTurnIntoOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const gripRef = useRef<HTMLButtonElement>(null);
+  const menuRowIdPrefix = useId();
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const turnIntoOptions = useMemo(
     () =>
@@ -284,33 +330,30 @@ export function BlockGutterControls({
               <DropdownMenuLabel className="px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                 {currentBlockLabel}
               </DropdownMenuLabel>
-              <button
-                type="button"
-                role="menuitem"
-                aria-label="Turn into"
-                className="flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm outline-none transition-colors duration-[20ms] ease-in hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
-                onClick={() => setTurnIntoOpen(true)}
+              <GutterMenuRow
+                itemId={`${menuRowIdPrefix}-turn-into`}
+                label="Turn into"
+                onSelect={() => setTurnIntoOpen(true)}
               >
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
                   <RefreshCw className="h-4 w-4" aria-hidden="true" />
                 </span>
                 <span className="min-w-0 flex-1 text-left">Turn into</span>
                 <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-              </button>
+              </GutterMenuRow>
               <DropdownMenuSeparator />
             </>
           ) : null}
           {!normalizedQuery && turnIntoOpen ? (
-            <button
-              type="button"
-              role="menuitem"
-              aria-label="Back to block actions"
-              className="mb-1 flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm outline-none transition-colors duration-[20ms] ease-in hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
-              onClick={() => setTurnIntoOpen(false)}
+            <GutterMenuRow
+              itemId={`${menuRowIdPrefix}-back`}
+              label="Back to block actions"
+              className="mb-1"
+              onSelect={() => setTurnIntoOpen(false)}
             >
               <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
               <span className="min-w-0 flex-1 text-left">Turn into</span>
-            </button>
+            </GutterMenuRow>
           ) : null}
           {showTurnIntoOptions && turnIntoOptions.length ? (
             <>

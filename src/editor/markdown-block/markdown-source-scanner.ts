@@ -58,6 +58,8 @@ export function scanMarkdownSource(markdown: string): MarkdownSourceSpan[] {
   let spanFrom = 0;
   let hasContent = false;
   let hasBoundary = false;
+  /** Whether the open paragraph is one a setext underline is allowed to close. */
+  let underlinable = false;
   let continuesList = false;
   let listStack: ListOpening[] = [];
 
@@ -76,6 +78,26 @@ export function scanMarkdownSource(markdown: string): MarkdownSourceSpan[] {
       hasContent = false;
       hasBoundary = false;
       lineIndex = raw.nextLineIndex;
+      continue;
+    }
+
+    // A setext underline ends the paragraph above it rather than continuing it, so the heading is a
+    // Block of its own even when prose follows on the very next line. Checked before the list branch
+    // because a one-character `-` underline is also a bare list marker, and CommonMark reads the
+    // underline. `underlinable` is what keeps the second `---` of a frontmatter block, or a line
+    // under a thematic break, from claiming the lines above it as a heading.
+    if (hasContent && !hasBoundary && underlinable && isSetextUnderlineLine(line)) {
+      let headingLastLine = lineIndex;
+      while (headingLastLine + 1 < lines.length && isBlankLine(lines[headingLastLine + 1])) {
+        headingLastLine += 1;
+      }
+
+      const headingTo = lines[headingLastLine].to;
+      spans.push(sourceSpan(markdown, spanFrom, headingTo));
+      spanFrom = headingTo;
+      hasContent = false;
+      hasBoundary = false;
+      lineIndex = headingLastLine + 1;
       continue;
     }
 
@@ -160,6 +182,11 @@ export function scanMarkdownSource(markdown: string): MarkdownSourceSpan[] {
     }
 
     const blank = isBlankLine(line);
+    // This line opens the Block's content whenever nothing but blanks precede it, and only a
+    // paragraph can be underlined: a thematic break is a Block in its own right.
+    if (!blank && (!hasContent || hasBoundary)) {
+      underlinable = !isThematicBreakLine(line);
+    }
     if (!blank && !hasContent && line.from > spanFrom) {
       spans.push(sourceSpan(markdown, spanFrom, line.from));
       spanFrom = line.from;
@@ -236,6 +263,14 @@ function isBlankLine(line: SourceLine): boolean {
 
 function isAtxHeadingLine(line: SourceLine): boolean {
   return /^ {0,3}#{1,6}(?:[ \t]+|$)/.test(line.body);
+}
+
+function isSetextUnderlineLine(line: SourceLine): boolean {
+  return /^ {0,3}(?:=+|-+)[ \t]*$/.test(line.body);
+}
+
+function isThematicBreakLine(line: SourceLine): boolean {
+  return /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(line.body);
 }
 
 function fenceOpening(line: SourceLine): FenceOpening | null {
@@ -400,6 +435,12 @@ function listItemEnd(
     }
     const nextFence = fenceOpening(relativeLine);
     if (nextFence) {
+      // Only a fence indented into the item's content column belongs to the item. A fence written
+      // to the left of that column interrupts the item the way CommonMark reads it, so a code
+      // block written under a list stays its own Block instead of disappearing into the last item.
+      if (leadingIndentColumns(line.body) < opening.contentIndent) {
+        return { to: line.from, nextLineIndex: lineIndex, continuesList: false };
+      }
       fence = nextFence;
       continue;
     }

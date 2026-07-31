@@ -1,4 +1,4 @@
-import { resolveKnowledgeWikiPage, type KnowledgePage } from "@/lib/knowledge-index";
+import { createKnowledgeWikiResolver, type KnowledgeWikiResolver } from "@/lib/knowledge-index";
 
 export type PageComputedPropertyValue = string | number | boolean | string[];
 
@@ -189,7 +189,8 @@ export function evaluatePageComputedProperties(
 interface EvaluationContext {
   definition: PageComputedPropertiesDefinition;
   pages: PageComputedPropertiesCatalogRow[];
-  knowledgePages: KnowledgePage[];
+  /** Wiki resolution index built once for the whole catalog, not per relation. */
+  wikiResolver: KnowledgeWikiResolver;
   pagesByIdentity: Map<string, PageComputedPropertiesCatalogRow>;
   memo: Map<string, EvaluationResult>;
   active: string[];
@@ -214,7 +215,7 @@ function createEvaluationContext(
   return {
     definition,
     pages,
-    knowledgePages,
+    wikiResolver: createKnowledgeWikiResolver(knowledgePages),
     pagesByIdentity: new Map(pages.map((page) => [pageIdentity(page), page])),
     memo: new Map(),
     active: [],
@@ -317,7 +318,7 @@ function evaluateRelation(
       );
       continue;
     }
-    const resolution = resolveKnowledgeWikiPage(context.knowledgePages, page.path, targetText);
+    const resolution = context.wikiResolver.resolve(page.path, targetText);
     if (resolution.status === "unresolved") {
       addDiagnostic(
         context,
@@ -471,7 +472,7 @@ function evaluateRollup(
     if (!targetPage) continue;
     const result = Object.hasOwn(context.definition.properties, definition.property)
       ? evaluateField(context, targetPage, definition.property)
-      : readSourceProperty(context, targetPage, definition.property, name);
+      : readSourceProperty(context, targetPage, definition.property, name, page);
     if (!result.ok) return result;
     if (Array.isArray(result.value)) values.push(...result.value);
     else values.push(result.value);
@@ -517,14 +518,17 @@ function readSourceProperty(
   context: EvaluationContext,
   page: PageComputedPropertiesCatalogRow,
   name: string,
-  diagnosticProperty: string
+  diagnosticProperty: string,
+  // A rollup reads its targets but fails on the Page that declares it, so the
+  // diagnostic belongs to that Page — the target row may not even be visible.
+  diagnosticPage: PageComputedPropertiesCatalogRow = page
 ): EvaluationResult {
   if (Object.hasOwn(page.properties, name)) {
     return { ok: true, value: cloneValue(page.properties[name] as PageComputedPropertyValue) };
   }
   addDiagnostic(
     context,
-    page,
+    diagnosticPage,
     diagnosticProperty,
     "missing-property",
     `Page ${page.path} has no source property ${name}.`

@@ -7,6 +7,7 @@ const { invokeMock } = vi.hoisted(() => ({
 import { useFileStore } from "@/stores/file-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { resolveWikiLinkTarget } from "@/editor/markdown-block/wiki-link";
 
 const now = "2026-04-30T00:00:00.000Z";
 
@@ -381,6 +382,87 @@ describe("useFileStore disk workspace", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("keeps the workspace open when a child vanishes mid-scan", async () => {
+    // A concurrent `rm -rf` inside the workspace makes the scan throw ENOENT for
+    // an inner path while the root itself is still there. Treating that as a
+    // missing root closed the workspace, dropped its recent entry, and unmounted
+    // the editor with its pending autosave.
+    useFileStore.setState({
+      openTarget: "folder",
+      rootPath: "/workspace",
+      files: [markdownFile("doc-1", "Journal.md")],
+      currentFileId: "doc-1",
+      openTabIds: ["doc-1"],
+      loadedContentIds: new Set(["doc-1"]),
+      recents: [{ kind: "folder", path: "/workspace" }],
+      isSynced: true,
+    });
+    window.history.replaceState({}, "", "/editor/doc-1?folder=%2Fworkspace");
+    invokeMock.mockRejectedValue(
+      new Error(
+        "Error invoking remote method 'shell:invoke': Error: ENOENT: no such file or directory, scandir '/workspace/Archive'"
+      )
+    );
+
+    await useFileStore.getState().loadFiles({ silent: true });
+
+    const state = useFileStore.getState();
+    expect(state.openTarget).toBe("folder");
+    expect(state.rootPath).toBe("/workspace");
+    expect(state.files.map((file) => file.id)).toEqual(["doc-1"]);
+    expect(state.currentFileId).toBe("doc-1");
+    expect(state.loadedContentIds).toEqual(new Set(["doc-1"]));
+    expect(state.recents).toEqual([{ kind: "folder", path: "/workspace" }]);
+    expect(state.isSynced).toBe(false);
+    expect(window.location.pathname + window.location.search).toBe(
+      "/editor/doc-1?folder=%2Fworkspace"
+    );
+  });
+
+  /*
+   * A scanned Page carries enough to resolve a Wiki Link to it.
+   *
+   * Resolution runs over the whole workspace, not the open Page, and it reads `meta.aliases`. The
+   * scan used to drop them on the floor, so `[[Alias]]` could only ever resolve to a Page the
+   * session had already opened — in a fresh window every alias link was dead and clicking one did
+   * nothing at all.
+   */
+  it("keeps a scanned Page's aliases, so an alias Wiki Link resolves before it is opened", async () => {
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "workspace_scan") {
+        return {
+          root: "/workspace",
+          documents: [
+            {
+              id: "roadmap",
+              idSource: "frontmatter",
+              path: "Notes/Roadmap.md",
+              name: "Roadmap.md",
+              title: "Roadmap",
+              documentType: "markdown",
+              aliases: ["Plan"],
+            },
+            {
+              id: "doc",
+              idSource: "path",
+              path: "Doc.md",
+              name: "Doc.md",
+              title: "Doc",
+              documentType: "markdown",
+            },
+          ],
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await useFileStore.getState().openFolder("/workspace");
+
+    const files = useFileStore.getState().files;
+    expect(files.find((file) => file.id === "roadmap")?.meta?.aliases).toEqual(["Plan"]);
+    expect(resolveWikiLinkTarget(files, "doc", "Plan")?.id).toBe("roadmap");
   });
 
   it("records the opened folder in the URL query so a webview refresh restores it", async () => {
@@ -1408,6 +1490,52 @@ describe("useFileStore disk workspace", () => {
     expect(state.justCreatedFileId).toBe(newId);
   });
 
+  it("evicts the cached body of a replaced Page so the next open reads disk", async () => {
+    // Replace-import rewrites the file on disk. Blanking the cached body while
+    // leaving the id in loadedContentIds made the next open render an empty
+    // editor against a stale revision instead of reading the replacement.
+    useFileStore.setState({
+      files: [
+        {
+          ...markdownFile("doc-1", "Notes.md"),
+          content: "Old body",
+          sourceRevision: "sha256:old",
+          outline: [{ id: "old", depth: 1, text: "Old" }],
+          meta: { id: "doc-1", title: "Old" },
+        },
+      ],
+      loadedContentIds: new Set(["doc-1"]),
+    });
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "doc_import_external") {
+        return {
+          id: "doc-1",
+          idSource: "path",
+          path: "Notes.md",
+          name: "Notes.md",
+          title: "Notes",
+          documentType: "markdown",
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    const id = await useFileStore.getState().importExternalFile({
+      name: "Notes.md",
+      parentId: null,
+      bytes: new Uint8Array([35, 32, 78]),
+      mode: "replace",
+    });
+
+    expect(id).toBe("doc-1");
+    const state = useFileStore.getState();
+    expect(state.getFile("doc-1")?.content).toBe("");
+    expect(state.getFile("doc-1")?.sourceRevision).toBeUndefined();
+    expect(state.getFile("doc-1")?.outline).toBeUndefined();
+    expect(state.getFile("doc-1")?.meta).toBeUndefined();
+    expect(state.loadedContentIds.has("doc-1")).toBe(false);
+  });
+
   it("flushes active Markdown edits before moving the Page on disk", async () => {
     const requestSave = vi.fn(async () => {
       useEditorStore.setState({ isDirty: false });
@@ -1790,5 +1918,55 @@ describe("useFileStore disk workspace", () => {
       useFileStore.setState({ loadFiles: originalLoadFiles });
       vi.unstubAllGlobals();
     }
+  });
+
+  it("saves a draft onto the existing file the user chose to replace", async () => {
+    // The native Save panel already asked "Draft.md already exists. Replace?"
+    // before it handed back this path; without carrying that consent to the
+    // write, `doc_create` refuses and the draft goes nowhere.
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "doc_create") {
+        return {
+          id: "doc-draft",
+          idSource: "frontmatter",
+          path: "Draft.md",
+          name: "Draft.md",
+          title: "Draft",
+          documentType: "markdown",
+        };
+      }
+      if (command === "doc_read") {
+        return {
+          markdown: "# Draft",
+          meta: { id: "doc-draft", title: "Draft" },
+          outline: [],
+          revision: "sha256:draft",
+        };
+      }
+      return undefined;
+    });
+
+    useFileStore.getState().createTransientFile("Untitled-1.md");
+    useFileStore.getState().setTransientMarkdown("# Draft");
+
+    const newId = await useFileStore.getState().materializeTransient("/notes/Draft.md");
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      "doc_create",
+      expect.objectContaining({
+        root: "/notes",
+        payload: expect.objectContaining({
+          path: "Draft.md",
+          markdown: "# Draft",
+          replaceExisting: true,
+        }),
+      })
+    );
+    const state = useFileStore.getState();
+    expect(newId).toBe(state.currentFileId);
+    expect(state.transientFile).toBeNull();
+    expect(state.openFilePath).toBe("/notes/Draft.md");
+    expect(state.files.map((file) => file.name)).toEqual(["Draft.md"]);
   });
 });

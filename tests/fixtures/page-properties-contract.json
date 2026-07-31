@@ -59,6 +59,30 @@
       "filename": "Nested custom.md",
       "source": "---\nid: nested-custom\nworkflow:\n  status: todo\n---\n\nBody\n",
       "patch": { "workflow": "replacement" }
+    },
+    {
+      "name": "folded block scalar property",
+      "filename": "Folded.md",
+      "source": "---\nid: folded\nsummary: >\n  first folded line\n  second folded line\nstatus: draft\n---\n\nBody\n",
+      "patch": { "summary": "replacement" }
+    },
+    {
+      "name": "literal block scalar property with a chomping indicator",
+      "filename": "Literal.md",
+      "source": "---\nid: literal\nnotes: |-\n  line one\n  line two\n---\n\nBody\n",
+      "patch": { "notes": "replacement" }
+    },
+    {
+      "name": "flow sequence property wrapped over indented lines",
+      "filename": "Wrapped tags.md",
+      "source": "---\nid: wrapped-tags\ntags: [\n  \"alpha\",\n  \"beta\"\n]\n---\n\nBody\n",
+      "patch": { "tags": ["replacement"] }
+    },
+    {
+      "name": "flow mapping property wrapped without indentation",
+      "filename": "Wrapped custom.md",
+      "source": "---\nid: wrapped-custom\nsettings: {\n\"a\": 1\n}\n---\n\nBody\n",
+      "patch": { "settings": "replacement" }
     }
   ],
   "invalid": [

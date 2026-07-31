@@ -1,11 +1,16 @@
+import { render } from "@testing-library/react";
+import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
 import {
   markdownTableBlankRow,
   markdownTableCellAt,
+  markdownTableCellSourceOffset,
+  markdownTableCellText,
   markdownTableNeighbourCell,
   parseMarkdownTableSource,
 } from "@/editor/markdown-block/markdown-table";
+import { MarkdownTableBlock } from "@/editor/markdown-block/markdown-table-block";
 
 const TABLE = "| A | B |\n| --- | :-: |\n| a1 | b1 |\n| a2 | b2 |";
 
@@ -96,5 +101,57 @@ describe("table cell navigation", () => {
     expect(markdownTableBlankRow(parseMarkdownTableSource("|a|b|c|\n|-|-|-|\n|1|2|3|")!)).toBe(
       "\n|  |  |  |"
     );
+  });
+});
+
+describe("table cell text", () => {
+  it("resolves an escaped pipe, inside a code span as much as outside one", () => {
+    // The escape belongs to the table syntax and is resolved before the cell is parsed as Markdown,
+    // so it goes even where inline escapes do not apply.
+    expect(markdownTableCellText("a \\| b")).toBe("a | b");
+    expect(markdownTableCellText("`x \\| y`")).toBe("`x | y`");
+    // Nothing else is this parser's escape: every other backslash is inline syntax and stays.
+    expect(markdownTableCellText("a \\* b \\\\ c")).toBe("a \\* b \\\\ c");
+  });
+
+  it("maps an offset in the rendered text back to the source it came from", () => {
+    const cell = "a \\| b";
+    expect(markdownTableCellSourceOffset(cell, 0)).toBe(0);
+    // Rendered as `a | b`: the space after the pipe is offset 3 there and offset 4 in the source.
+    expect(markdownTableCellSourceOffset(cell, 3)).toBe(4);
+    expect(markdownTableCellSourceOffset(cell, "a | b".length)).toBe(cell.length);
+  });
+});
+
+describe("rendered grid", () => {
+  const ALIGNED = "| a `x \\| y` | z |\n| --- | :-: |\n| 1 | 2 |";
+
+  function renderGrid(source: string) {
+    const geometry = parseMarkdownTableSource(source)!;
+    return render(
+      createElement(MarkdownTableBlock, {
+        blockId: "block-1",
+        source,
+        geometry,
+        editable: false,
+        renderCell: (text: string) => createElement("span", null, text),
+      })
+    );
+  }
+
+  it("shows a cell's escaped pipe as the pipe it escapes", () => {
+    const { container } = renderGrid(ALIGNED);
+    expect(container.textContent).toContain("`x | y`");
+    expect(container.textContent).not.toContain("\\|");
+  });
+
+  it("says how each column is aligned on every cell, header cells included", () => {
+    const { container } = renderGrid(ALIGNED);
+    const header = container.querySelectorAll("th");
+    expect(header[0].getAttribute("data-align")).toBe("left");
+    expect(header[1].getAttribute("data-align")).toBe("center");
+    const body = container.querySelectorAll("td");
+    expect(body[0].getAttribute("data-align")).toBe("left");
+    expect(body[1].getAttribute("data-align")).toBe("center");
   });
 });

@@ -362,6 +362,36 @@ describe("parseMarkdownContainer round trips", () => {
     );
   });
 
+  it("keeps a callout's fold marker when its type is changed", () => {
+    // `[!NOTE]-` is what makes a callout start collapsed in Obsidian. doXmind does not honour it, so
+    // dropping it changes nothing on screen and everything in the file the user opens elsewhere.
+    const collapsed = parseMarkdownContainer("callout", "> [!NOTE]- Hidden details\n> body");
+    expect(collapsed?.withType?.("tip")).toBe("> [!TIP]- Hidden details\n> body");
+
+    const expanded = parseMarkdownContainer("callout", "> [!NOTE]+ Shown\n> body");
+    expect(expanded?.withType?.("warning")).toBe("> [!WARNING]+ Shown\n> body");
+
+    // A callout without one still changes type without gaining a marker it never had.
+    const plain = parseMarkdownContainer("callout", "> [!TIP] Title\n> body");
+    expect(plain?.withType?.("note")).toBe("> [!NOTE] Title\n> body");
+  });
+
+  it("changes a type without touching the header's own spacing", () => {
+    // The marker's tab, and the space left behind by a title the file never had, are both bytes the
+    // user's file already holds. `withHeading` drops the gap when the *user* deletes the title, which
+    // is their edit; changing the type is not, so nothing here is tidied. Pinned because the obvious
+    // reading of `> [!TIP] ` is that the editor left a space behind, and it did not — it kept one.
+    const spaced = parseMarkdownContainer("callout", "> [!NOTE] \n> body");
+    expect(spaced?.heading).toBe("");
+    expect(spaced?.withType?.("tip")).toBe("> [!TIP] \n> body");
+
+    const tabbed = parseMarkdownContainer("callout", "> [!NOTE]\tTitle");
+    expect(tabbed?.withType?.("caution")).toBe("> [!CAUTION]\tTitle");
+
+    const bare = parseMarkdownContainer("callout", "> [!NOTE]\n> body");
+    expect(bare?.withType?.("tip")).toBe("> [!TIP]\n> body");
+  });
+
   it("refuses a source that is not a container, so the caller can keep its fallback", () => {
     expect(parseMarkdownContainer("callout", "> Just a quote")).toBeNull();
     expect(parseMarkdownContainer("toggle", "<details>not a toggle</details>")).toBeNull();
