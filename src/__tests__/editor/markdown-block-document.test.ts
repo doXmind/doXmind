@@ -196,6 +196,27 @@ describe("MarkdownBlockDocument", () => {
     expect(document.undo()).toEqual({ ...before, revision: 2 });
   });
 
+  it.each<[string, string, number]>([
+    ["a tab-indented sibling", "- a\n\t- b\n\t- c\n", 2],
+    ["a sibling whose marker gap is a tab", "-\ta\n-\tb\n", 1],
+  ])("moves %s a whole level in one press", (_name, markdown, expectedDepth) => {
+    // The parent's nesting indent is always spaces, so prefixing it to a tab-indented sibling
+    // landed on the same tab stop: the file changed, the depth did not, and Tab felt dead.
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+    const target = before.blocks.at(-1)!;
+
+    const result = document.apply({ type: "indentBlocks", blockIds: [target.id] });
+
+    expect(result.snapshot.blocks.at(-1)?.depth).toBe(expectedDepth);
+    expect(
+      MarkdownBlockDocument.fromMarkdown(result.snapshot.markdown)
+        .getSnapshot()
+        .blocks.map((block) => `${block.kind}@${block.depth}`)
+    ).toEqual(result.snapshot.blocks.map((block) => `${block.kind}@${block.depth}`));
+    expect(document.undo().markdown).toBe(markdown);
+  });
+
   it("outdents a list Block with its descendants while preserving markers and CRLF", () => {
     const markdown =
       "- parent\r\n  + [X] child\r\n    continuation\r\n    7) grandchild\r\n- after\r\n";
@@ -376,6 +397,38 @@ describe("MarkdownBlockDocument", () => {
     for (const block of snapshot.blocks) {
       expect(block.raw).toBe(markdown.slice(block.from, block.to));
     }
+  });
+
+  it.each<[string, string]>([
+    ["spaced asterisks", "* * *"],
+    ["spaced dashes", "- - -"],
+    ["four spaced asterisks", "* * * *"],
+  ])("classifies a %s divider as a thematic break, not a bullet", (_name, divider) => {
+    // The bullet pattern matches `* * *` marker-then-space, so the divider used to open a list item
+    // whose text read `* *`. Splitting it then wrote a second `*` item and destroyed the rule.
+    const markdown = `intro\n\n${divider}\n\nmore\n`;
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const snapshot = document.getSnapshot();
+
+    expect(snapshot.blocks.map((block) => block.kind)).toEqual([
+      "paragraph",
+      "thematic_break",
+      "paragraph",
+    ]);
+    expect(snapshot.markdown).toBe(markdown);
+    expect(() =>
+      document.apply({ type: "split", blockId: snapshot.blocks[1].id, at: divider.length })
+    ).toThrow();
+    expect(document.getSnapshot().markdown).toBe(markdown);
+  });
+
+  it("still reads a short marker run as a list item", () => {
+    const snapshot = MarkdownBlockDocument.fromMarkdown("- -\n\n* item\n").getSnapshot();
+
+    expect(snapshot.blocks.map((block) => block.kind)).toEqual([
+      "bullet_list_item",
+      "bullet_list_item",
+    ]);
   });
 
   it("edits semantic source blocks losslessly but rejects unsafe structural commands", () => {
@@ -795,6 +848,44 @@ describe("MarkdownBlockDocument", () => {
     expect(result.snapshot.markdown).toBe("He\r\n\r\nllo\r\n");
   });
 
+  it.each<[string, string, string, string]>([
+    ["a heading before a paragraph", "# H\n\nbody\n", "# H\n\n\n\nbody\n", "# H\n\nX\n\nbody\n"],
+    [
+      "a paragraph before a paragraph",
+      "para\n\nnext\n",
+      "para\n\n\n\nnext\n",
+      "para\n\nX\n\nnext\n",
+    ],
+    ["the last Block on the Page", "tail\n", "tail\n\n\n", "tail\n\nX\n"],
+  ])(
+    "does not grow the blank-line run each time Enter ends %s",
+    (_name, markdown, afterSplit, afterTyping) => {
+      // The new Block holds nothing but line endings, so it cannot survive a reload — but its blank
+      // lines do. Carrying the anchor's whole separator into it as well as onto the anchor left two
+      // more of them behind on every cycle, without bound.
+      const splitAtEnd = (source: string) => {
+        const document = MarkdownBlockDocument.fromMarkdown(source);
+        const first = document.getSnapshot().blocks[0];
+        const content = first.raw.replace(/(?:\r\n|\n|\r)+$/, "").length;
+        return { document, ...document.apply({ type: "split", blockId: first.id, at: content }) };
+      };
+
+      const once = splitAtEnd(markdown);
+      expect(once.snapshot.markdown).toBe(afterSplit);
+      // A tab away and back rebuilds the document from these bytes, so the cycle has to settle.
+      expect(splitAtEnd(afterSplit).snapshot.markdown).toBe(afterSplit);
+      // And the capped separator still keeps the new Block off its neighbours once it has text.
+      expect(
+        once.document.apply({
+          type: "replaceText",
+          blockId: once.snapshot.blocks[1].id,
+          range: { from: 0, to: 0 },
+          text: "X",
+        }).snapshot.markdown
+      ).toBe(afterTyping);
+    }
+  );
+
   it("splits a bullet item into adjacent source-backed list Blocks", () => {
     const document = MarkdownBlockDocument.fromMarkdown("- one two\r\n- keep\r\n");
     const before = document.getSnapshot();
@@ -972,6 +1063,39 @@ describe("MarkdownBlockDocument", () => {
       anchor: 0,
       head: 0,
     });
+  });
+
+  it.each<[string, string]>([
+    ["tab-indented children", "- a\n\t- b\n\t- c\n"],
+    ["four-space children", "- a\n    - b\n    - c\n"],
+  ])("leaves a list parent alone when unwrapping it would bury its %s", (_name, markdown) => {
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({ type: "mergeBackward", blockId: before.blocks[0].id });
+
+    // Unwrapping the parent puts a blank line in front of children indented four columns, which
+    // reads back as an indented code block — the children stop being list items on disk while the
+    // live view still shows them. `setKind` already refuses the same intent.
+    expect(result.snapshot.markdown).toBe(markdown);
+    expect(result.snapshot.blocks.map((block) => `${block.kind}@${block.depth ?? "-"}`)).toEqual(
+      before.blocks.map((block) => `${block.kind}@${block.depth ?? "-"}`)
+    );
+    expect(document.undo().markdown).toBe(markdown);
+  });
+
+  it("still unwraps a list parent whose children survive as list items", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("- a\n  - b\n");
+    const before = document.getSnapshot();
+
+    const result = document.apply({ type: "mergeBackward", blockId: before.blocks[0].id });
+
+    expect(result.snapshot.markdown).toBe("a\n\n  - b\n");
+    expect(
+      MarkdownBlockDocument.fromMarkdown(result.snapshot.markdown)
+        .getSnapshot()
+        .blocks.map((block) => `${block.kind}@${block.depth ?? "-"}`)
+    ).toEqual(result.snapshot.blocks.map((block) => `${block.kind}@${block.depth ?? "-"}`));
   });
 
   it("unwraps a blockquote at its payload boundary", () => {
@@ -1707,6 +1831,26 @@ describe("moveBlocks re-indents what it moves", () => {
     ).toEqual(["bullet_list_item@0", "bullet_list_item@1", "bullet_list_item@0", "paragraph@-"]);
   });
 
+  it("refuses the move when the re-indented range cannot be validated", () => {
+    // Landing next to a thematic break re-segments the candidate, so the correct dedent to `- c`
+    // cannot be verified. Committing the un-shifted `    - c` would have written an indented code
+    // block into the Page while the live view still called it a list item.
+    const markdown = "# Notes\n\nSome intro.\n\n---\n\n- a\n  - b\n    - c\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const blocks = document.getSnapshot().blocks;
+    const moved = blocks.find((block) => block.raw.includes("- c"))!;
+    const before = blocks.find((block) => block.raw.startsWith("---"))!;
+
+    const result = document.apply({
+      type: "moveBlocks",
+      blockIds: [moved.id],
+      beforeId: before.id,
+    });
+
+    expect(result.snapshot.markdown).toBe(markdown);
+    expect(document.undo().markdown).toBe(markdown);
+  });
+
   it("leaves a paragraph move's own bytes untouched", () => {
     const result = move("one\n\ntwo\n\nthree\n", "three", "one");
     // The trailing blank line is `ensureBlockBoundary` normalising the new last Block, unrelated to
@@ -1782,5 +1926,100 @@ describe("replaceBlocks converts a whole range in one revision", () => {
     ]);
     expect(result.snapshot.revision).toBe(before.revision + 1);
     expect(document.undo().markdown).toBe(markdown);
+  });
+});
+
+describe("setext headings", () => {
+  const markdown = "Setext H1\n=========\n\nbody\n\n## ATX H2\n\nmore\n";
+
+  it("reports the underlined Block as a heading with its own level", () => {
+    const snapshot = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot();
+
+    expect(snapshot.blocks.map((block) => [block.kind, block.level])).toEqual([
+      ["heading", 1],
+      ["paragraph", undefined],
+      ["heading", 2],
+      ["paragraph", undefined],
+    ]);
+    expect(snapshot.markdown).toBe(markdown);
+  });
+
+  it("keeps the underline attached when the heading text is edited", () => {
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const heading = document.getSnapshot().blocks[0];
+
+    const result = document.apply({
+      type: "replaceText",
+      blockId: heading.id,
+      range: { from: 7, to: 9 },
+      text: "One",
+    });
+
+    expect(result.snapshot.markdown).toBe("Setext One\n=========\n\nbody\n\n## ATX H2\n\nmore\n");
+    expect(result.snapshot.blocks[0]).toMatchObject({ kind: "heading", level: 1 });
+  });
+
+  it("drops the underline when the heading is turned into a paragraph", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("Setext H2\n---\n\nbody\n");
+    const heading = document.getSnapshot().blocks[0];
+
+    const result = document.apply({ type: "setKind", blockId: heading.id, kind: "paragraph" });
+
+    expect(result.snapshot.markdown).toBe("Setext H2\n\nbody\n");
+    expect(result.snapshot.blocks.map((block) => block.kind)).toEqual(["paragraph", "paragraph"]);
+  });
+
+  it("writes an ATX marker when the heading level is set explicitly", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("Setext H1\n===\n\nbody\n");
+    const heading = document.getSnapshot().blocks[0];
+
+    const result = document.apply({
+      type: "setKind",
+      blockId: heading.id,
+      kind: "heading",
+      level: 3,
+    });
+
+    expect(result.snapshot.markdown).toBe("### Setext H1\n\nbody\n");
+    expect(result.snapshot.blocks[0]).toMatchObject({ kind: "heading", level: 3 });
+  });
+
+  it("starts an ordinary paragraph when Enter lands at the end of the heading", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("Setext H1\n===\n\nbody\n");
+    const heading = document.getSnapshot().blocks[0];
+
+    const result = document.apply({
+      type: "split",
+      blockId: heading.id,
+      at: "Setext H1\n===".length,
+    });
+
+    expect(result.snapshot.blocks.map((block) => [block.kind, block.level])).toEqual([
+      ["heading", 1],
+      ["paragraph", undefined],
+      ["paragraph", undefined],
+    ]);
+    expect(result.snapshot.blocks[0].raw).toBe("Setext H1\n===\n\n");
+  });
+
+  it("merges the heading's text without carrying its underline into the Block above", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("Alpha\n\nSetext H1\n===\n");
+    const heading = document.getSnapshot().blocks[1];
+
+    const result = document.apply({ type: "mergeBackward", blockId: heading.id });
+
+    expect(result.snapshot.markdown).toBe("AlphaSetext H1\n");
+    expect(result.snapshot.blocks.map((block) => block.kind)).toEqual(["paragraph"]);
+  });
+
+  it("leaves Backspace inert at the start of the Block under the heading", () => {
+    const markdown = "Setext H1\n===\n\nbody\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const body = document.getSnapshot().blocks[1];
+
+    // Joining the text onto the underline would stop it being one, quietly demoting the heading.
+    expect(document.apply({ type: "mergeBackward", blockId: body.id }).snapshot.markdown).toBe(
+      markdown
+    );
   });
 });

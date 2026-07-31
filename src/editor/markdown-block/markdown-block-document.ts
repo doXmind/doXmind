@@ -397,6 +397,10 @@ export class MarkdownBlockDocument {
       }
       const parentSyntax = listItemSyntax(parent.raw, true);
       if (!parentSyntax) throw new Error("indentBlocks requires a source-backed list sibling");
+      const nestingIndent = nestingIndentInto(
+        parentSyntax,
+        listItemSyntax(selected[0].raw, true) ?? parentSyntax
+      );
 
       let endIndex = firstIndex + length;
       const selectedRootDepth = Math.min(...selected.map((block) => block.depth ?? 0));
@@ -413,7 +417,7 @@ export class MarkdownBlockDocument {
         const candidate = sourceBlocks[blockIndex];
         sourceBlocks[blockIndex] = {
           ...candidate,
-          raw: indentSourceLines(candidate.raw, parentSyntax.nestingIndent),
+          raw: indentSourceLines(candidate.raw, nestingIndent),
           depth: (candidate.depth ?? 0) + 1,
         };
       }
@@ -468,12 +472,12 @@ export class MarkdownBlockDocument {
           : reordered.findIndex((block) => block.id === command.beforeId);
       if (beforeIndex < 0) throw new Error(`unknown before block: ${command.beforeId}`);
 
+      const normalized = normalizeMovedListIndent(reordered, beforeIndex, selected);
+      // Committing the un-shifted range would write the very indentation the shift exists to avoid,
+      // so an unverifiable drop is refused outright rather than landed as source.
+      if (normalized === null) return { snapshot: this.getSnapshot() };
       this.recordHistory();
-      reordered.splice(
-        beforeIndex,
-        0,
-        ...normalizeMovedListIndent(reordered, beforeIndex, selected)
-      );
+      reordered.splice(beforeIndex, 0, ...normalized);
       for (const boundaryIndex of [beforeIndex - 1, beforeIndex + selected.length - 1]) {
         if (boundaryIndex < 0 || boundaryIndex >= reordered.length - 1) continue;
         reordered[boundaryIndex] = ensureBlockBoundary(
@@ -807,14 +811,25 @@ export class MarkdownBlockDocument {
         : carriesHeading
           ? headingMarker + rightContent
           : rightContent;
+      const newline = preferredLineEnding(block.raw, this.markdown);
+      // Enter at the very end makes a Block with nothing but line endings in it. No scan can produce
+      // such a Block, so it dies on the next reload while its blank lines stay — and because the
+      // anchor's whole separator was carried onto both halves, every press left two more of them
+      // behind, without bound. Cap what the contentless half carries at the boundary it needs, so a
+      // repeated press settles instead of accumulating. Anything shorter is left exactly as it is.
+      const separatorLimit = index + 1 < sourceBlocks.length ? 2 : 1;
+      const rightSeparator =
+        rightRaw.length > 0 || countLineEndings(separator) <= separatorLimit
+          ? separator
+          : newline.repeat(separatorLimit);
       let left = reclassifyEditableSource(block, leftContent);
       const right = blockFromSource(
-        rightRaw + separator,
+        rightRaw + rightSeparator,
         `block-${this.nextBlockNumber}`,
         listItem ? block.depth : undefined
       );
       this.nextBlockNumber += 1;
-      left = ensureBlockBoundary(left, right, preferredLineEnding(block.raw, this.markdown));
+      left = ensureBlockBoundary(left, right, newline);
       sourceBlocks.splice(index, 1, left, right);
       this.commitSources(sourceBlocks);
       this.revision += 1;
@@ -837,13 +852,21 @@ export class MarkdownBlockDocument {
           (previousBlock === null ||
             listItemFamily(previousBlock.kind) !== listItemFamily(block.kind)));
       if (unwrapCurrent) {
-        this.recordHistory();
+        const subtreeEndIndex = listDescendantRangeEnd(sourceBlocks, index, 1);
         const { content, separator } = splitBlockSource(block.raw);
         sourceBlocks[index] = blockFromSource(
           plainBlockContent(block, content) + separator,
           block.id
         );
         normalizeNeighborBoundaries(sourceBlocks, index, this.markdown);
+        // Losing the marker also loses the column the children nested against: children indented
+        // four columns read back as an indented code block once the blank line lands in front of
+        // them, so they stop being list items on disk while the live view still shows them.
+        // `setKind` refuses the same intent; a keystroke goes inert rather than throwing.
+        if (!listDescendantsSurviveSource(sourceBlocks, index, subtreeEndIndex)) {
+          return { snapshot: this.getSnapshot() };
+        }
+        this.recordHistory();
         this.commitSources(sourceBlocks);
         this.revision += 1;
         return {
@@ -857,7 +880,10 @@ export class MarkdownBlockDocument {
         !previous.editable ||
         !block.editable ||
         isMarkdownSourceOnlyBlockKind(previous.kind) ||
-        isMarkdownSourceOnlyBlockKind(block.kind)
+        isMarkdownSourceOnlyBlockKind(block.kind) ||
+        // Text joined onto a setext heading lands on the underline and stops it being one, so the
+        // heading above would quietly dissolve into a paragraph.
+        isSetextHeadingBlock(previous)
       ) {
         // Backspace at the start of a Block whose neighbour has no text representation is a
         // no-op, not an error: a divider, image, table or diagram cannot absorb text. Returning
@@ -1268,6 +1294,27 @@ function listDescendantRangeEnd(
   return endIndex;
 }
 
+/**
+ * Whether the Blocks in `[index, endIndex)` still scan back to the kinds they claim.
+ *
+ * Only the rewritten Block and its own descendants are re-scanned: what a nested item means depends
+ * on the item above it, never on what follows the subtree.
+ */
+function listDescendantsSurviveSource(
+  blocks: readonly MarkdownBlockSource[],
+  index: number,
+  endIndex: number
+): boolean {
+  if (endIndex <= index + 1) return true;
+  const region = blocks.slice(index, endIndex);
+  const scanned = scanMarkdownSource(region.map((block) => block.raw).join(""));
+  if (scanned.length !== region.length) return false;
+  return region.every(
+    (block, offset) =>
+      blockFromSource(scanned[offset].raw, block.id, scanned[offset].listDepth).kind === block.kind
+  );
+}
+
 function assertListDescendantsSelected(
   blocks: readonly MarkdownBlockSource[],
   firstIndex: number,
@@ -1410,7 +1457,13 @@ function listMarkerForKind(kind: ListItemBlockKind): string {
 }
 
 function plainBlockContent(block: MarkdownBlockSource, content: string): string {
-  if (block.kind === "heading") return content.replace(/^#{1,6}[ \t]+/, "");
+  if (block.kind === "heading") {
+    // A setext heading's syntax is its underline, so that is what comes off. Leaving it on made the
+    // heading's own text carry a `===` line into whatever the Block turned into.
+    const underline = SETEXT_UNDERLINE.exec(content);
+    if (underline) return content.slice(0, underline.index);
+    return content.replace(/^#{1,6}[ \t]+/, "");
+  }
   const listItem = listItemSyntax(block.raw, block.depth !== undefined);
   if (listItem) return content.slice(listItem.contentFrom);
   if (block.kind === "blockquote") {
@@ -1430,14 +1483,15 @@ function prefixSourceLines(source: string, prefix: string): string {
  * Without this, dragging a depth-2 item to the top of the Page left `    - c` — four leading spaces,
  * which Markdown reads as an indented code block. The Block silently stopped being a list item, and
  * that is the user's file, not a view. The shift is applied to the whole range so nesting *within*
- * the moved subtree is preserved, and it is validated by re-scanning: if the result would not parse
- * back to the intended kinds and depths, the original bytes are kept rather than made worse.
+ * the moved subtree is preserved, and it is validated by re-scanning: `null` means the result would
+ * not parse back to the intended kinds, and the caller must abandon the move. Keeping the
+ * un-shifted bytes instead is not a safe fallback — those are exactly the bytes that corrupt.
  */
 function normalizeMovedListIndent(
   reordered: readonly MarkdownBlockSource[],
   beforeIndex: number,
   selected: readonly MarkdownBlockSource[]
-): MarkdownBlockSource[] {
+): MarkdownBlockSource[] | null {
   const moved = [...selected];
   if (moved.every((block) => listItemFamily(block.kind) === null)) return moved;
 
@@ -1469,11 +1523,11 @@ function normalizeMovedListIndent(
     ...reordered.slice(beforeIndex),
   ];
   const scanned = scanMarkdownSource(candidate.map((block) => block.raw).join(""));
-  if (scanned.length !== candidate.length) return moved;
+  if (scanned.length !== candidate.length) return null;
   for (const [index, block] of shifted.entries()) {
     const span = scanned[beforeIndex + index];
     if (!span || blockFromSource(span.raw, block.id, span.listDepth).kind !== block.kind) {
-      return moved;
+      return null;
     }
   }
   return shifted;
@@ -1561,6 +1615,15 @@ function blockFromSource(raw: string, id: string, listDepth?: number): MarkdownB
     };
   }
 
+  if (isSetextHeadingSource(raw)) {
+    return {
+      id,
+      kind: "heading",
+      raw,
+      editable: true,
+    };
+  }
+
   if (mermaidFenceSource(raw)) {
     return {
       id,
@@ -1597,7 +1660,12 @@ function blockFromSource(raw: string, id: string, listDepth?: number): MarkdownB
     };
   }
 
-  const listItem = listItemSyntax(raw, listDepth !== undefined);
+  // A spaced divider is marker-then-space, so the list pattern claims it before the thematic-break
+  // check further down ever runs. CommonMark gives the break precedence; the list reading is never
+  // the right one.
+  const listItem = isSpacedThematicBreakSource(raw)
+    ? null
+    : listItemSyntax(raw, listDepth !== undefined);
   if (listItem) {
     return {
       id,
@@ -1666,6 +1734,36 @@ function blockFromSource(raw: string, id: string, listDepth?: number): MarkdownB
     return { id, kind: "unsupported", raw, editable: true };
   }
   return { id, kind: "paragraph", raw, editable: true };
+}
+
+/** The `=` or `-` run underlining a setext heading, matched with the line ending in front of it. */
+const SETEXT_UNDERLINE = /(?:\r\n|\n|\r) {0,3}(=+|-+)[ \t]*$/;
+
+/**
+ * A heading written with an underline rather than an ATX marker.
+ *
+ * `---` is a thematic break, a setext underline and a frontmatter delimiter depending only on what
+ * sits above it, so the underline's shape cannot decide on its own. The lexer settles it: a setext
+ * heading lexes as exactly one heading token, while `---\ntitle: x\n---` lexes as a break followed
+ * by one and stays a raw Block. Gated on the cheap shape test so the lexer never runs for a source
+ * that could not be one either way.
+ */
+function isSetextHeadingSource(raw: string): boolean {
+  const { content } = splitBlockSource(raw);
+  if (!SETEXT_UNDERLINE.test(content)) return false;
+  const tokens = nativeBlockLexer.lexer(content);
+  return tokens.length === 1 && tokens[0].type === "heading";
+}
+
+/** True for a heading Block already classified as one, written in setext form. */
+function isSetextHeadingBlock(block: MarkdownBlockSource): boolean {
+  return block.kind === "heading" && SETEXT_UNDERLINE.test(splitBlockSource(block.raw).content);
+}
+
+/** A single-line thematic break whose markers are separated, like `* * *` or `- - -`. */
+function isSpacedThematicBreakSource(raw: string): boolean {
+  const { content } = splitBlockSource(raw);
+  return /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(content);
 }
 
 function pageCollectionFenceSource(raw: string): boolean {
@@ -1743,6 +1841,23 @@ function listItemSyntax(raw: string, allowNested = false): ListItemSourceSyntax 
     };
   }
   return null;
+}
+
+/**
+ * Indentation that moves `child` into `parent`'s content column.
+ *
+ * `nestingIndent` is always spaces, so prefixing it to a tab-indented sibling did not move the
+ * sibling at all — two spaces in front of a tab still land on the same tab stop, and the Block kept
+ * its old depth while the file gained junk whitespace. Widen the unit until the column really moves.
+ */
+function nestingIndentInto(parent: ListItemSourceSyntax, child: ListItemSourceSyntax): string {
+  const childIndentation = child.prefix.slice(0, child.indent);
+  let indentation = parent.nestingIndent;
+  // Terminates: the measured column is never below the number of spaces prefixed.
+  while (advanceMarkdownColumns(0, indentation + childIndentation) < parent.contentIndent) {
+    indentation += " ";
+  }
+  return indentation;
 }
 
 /**
@@ -1846,12 +1961,25 @@ function spansFromSources(blocks: MarkdownBlockSource[]): MarkdownBlockSpan[] {
 
 function blockViewFromSpan(markdown: string, block: MarkdownBlockSpan): MarkdownBlockView {
   const raw = markdown.slice(block.from, block.to);
-  const heading = block.kind === "heading" ? raw.match(/^(#{1,6})[ \t]+/) : null;
   const listItem = listItemSyntax(raw, block.depth !== undefined);
   return {
     ...block,
-    level: heading?.[1].length as 1 | 2 | 3 | 4 | 5 | 6 | undefined,
+    level: block.kind === "heading" ? headingLevel(raw) : undefined,
     checked: listItem?.checked,
     raw,
   };
+}
+
+/**
+ * The level of a heading Block, from its ATX marker or from its underline.
+ *
+ * No lexing here: the Block is already classified, so a heading that carries no `#` marker can only
+ * be a setext one, and this runs for every Block of every snapshot.
+ */
+function headingLevel(raw: string): 1 | 2 | 3 | 4 | 5 | 6 | undefined {
+  const atx = raw.match(/^(#{1,6})[ \t]+/);
+  if (atx) return atx[1].length as 1 | 2 | 3 | 4 | 5 | 6;
+  const underline = SETEXT_UNDERLINE.exec(splitBlockSource(raw).content)?.[1];
+  if (!underline) return undefined;
+  return underline[0] === "=" ? 1 : 2;
 }

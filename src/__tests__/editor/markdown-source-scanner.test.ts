@@ -301,4 +301,105 @@ describe("scanMarkdownSource", () => {
     expect(spans[0]).toMatchObject({ from: 0, to: leading.length });
     expect(spans[1]).toMatchObject({ from: leading.length, to: markdown.length });
   });
+
+  it("leaves a fence written left of a list item's content column out of the item", () => {
+    const markdown = "- item\n```\ncode\n```\n";
+
+    const spans = scanMarkdownSource(markdown);
+
+    expect(spans.map((span) => span.raw)).toEqual(["- item\n", "```\ncode\n```\n"]);
+    expect(spans.map((span) => span.listDepth)).toEqual([0, undefined]);
+    expect(spans.map((span) => span.raw).join("")).toBe(markdown);
+    expect(
+      MarkdownBlockDocument.fromMarkdown(markdown)
+        .getSnapshot()
+        .blocks.map((block) => block.kind)
+    ).toEqual(["bullet_list_item", "fenced_code"]);
+  });
+
+  it("keeps a fence indented into the item's content column inside the item", () => {
+    const markdown = "- item\n  ```\n  code\n  ```\n";
+
+    expect(scanMarkdownSource(markdown).map((span) => span.raw)).toEqual([markdown]);
+  });
+});
+
+describe("setext headings", () => {
+  it("ends a Block at the underline instead of swallowing what follows", () => {
+    const markdown = "Setext H1\n=========\nnext paragraph\n";
+
+    const spans = scanMarkdownSource(markdown);
+
+    expect(spans.map((span) => span.raw)).toEqual(["Setext H1\n=========\n", "next paragraph\n"]);
+    expect(spans.map((span) => span.raw).join("")).toBe(markdown);
+  });
+
+  it("keeps a multi-line heading and its trailing blank lines in one Block", () => {
+    const markdown = "first\nsecond\n===\n\nbody\n";
+
+    const spans = scanMarkdownSource(markdown);
+
+    expect(spans.map((span) => span.raw)).toEqual(["first\nsecond\n===\n\n", "body\n"]);
+    expect(spans.map((span) => span.raw).join("")).toBe(markdown);
+  });
+
+  it.each<[string, string, string[], (number | undefined)[]]>([
+    [
+      "a `=` underline under a paragraph line",
+      "Setext H1\n=========\n\nbody\n",
+      ["heading", "paragraph"],
+      [1, undefined],
+    ],
+    [
+      "a `---` underline under a paragraph line",
+      "Setext H2\n---\n\nbody\n",
+      ["heading", "paragraph"],
+      [2, undefined],
+    ],
+    [
+      "a one-character `-` underline",
+      "Setext H2\n-\n\nbody\n",
+      ["heading", "paragraph"],
+      [2, undefined],
+    ],
+    [
+      "a `---` at the very start of the source",
+      "---\ntitle: Front\n---\n\nbody\n",
+      ["unsupported", "paragraph"],
+      [undefined, undefined],
+    ],
+    [
+      "a `---` after a blank line",
+      "para\n\n---\n\nafter\n",
+      ["paragraph", "thematic_break", "paragraph"],
+      [undefined, undefined, undefined],
+    ],
+    ["a `---` under a list item", "- item\n---\n", ["bullet_list_item"], [undefined]],
+    ["a `---` inside a code fence", "```\ncode\n---\n```\n", ["fenced_code"], [undefined]],
+    [
+      "a `---` under a thematic break",
+      "para\n\n---\ntext\n---\n\nafter\n",
+      ["paragraph", "unsupported", "paragraph"],
+      [undefined, undefined, undefined],
+    ],
+  ])("reads %s the way CommonMark does", (_name, markdown, kinds, levels) => {
+    const snapshot = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot();
+
+    expect(snapshot.blocks.map((block) => block.kind)).toEqual(kinds);
+    expect(snapshot.blocks.map((block) => block.level)).toEqual(levels);
+    expect(snapshot.markdown).toBe(markdown);
+    expect(snapshot.blocks.map((block) => block.raw).join("")).toBe(markdown);
+  });
+
+  it("carries CRLF underlines through unchanged", () => {
+    const markdown = "Setext H1\r\n===\r\n\r\nbody\r\n";
+
+    const snapshot = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot();
+
+    expect(snapshot.blocks.map((block) => [block.kind, block.level])).toEqual([
+      ["heading", 1],
+      ["paragraph", undefined],
+    ]);
+    expect(snapshot.markdown).toBe(markdown);
+  });
 });
