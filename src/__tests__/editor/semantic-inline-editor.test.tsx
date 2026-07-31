@@ -233,6 +233,48 @@ describe("SemanticInlineEditor", () => {
     expect(onSourceChange).not.toHaveBeenCalled();
     expect(screen.getByRole("img", { name: "Map" })).toBeInTheDocument();
   });
+
+  it("points at the slash command panel it never hands focus to", () => {
+    render(
+      <SemanticInlineEditor
+        source="/head"
+        onSourceChange={vi.fn()}
+        slashListboxId="block-1-slash"
+        slashMenuOpen
+        slashActiveOptionId="block-1-slash-heading-2"
+      />
+    );
+    const editor = screen.getByRole("textbox", { name: "Markdown block" });
+
+    expect(editor).toHaveAttribute("aria-haspopup", "listbox");
+    expect(editor).toHaveAttribute("aria-controls", "block-1-slash");
+    expect(editor).toHaveAttribute("aria-activedescendant", "block-1-slash-heading-2");
+  });
+
+  it("drops the panel relationship while the panel is closed", () => {
+    render(
+      <SemanticInlineEditor
+        source="text"
+        onSourceChange={vi.fn()}
+        slashListboxId="block-1-slash"
+        slashActiveOptionId="block-1-slash-heading-2"
+      />
+    );
+    const editor = screen.getByRole("textbox", { name: "Markdown block" });
+
+    expect(editor).toHaveAttribute("aria-haspopup", "listbox");
+    expect(editor).not.toHaveAttribute("aria-controls");
+    expect(editor).not.toHaveAttribute("aria-activedescendant");
+  });
+
+  it("claims no popup on a surface that has no slash panel", () => {
+    render(<SemanticInlineEditor source="cell" label="Table cell" onSourceChange={vi.fn()} />);
+    const editor = screen.getByRole("textbox", { name: "Table cell" });
+
+    expect(editor).not.toHaveAttribute("aria-haspopup");
+    expect(editor).not.toHaveAttribute("aria-controls");
+    expect(editor).not.toHaveAttribute("aria-activedescendant");
+  });
 });
 
 function setDomSelection(node: Node, offset: number) {

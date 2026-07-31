@@ -280,9 +280,21 @@ export function DropdownMenuContent({
   // Handle keyboard navigation
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!open || itemIds.length === 0) return;
+      if (!open) return;
 
-      const currentIndex = focusedId ? itemIds.indexOf(focusedId) : -1;
+      // `itemIds` is a registration log, not a reading order: a menu that mounts extra rows while
+      // it is open (the block gutter's filtered "Turn into" group) appends them after the rows
+      // they render above, so arrow keys would walk the list in a different order than the eye.
+      // Read the live DOM instead — it is the order the user sees. It is also the only place rows
+      // that are not `DropdownMenuItem`s appear, since those never register.
+      const domIds = Array.from(
+        contentRef.current?.querySelectorAll<HTMLElement>("[data-dropdown-item]") ?? [],
+        (node) => node.dataset.dropdownItem ?? ""
+      ).filter(Boolean);
+      const ids = domIds.length > 0 ? domIds : itemIds;
+      if (ids.length === 0) return;
+
+      const currentIndex = focusedId ? ids.indexOf(focusedId) : -1;
 
       switch (e.key) {
         case "Escape":
@@ -291,27 +303,27 @@ export function DropdownMenuContent({
           break;
         case "ArrowDown":
           e.preventDefault();
-          if (currentIndex < itemIds.length - 1) {
-            setFocusedId(itemIds[currentIndex + 1]);
+          if (currentIndex < ids.length - 1) {
+            setFocusedId(ids[currentIndex + 1]);
           } else {
-            setFocusedId(itemIds[0]);
+            setFocusedId(ids[0]);
           }
           break;
         case "ArrowUp":
           e.preventDefault();
           if (currentIndex > 0) {
-            setFocusedId(itemIds[currentIndex - 1]);
+            setFocusedId(ids[currentIndex - 1]);
           } else {
-            setFocusedId(itemIds[itemIds.length - 1]);
+            setFocusedId(ids[ids.length - 1]);
           }
           break;
         case "Home":
           e.preventDefault();
-          setFocusedId(itemIds[0]);
+          setFocusedId(ids[0]);
           break;
         case "End":
           e.preventDefault();
-          setFocusedId(itemIds[itemIds.length - 1]);
+          setFocusedId(ids[ids.length - 1]);
           break;
       }
     };
@@ -418,6 +430,7 @@ export function DropdownMenuItem({
     <button
       ref={itemRef}
       role="menuitem"
+      data-dropdown-item={itemId}
       tabIndex={isFocused ? 0 : -1}
       className={cn(
         "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors",
@@ -441,6 +454,31 @@ export function DropdownMenuItem({
       {children}
     </button>
   );
+}
+
+/**
+ * Joins a row a menu renders for itself — a raw `<button role="menuitem">` whose click navigates
+ * inside the open menu instead of closing it — to the same roving focus ring `DropdownMenuItem`
+ * uses. Without the `data-dropdown-item` marker and the focus effect, `DropdownMenuContent`'s
+ * arrow-key walk reads straight past the row and a keyboard user can never reach it.
+ *
+ * Must be called from a component rendered inside `DropdownMenuContent`, not from the component
+ * that renders the `DropdownMenu` itself — the shared focus lives in the menu's context.
+ */
+export function useDropdownMenuItemFocus(itemId: string) {
+  const { focusedId } = React.useContext(DropdownMenuContext);
+  const ref = React.useRef<HTMLButtonElement>(null);
+  const isFocused = focusedId === itemId;
+
+  React.useEffect(() => {
+    if (isFocused) ref.current?.focus();
+  }, [isFocused]);
+
+  return {
+    ref,
+    "data-dropdown-item": itemId,
+    tabIndex: isFocused ? 0 : -1,
+  } as const;
 }
 
 export function DropdownMenuSeparator() {
@@ -594,6 +632,7 @@ export function DropdownMenuSubTrigger({
     <button
       ref={triggerRef as React.RefObject<HTMLButtonElement>}
       role="menuitem"
+      data-dropdown-item={itemId}
       aria-haspopup="menu"
       aria-expanded={open}
       className={cn(

@@ -602,7 +602,12 @@
 
 .markdown-page th,
 .markdown-page td {
-  @apply text-left;
+  /*
+   * Written out rather than `@apply text-left`: the alignment overrides below carry `.text-left` in
+   * their own selectors, which makes Tailwind read applying that utility here as a circular
+   * definition and fail the whole stylesheet to compile.
+   */
+  text-align: left;
   min-width: 60px;
   padding: 6px 9px;
   border: 1px solid hsl(var(--foreground) / 0.094);
@@ -616,6 +621,33 @@
 .markdown-page th {
   @apply font-medium text-foreground;
   background: hsl(var(--foreground) / 0.035);
+}
+
+/*
+ * A column's alignment comes from the Markdown delimiter row and rides on the cell as a Tailwind
+ * utility class (or a data-align attribute). A bare utility is only (0,1,0), so the (0,1,1) default
+ * above wins and every cell renders left — setting an alignment changed the source but nothing on
+ * screen. These overrides carry the cell's own selector so they out-specify the default.
+ */
+.markdown-page th.text-left,
+.markdown-page td.text-left,
+.markdown-page th[data-align="left"],
+.markdown-page td[data-align="left"] {
+  text-align: left;
+}
+
+.markdown-page th.text-center,
+.markdown-page td.text-center,
+.markdown-page th[data-align="center"],
+.markdown-page td[data-align="center"] {
+  text-align: center;
+}
+
+.markdown-page th.text-right,
+.markdown-page td.text-right,
+.markdown-page th[data-align="right"],
+.markdown-page td[data-align="right"] {
+  text-align: right;
 }
 
 .markdown-page ::selection {
