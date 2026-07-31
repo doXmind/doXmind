@@ -108,6 +108,8 @@ export interface WorkspaceEntry {
   wordCount?: number;
   documentType?: WorkspaceDocumentType;
   isFavorite?: boolean;
+  /** Frontmatter aliases, carried by the scan so Wiki Links resolve without opening the Page. */
+  aliases?: string[];
 }
 
 export interface StorageWriteInput {
@@ -438,6 +440,13 @@ export interface StorageCreateInput {
   kind?: WorkspaceEntryKind;
   parent?: DocumentHandle | null;
   content?: StorageWriteInput;
+  /**
+   * Overwrite an existing file at the destination. Only set it when the user
+   * has already consented to replacing that exact path — the native Save
+   * panel's own "…already exists. Replace?" prompt. Left unset (the default)
+   * creation refuses to touch an occupied destination.
+   */
+  replaceExisting?: boolean;
 }
 
 export interface StorageImportInput {

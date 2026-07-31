@@ -620,10 +620,12 @@ function forgetRecent(entry: RecentEntry, state: Pick<FileState, "recents">): Re
 
 function isMissingWorkspaceRootError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
+  // Deliberately matches only the messages both backends emit for the root
+  // itself. A bare ENOENT is an inner failure — a child directory or file
+  // deleted mid-scan — and must never close the workspace.
   return (
     /workspace root is not a directory/i.test(message) ||
-    /failed to resolve workspace root/i.test(message) ||
-    /no such file or directory/i.test(message)
+    /failed to resolve workspace root/i.test(message)
   );
 }
 
@@ -692,12 +694,21 @@ function outlinesEqual(
 }
 
 function fileFromEntry(entry: WorkspaceEntry, existingReadModel?: LoadedReadModel): FileItem {
+  // A Page that has been opened this session carries its full read-model `meta`. One that has only
+  // been scanned carries whatever the scan could see — which now includes `aliases`, because Wiki
+  // Link resolution runs over the whole workspace and dropping them here made `[[Alias]]` resolve
+  // only for Pages the session happened to have opened.
+  const scanMeta =
+    entry.aliases && entry.aliases.length
+      ? { id: entry.handle.id, aliases: [...entry.aliases] }
+      : undefined;
   return {
     id: entry.handle.id,
     name: entry.name,
     content: existingReadModel?.content ?? "",
     sourceRevision: existingReadModel?.sourceRevision,
     outline: existingReadModel?.outline,
+    meta: existingReadModel?.meta ?? scanMeta,
     isFolder: entry.kind === "folder",
     parentId: entry.parent?.id ?? null,
     position: entry.position || 0,
@@ -1638,6 +1649,10 @@ export const useFileStore = create<FileState>()(
           kind: "document",
           parent: undefined,
           content: { markdown: transient.content },
+          // The only caller is the native Save panel, which asks the user to
+          // confirm a replace before it hands back an occupied path. Without
+          // carrying that consent through, the draft has nowhere to go.
+          replaceExisting: true,
         });
 
         // Drop the synthetic transient FileItem before openFile rebuilds
@@ -1886,14 +1901,30 @@ export const useFileStore = create<FileState>()(
                 f.name) === name
           );
           if (existing) {
-            // Clear the cached Page body so the next open reads the replacement
-            // source from disk.
+            // Evict the cached Page read model so the next open reads the
+            // replacement source from disk. Dropping the id from
+            // loadedContentIds is what makes loadFileContent miss the cache;
+            // the stale revision has to go with it or the first keystroke
+            // saves against the pre-import revision.
             // Name doesn't change here, but re-sort to be defensive — under
             // modified-newest the touched entry should move to the top.
             set((state) => ({
               files: sortFilesByOption(
-                state.files.map((f) => (f.id === existing.id ? { ...f, content: "" } : f)),
+                state.files.map((f) =>
+                  f.id === existing.id
+                    ? {
+                        ...f,
+                        content: "",
+                        sourceRevision: undefined,
+                        outline: undefined,
+                        meta: undefined,
+                      }
+                    : f
+                ),
                 state.sortBy
+              ),
+              loadedContentIds: new Set(
+                [...state.loadedContentIds].filter((id) => id !== existing.id)
               ),
             }));
             eventBus.emit("storage:changed");

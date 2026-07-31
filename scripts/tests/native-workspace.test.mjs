@@ -1600,3 +1600,304 @@ test("Electron boot has no FastAPI lifecycle or workspace proxy", async () => {
   assert.equal(NATIVE_WORKSPACE_COMMANDS.has("workspace_inspect_page_recovery"), true);
   assert.equal(NATIVE_WORKSPACE_COMMANDS.has("workspace_read_page_recovery"), true);
 });
+
+test("keys nested inside a frontmatter mapping never become Page properties", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    const source = "---\nid: page-5\nauthor:\n  name: Jane\n  status: done\n---\n\n# Body\n";
+    await fs.writeFile(path.join(root, "Nested.md"), source);
+    await fs.writeFile(
+      path.join(root, "Nested id.md"),
+      "---\nconfig:\n  id: nested-thing\n---\n\nBody\n"
+    );
+
+    const opened = await invoke("doc_read", { root, path: "Nested.md" });
+    assert.equal(opened.meta.id, "page-5");
+    assert.equal(opened.meta.author, "");
+    assert.equal("name" in opened.meta, false);
+    assert.equal("status" in opened.meta, false);
+
+    const scan = await invoke("workspace_scan", { root });
+    const nestedId = scan.documents.find((document) => document.path === "Nested id.md");
+    assert.equal(nestedId.idSource, "path");
+    assert.equal(nestedId.id.startsWith("path:"), true);
+
+    await assert.rejects(
+      invoke("doc_write_workspace", {
+        root,
+        path: "Nested.md",
+        payload: { meta: { author: "Jane" }, expectedRevision: opened.revision },
+      }),
+      /cannot safely patch Page property 'author': nested YAML value/
+    );
+    assert.equal(await fs.readFile(path.join(root, "Nested.md"), "utf8"), source);
+  });
+});
+
+test("a YAML document-end marker terminates frontmatter instead of swallowing prose", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    const source = "---\nid: p\ntitle: T\n...\n\n# Body\n\n---\n\nAfter\n";
+    await fs.writeFile(path.join(root, "Pandoc.md"), source);
+    assert.deepEqual(splitPageSource(source).body, "# Body\n\n---\n\nAfter\n");
+
+    const opened = await invoke("doc_read", { root, path: "Pandoc.md" });
+    assert.equal(opened.markdown, "# Body\n\n---\n\nAfter\n");
+    assert.equal(opened.meta.id, "p");
+    assert.equal(opened.meta.title, "T");
+
+    await invoke("doc_write_workspace", {
+      root,
+      path: "Pandoc.md",
+      payload: {
+        markdown: opened.markdown,
+        meta: { favorite: true },
+        expectedRevision: opened.revision,
+      },
+    });
+    assert.equal(
+      await fs.readFile(path.join(root, "Pandoc.md"), "utf8"),
+      "---\nid: p\ntitle: T\nfavorite: true\n...\n\n# Body\n\n---\n\nAfter\n"
+    );
+  });
+});
+
+test("one undecodable Page keeps the rest of the workspace scannable", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    await fs.writeFile(path.join(root, "Good.md"), "---\nid: good-1\n---\n\nBody\n");
+    // "résumé" written by an old editor in Latin-1.
+    await fs.writeFile(
+      path.join(root, "Legacy.md"),
+      Buffer.from([0x72, 0xe9, 0x73, 0x75, 0x6d, 0xe9, 0x0a])
+    );
+
+    const scan = await invoke("workspace_scan", { root });
+    assert.deepEqual(
+      scan.documents.map((document) => document.path),
+      ["Good.md", "Legacy.md"]
+    );
+    const legacy = scan.documents.find((document) => document.path === "Legacy.md");
+    assert.equal(legacy.idSource, "path");
+    assert.equal(legacy.title, "Legacy");
+    assert.equal((await invoke("doc_read", { root, path: "Good.md" })).markdown, "Body\n");
+
+    // Byte fidelity still matters where the bytes are actually used.
+    await assert.rejects(
+      invoke("doc_read", { root, path: "Legacy.md" }),
+      /Page is not valid UTF-8/
+    );
+  });
+});
+
+test("the scan carries frontmatter aliases, so a Wiki Link resolves without opening the Page", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    await fs.writeFile(
+      path.join(root, "Roadmap.md"),
+      '---\naliases: ["Plan", "Q3 Plan"]\n---\n\n# Roadmap\n'
+    );
+    await fs.writeFile(path.join(root, "Plain.md"), "# Plain\n");
+
+    const scan = await invoke("workspace_scan", { root });
+    const roadmap = scan.documents.find((document) => document.path === "Roadmap.md");
+    assert.deepEqual(roadmap.aliases, ["Plan", "Q3 Plan"]);
+    // Absent rather than an empty array, so a Page without aliases stays the shape it was.
+    assert.equal("aliases" in scan.documents.find((d) => d.path === "Plain.md"), false);
+  });
+});
+
+test("a Page save preserves the file's permissions through the process umask", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("POSIX permission bits");
+    return;
+  }
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    const pagePath = path.join(root, "Shared.md");
+    await fs.writeFile(pagePath, "---\nid: shared-1\n---\n\nBody\n");
+    await fs.chmod(pagePath, 0o664);
+    const opened = await invoke("doc_read", { root, path: "Shared.md" });
+
+    const previousUmask = process.umask(0o022);
+    try {
+      await invoke("doc_write_workspace", {
+        root,
+        path: "Shared.md",
+        payload: { markdown: "Changed\n", expectedRevision: opened.revision },
+      });
+    } finally {
+      process.umask(previousUmask);
+    }
+
+    assert.equal((await fs.stat(pagePath)).mode & 0o777, 0o664);
+  });
+});
+
+test("a case-only Page rename is a relocation, not a destination collision", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    await fs.writeFile(path.join(root, "readme.md"), "---\nid: readme-1\n---\n\nBody\n");
+    const recoveryBytes = Buffer.from([7, 8, 9]);
+    await fs.writeFile(path.join(root, ".readme.doxmind"), recoveryBytes);
+    const opened = await invoke("doc_read", { root, path: "readme.md" });
+
+    const relocated = await invoke("workspace_relocate_page", {
+      root,
+      oldPath: "readme.md",
+      newPath: "README.md",
+      expectedRevision: opened.revision,
+      checks: [{ path: "readme.md", expectedRevision: opened.revision }],
+      writes: [],
+    });
+
+    assert.equal(relocated.document.path, "README.md");
+    assert.equal(
+      await fs.readFile(path.join(root, "README.md"), "utf8"),
+      "---\nid: readme-1\n---\n\nBody\n"
+    );
+    assert.deepEqual(await fs.readFile(path.join(root, ".README.doxmind")), recoveryBytes);
+
+    // A genuinely occupied destination is still refused.
+    await fs.writeFile(path.join(root, "Other.md"), "---\nid: other-1\n---\n\nOther\n");
+    const moved = await invoke("doc_read", { root, path: "README.md" });
+    const other = await invoke("doc_read", { root, path: "Other.md" });
+    await assert.rejects(
+      invoke("workspace_relocate_page", {
+        root,
+        oldPath: "README.md",
+        newPath: "Other.md",
+        expectedRevision: moved.revision,
+        checks: [
+          { path: "README.md", expectedRevision: moved.revision },
+          { path: "Other.md", expectedRevision: other.revision },
+        ],
+        writes: [],
+      }),
+      /destination already exists: Other.md/
+    );
+    assert.equal(
+      await fs.readFile(path.join(root, "Other.md"), "utf8"),
+      "---\nid: other-1\n---\n\nOther\n"
+    );
+  });
+});
+
+test("Page creation overwrites only when the caller carries the user's consent", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    const existing = "---\nid: draft-1\ntitle: Old\n---\n\nOld body\n";
+    await fs.writeFile(path.join(root, "Draft.md"), existing);
+
+    // Default: an occupied destination is never silently overwritten.
+    await assert.rejects(
+      invoke("doc_create", {
+        root,
+        payload: { path: "Draft.md", markdown: "New body", meta: { id: "draft-2" } },
+      }),
+      /document already exists: Draft.md/
+    );
+    assert.equal(await fs.readFile(path.join(root, "Draft.md"), "utf8"), existing);
+
+    // The native Save panel already asked "replace?"; carry that through.
+    const created = await invoke("doc_create", {
+      root,
+      payload: {
+        path: "Draft.md",
+        markdown: "New body",
+        meta: { id: "draft-2" },
+        replaceExisting: true,
+      },
+    });
+    assert.equal(created.path, "Draft.md");
+    assert.equal(created.id, "draft-2");
+    assert.equal(
+      await fs.readFile(path.join(root, "Draft.md"), "utf8"),
+      "---\nid: draft-2\n---\n\nNew body"
+    );
+
+    // Consent replaces a file, never a directory.
+    await fs.mkdir(path.join(root, "Folder.md"));
+    await assert.rejects(
+      invoke("doc_create", {
+        root,
+        payload: { path: "Folder.md", markdown: "x", replaceExisting: true },
+      }),
+      /document already exists: Folder.md/
+    );
+  });
+});
+
+test("a case-only folder rename is a relocation, not a destination collision", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    await fs.mkdir(path.join(root, "notes"));
+    await fs.writeFile(path.join(root, "notes", "Plan.md"), "---\nid: plan-1\n---\n\n[[Spec]]\n");
+    await fs.writeFile(path.join(root, "notes", "Spec.md"), "---\nid: spec-1\n---\n\nSpec\n");
+    const plan = await invoke("doc_read", { root, path: "notes/Plan.md" });
+    const spec = await invoke("doc_read", { root, path: "notes/Spec.md" });
+
+    const relocated = await invoke("workspace_relocate_folder", {
+      root,
+      oldPath: "notes",
+      newPath: "Notes",
+      checks: [
+        { path: "notes/Plan.md", expectedRevision: plan.revision },
+        { path: "notes/Spec.md", expectedRevision: spec.revision },
+      ],
+      writes: [],
+    });
+
+    assert.equal(relocated.path, "Notes");
+    assert.deepEqual(relocated.writes, []);
+    const scan = await invoke("workspace_scan", { root });
+    assert.deepEqual(scan.documents.map((document) => document.path).sort(), [
+      "Notes/Plan.md",
+      "Notes/Spec.md",
+    ]);
+    // A case-only rename resolves the same Pages, so no link may be rewritten.
+    assert.equal(
+      await fs.readFile(path.join(root, "Notes", "Plan.md"), "utf8"),
+      "---\nid: plan-1\n---\n\n[[Spec]]\n"
+    );
+
+    // A genuinely occupied destination is still refused.
+    await fs.mkdir(path.join(root, "Archive"));
+    const moved = await invoke("doc_read", { root, path: "Notes/Plan.md" });
+    const movedSpec = await invoke("doc_read", { root, path: "Notes/Spec.md" });
+    await assert.rejects(
+      invoke("workspace_relocate_folder", {
+        root,
+        oldPath: "Notes",
+        newPath: "Archive",
+        checks: [
+          { path: "Notes/Plan.md", expectedRevision: moved.revision },
+          { path: "Notes/Spec.md", expectedRevision: movedSpec.revision },
+        ],
+        writes: [],
+      }),
+      /destination already exists: Archive/
+    );
+    assert.equal((await fs.stat(path.join(root, "Notes"))).isDirectory(), true);
+  });
+});
+
+test("a case-only Attachment rename is a relocation, not a destination collision", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    await fs.writeFile(path.join(root, "spec.pdf"), Buffer.from("%PDF-1.4\n"));
+
+    const renamed = await invoke("doc_rename", {
+      root,
+      oldPath: "spec.pdf",
+      newPath: "Spec.pdf",
+    });
+
+    assert.equal(renamed.path, "Spec.pdf");
+    const scan = await invoke("workspace_scan", { root });
+    assert.deepEqual(
+      scan.documents.map((document) => document.path),
+      ["Spec.pdf"]
+    );
+  });
+});

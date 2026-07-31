@@ -51,6 +51,7 @@ interface WorkspaceDocumentDto {
   title?: string | null;
   documentType?: WorkspaceDocumentType;
   favorite?: boolean | null;
+  aliases?: string[] | null;
 }
 
 // `doc_move` is an Attachment-only compatibility command. Pages and folders
@@ -258,6 +259,7 @@ export class DiskStorageAdapter implements StorageAdapter {
         path,
         markdown: input.content?.markdown ?? "",
         meta,
+        ...(input.replaceExisting && { replaceExisting: true }),
       },
     });
     return entryFromDocument(document);
@@ -599,6 +601,7 @@ function entryFromDocument(doc: WorkspaceDocumentDto): WorkspaceEntry {
     wordCount: 0,
     documentType: doc.documentType ?? documentTypeFromPath(doc.path),
     isFavorite: doc.favorite ?? false,
+    aliases: Array.isArray(doc.aliases) ? doc.aliases : undefined,
   };
 }
 

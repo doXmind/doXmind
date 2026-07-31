@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import stat
+import tempfile
 import time
 import uuid
 from collections import Counter
@@ -245,7 +246,7 @@ def workspace_scan(root: str) -> dict[str, Any]:
     # deterministic order — otherwise Timsort's stability would fall back
     # to `rglob`'s unstable filesystem order, defeating this whole sort.
     for path in iter_workspace_document_paths(workspace):
-        documents.append(document_dto_for_path(workspace, path))
+        documents.append(scan_document_dto(workspace, path))
     resolve_duplicate_page_ids(documents)
     result = {"root": str(workspace), "documents": documents}
     write_workspace_index(workspace, workspace_index_from_documents(documents))
@@ -557,7 +558,13 @@ def doc_create(root: str, payload: dict[str, Any]) -> dict[str, Any]:
     rel_path = str(payload.get("path") or "")
     ensure_markdown_path(rel_path)
     path = resolve_workspace_path_for_write(workspace, rel_path)
-    if path.exists():
+    # Creation refuses to overwrite unless the caller already collected the
+    # user's consent for this exact destination — the native Save panel asks
+    # "replace?" itself and only returns a path once the user said yes. Every
+    # other create path keeps the default refusal.
+    replace_existing = payload.get("replaceExisting") is True
+    occupied = path.exists()
+    if occupied and not (replace_existing and path.is_file()):
         raise ValueError(f"document already exists: {rel_path}")
     meta = dict(payload.get("meta") or {})
     requested_id = meta.get("id")
@@ -566,12 +573,17 @@ def doc_create(root: str, payload: dict[str, Any]) -> dict[str, Any]:
         if isinstance(requested_id, str) and requested_id.strip()
         else str(uuid.uuid4())
     )
-    MarkdownPageStore().create(
-        path,
-        page_id,
-        str(payload.get("markdown") or ""),
-        meta,
-    )
+    markdown = str(payload.get("markdown") or "")
+    if occupied:
+        # MarkdownPageStore.create refuses an occupied path, so render the new
+        # Page outside the workspace first and commit it with a single atomic
+        # replace: a crash before that leaves the user's existing file intact.
+        with tempfile.TemporaryDirectory() as staging_root:
+            staging = Path(staging_root) / path.name
+            MarkdownPageStore().create(staging, page_id, markdown, meta)
+            atomic_write(path, staging.read_bytes())
+    else:
+        MarkdownPageStore().create(path, page_id, markdown, meta)
     _invalidate_scan_cache(workspace)
     return next(
         document
@@ -694,18 +706,47 @@ def _existing_legacy_sidecar_family(document_path: Path) -> list[Path]:
     return [candidate for candidate in candidates if candidate.exists() or candidate.is_symlink()]
 
 
+def _is_same_filesystem_entry(left: Path, right: Path) -> bool:
+    """Whether two paths name one on-disk entry.
+
+    A case-only rename on a case-insensitive filesystem finds the moved entry
+    itself waiting at the destination; identity is what separates that from a
+    genuine collision. Mirrors ``isSameFilesystemEntry`` in the Electron core.
+    """
+    try:
+        left_stat = left.lstat()
+        right_stat = right.lstat()
+    except OSError:
+        return False
+    return (left_stat.st_dev, left_stat.st_ino) == (right_stat.st_dev, right_stat.st_ino)
+
+
+def _foreign_sidecar_family(destination: Path, source_artifacts: list[Path]) -> list[Path]:
+    """Recovery artifacts already at ``destination`` that are not the source's own.
+
+    ``Path.exists`` is case-insensitive on macOS and Windows, so during a
+    case-only rename the source's ``.readme.doxmind`` answers for
+    ``.README.doxmind``. Only a genuinely different entry blocks the move.
+    """
+    return [
+        artifact
+        for artifact in _existing_legacy_sidecar_family(destination)
+        if not any(_is_same_filesystem_entry(artifact, member) for member in source_artifacts)
+    ]
+
+
 def _move_document_family(root: str, old_path: str, new_path: str) -> dict[str, Any]:
     workspace = canonical_workspace_root(root)
     ensure_same_document_extension(old_path, new_path)
     source = resolve_existing_workspace_path(workspace, old_path)
     destination = resolve_workspace_path_for_write(workspace, new_path)
-    if destination.exists():
+    if destination.exists() and not _is_same_filesystem_entry(source, destination):
         raise ValueError(f"destination already exists: {new_path}")
 
     source_sidecar = sidecar_path_for(source)
     source_artifacts = _existing_legacy_sidecar_family(source)
     destination_sidecar = sidecar_path_for(destination)
-    destination_artifacts = _existing_legacy_sidecar_family(destination)
+    destination_artifacts = _foreign_sidecar_family(destination, source_artifacts)
     if destination_artifacts:
         raise ValueError(
             "destination sidecar already exists: "
@@ -895,13 +936,15 @@ def workspace_relocate_page(
     document_dto_for_path(workspace, source)
 
     destination = resolve_workspace_path_for_write(workspace, normalized_new)
-    if destination.exists() or destination.is_symlink():
+    if (destination.exists() or destination.is_symlink()) and not _is_same_filesystem_entry(
+        source, destination
+    ):
         raise ValueError(f"destination already exists: {new_path}")
 
     source_sidecar = sidecar_path_for(source)
     destination_sidecar = sidecar_path_for(destination)
     source_artifacts = _existing_legacy_sidecar_family(source)
-    destination_artifacts = _existing_legacy_sidecar_family(destination)
+    destination_artifacts = _foreign_sidecar_family(destination, source_artifacts)
     for artifact in [*source_artifacts, *destination_artifacts]:
         if artifact.is_symlink():
             raise ValueError(f"legacy sidecar family contains a symbolic link: {artifact}")
@@ -1068,7 +1111,9 @@ def workspace_relocate_folder(
     if not source.is_dir():
         raise ValueError(f"folder is not a directory: {old_path}")
     destination = resolve_workspace_path_for_write(workspace, normalized_new)
-    if destination.exists() or destination.is_symlink():
+    if (destination.exists() or destination.is_symlink()) and not _is_same_filesystem_entry(
+        source, destination
+    ):
         raise ValueError(f"destination already exists: {new_path}")
     if not isinstance(writes_value, list):
         raise ValueError("Folder relocation writes must be an array")
@@ -1360,6 +1405,29 @@ def ensure_path_within_root(root: Path, path: Path) -> None:
         raise ValueError(f"path escapes workspace root: {path}")
 
 
+def scan_document_dto(root: Path, path: Path) -> dict[str, Any]:
+    """One undecodable Page must not hide every healthy Page in the workspace.
+
+    Mirrors `scanDocumentDto` in electron/native-workspace.js: the scan falls back
+    to path identity for a file it cannot decode, and `doc_read` still refuses the
+    bytes when the user opens it. Without this, a single Latin-1 Markdown file
+    left behind by an older editor failed the whole scan and the sidebar rendered
+    empty.
+    """
+    try:
+        return document_dto_for_path(root, path)
+    except UnicodeDecodeError:
+        rel_path = relative_path_string(root, path)
+        return {
+            "id": stable_path_id(rel_path),
+            "idSource": "path",
+            "path": rel_path,
+            "name": path.name,
+            "title": path.stem,
+            "documentType": "markdown",
+        }
+
+
 def document_dto_for_path(root: Path, path: Path) -> dict[str, Any]:
     rel_path = relative_path_string(root, path)
     if is_pdf_file(path):
@@ -1401,6 +1469,12 @@ def document_dto_for_path(root: Path, path: Path) -> dict[str, Any]:
         value = scan_meta.get(key)
         if value is not None:
             dto[key if key != "cover_position" else "coverPosition"] = value
+    # Aliases ride the scan because they are how a Wiki Link resolves. Resolution runs
+    # against the whole workspace, not the open Page, so leaving them behind meant
+    # `[[Alias]]` could only ever work for a Page the session had already opened.
+    aliases = scan_meta.get("aliases")
+    if isinstance(aliases, list) and all(isinstance(value, str) for value in aliases):
+        dto["aliases"] = aliases
     return dto
 
 

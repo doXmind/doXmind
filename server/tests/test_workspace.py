@@ -1548,3 +1548,216 @@ def test_doc_read_envelope_excludes_legacy_sidecar_fields(sync_client, tmp_path)
     _create_markdown(sync_client, root)
     read = invoke(sync_client, "doc_read", {"root": root, "path": "Note.md"})
     assert {"extras", "source", "sourceState", "correlation"}.isdisjoint(read)
+
+
+def test_workspace_scan_tolerates_one_undecodable_page(sync_client, tmp_path):
+    """One Latin-1 file must not hide every healthy Page.
+
+    Parity with `scanDocumentDto` in electron/native-workspace.js: the scan falls
+    back to path identity for bytes it cannot decode, while `doc_read` still
+    refuses them. Before this, a single such file failed the whole scan and the
+    sidebar rendered empty with no explanation.
+    """
+    (tmp_path / "Good.md").write_text("Body\n", encoding="utf-8")
+    (tmp_path / "Legacy.md").write_bytes(bytes([0x72, 0xE9, 0x73, 0x75, 0x6D, 0xE9, 0x0A]))
+
+    scan = invoke(sync_client, "workspace_scan", {"root": str(tmp_path)})
+    assert [document["path"] for document in scan["documents"]] == ["Good.md", "Legacy.md"]
+
+    legacy = next(d for d in scan["documents"] if d["path"] == "Legacy.md")
+    assert legacy["idSource"] == "path"
+    assert legacy["title"] == "Legacy"
+
+    assert invoke(sync_client, "doc_read", {"root": str(tmp_path), "path": "Good.md"})["markdown"] == "Body\n"
+
+    # Byte fidelity still matters where the bytes are actually used.
+    with pytest.raises(Exception):
+        invoke(sync_client, "doc_read", {"root": str(tmp_path), "path": "Legacy.md"})
+
+
+def test_workspace_scan_carries_frontmatter_aliases(sync_client, tmp_path):
+    """Parity with electron/native-workspace.js: aliases ride the scan.
+
+    Wiki Link resolution runs over the whole workspace, not the open Page, so a
+    scan that dropped aliases made `[[Alias]]` resolve only for Pages the session
+    had already opened.
+    """
+    (tmp_path / "Roadmap.md").write_text(
+        '---\naliases: ["Plan", "Q3 Plan"]\n---\n\n# Roadmap\n', encoding="utf-8"
+    )
+    (tmp_path / "Plain.md").write_text("# Plain\n", encoding="utf-8")
+
+    scan = invoke(sync_client, "workspace_scan", {"root": str(tmp_path)})
+    roadmap = next(d for d in scan["documents"] if d["path"] == "Roadmap.md")
+    assert roadmap["aliases"] == ["Plan", "Q3 Plan"]
+    # Absent rather than an empty list, so a Page without aliases keeps its shape.
+    assert "aliases" not in next(d for d in scan["documents"] if d["path"] == "Plain.md")
+
+
+def test_doc_create_overwrites_only_with_the_users_carried_consent(sync_client, tmp_path):
+    """Parity with electron/native-workspace.js: the native Save panel collects
+    the replace consent, so `doc_create` needs it carried through explicitly."""
+    root = str(tmp_path)
+    draft = tmp_path / "Draft.md"
+    existing = "---\nid: draft-1\ntitle: Old\n---\n\nOld body\n"
+    draft.write_text(existing, encoding="utf-8")
+
+    refused = error_response(
+        sync_client,
+        "doc_create",
+        {"root": root, "payload": {"path": "Draft.md", "markdown": "New body"}},
+    )
+    assert refused.status_code != 200
+    assert "document already exists: Draft.md" in refused.text
+    assert draft.read_text(encoding="utf-8") == existing
+
+    created = invoke(
+        sync_client,
+        "doc_create",
+        {
+            "root": root,
+            "payload": {
+                "path": "Draft.md",
+                "markdown": "New body",
+                "meta": {"id": "draft-2"},
+                "replaceExisting": True,
+            },
+        },
+    )
+    assert created["path"] == "Draft.md"
+    assert created["id"] == "draft-2"
+    assert draft.read_text(encoding="utf-8") == "---\nid: draft-2\n---\n\nNew body"
+
+    # Consent replaces a file, never a directory.
+    (tmp_path / "Folder.md").mkdir()
+    directory = error_response(
+        sync_client,
+        "doc_create",
+        {
+            "root": root,
+            "payload": {"path": "Folder.md", "markdown": "x", "replaceExisting": True},
+        },
+    )
+    assert directory.status_code != 200
+    assert "document already exists: Folder.md" in directory.text
+
+
+def test_case_only_page_rename_is_a_relocation_not_a_collision(sync_client, tmp_path):
+    """Parity with electron/native-workspace.js: on a case-insensitive
+    filesystem the moved Page itself answers at the destination."""
+    root = str(tmp_path)
+    source = "---\nid: readme-1\n---\n\nBody\n"
+    (tmp_path / "readme.md").write_text(source, encoding="utf-8")
+    recovery = b"\x07\x08\x09"
+    sidecar_path_for(tmp_path / "readme.md").write_bytes(recovery)
+    opened = invoke(sync_client, "doc_read", {"root": root, "path": "readme.md"})
+
+    relocated = invoke(
+        sync_client,
+        "workspace_relocate_page",
+        {
+            "root": root,
+            "oldPath": "readme.md",
+            "newPath": "README.md",
+            "expectedRevision": opened["revision"],
+            "checks": [{"path": "readme.md", "expectedRevision": opened["revision"]}],
+            "writes": [],
+        },
+    )
+
+    assert relocated["document"]["path"] == "README.md"
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == source
+    assert sidecar_path_for(tmp_path / "README.md").read_bytes() == recovery
+
+    # A genuinely occupied destination is still refused.
+    (tmp_path / "Other.md").write_text("---\nid: other-1\n---\n\nOther\n", encoding="utf-8")
+    moved = invoke(sync_client, "doc_read", {"root": root, "path": "README.md"})
+    other = invoke(sync_client, "doc_read", {"root": root, "path": "Other.md"})
+    refused = error_response(
+        sync_client,
+        "workspace_relocate_page",
+        {
+            "root": root,
+            "oldPath": "README.md",
+            "newPath": "Other.md",
+            "expectedRevision": moved["revision"],
+            "checks": [
+                {"path": "README.md", "expectedRevision": moved["revision"]},
+                {"path": "Other.md", "expectedRevision": other["revision"]},
+            ],
+            "writes": [],
+        },
+    )
+    assert refused.status_code != 200
+    assert "destination already exists: Other.md" in refused.text
+    assert (tmp_path / "Other.md").read_text(encoding="utf-8") == "---\nid: other-1\n---\n\nOther\n"
+
+
+def test_case_only_folder_rename_is_a_relocation_not_a_collision(sync_client, tmp_path):
+    """Parity with electron/native-workspace.js for the folder half."""
+    root = str(tmp_path)
+    (tmp_path / "notes").mkdir()
+    plan_source = "---\nid: plan-1\n---\n\n[[Spec]]\n"
+    (tmp_path / "notes" / "Plan.md").write_text(plan_source, encoding="utf-8")
+    (tmp_path / "notes" / "Spec.md").write_text("---\nid: spec-1\n---\n\nSpec\n", encoding="utf-8")
+    plan = invoke(sync_client, "doc_read", {"root": root, "path": "notes/Plan.md"})
+    spec = invoke(sync_client, "doc_read", {"root": root, "path": "notes/Spec.md"})
+
+    relocated = invoke(
+        sync_client,
+        "workspace_relocate_folder",
+        {
+            "root": root,
+            "oldPath": "notes",
+            "newPath": "Notes",
+            "checks": [
+                {"path": "notes/Plan.md", "expectedRevision": plan["revision"]},
+                {"path": "notes/Spec.md", "expectedRevision": spec["revision"]},
+            ],
+            "writes": [],
+        },
+    )
+
+    assert relocated == {"path": "Notes", "writes": []}
+    scan = invoke(sync_client, "workspace_scan", {"root": root})
+    assert sorted(document["path"] for document in scan["documents"]) == [
+        "Notes/Plan.md",
+        "Notes/Spec.md",
+    ]
+    # A case-only rename resolves the same Pages, so no link may be rewritten.
+    assert (tmp_path / "Notes" / "Plan.md").read_text(encoding="utf-8") == plan_source
+
+    # A genuinely occupied destination is still refused.
+    (tmp_path / "Archive").mkdir()
+    moved = invoke(sync_client, "doc_read", {"root": root, "path": "Notes/Plan.md"})
+    moved_spec = invoke(sync_client, "doc_read", {"root": root, "path": "Notes/Spec.md"})
+    refused = error_response(
+        sync_client,
+        "workspace_relocate_folder",
+        {
+            "root": root,
+            "oldPath": "Notes",
+            "newPath": "Archive",
+            "checks": [
+                {"path": "Notes/Plan.md", "expectedRevision": moved["revision"]},
+                {"path": "Notes/Spec.md", "expectedRevision": moved_spec["revision"]},
+            ],
+            "writes": [],
+        },
+    )
+    assert refused.status_code != 200
+    assert "destination already exists: Archive" in refused.text
+    assert (tmp_path / "Notes").is_dir()
+
+
+def test_case_only_attachment_rename_is_a_relocation_not_a_collision(sync_client, tmp_path):
+    root = str(tmp_path)
+    (tmp_path / "spec.pdf").write_bytes(b"%PDF-1.4\n")
+
+    renamed = invoke(
+        sync_client, "doc_rename", {"root": root, "oldPath": "spec.pdf", "newPath": "Spec.pdf"}
+    )
+
+    assert renamed["path"] == "Spec.pdf"
+    scan = invoke(sync_client, "workspace_scan", {"root": root})
+    assert [document["path"] for document in scan["documents"]] == ["Spec.pdf"]

@@ -69,7 +69,7 @@ def parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
         return {"id": str(uuid.uuid4())}, raw
 
     closing_index = next(
-        (index for index, line in enumerate(lines[1:], start=1) if line == "---"),
+        (index for index, line in enumerate(lines[1:], start=1) if line in ("---", "...")),
         None,
     )
     if closing_index is None:
@@ -77,12 +77,13 @@ def parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
 
     meta: dict[str, Any] = {}
     for line in lines[1:closing_index]:
-        if ":" not in line:
+        # Only a top-level mapping entry — the exact shape the patch writer can
+        # target — becomes a Page property. Indented keys stay unknown-but-
+        # preserved source so an edit never lands on a different YAML node.
+        match = re.match(r"^([A-Za-z_][A-Za-z0-9_.-]*)\s*:", line)
+        if match is None:
             continue
-        key, value = line.split(":", 1)
-        key = key.strip()
-        if key:
-            meta[key] = parse_yaml_scalar(value.strip())
+        meta[match.group(1)] = parse_yaml_scalar(line[match.end() :].strip())
 
     body_lines = lines[closing_index + 1 :]
     if body_lines and body_lines[0] == "":
@@ -107,7 +108,9 @@ def extract_frontmatter_block(raw: str) -> str | None:
         opening_length = 4
     offset = source_start + opening_length
     for line in raw[offset:].splitlines(keepends=True):
-        if line.rstrip("\r\n") == "---":
+        # `...` is YAML's document-end marker and a conventional frontmatter
+        # terminator. Without it the scan runs past the block into body prose.
+        if line.rstrip("\r\n") in ("---", "..."):
             return raw[: offset + 3]
         offset += len(line)
     return None
@@ -117,8 +120,12 @@ def atomic_write(target: Path, data: bytes) -> None:
     """Durably replace ``target`` without exposing a partially-written Page."""
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.parent / f".{target.name}.tmp-{uuid.uuid4().hex}"
+    mode = target.stat().st_mode & 0o777 if target.exists() else 0o600
     try:
         with open(temporary, "wb") as handle:
+            # The create mode is masked by the process umask, so preserving the
+            # Page's permissions needs an explicit chmod before the replace.
+            os.chmod(temporary, mode)
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
