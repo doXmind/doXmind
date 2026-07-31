@@ -81,6 +81,10 @@ export interface KnowledgeWikiResolution {
   candidates: KnowledgePage[];
 }
 
+export interface KnowledgeWikiResolver {
+  resolve(sourcePath: string, targetText: string): KnowledgeWikiResolution;
+}
+
 export type KnowledgeIndexAdapter = Pick<StorageAdapter, "list" | "read">;
 
 interface IndexedPage {
@@ -122,8 +126,13 @@ export async function buildKnowledgeSourceIndex(
   adapter: KnowledgeIndexAdapter
 ): Promise<KnowledgeSourceIndex> {
   const indexedPages = await readIndexedPages(adapter);
+  const wikiIndex = buildWikiIndex(
+    indexedPages,
+    (page) => page.page.path,
+    (page) => page.normalizedNames
+  );
 
-  const links = indexedPages.flatMap((source) => linksFromPage(source, indexedPages));
+  const links = indexedPages.flatMap((source) => linksFromPage(source, indexedPages, wikiIndex));
   links.sort(compareLinks);
   const unlinkedMentions = unlinkedMentionsFromPages(indexedPages, links);
 
@@ -175,15 +184,14 @@ function sourceCatalogFromIndexedPages(
   };
 }
 
-/** Resolve one Wiki target using the same path/title/alias rules as the index. */
-export function resolveKnowledgeWikiPage(
-  pages: readonly KnowledgePage[],
-  sourcePath: string,
-  targetText: string
-): KnowledgeWikiResolution {
-  return resolveWikiCandidates(
-    sourcePath,
-    targetText,
+/**
+ * Index one Page catalog once so a whole view resolves in linear time. Every
+ * lookup applies the same path/title/alias rules as `resolveKnowledgeWikiPage`.
+ */
+export function createKnowledgeWikiResolver(
+  pages: readonly KnowledgePage[]
+): KnowledgeWikiResolver {
+  const index = buildWikiIndex(
     pages,
     (page) => page.path,
     (page) =>
@@ -193,6 +201,18 @@ export function resolveKnowledgeWikiPage(
         )
       )
   );
+  return {
+    resolve: (sourcePath, targetText) => resolveWikiCandidates(sourcePath, targetText, index),
+  };
+}
+
+/** Resolve one Wiki target using the same path/title/alias rules as the index. */
+export function resolveKnowledgeWikiPage(
+  pages: readonly KnowledgePage[],
+  sourcePath: string,
+  targetText: string
+): KnowledgeWikiResolution {
+  return createKnowledgeWikiResolver(pages).resolve(sourcePath, targetText);
 }
 
 function unlinkedMentionsFromPages(
@@ -362,17 +382,21 @@ function indexedPage(catalogPage: WorkspaceCatalogPage): IndexedPage {
   };
 }
 
-function linksFromPage(source: IndexedPage, pages: IndexedPage[]): KnowledgeLink[] {
+function linksFromPage(
+  source: IndexedPage,
+  pages: IndexedPage[],
+  wikiIndex: WikiIndex<IndexedPage>
+): KnowledgeLink[] {
   const searchable = maskIgnoredMarkdown(source.markdown);
   return [
-    ...wikiLinksFromPage(source, pages, searchable),
+    ...wikiLinksFromPage(source, wikiIndex, searchable),
     ...markdownLinksFromPage(source, pages, searchable),
   ];
 }
 
 function wikiLinksFromPage(
   source: IndexedPage,
-  pages: IndexedPage[],
+  wikiIndex: WikiIndex<IndexedPage>,
   searchable: string
 ): KnowledgeLink[] {
   const links: KnowledgeLink[] = [];
@@ -382,7 +406,7 @@ function wikiLinksFromPage(
     if (isEscapedAt(source.markdown, match.index)) continue;
     const parsed = parseWikiTarget(match[1]);
     if (!parsed.targetText) continue;
-    const resolution = resolveWikiTarget(source, parsed.targetText, pages);
+    const resolution = resolveWikiTarget(source, parsed.targetText, wikiIndex);
     links.push({
       kind: "wiki",
       sourceId: source.page.id,
@@ -484,15 +508,6 @@ function maskIgnoredMarkdown(source: string): string {
     }
   }
 
-  let commentFrom = source.indexOf("<!--");
-  while (commentFrom >= 0) {
-    const terminator = source.indexOf("-->", commentFrom + 4);
-    const commentTo = terminator < 0 ? source.length : terminator + 3;
-    mask(commentFrom, commentTo);
-    if (terminator < 0) break;
-    commentFrom = source.indexOf("<!--", commentTo);
-  }
-
   let offset = 0;
   while (offset < source.length) {
     if (source[offset] !== "`" || masked[offset] === " ") {
@@ -520,6 +535,19 @@ function maskIgnoredMarkdown(source: string): string {
     }
     mask(offset, closingTo);
     offset = closingTo;
+  }
+
+  // Inline comments are masked last, over the already-masked buffer: an opener
+  // that lives inside a fence or a code span is not a comment, and an opener
+  // without its own terminator must not swallow the rest of the file.
+  const outsideCode = masked.join("");
+  let commentFrom = outsideCode.indexOf("<!--");
+  while (commentFrom >= 0) {
+    const terminator = outsideCode.indexOf("-->", commentFrom + 4);
+    if (terminator < 0) break;
+    const commentTo = terminator + 3;
+    mask(commentFrom, commentTo);
+    commentFrom = outsideCode.indexOf("<!--", commentTo);
   }
   return masked.join("");
 }
@@ -560,24 +588,41 @@ function parseWikiTarget(source: string): {
 function resolveWikiTarget(
   source: IndexedPage,
   target: string,
-  pages: IndexedPage[]
+  index: WikiIndex<IndexedPage>
 ): { status: KnowledgeLinkStatus; page: IndexedPage | null } {
-  const resolution = resolveWikiCandidates(
-    source.page.path,
-    target,
-    pages,
-    (page) => page.page.path,
-    (page) => page.normalizedNames
-  );
+  const resolution = resolveWikiCandidates(source.page.path, target, index);
   return { status: resolution.status, page: resolution.page };
+}
+
+/** Path and name buckets built once per catalog; each bucket keeps Page order. */
+interface WikiIndex<T> {
+  byPath: Map<string, T[]>;
+  byName: Map<string, T[]>;
+}
+
+function buildWikiIndex<T>(
+  pages: readonly T[],
+  pathOf: (page: T) => string,
+  namesOf: (page: T) => ReadonlySet<string>
+): WikiIndex<T> {
+  const byPath = new Map<string, T[]>();
+  const byName = new Map<string, T[]>();
+  const bucket = (buckets: Map<string, T[]>, key: string, page: T) => {
+    const existing = buckets.get(key);
+    if (existing) existing.push(page);
+    else buckets.set(key, [page]);
+  };
+  for (const page of pages) {
+    bucket(byPath, normalizePath(pathOf(page), false), page);
+    for (const name of namesOf(page)) bucket(byName, name, page);
+  }
+  return { byPath, byName };
 }
 
 function resolveWikiCandidates<T>(
   sourcePath: string,
   target: string,
-  pages: readonly T[],
-  pathOf: (page: T) => string,
-  namesOf: (page: T) => ReadonlySet<string>
+  index: WikiIndex<T>
 ): { status: KnowledgeLinkStatus; page: T | null; candidates: T[] } {
   const sourceDirectory = directoryName(normalizePath(sourcePath, false));
   const normalizedTargetPath = resolveRelativePath("", target);
@@ -597,19 +642,19 @@ function resolveWikiCandidates<T>(
       : [relativeTarget, normalizedTarget].filter((path): path is string => path !== null);
 
   for (const candidate of unique(explicitPaths)) {
-    const matches = pages.filter((page) => normalizePath(pathOf(page), false) === candidate);
+    const matches = index.byPath.get(candidate) ?? [];
     if (matches.length === 1) {
-      return { status: "resolved", page: matches[0], candidates: matches };
+      return { status: "resolved", page: matches[0], candidates: [...matches] };
     }
-    if (matches.length > 1) return { status: "ambiguous", page: null, candidates: matches };
+    if (matches.length > 1) return { status: "ambiguous", page: null, candidates: [...matches] };
   }
   if (isQualified) return { status: "unresolved", page: null, candidates: [] };
 
   if (!normalizedTarget) return { status: "unresolved", page: null, candidates: [] };
   const targetName = normalizeName(baseName(normalizedTarget));
-  const named = pages.filter((page) => namesOf(page).has(targetName));
-  if (named.length === 1) return { status: "resolved", page: named[0], candidates: named };
-  if (named.length > 1) return { status: "ambiguous", page: null, candidates: named };
+  const named = index.byName.get(targetName) ?? [];
+  if (named.length === 1) return { status: "resolved", page: named[0], candidates: [...named] };
+  if (named.length > 1) return { status: "ambiguous", page: null, candidates: [...named] };
   return { status: "unresolved", page: null, candidates: [] };
 }
 

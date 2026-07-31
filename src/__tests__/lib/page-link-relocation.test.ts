@@ -303,6 +303,108 @@ describe("planPageLinkRelocation", () => {
     expect(plan.skipped).toEqual([]);
   });
 
+  it("repairs relative image and attachment destinations when the Page moves", async () => {
+    const page = pageEntry("plan", "Project Plan.md");
+    const markdown = "![diagram](assets/diagram.png)\n\n[spec](attachments/Spec.pdf)\n";
+    const adapter = adapterFixture(
+      [page],
+      new Map([[page.handle.id, content(page, markdown, "sha256:plan")]])
+    );
+
+    const plan = await planPageLinkRelocation(adapter, {
+      pageId: "plan",
+      fromPath: "Project Plan.md",
+      toPath: "Archive/Project Plan.md",
+    });
+
+    expect(plan.writes).toEqual([
+      expect.objectContaining({
+        sourceId: "plan",
+        destinationPath: "Archive/Project Plan.md",
+        markdown: "![diagram](../assets/diagram.png)\n\n[spec](../attachments/Spec.pdf)\n",
+        replacements: [
+          expect.objectContaining({
+            kind: "asset",
+            before: "assets/diagram.png",
+            after: "../assets/diagram.png",
+          }),
+          expect.objectContaining({
+            kind: "asset",
+            before: "attachments/Spec.pdf",
+            after: "../attachments/Spec.pdf",
+          }),
+        ],
+      }),
+    ]);
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it("leaves asset destinations untouched when only the Page name changes", async () => {
+    const page = pageEntry("plan", "Notes/Plan.md");
+    const markdown = "![diagram](assets/diagram.png)\n";
+    const adapter = adapterFixture(
+      [page],
+      new Map([[page.handle.id, content(page, markdown, "sha256:plan")]])
+    );
+
+    const plan = await planPageLinkRelocation(adapter, {
+      pageId: "plan",
+      fromPath: "Notes/Plan.md",
+      toPath: "Notes/Roadmap.md",
+    });
+
+    expect(plan.writes).toEqual([]);
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it("still repairs links after an unterminated comment opener inside a code fence", async () => {
+    const target = pageEntry("target", "Target.md");
+    const doc = pageEntry("doc", "Doc.md");
+    const markdown = "```html\n<!-- unterminated\n```\n\nSee [[Target]].\n";
+    const adapter = adapterFixture(
+      [target, doc],
+      new Map([
+        [target.handle.id, content(target, "# Target\n", "sha256:target")],
+        [doc.handle.id, content(doc, markdown, "sha256:doc")],
+      ])
+    );
+
+    const plan = await planPageLinkRelocation(adapter, {
+      pageId: "target",
+      fromPath: "Target.md",
+      toPath: "Archive/Renamed.md",
+    });
+
+    expect(plan.writes).toEqual([
+      expect.objectContaining({
+        sourceId: "doc",
+        markdown: "```html\n<!-- unterminated\n```\n\nSee [[Archive/Renamed]].\n",
+      }),
+    ]);
+  });
+
+  it("leaves a Wiki target that escapes the workspace root untouched", async () => {
+    const target = pageEntry("target", "Target.md");
+    const doc = pageEntry("doc", "Doc.md");
+    const markdown = "See [[../Target]] and [md](../Target.md).\n";
+    const adapter = adapterFixture(
+      [target, doc],
+      new Map([
+        [target.handle.id, content(target, "# Target\n", "sha256:target")],
+        [doc.handle.id, content(doc, markdown, "sha256:doc")],
+      ])
+    );
+
+    const plan = await planPageLinkRelocation(adapter, {
+      pageId: "target",
+      fromPath: "Target.md",
+      toPath: "Archive/Renamed.md",
+    });
+
+    expect(plan.writes).toEqual([]);
+    expect(plan.skipped).toEqual([]);
+  });
+
   it("reports a link when the destination cannot be represented without changing Wiki syntax", async () => {
     const target = pageEntry("target", "Notes/Target.md");
     const daily = pageEntry("daily", "Daily.md");
@@ -510,6 +612,36 @@ describe("planFolderLinkRelocation", () => {
     ]);
   });
 
+  it("keeps asset destinations pointing at the same files when a folder moves", async () => {
+    const doc = pageEntry("doc", "Notes/Doc.md");
+    const markdown = "![inside](assets/d.png)\n\n![outside](../shared/logo.png)\n";
+    const adapter = adapterFixture(
+      [doc],
+      new Map([[doc.handle.id, content(doc, markdown, "sha256:doc")]])
+    );
+
+    const plan = await planFolderLinkRelocation(adapter, {
+      fromPath: "Notes",
+      toPath: "Archive/Notes",
+    });
+
+    expect(plan.writes).toEqual([
+      expect.objectContaining({
+        sourceId: "doc",
+        destinationPath: "Archive/Notes/Doc.md",
+        markdown: "![inside](assets/d.png)\n\n![outside](../../shared/logo.png)\n",
+        replacements: [
+          expect.objectContaining({
+            kind: "asset",
+            before: "../shared/logo.png",
+            after: "../../shared/logo.png",
+          }),
+        ],
+      }),
+    ]);
+    expect(plan.skipped).toEqual([]);
+  });
+
   it("rejects a destination occupied by a Page outside the moved subtree", async () => {
     const moving = pageEntry("moving", "Notes/Target.md");
     const collision = pageEntry("collision", "Archive/Notes/Target.md");
@@ -528,6 +660,58 @@ describe("planFolderLinkRelocation", () => {
       })
     ).rejects.toThrow(
       "Folder relocation destination already contains a Page: Archive/Notes/Target.md"
+    );
+  });
+
+  it("plans a case-only folder rename without rewriting a single link", async () => {
+    const plan = pageEntry("plan", "notes/Plan.md");
+    const spec = pageEntry("spec", "notes/Spec.md");
+    const outside = pageEntry("outside", "Daily.md");
+    const adapter = adapterFixture(
+      [plan, spec, outside],
+      new Map([
+        [plan.handle.id, content(plan, "[[Spec]] and ![](assets/d.png)\n", "sha256:plan")],
+        [spec.handle.id, content(spec, "Spec", "sha256:spec")],
+        [outside.handle.id, content(outside, "[Plan](./notes/Plan.md)\n", "sha256:daily")],
+      ])
+    );
+
+    const relocation = await planFolderLinkRelocation(adapter, {
+      fromPath: "notes",
+      toPath: "Notes",
+    });
+
+    expect(relocation.relocation.pages).toEqual([
+      {
+        pageId: "plan",
+        sourcePath: "notes/Plan.md",
+        destinationPath: "Notes/Plan.md",
+        expectedRevision: "sha256:plan",
+      },
+      {
+        pageId: "spec",
+        sourcePath: "notes/Spec.md",
+        destinationPath: "Notes/Spec.md",
+        expectedRevision: "sha256:spec",
+      },
+    ]);
+    // Nothing about link resolution changes when only the case changes, so no
+    // Page may be rewritten — inside or outside the renamed folder.
+    expect(relocation.writes).toEqual([]);
+    expect(relocation.skipped).toEqual([]);
+  });
+
+  it("still refuses a folder move into its own subtree that differs only in case", async () => {
+    const page = pageEntry("page", "notes/Plan.md");
+    const adapter = adapterFixture(
+      [page],
+      new Map([[page.handle.id, content(page, "Plan", "sha256:plan")]])
+    );
+
+    await expect(
+      planFolderLinkRelocation(adapter, { fromPath: "notes", toPath: "Notes/Archive" })
+    ).rejects.toThrow(
+      "Folder relocation destination cannot be the source folder or its descendant"
     );
   });
 });

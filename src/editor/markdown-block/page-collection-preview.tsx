@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, type MouseEvent } from "react";
+import { Fragment, useMemo, useRef, type MouseEvent } from "react";
 
 import {
   parsePageCollection,
@@ -30,18 +30,22 @@ export interface PageCollectionPreviewProps {
 }
 
 export function PageCollectionPreview({ source, context }: PageCollectionPreviewProps) {
-  const parsed = parsePageCollection(source);
+  const parsed = useMemo(() => parsePageCollection(source), [source]);
+  const catalog = useStableCatalog(context?.status === "ready" ? context.pages : null);
+  const projection = useMemo(
+    () => (parsed.ok && catalog ? projectPageCollection(parsed.definition, catalog) : null),
+    [parsed, catalog]
+  );
   if (!parsed.ok) {
     return <CollectionMessage tone="error">{parsed.diagnostics[0].message}</CollectionMessage>;
   }
   if (!context || context.status === "loading") {
     return <CollectionMessage loading>Loading Page collection…</CollectionMessage>;
   }
-  if (context.status === "error" || !context.pages) {
+  if (context.status === "error" || !projection) {
     return <CollectionMessage tone="error">Page collection is unavailable.</CollectionMessage>;
   }
 
-  const projection = projectPageCollection(parsed.definition, context.pages);
   if (projection.view === "table") {
     return (
       <CollectionTable
@@ -67,6 +71,24 @@ export function PageCollectionPreview({ source, context }: PageCollectionPreview
       onOpenPage={context.onOpenPage}
     />
   );
+}
+
+/**
+ * Hold the catalog identity steady across renders that only changed Page
+ * Markdown. The editor rebuilds the catalog array on every keystroke, and the
+ * projection is quadratic in catalog size once a computed relation is declared,
+ * so re-projecting per keystroke froze typing in large workspaces.
+ */
+function useStableCatalog(
+  pages: readonly WorkspaceCatalogPage[] | null
+): readonly WorkspaceCatalogPage[] | null {
+  const cached = useRef<{ key: string; pages: readonly WorkspaceCatalogPage[] } | null>(null);
+  if (!pages) return null;
+  const key = JSON.stringify(
+    pages.map(({ id, path, title, aliases, properties }) => [id, path, title, aliases, properties])
+  );
+  if (cached.current?.key !== key) cached.current = { key, pages };
+  return cached.current.pages;
 }
 
 function CollectionMessage({

@@ -5,7 +5,7 @@ import {
 import type { DocumentContent, StorageAdapter, WorkspaceEntry } from "@/lib/storage";
 
 export type PageLinkRelocationAdapter = Pick<StorageAdapter, "list" | "read">;
-export type PageLinkKind = "wiki" | "markdown";
+export type PageLinkKind = "wiki" | "markdown" | "asset";
 
 export interface PageLinkRelocationInput {
   pageId: string;
@@ -20,7 +20,8 @@ export interface FolderLinkRelocationInput {
 
 export interface PageLinkReplacement {
   kind: PageLinkKind;
-  targetId: string;
+  /** Target Page id, or `null` for an Attachment/asset destination that is not a Page. */
+  targetId: string | null;
   range: { from: number; to: number };
   before: string;
   after: string;
@@ -103,6 +104,11 @@ interface Resolution {
   candidates: IndexedPage[];
 }
 
+interface FolderMove {
+  fromPath: string;
+  toPath: string;
+}
+
 interface PlannedLinkChanges {
   writes: PageLinkRelocationWrite[];
   skipped: SkippedPageLink[];
@@ -147,7 +153,7 @@ export async function planPageLinkRelocation(
   if (collision) throw new Error(`Page relocation destination already exists: ${toPath}`);
 
   const movedRevision = requiredRevision(moved);
-  const changes = planLinkChanges(pages, new Map([[moved.id, toPath]]));
+  const changes = planLinkChanges(pages, new Map([[moved.id, toPath]]), null);
   return {
     relocation: {
       pageId: moved.id,
@@ -185,7 +191,11 @@ export async function planFolderLinkRelocation(
   }
   const normalizedFrom = normalizePath(fromPath, true);
   const normalizedTo = normalizePath(toPath, true);
-  if (normalizedTo === normalizedFrom || normalizedTo.startsWith(`${normalizedFrom}/`)) {
+  // `workspacePath` already returns a case-preserving NFC path, so comparing
+  // the two directly keeps a case-only rename (`notes` -> `Notes`) a real
+  // relocation instead of a no-op. Containment stays case-insensitive: on a
+  // case-insensitive filesystem `Notes/Sub` really is inside `notes`.
+  if (toPath === fromPath || normalizedTo.startsWith(`${normalizedFrom}/`)) {
     throw new Error("Folder relocation destination cannot be the source folder or its descendant");
   }
 
@@ -213,7 +223,7 @@ export async function planFolderLinkRelocation(
     plannedDestinations.add(normalizedDestination);
   }
 
-  const changes = planLinkChanges(pages, destinations);
+  const changes = planLinkChanges(pages, destinations, { fromPath, toPath });
   return {
     relocation: {
       fromPath,
@@ -246,7 +256,8 @@ async function readPages(adapter: PageLinkRelocationAdapter): Promise<IndexedPag
 
 function planLinkChanges(
   pages: IndexedPage[],
-  destinations: ReadonlyMap<string, string>
+  destinations: ReadonlyMap<string, string>,
+  movedFolder: FolderMove | null
 ): PlannedLinkChanges {
   const pathAfterRelocation = (page: IndexedPage) => destinations.get(page.id) ?? page.path;
   const writes: PageLinkRelocationWrite[] = [];
@@ -260,6 +271,28 @@ function planLinkChanges(
     const sourceMoves = destinations.has(source.id);
     const replacements: PageLinkReplacement[] = [];
     for (const occurrence of linkOccurrences(source.content.markdown)) {
+      if (occurrence.kind === "asset") {
+        const assetReplacement = relocatedAssetTarget(
+          occurrence,
+          source.path,
+          pathAfterRelocation(source),
+          movedFolder
+        );
+        if (assetReplacement === null) {
+          if (sourceMoves) skipped.push(skippedLink(source, occurrence, "unsafe"));
+          continue;
+        }
+        if (assetReplacement === occurrence.before) continue;
+        replacements.push({
+          kind: "asset",
+          targetId: null,
+          range: occurrence.targetRange,
+          before: occurrence.before,
+          after: assetReplacement,
+        });
+        continue;
+      }
+
       const before = resolveLink(occurrence, source.path, pages, (page) => page.path);
       if (before.status === "ambiguous") {
         if (sourceMoves || before.candidates.some((page) => destinations.has(page.id))) {
@@ -398,15 +431,16 @@ function markdownLinkOccurrences(markdown: string, searchable: string): LinkOccu
   const occurrences: LinkOccurrence[] = [];
   const pattern = /\[([^\]\r\n]*)\]\((<[^>\r\n]+>|[^)\r\n]+)\)/g;
   for (const match of searchable.matchAll(pattern)) {
-    if (match.index === undefined || searchable[match.index - 1] === "!") continue;
+    if (match.index === undefined) continue;
     if (isEscapedAt(markdown, match.index)) continue;
     const destination = match[2];
     const parsed = parseMarkdownDestination(destination);
     if (!parsed) continue;
+    if (searchable[match.index - 1] === "!" && parsed.kind !== "asset") continue;
     const destinationFrom = match.index + match[0].indexOf("](") + 2;
     const targetFrom = destinationFrom + parsed.targetOffset;
     occurrences.push({
-      kind: "markdown",
+      kind: parsed.kind,
       targetText: parsed.targetText,
       targetRange: { from: targetFrom, to: targetFrom + parsed.rawPath.length },
       before: markdown.slice(targetFrom, targetFrom + parsed.rawPath.length),
@@ -417,6 +451,7 @@ function markdownLinkOccurrences(markdown: string, searchable: string): LinkOccu
 }
 
 function parseMarkdownDestination(source: string): {
+  kind: "markdown" | "asset";
   targetText: string;
   targetOffset: number;
   rawPath: string;
@@ -452,8 +487,53 @@ function parseMarkdownDestination(source: string): {
   } catch {
     return null;
   }
-  if (!isMarkdownPath(targetText)) return null;
-  return { targetText, targetOffset, rawPath, angleWrapped };
+  if (isMarkdownPath(targetText)) {
+    return { kind: "markdown", targetText, targetOffset, rawPath, angleWrapped };
+  }
+  // Only file-shaped destinations name an Attachment or asset whose relative
+  // path has to survive the move; anything else is left exactly as authored.
+  if (!/\.[A-Za-z0-9]+$/.test(targetText)) return null;
+  return { kind: "asset", targetText, targetOffset, rawPath, angleWrapped };
+}
+
+/**
+ * Rewrite a relative Attachment/asset destination so it still names the same
+ * file after relocation. Asset bytes are never moved by a Page relocation and
+ * move with their subtree during a Folder relocation, so the destination is
+ * recomputed lexically and verified before it is planned.
+ */
+function relocatedAssetTarget(
+  occurrence: LinkOccurrence,
+  sourcePath: string,
+  sourcePathAfter: string,
+  movedFolder: FolderMove | null
+): string | null {
+  const assetPath = assetTargetPath(directoryName(sourcePath), occurrence.targetText);
+  if (!assetPath) return null;
+  const assetPathAfter = assetPathAfterRelocation(assetPath, movedFolder);
+  const directoryAfter = directoryName(sourcePathAfter);
+  const unchanged = assetTargetPath(directoryAfter, occurrence.targetText);
+  if (unchanged && normalizeName(unchanged) === normalizeName(assetPathAfter)) {
+    return occurrence.before;
+  }
+
+  const replacement = replacementTarget(occurrence, sourcePathAfter, assetPathAfter);
+  if (replacement === null) return null;
+  const replacementText = replacementTargetText("markdown", replacement);
+  if (replacementText === null) return null;
+  const verified = assetTargetPath(directoryAfter, replacementText);
+  if (!verified || normalizeName(verified) !== normalizeName(assetPathAfter)) return null;
+  return replacement;
+}
+
+function assetTargetPath(directory: string, target: string): string | null {
+  return workspacePath(directory ? `${directory}/${target}` : target);
+}
+
+function assetPathAfterRelocation(path: string, movedFolder: FolderMove | null): string {
+  if (!movedFolder) return path;
+  const suffix = pathWithinFolder(path, movedFolder.fromPath);
+  return suffix === null ? path : `${movedFolder.toPath}/${suffix}`;
 }
 
 function resolveLink(
@@ -474,15 +554,23 @@ function resolveWikiTarget(
   pathOf: (page: IndexedPage) => string
 ): Resolution {
   const sourceDirectory = directoryName(normalizePath(sourcePath, false));
-  const normalizedTarget = normalizePath(target, false);
-  const relativeTarget = joinPath(sourceDirectory, target);
+  // Root escape must fail exactly as it does in knowledge-index's resolver, so
+  // the planner never repairs a Wiki target the editor renders as unresolved.
+  const normalizedTargetPath = resolveRelativePath("", target);
+  const relativeTargetPath = resolveRelativePath(sourceDirectory, target);
+  const normalizedTarget = normalizedTargetPath
+    ? stripMarkdownExtension(normalizedTargetPath)
+    : null;
+  const relativeTarget = relativeTargetPath ? stripMarkdownExtension(relativeTargetPath) : null;
   const isExplicitRelative = /^(?:\.\.?)(?:[\\/]|$)/.test(target);
   const isQualified = isExplicitRelative || /[\\/]/.test(target);
-  const explicitPaths = isExplicitRelative
-    ? [relativeTarget]
-    : isQualified
-      ? [normalizedTarget, relativeTarget]
-      : [relativeTarget, normalizedTarget];
+  const explicitPaths = (
+    isExplicitRelative
+      ? [relativeTarget]
+      : isQualified
+        ? [normalizedTarget, relativeTarget]
+        : [relativeTarget, normalizedTarget]
+  ).filter((path): path is string => path !== null);
 
   for (const candidate of unique(explicitPaths)) {
     const matches = pages.filter((page) => normalizePath(pathOf(page), false) === candidate);
@@ -491,6 +579,7 @@ function resolveWikiTarget(
   }
   if (isQualified) return unresolved();
 
+  if (!normalizedTarget) return unresolved();
   const targetName = normalizeName(baseName(normalizedTarget));
   const named = pages.filter((page) => pageNames(page, pathOf(page)).has(targetName));
   if (named.length === 1) return resolved(named[0]);
@@ -600,15 +689,6 @@ function maskIgnoredMarkdown(source: string): string {
     }
   }
 
-  let commentFrom = source.indexOf("<!--");
-  while (commentFrom >= 0) {
-    const terminator = source.indexOf("-->", commentFrom + 4);
-    const commentTo = terminator < 0 ? source.length : terminator + 3;
-    mask(commentFrom, commentTo);
-    if (terminator < 0) break;
-    commentFrom = source.indexOf("<!--", commentTo);
-  }
-
   let offset = 0;
   while (offset < source.length) {
     if (source[offset] !== "`" || masked[offset] === " ") {
@@ -636,6 +716,19 @@ function maskIgnoredMarkdown(source: string): string {
     }
     mask(offset, closingTo);
     offset = closingTo;
+  }
+
+  // Inline comments are masked last, over the already-masked buffer: an opener
+  // that lives inside a fence or a code span is not a comment, and an opener
+  // without its own terminator must not swallow the rest of the file.
+  const outsideCode = masked.join("");
+  let commentFrom = outsideCode.indexOf("<!--");
+  while (commentFrom >= 0) {
+    const terminator = outsideCode.indexOf("-->", commentFrom + 4);
+    if (terminator < 0) break;
+    const commentTo = terminator + 3;
+    mask(commentFrom, commentTo);
+    commentFrom = outsideCode.indexOf("<!--", commentTo);
   }
   return masked.join("");
 }
@@ -748,10 +841,6 @@ function resolveRelativePath(directory: string, target: string): string | null {
     segments.push(segment);
   }
   return segments.join("/").normalize("NFC").toLowerCase();
-}
-
-function joinPath(directory: string, target: string): string {
-  return normalizePath(directory ? `${directory}/${target}` : target, false);
 }
 
 function relativePath(sourceDirectory: string, targetPath: string): string {

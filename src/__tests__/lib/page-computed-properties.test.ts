@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { createKnowledgeWikiResolver } from "@/lib/knowledge-index";
 import {
   evaluatePageComputedProperties,
   parsePageComputedPropertiesDefinition,
@@ -7,6 +8,27 @@ import {
   type PageComputedPropertiesCatalogRow,
   type PageComputedPropertiesDefinition,
 } from "@/lib/page-computed-properties";
+
+const wikiResolution = vi.hoisted(() => ({ resolves: 0 }));
+
+// The real resolver, wrapped so the test can count index builds and lookups.
+vi.mock("@/lib/knowledge-index", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/knowledge-index")>();
+  return {
+    ...actual,
+    createKnowledgeWikiResolver: vi.fn(
+      (pages: Parameters<typeof actual.createKnowledgeWikiResolver>[0]) => {
+        const resolver = actual.createKnowledgeWikiResolver(pages);
+        return {
+          resolve: (sourcePath: string, targetText: string) => {
+            wikiResolution.resolves += 1;
+            return resolver.resolve(sourcePath, targetText);
+          },
+        };
+      }
+    ),
+  };
+});
 
 const property = (name: string) => ({ type: "property", name }) as const;
 const literal = (value: string | number | boolean | string[]) =>
@@ -407,5 +429,76 @@ describe("evaluatePageComputedProperties", () => {
 
     expect(projection.rows[0]?.derivedProperties).toMatchObject({ visible: true, result: "safe" });
     expect(projection.diagnostics).toEqual([]);
+  });
+
+  it("reports a rollup's missing target property against the Page that owns the rollup", () => {
+    // The rollup fails closed on the source Page, so the explanation has to
+    // travel with that row — a Collection that filters the target out would
+    // otherwise drop the only diagnostic and render a bare empty cell.
+    const catalog: PageComputedPropertiesCatalogRow[] = [
+      {
+        id: "source",
+        path: "Source.md",
+        title: "Source",
+        aliases: [],
+        properties: { owners: "[[Target]]" },
+      },
+      { id: "target", path: "Target.md", title: "Target", aliases: [], properties: {} },
+    ];
+    const definition = {
+      version: 1,
+      properties: {
+        owners: { type: "relation" },
+        total: { type: "rollup", relation: "owners", property: "score", calculate: "sum" },
+      },
+    } as const satisfies PageComputedPropertiesDefinition;
+
+    const projection = evaluatePageComputedProperties(definition, catalog);
+
+    expect(projection.rows.find(({ id }) => id === "source")?.derivedProperties).not.toHaveProperty(
+      "total"
+    );
+    expect(projection.diagnostics).toEqual([
+      {
+        code: "missing-property",
+        rowId: "source",
+        rowPath: "Source.md",
+        property: "total",
+        message: "Page Target.md has no source property score.",
+      },
+    ]);
+  });
+});
+
+describe("evaluatePageComputedProperties relation indexing", () => {
+  it("indexes the catalog once for the whole projection, not once per relation link", () => {
+    const definition = {
+      version: 1,
+      properties: {
+        owners: { type: "relation" },
+        total: { type: "rollup", relation: "owners", property: "score", calculate: "sum" },
+      },
+    } as const satisfies PageComputedPropertiesDefinition;
+    const size = 200;
+    const catalog: PageComputedPropertiesCatalogRow[] = Array.from(
+      { length: size },
+      (_unused, index) => ({
+        id: `page-${index}`,
+        path: `Notes/Page ${index}.md`,
+        title: `Page ${index}`,
+        aliases: [],
+        properties: { score: index, owners: [`[[Page ${(index + 1) % size}]]`] },
+      })
+    );
+    const createResolver = vi.mocked(createKnowledgeWikiResolver);
+    createResolver.mockClear();
+    wikiResolution.resolves = 0;
+
+    const projection = evaluatePageComputedProperties(definition, catalog);
+
+    expect(projection.diagnostics).toEqual([]);
+    expect(projection.rows).toHaveLength(size);
+    expect(createResolver).toHaveBeenCalledOnce();
+    expect(wikiResolution.resolves).toBe(size);
   });
 });

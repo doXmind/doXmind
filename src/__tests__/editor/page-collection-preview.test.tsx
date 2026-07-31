@@ -3,7 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { PageCollectionPreview } from "@/editor/markdown-block/page-collection-preview";
+import { projectPageCollection } from "@/lib/page-collection";
 import type { WorkspaceCatalogPage } from "@/lib/workspace-page-catalog";
+
+vi.mock("@/lib/page-collection", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/page-collection")>();
+  return { ...actual, projectPageCollection: vi.fn(actual.projectPageCollection) };
+});
 
 function collectionSource(definition: unknown): string {
   return `\`\`\`doxmind-collection\n${JSON.stringify(definition)}\n\`\`\`\n`;
@@ -233,6 +239,49 @@ describe("PageCollectionPreview", () => {
       "Page Plans/Roadmap.md has no source property estimate."
     );
     expect(screen.queryByRole("button", { name: "Missing" })).not.toBeInTheDocument();
+  });
+
+  it("re-projects only when the fence or the catalog content changes", () => {
+    // The projection is quadratic in catalog size for computed relations, and
+    // the editor hands this component a freshly built catalog array on every
+    // keystroke. Re-running it per render froze typing in large workspaces.
+    const projectSpy = vi.mocked(projectPageCollection);
+    projectSpy.mockClear();
+    const source = collectionSource({
+      version: 2,
+      view: "table",
+      filters: [{ property: "type", operator: "equals", value: "task" }],
+      columns: ["status"],
+      sort: [],
+    });
+    const context = { status: "ready", pages } as const;
+
+    const { rerender } = render(<PageCollectionPreview source={source} context={context} />);
+    expect(projectSpy).toHaveBeenCalledTimes(1);
+
+    rerender(<PageCollectionPreview source={source} context={context} />);
+    expect(projectSpy).toHaveBeenCalledTimes(1);
+
+    // A keystroke in the open Page rebuilds the catalog with fresh objects but
+    // leaves every value the projection reads untouched.
+    const retyped = pages.map((page) =>
+      page.id === "note" ? { ...page, markdown: "typed" } : page
+    );
+    rerender(
+      <PageCollectionPreview source={source} context={{ status: "ready", pages: retyped }} />
+    );
+    expect(projectSpy).toHaveBeenCalledTimes(1);
+
+    const edited = pages.map((page) =>
+      page.id === "task-a" ? { ...page, properties: { ...page.properties, status: "done" } } : page
+    );
+    rerender(
+      <PageCollectionPreview source={source} context={{ status: "ready", pages: edited }} />
+    );
+    expect(projectSpy).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("table", { name: "Page collection table" })).toHaveTextContent(
+      "First taskdone"
+    );
   });
 
   it("reports loading and catalog errors with deterministic print readiness", () => {
