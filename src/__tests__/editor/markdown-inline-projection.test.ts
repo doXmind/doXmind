@@ -81,6 +81,25 @@ describe("Markdown inline projection", () => {
     ]);
   });
 
+  it("closes emphasis nested inside the same delimiter character", () => {
+    // Reserving the outer span's width out of every closing run meant an inner span whose closer sits
+    // on its own run never closed, so its delimiters were emitted as literal text: `**a *b* c**` read
+    // `a b c` unfocused and `a *b* c` the moment it was clicked. Deleting one of those invented
+    // asterisks then destroyed a real delimiter.
+    expect(projectMarkdownInline("**a *b* c**").visibleText).toBe("a b c");
+    expect(projectMarkdownInline("*a **b** c*").visibleText).toBe("a b c");
+    expect(projectMarkdownInline("***a* b**").visibleText).toBe("a b");
+    expect(projectMarkdownInline("**a *b* c**").segments).toContainEqual(
+      expect.objectContaining({
+        text: "b",
+        marks: expect.objectContaining({ bold: true, italic: true }),
+      })
+    );
+    // Adjacent closers still share one run, which is what the reservation was there for.
+    expect(projectMarkdownInline("***bold***").visibleText).toBe("bold");
+    expect(projectMarkdownInline("**a *b***").visibleText).toBe("a b");
+  });
+
   it("maps escaped punctuation and emoji with UTF-16 offsets in both directions", () => {
     const projection = projectMarkdownInline("🚀 \\*ship\\* **now**");
 
@@ -135,6 +154,16 @@ describe("Markdown inline projection", () => {
         marks: expect.objectContaining({ code: false }),
       }),
     ]);
+  });
+
+  it("keeps a backslash inside a code span, where escapes do not apply", () => {
+    // CommonMark resolves no escape inside a code span, so `\|` there is a backslash and a pipe, and
+    // `marked` — which renders the same source for the preview and for export — agrees. The escape a
+    // table cell carries is table syntax, resolved by `markdownTableCellText` when the row is split
+    // into cells, before any of this runs. Resolving it here instead would rewrite the code spans of
+    // every paragraph that never was a cell.
+    expect(projectMarkdownInline("`x \\| y`").visibleText).toBe("x \\| y");
+    expect(projectMarkdownInline("x \\| y").visibleText).toBe("x | y");
   });
 
   it("hides an autolink's angle brackets and links the URL it wraps", () => {
@@ -308,6 +337,46 @@ describe("Markdown inline projection", () => {
     });
   });
 
+  it("takes an emphasis span's delimiters with the content that emptied it", () => {
+    // Selecting a bold word and pressing Backspace used to leave `a **** c` on disk, which CommonMark
+    // reads as four literal asterisks — visible in the preview, hidden by the editing surface, and so
+    // unreachable by any further keystroke.
+    expect(applyVisibleTextPatch("a **bold** c", "a bold c", "a  c")).toEqual({
+      source: "a  c",
+      applied: true,
+    });
+    expect(applyVisibleTextPatch("x _em_ y", "x em y", "x  y")).toEqual({
+      source: "x  y",
+      applied: true,
+    });
+    expect(applyVisibleTextPatch("a ~~struck~~ c", "a struck c", "a  c")).toEqual({
+      source: "a  c",
+      applied: true,
+    });
+    // A deletion that only shortens the span keeps it.
+    expect(applyVisibleTextPatch("a **bold** c", "a bold c", "a bd c").source).toBe("a **bd** c");
+    // Underscores that were never emphasis are not delimiters to take away either.
+    expect(applyVisibleTextPatch("snake_case_name", "snake_case_name", "snake__name").source).toBe(
+      "snake__name"
+    );
+  });
+
+  it("keeps a character typed immediately after an underscore emphasis run", () => {
+    // A caret between two segments resolves forward, so the insertion landed after the closing `_`.
+    // `_under_X` cannot close against a word character, the reparse no longer matched, and the
+    // keystroke was discarded outright — the character never appeared and the file never changed.
+    expect(
+      applyVisibleTextPatch("Prefix _under_ tail", "Prefix under tail", "Prefix underX tail")
+    ).toEqual({ source: "Prefix _underX_ tail", applied: true });
+    expect(
+      applyVisibleTextPatch("Prefix __strong__ tail", "Prefix strong tail", "Prefix strongX tail")
+    ).toEqual({ source: "Prefix __strongX__ tail", applied: true });
+    // The asterisk form never had the problem, and still puts the character outside the span.
+    expect(
+      applyVisibleTextPatch("Prefix *under* tail", "Prefix under tail", "Prefix underX tail").source
+    ).toBe("Prefix *under*X tail");
+  });
+
   it("escapes newly typed Markdown punctuation so the visible text stays literal", () => {
     const result = applyVisibleTextPatch("Plain text", "Plain text", "Plain *text*");
 
@@ -316,5 +385,18 @@ describe("Markdown inline projection", () => {
       applied: true,
     });
     expect(projectMarkdownInline(result.source).visibleText).toBe("Plain *text*");
+  });
+
+  it("does not escape a typed `!`, which has no syntax of its own", () => {
+    // `!` only means anything before a `[`, and that bracket is escaped anyway — so the backslash
+    // bought nothing and cost a byte the user never typed.
+    expect(applyVisibleTextPatch("Done", "Done", "Done!")).toEqual({
+      source: "Done!",
+      applied: true,
+    });
+    // An image the user types by hand still comes out literal, because the bracket carries it.
+    const image = applyVisibleTextPatch("x", "x", "x![alt](a.png)");
+    expect(image.applied).toBe(true);
+    expect(projectMarkdownInline(image.source).visibleText).toBe("x![alt](a.png)");
   });
 });

@@ -73,6 +73,31 @@ describe("Markdown inline formatting", () => {
     });
   });
 
+  it("reports emphasis only when the whole selection carries it", () => {
+    // Reading the characters just outside the selection, a drag across `*a* and *b*` abuts a `*` at
+    // either end, so Italic drew pressed for a run that is mostly not italic — and pressing it did
+    // nothing, because untoggling there would take the opening delimiter of one span and the closing
+    // delimiter of the other. A pressed button that does nothing is worse than an unlit one.
+    expect(markdownInlineFormatState("*a* and *b*", 1, 10)).toMatchObject({ italic: false });
+    expect(markdownInlineFormatState("**a** and **b**", 2, 13)).toMatchObject({ bold: false });
+    expect(markdownInlineFormatState("~~gone~~ and ~~also gone~~", 2, 24)).toMatchObject({
+      strike: false,
+    });
+    // A fragment inside a span carries the mark, but has no delimiter beside it for the untoggle to
+    // remove, so it stays unlit rather than lighting up for an edit that declines.
+    expect(markdownInlineFormatState("A **bold phrase** here", 9, 15)).toMatchObject({
+      bold: false,
+    });
+    expect(createMarkdownInlineFormatEdit("A **bold phrase** here", 9, 15, "bold")).toBeNull();
+
+    // What one span's worth of selection reports is unchanged, delimiter character included.
+    expect(markdownInlineFormatState("**a *b* c**", 2, 9)).toMatchObject({ bold: true });
+    expect(markdownInlineFormatState("This is _important_ text", 9, 18)).toMatchObject({
+      italic: true,
+    });
+    expect(markdownInlineFormatState("~~gone~~ here", 2, 6)).toMatchObject({ strike: true });
+  });
+
   it("reports inline code when the selection reaches onto the delimiters", () => {
     // An inline code chip is drawn with padding. A drag that begins a pixel inside its left edge
     // anchors in the preceding text node, so the source offsets straddle a backtick even though the
@@ -239,6 +264,35 @@ describe("Markdown inline formatting", () => {
     expect(createMarkdownInlineFormatEdit(source, 2, 6, "link")).toBeNull();
   });
 
+  it("refuses a format whose selection ends inside an emphasis delimiter run", () => {
+    // The semantic editor hides the delimiters, so dragging the rendered word `bold` in
+    // `A **bold phrase** here` anchors at source offset 4 — inside the `**` run. Splicing markers at
+    // those offsets wrote `A ****bold** phrase** here`, putting asterisks the user never typed into
+    // the paragraph and rewriting delimiters they never selected.
+    expect(createMarkdownInlineFormatEdit("A **bold phrase** here", 4, 8, "bold")).toBeNull();
+    expect(createMarkdownInlineFormatEdit("A **bold** here", 4, 12, "bold")).toBeNull();
+    expect(createMarkdownInlineFormatEdit("**bold** tail", 2, 13, "bold")).toBeNull();
+    // A different mark applied wholly inside the span is still fine — the guard is about delimiters
+    // the edit would rewrite, not about formatting emphasized text.
+    expect(createMarkdownInlineFormatEdit("A **bold phrase** here", 4, 8, "strike")).toEqual({
+      from: 4,
+      to: 8,
+      text: "~~bold~~",
+      selection: { anchor: 6, head: 10 },
+    });
+  });
+
+  it("refuses to untoggle emphasis across two different spans", () => {
+    // Reading only the characters just outside the selection, selecting the whole of `*a* and *b*`
+    // looked italic, and untoggling deleted the opening `*` of the first span and the closing `*` of
+    // the second, leaving `a* and *b`.
+    expect(createMarkdownInlineFormatEdit("*a* and *b*", 1, 10, "italic")).toBeNull();
+    expect(createMarkdownInlineFormatEdit("**a** and **b**", 2, 13, "bold")).toBeNull();
+    expect(
+      createMarkdownInlineFormatEdit("~~gone~~ and ~~also gone~~", 2, 24, "strike")
+    ).toBeNull();
+  });
+
   it("keeps selection offsets in the DOM UTF-16 coordinate space", () => {
     expect(createMarkdownInlineFormatEdit("Hi 😀", 3, 5, "bold")).toEqual({
       from: 3,
@@ -246,6 +300,29 @@ describe("Markdown inline formatting", () => {
       text: "**😀**",
       selection: { anchor: 5, head: 7 },
     });
+  });
+
+  /*
+   * A selection that only partly covers an emphasis run declines.
+   *
+   * Reparsing the result catches most of these, but not all: wrapping `phrase` inside
+   * `A **bold phrase** here` produces `A **bold **phrase**** here`, whose visible text is still
+   * `A bold phrase here`, so the round-trip check passes while the file has grown a four-asterisk
+   * run. Emphasis runs mean something up to three — `***bold***` is italic nested in bold and must
+   * still work — so a *new* run of four is the corruption and nothing else.
+   */
+  it("declines rather than splicing a marker into an existing emphasis run", () => {
+    const source = "A **bold phrase** here";
+    // The head of the run, the tail of it, and a selection that swallows the delimiters.
+    expect(createMarkdownInlineFormatEdit(source, 4, 8, "bold")).toBeNull();
+    expect(createMarkdownInlineFormatEdit(source, 9, 15, "bold")).toBeNull();
+    expect(createMarkdownInlineFormatEdit(source, 2, 17, "bold")).toBeNull();
+    // Selecting exactly what the run wraps still toggles it off.
+    const off = createMarkdownInlineFormatEdit(source, 4, 15, "bold");
+    expect(off).not.toBeNull();
+    expect(source.slice(0, off!.from) + off!.text + source.slice(off!.to)).toBe(
+      "A bold phrase here"
+    );
   });
 
   it("adds italic outside bold and toggles triple emphasis without corrupting either mark", () => {
@@ -291,6 +368,13 @@ describe("createMarkdownLinkEdit", () => {
     expect(createMarkdownLinkEdit("x", 0, 1, "https://e.com/a b")).toMatchObject({
       text: "[x](<https://e.com/a b>)",
     });
+  });
+
+  it("refuses a selection that straddles an emphasis marker", () => {
+    // Selecting the visible run `bold and` in `**bold** and more` maps to source [2,12), which is
+    // inside the opening `**`. Wrapping that range produced `**[bold** and](https://e.com) more`:
+    // the bold the user never touched was destroyed and the link did not even render as one.
+    expect(createMarkdownLinkEdit("**bold** and more", 2, 12, "https://e.com")).toBeNull();
   });
 
   it("refuses an empty destination, a label with an unescaped bracket, and inline code", () => {

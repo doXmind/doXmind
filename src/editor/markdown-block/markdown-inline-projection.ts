@@ -213,14 +213,11 @@ export function applyVisibleTextPatch(
     to: difference.oldTo,
   });
   const replacement = newVisible.slice(difference.newFrom, difference.newTo);
-  const candidates = [escapeVisibleMarkdown(replacement), replacement].filter(
-    (candidate, index, all) => all.indexOf(candidate) === index
-  );
-  for (const candidate of candidates) {
-    const nextSource = `${source.slice(
-      0,
-      sourceRange.from
-    )}${candidate}${source.slice(sourceRange.to)}`;
+  const insertionAt =
+    difference.oldFrom === difference.oldTo
+      ? projection.visibleOffsetToSource(difference.oldFrom, "backward")
+      : null;
+  for (const nextSource of patchCandidates(source, sourceRange, replacement, insertionAt)) {
     const nextProjection = projectMarkdownInline(nextSource);
     if (nextProjection.visibleText !== newVisible) continue;
     return {
@@ -230,6 +227,49 @@ export function applyVisibleTextPatch(
     };
   }
   return patchFailure(source, projection, selection);
+}
+
+/**
+ * The source strings worth trying for one visible edit, best first.
+ *
+ * Every candidate is still accepted only if it reparses to the visible text the user typed, so the
+ * extra ones can only rescue an edit that would otherwise be dropped on the floor:
+ *
+ * - Emptying a span used to leave its delimiters behind — deleting the word in `a **bold** c` wrote
+ *   `a **** c`, which CommonMark reads as four literal asterisks the editing surface then hides, so
+ *   there is no keystroke that reaches them again. The delimiters leave with the content they wrapped.
+ * - A caret between two segments resolves forward, which puts an insertion after a closing delimiter.
+ *   `_under_` cannot close against a following word character, so typing right after it reparsed to
+ *   something else and the keystroke was silently discarded — the character never appeared and the
+ *   file never changed. The backward position keeps the insertion inside the span instead.
+ */
+function patchCandidates(
+  source: string,
+  range: Utf16Range,
+  replacement: string,
+  insertionAt: number | null
+): string[] {
+  const candidates: string[] = [];
+  const push = (from: number, to: number, text: string) => {
+    const candidate = `${source.slice(0, from)}${text}${source.slice(to)}`;
+    if (!candidates.includes(candidate)) candidates.push(candidate);
+  };
+  const emptied = replacement ? null : emptiedDelimiterPair(source, range);
+  if (emptied) push(emptied.from, emptied.to, "");
+  const texts = [escapeVisibleMarkdown(replacement), replacement];
+  for (const text of texts) push(range.from, range.to, text);
+  if (insertionAt !== null) {
+    for (const text of texts) push(insertionAt, insertionAt, text);
+  }
+  return candidates;
+}
+
+/** The delimiter runs either side of a range that an empty replacement would leave with no content. */
+function emptiedDelimiterPair(source: string, range: Utf16Range): Utf16Range | null {
+  const opening = /(?:\*+|_+|~+)$/.exec(source.slice(0, range.from))?.[0] ?? "";
+  const closing = /^(?:\*+|_+|~+)/.exec(source.slice(range.to))?.[0] ?? "";
+  if (!opening || opening !== closing) return null;
+  return { from: range.from - opening.length, to: range.to + closing.length };
 }
 
 class InlineParser {
@@ -363,10 +403,18 @@ class InlineParser {
   ): boolean {
     if (this.source[cursor] !== expected.character) return false;
     const runLength = this.delimiterRunLength(cursor, expected.character, to);
+    if (runLength < expected.width) return false;
     const reservedWidth = ancestors
       .filter((delimiter) => delimiter.character === expected.character)
       .reduce((sum, delimiter) => sum + delimiter.width, 0);
-    if (runLength < expected.width + reservedWidth) return false;
+    // An ancestor only draws its closer from *this* run when something is left of the run once this
+    // delimiter has taken its width — `***bold***` closes both spans out of one run, so the inner one
+    // has to leave enough behind. A run that ends exactly where this span closes says the outer span
+    // closes somewhere further along, and reserving there meant the inner span never closed at all:
+    // `**a *b* c**` rendered `a b c` unfocused but showed `a *b* c` the moment it was clicked, so
+    // deleting one of those invented asterisks destroyed a real delimiter.
+    const leftover = runLength - expected.width;
+    if (leftover > 0 && leftover < reservedWidth) return false;
 
     const previous = this.source[cursor - 1] ?? "";
     const next = this.source[cursor + expected.width] ?? "";
@@ -949,6 +997,15 @@ function decodeEscapedText(source: string): string {
   return source.replace(/\\([!-/:-@[-`{-~])/gu, "$1");
 }
 
+/**
+ * Escape what the user typed so it stays literal in the source.
+ *
+ * Deliberately not `!`. The only thing a bare `!` can start is an image, and that needs a `[` right
+ * after it — which this function already escapes, so the `!` can never reach its syntax. Escaping it
+ * anyway put a backslash the user never typed into their file: typing `!` at the end of a paragraph
+ * wrote `\!`. It renders the same, so nothing looked wrong, but the bytes on disk stopped being the
+ * bytes the user wrote, and this Page format is the file.
+ */
 function escapeVisibleMarkdown(text: string): string {
-  return text.replace(/[\\*_~`[\]!|]/gu, "\\$&");
+  return text.replace(/[\\*_~`[\]|]/gu, "\\$&");
 }

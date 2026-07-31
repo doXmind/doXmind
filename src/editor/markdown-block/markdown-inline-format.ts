@@ -1,4 +1,5 @@
 import type { InlineFormatState } from "@/editor/markdown-block/inline-format-toolbar";
+import { projectMarkdownInline } from "@/editor/markdown-block/markdown-inline-projection";
 
 export type MarkdownInlineFormat = "bold" | "italic" | "strike" | "link" | "code";
 
@@ -86,29 +87,92 @@ export function createMarkdownInlineFormatEdit(
   const selected = source.slice(from, to);
   // Code is fully handled above; the arithmetic here removes exactly `wrapper.open.length` characters
   // either side of the selection, which only holds for wrappers that abut it.
-  const activeState = markdownInlineFormatState(source, from, to);
-  if (format !== "code" && activeState[format]) {
+  if (format !== "code" && activeEmphasisMarks(source, from, to)[format]) {
     const editFrom = from - wrapper.open.length;
-    return {
+    return verifiedEdit(source, {
       from: editFrom,
       to: to + wrapper.close.length,
       text: selected,
       selection: { anchor: editFrom, head: editFrom + selected.length },
-    };
+    });
   }
 
   const spacedCode = format === "code" && wrapper.open.length > 1;
   const prefix = spacedCode ? `${wrapper.open} ` : wrapper.open;
   const suffix = spacedCode ? ` ${wrapper.close}` : wrapper.close;
-  return {
-    from,
-    to,
-    text: `${prefix}${selected}${suffix}`,
-    selection: {
-      anchor: from + prefix.length,
-      head: from + prefix.length + selected.length,
+  return verifiedEdit(
+    source,
+    {
+      from,
+      to,
+      text: `${prefix}${selected}${suffix}`,
+      selection: {
+        anchor: from + prefix.length,
+        head: from + prefix.length + selected.length,
+      },
     },
-  };
+    // Code is the one format that is meant to change the visible text: whatever it wraps stops being
+    // Markdown and becomes the literal characters of the source, padding spaces included.
+    format === "code"
+      ? visibleTextWith(source, from, to, spacedCode ? ` ${selected} ` : selected)
+      : undefined,
+    wrapper.open[0]
+  );
+}
+
+/**
+ * Whether the edit merged its marker into a delimiter run already in the source.
+ *
+ * Reparsing the result is not enough on its own. `A **bold phrase** here` with `phrase` selected
+ * wraps to `A **bold **phrase**** here`, whose visible text is still `A bold phrase here` — so the
+ * round-trip check passes while the file has grown a four-asterisk run that no longer says what it
+ * used to. The signature is a marker landing flush against the same character, so the two runs merge
+ * and the span boundaries move.
+ *
+ * Adjacency alone would be too blunt: `***bold***` is how italic legitimately nests inside bold, and
+ * that marker is adjacent by construction. Emphasis runs are meaningful up to three; a *new* run of
+ * four or more is the corruption and nothing else. Backticks are exempt — a run of them is how a code
+ * span carries a backtick, and `createCodeEdit` already guards that case.
+ */
+function growsDelimiterRun(source: string, next: string, delimiter: string): boolean {
+  if (delimiter === "`") return false;
+  const longest = (text: string) =>
+    Math.max(0, ...[...text.matchAll(new RegExp(`\\${delimiter}+`, "g"))].map((m) => m[0].length));
+  const after = longest(next);
+  return after >= 4 && after > longest(source);
+}
+
+/**
+ * The edit, or null when applying it would rewrite Markdown outside the selection.
+ *
+ * The offsets arrive from a surface that hides delimiters, so a drag over a bold word legitimately
+ * anchors *inside* a `**` run and the ends of a selection are exactly what cannot be trusted. Splicing
+ * markers there wrote unbalanced delimiters into the file — `A **bold phrase** here` became
+ * `A ****bold** phrase** here`, and toggling italic off across `*a* and *b*` took the opening `*` of
+ * one span and the closing `*` of the other. Neither is visible in the offsets, so the result is
+ * reparsed and refused unless the visible text comes back as `expected`, which for every toggle means
+ * unchanged. This is the same "refuse rather than corrupt the source" the code-span and image guards
+ * above already apply.
+ */
+function verifiedEdit(
+  source: string,
+  edit: MarkdownInlineFormatEdit,
+  expected?: string,
+  delimiter?: string
+): MarkdownInlineFormatEdit | null {
+  const next = `${source.slice(0, edit.from)}${edit.text}${source.slice(edit.to)}`;
+  if (delimiter && growsDelimiterRun(source, next, delimiter)) return null;
+  const target = expected ?? projectMarkdownInline(source).visibleText;
+  return projectMarkdownInline(next).visibleText === target ? edit : null;
+}
+
+/** The block's visible text with the selection's visible span swapped for `replacement`. */
+function visibleTextWith(source: string, from: number, to: number, replacement: string): string {
+  const projection = projectMarkdownInline(source);
+  const range = projection.sourceRangeToVisible({ from, to });
+  return `${projection.visibleText.slice(0, range.from)}${replacement}${projection.visibleText.slice(
+    range.to
+  )}`;
 }
 
 export function markdownInlineFormatState(
@@ -116,18 +180,60 @@ export function markdownInlineFormatState(
   from: number,
   to: number
 ): InlineFormatState {
+  const linkClose = linkCloseAfter(source, to);
+  return {
+    ...activeEmphasisMarks(source, from, to),
+    link: from > 0 && source[from - 1] === "[" && !isImageLabel(source, from) && linkClose !== null,
+    code: selectionIsInlineCode(source, from, to),
+  };
+}
+
+type EmphasisMarks = Record<Exclude<MarkdownInlineFormat, "link" | "code">, boolean>;
+
+/**
+ * Which emphasis marks a selection carries — what the toolbar draws pressed, and what the untoggle
+ * above acts on.
+ *
+ * Two conditions, and both are load-bearing.
+ *
+ * The delimiters have to abut the selection, because that is what the untoggle removes: exactly
+ * `wrapper.open.length` characters at either end.
+ *
+ * And every visible character of the selection has to carry the mark. Adjacency alone answers a
+ * different question, and the two part company as soon as a selection spans two spans: `*a* and *b*`
+ * selected whole abuts a `*` at either end, so Italic drew pressed for a run that is mostly not
+ * italic — and pressing it did nothing, because untoggling there would take the opening delimiter of
+ * one span and the closing delimiter of the other. A pressed button that does nothing is worse than
+ * an unlit one, which is the same rule the code toggle above is written to.
+ *
+ * The projection already knows which marks each run of visible text carries. Parsing costs 16µs for
+ * a 270-character paragraph and 41µs for 812, and the early return keeps it off every selection that
+ * has no delimiter beside it at all.
+ */
+function activeEmphasisMarks(source: string, from: number, to: number): EmphasisMarks {
   const wraps = (wrapper: Wrapper) =>
     from >= wrapper.open.length &&
     source.slice(from - wrapper.open.length, from) === wrapper.open &&
     source.slice(to, to + wrapper.close.length) === wrapper.close;
-  const linkClose = linkCloseAfter(source, to);
   const emphasis = emphasisRunsAround(source, from, to);
-  return {
+  const abutting: EmphasisMarks = {
     bold: emphasis >= 2,
     italic: emphasis % 2 === 1,
     strike: wraps(SIMPLE_WRAPPERS.strike),
-    link: from > 0 && source[from - 1] === "[" && !isImageLabel(source, from) && linkClose !== null,
-    code: selectionIsInlineCode(source, from, to),
+  };
+  if (!abutting.bold && !abutting.italic && !abutting.strike) return abutting;
+
+  const projection = projectMarkdownInline(source);
+  const visible = projection.sourceRangeToVisible({ from, to });
+  const covered = projection.segments.filter(
+    (segment) => segment.visibleFrom < visible.to && segment.visibleTo > visible.from
+  );
+  const carries = (mark: keyof EmphasisMarks) =>
+    covered.length > 0 && covered.every((segment) => segment.marks[mark]);
+  return {
+    bold: abutting.bold && carries("bold"),
+    italic: abutting.italic && carries("italic"),
+    strike: abutting.strike && carries("strike"),
   };
 }
 
@@ -141,8 +247,8 @@ export function markdownInlineFormatState(
  *
  * The intraword rule is CommonMark's and, more to the point, is already what
  * `markdown-inline-projection.ts` uses to decide what to render, so `snake_case_name` is not
- * emphasis here either. The two have to agree; a toolbar that contradicts the text under it is the
- * same defect in the other direction.
+ * emphasis here either. The two have to agree; an untoggle that contradicts the text under it is
+ * the same defect in the other direction.
  */
 function emphasisRunsAround(source: string, from: number, to: number): number {
   for (const mark of ["*", "_"] as const) {
@@ -173,12 +279,12 @@ function createLinkEdit(source: string, from: number, to: number): MarkdownInlin
   if (isImageLabel(source, from) && close !== null) return null;
   if (from > 0 && source[from - 1] === "[" && !isImageLabel(source, from) && close !== null) {
     // Toggling off an existing link unwraps it back to its label.
-    return {
+    return verifiedEdit(source, {
       from: from - 1,
       to: close,
       text: selected,
       selection: { anchor: from - 1, head: from - 1 + selected.length },
-    };
+    });
   }
   // Applying a link needs a destination, which only the user has. `createMarkdownLinkEdit` takes
   // one; writing `[label](https://)` here produced a link that goes nowhere and, worse, put the
@@ -212,21 +318,26 @@ export function createMarkdownLinkEdit(
     // A title belongs to the link, not to the destination being changed, so it survives a retarget.
     const { title } = splitLinkDestination(source.slice(existing.labelTo + 2, existing.to - 1));
     const text = `[${label}](${encodeLinkDestination(destination)}${title ? ` ${title}` : ""})`;
-    return {
+    return verifiedEdit(source, {
       from: existing.from,
       to: existing.to,
       text,
       selection: { anchor: existing.from, head: existing.from + text.length },
-    };
+    });
   }
   const label = selected || destination;
   const text = `[${label}](${encodeLinkDestination(destination)})`;
-  return {
-    from,
-    to,
-    text,
-    selection: { anchor: from + 1, head: from + 1 + label.length },
-  };
+  return verifiedEdit(
+    source,
+    {
+      from,
+      to,
+      text,
+      selection: { anchor: from + 1, head: from + 1 + label.length },
+    },
+    // Linking an empty selection has no label to reuse, so the destination becomes the visible text.
+    selected ? undefined : visibleTextWith(source, from, to, label)
+  );
 }
 
 /** Wrap a destination in angle brackets when it contains characters that would end it early. */
