@@ -17,11 +17,14 @@ import { createPortal } from "react-dom";
 import {
   type ChangeEvent,
   type ClipboardEvent,
+  createContext,
   type CSSProperties,
   type DragEvent,
   Fragment,
   type KeyboardEvent,
+  memo,
   type ReactNode,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -201,6 +204,23 @@ export interface MarkdownWikiEmbedContext {
   onOpenPage?: (pageId: string) => void;
 }
 
+export interface MarkdownWikiLinkServices {
+  /** Open the Page a `[[target]]` names, or report that there is none. */
+  open: (target: string) => void;
+  /** Whether that target names a Page that exists in the workspace. */
+  resolves: (target: string) => boolean;
+}
+
+/**
+ * How a rendered `[[Wiki Link]]` reaches the workspace.
+ *
+ * A context rather than a prop, because the only consumer is one leaf about twenty render sites
+ * below the row and threading a resolver alongside `onOpenWikiLink` through all of them would be
+ * churn for a single element. A row rendered without a provider keeps exactly its previous
+ * behaviour: nothing is reported unresolved.
+ */
+export const MarkdownWikiLinkContext = createContext<MarkdownWikiLinkServices | null>(null);
+
 export type MarkdownCollectionContext = PageCollectionPreviewContext;
 
 export interface MarkdownImageContext {
@@ -208,7 +228,82 @@ export interface MarkdownImageContext {
   readAsset: (path: string) => Promise<WorkspaceAssetRead>;
 }
 
-export function MarkdownBlockRow({
+/**
+ * Whether an arrow handed back by an in-place surface means "leave this Block".
+ *
+ * A surface that holds text keeps its arrows for its own caret, so most of them reach the Block
+ * only after the caret has moved and the key is spent. Two decide for themselves before handing one
+ * back: a code Block hands an arrow back only at the payload's own edge (`atPayloadEdge` in
+ * markdown-code-block.tsx), and a table hands the vertical pair back only once the cell move it
+ * would make turned out not to exist. For those the key arriving here is already a decision.
+ *
+ * The rest — a figure's source field, a container's heading and body — hand every arrow back
+ * wherever the caret is, so the decision has to be made here instead, off the caret itself.
+ * Dropping the key unconditionally left those Blocks with no way out but Escape or the mouse;
+ * taking it unconditionally would have been worse, because it would have stopped the caret moving
+ * inside a two-line equation or a multi-line callout body at all.
+ */
+function arrowLeavesInPlaceBlock(
+  kind: MarkdownBlockView["kind"],
+  event: KeyboardEvent<HTMLElement>
+): boolean {
+  if (kind === "fenced_code") return true;
+  if (kind === "table") return event.key === "ArrowUp" || event.key === "ArrowDown";
+  if (kind === "block_math" || kind === "mermaid" || kind === "callout" || kind === "toggle") {
+    return caretAtSurfaceEdge(event.target, event.key);
+  }
+  return false;
+}
+
+/**
+ * Whether an arrow at this caret would move off the end of `text` rather than inside it.
+ *
+ * The same test `atPayloadEdge` makes over a code Block's payload. Restated here rather than shared
+ * because there it reads a payload the surface already holds, and here it reads whatever the DOM
+ * says the surface currently contains — one caret rule, two places that can see a caret.
+ */
+function atTextEdge(text: string, key: string, start: number, end: number): boolean {
+  if (start !== end) return false;
+  if (key === "ArrowLeft") return start === 0;
+  if (key === "ArrowRight") return start === text.length;
+  if (key === "ArrowUp") return !text.slice(0, start).includes("\n");
+  if (key === "ArrowDown") return !text.slice(start).includes("\n");
+  return false;
+}
+
+/**
+ * The caret-at-edge test, asked of the element the key was pressed in.
+ *
+ * A figure's field is a textarea and a container's two regions are contenteditable, so the offset
+ * comes from `selectionStart` in one case and from a Range measured against the element's own text
+ * in the other. A selection that is not collapsed, or one that sits outside the element, is never
+ * an edge: an arrow there collapses the selection and belongs to the surface.
+ */
+function caretAtSurfaceEdge(target: EventTarget | null, key: string): boolean {
+  if (target instanceof HTMLTextAreaElement) {
+    const { selectionStart, selectionEnd, value } = target;
+    if (selectionStart === null || selectionEnd === null) return false;
+    return atTextEdge(value, key, selectionStart, selectionEnd);
+  }
+  if (!(target instanceof HTMLElement)) return false;
+  // `isContentEditable` is the browser's own answer and the one that counts at runtime; jsdom does
+  // not implement it, so the attribute the surface actually sets stands in under test.
+  const contentEditable = target.getAttribute("contenteditable");
+  if (!target.isContentEditable && contentEditable !== "" && contentEditable !== "true") {
+    return false;
+  }
+  const selection = target.ownerDocument.defaultView?.getSelection();
+  if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return false;
+  const caret = selection.getRangeAt(0);
+  if (!target.contains(caret.startContainer)) return false;
+  const before = target.ownerDocument.createRange();
+  before.selectNodeContents(target);
+  before.setEnd(caret.startContainer, caret.startOffset);
+  const offset = before.toString().length;
+  return atTextEdge(target.textContent ?? "", key, offset, offset);
+}
+
+function MarkdownBlockRowView({
   block,
   index,
   count,
@@ -259,6 +354,7 @@ export function MarkdownBlockRow({
   const rowRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editorId = `native-block-editor-${block.id}`;
+  const slashListboxId = `${editorId}-slash`;
   const descriptionId = NATIVE_BLOCK_SHORTCUTS_ID;
   const rawSource = editableMarkdownBlockSource(block.raw);
   const editingProjection = useMemo(() => createBlockEditingProjection(block), [block]);
@@ -405,16 +501,18 @@ export function MarkdownBlockRow({
     // An arrow leaves the Block. There is no caret inside one of these to move first, so pressing
     // Down on a divider simply did nothing — the Block swallowed the key and the only way out was the
     // mouse. Every kind that *does* hold text keeps its arrows for its own caret, which is why this
-    // is gated rather than applied to every in-place surface.
+    // is gated rather than applied to every in-place surface — except where the surface has already
+    // decided the caret is at its own edge before handing the key back, in which case dropping it
+    // made the Block a keyboard trap of exactly the same shape.
     if (
       !mod &&
       !event.altKey &&
       !event.shiftKey &&
-      cellFree &&
       (event.key === "ArrowUp" ||
         event.key === "ArrowDown" ||
         event.key === "ArrowLeft" ||
-        event.key === "ArrowRight")
+        event.key === "ArrowRight") &&
+      (cellFree || arrowLeavesInPlaceBlock(block.kind, event))
     ) {
       const direction = event.key === "ArrowUp" || event.key === "ArrowLeft" ? -1 : 1;
       if (onNavigate?.(block.id, direction)) event.preventDefault();
@@ -1253,6 +1351,19 @@ export function MarkdownBlockRow({
                   aria-label="Markdown block"
                   aria-describedby={descriptionId}
                   aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Meta+D Control+D Meta+Shift+Backspace Control+Shift+Backspace"
+                  // The slash panel never takes focus — the caret has to stay where the command
+                  // will be written — so without these the panel was inaudible: a screen reader
+                  // announced neither that it had opened nor which command the arrows were moving
+                  // over, because nothing on the focused element pointed at it. Deliberately no
+                  // `role="combobox"` and no `aria-expanded`: this surface is a real textarea whose
+                  // multi-line editing behaviour is the point, and the role does not support them.
+                  aria-haspopup="listbox"
+                  aria-controls={slashMenuOpen ? slashListboxId : undefined}
+                  aria-activedescendant={
+                    slashMenuOpen && slashCommands[slashIndex]
+                      ? `${slashListboxId}-${slashCommands[slashIndex].id}`
+                      : undefined
+                  }
                   data-native-block-editor
                   className={`native-block-textarea block min-w-0 flex-1 resize-none overflow-hidden bg-transparent outline-none ${
                     sourceOnly ? "font-mono" : ""
@@ -1369,6 +1480,7 @@ export function MarkdownBlockRow({
               ? createPortal(
                   <div
                     ref={slashListRef}
+                    id={slashListboxId}
                     role="listbox"
                     aria-label="Block commands"
                     // Portalled onto `document.body`, so the runtime's "pressed outside the editor,
@@ -1400,6 +1512,7 @@ export function MarkdownBlockRow({
                       slashCommands.map((command, commandIndex) => (
                         <button
                           key={command.id}
+                          id={`${slashListboxId}-${command.id}`}
                           type="button"
                           role="option"
                           tabIndex={-1}
@@ -1460,6 +1573,68 @@ export function MarkdownBlockRow({
     </div>
   );
 }
+
+/**
+ * The Block fields this row draws from.
+ *
+ * `from` and `to` are deliberately not compared, and that omission is the whole point: an edit
+ * shifts the span of every Block after it, so comparing them would report every row as changed and
+ * defeat the memo entirely. Nothing here reads them — the `.from`/`.to` sites in this file are all
+ * `visibleRange`, `inlineSelection`, `cellFor()` and `line.from`, which are Block-relative offsets.
+ */
+function sameBlockView(previous: MarkdownBlockView, next: MarkdownBlockView): boolean {
+  return (
+    previous.id === next.id &&
+    previous.kind === next.kind &&
+    previous.level === next.level &&
+    previous.depth === next.depth &&
+    previous.raw === next.raw &&
+    previous.editable === next.editable &&
+    previous.checked === next.checked
+  );
+}
+
+function sameRowSelection(
+  previous: MarkdownBlockRowProps["selection"],
+  next: MarkdownBlockRowProps["selection"]
+): boolean {
+  if (!previous || !next) return previous === next;
+  return previous.anchor === next.anchor && previous.head === next.head;
+}
+
+/**
+ * Whether a row can skip re-rendering.
+ *
+ * `MarkdownBlockDocument.getSnapshot()` rebuilds every Block view on every call, so each row's
+ * `block` is a fresh object after every keystroke and a plain shallow `memo` could never skip
+ * anything: one character re-ran `createBlockEditingProjection` and `projectMarkdownInline` for all
+ * N rows, which is why typing latency grew with document length.
+ *
+ * Compared generically over every prop rather than by hand-enumerating them, so a prop added later
+ * is covered by default instead of being silently ignored. Only the two props that are value-equal
+ * but identity-unstable are special-cased.
+ *
+ * The key-count check stands in for a union of both key sets: a prop that disappeared between
+ * renders is invisible to the loop, because a missing key reads as the same `undefined` a present
+ * one holding `undefined` does. Building that union instead — two key arrays and a Set per row —
+ * measured 16ms per keystroke on an 8000-Block Page, more than every comparison it performed.
+ */
+function sameRowProps(previous: MarkdownBlockRowProps, next: MarkdownBlockRowProps): boolean {
+  if (Object.keys(previous).length !== Object.keys(next).length) return false;
+  for (const name in next) {
+    const key = name as keyof MarkdownBlockRowProps;
+    if (key === "block") {
+      if (!sameBlockView(previous.block, next.block)) return false;
+    } else if (key === "selection") {
+      if (!sameRowSelection(previous.selection, next.selection)) return false;
+    } else if (!Object.is(previous[key], next[key])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export const MarkdownBlockRow = memo(MarkdownBlockRowView, sameRowProps);
 
 /** `/` is the Notion trigger; `、` is the fullwidth one Feishu accepts, so a CJK keyboard needs no
  * mode switch to reach the menu. */
@@ -3211,29 +3386,68 @@ function renderWikiText(
   return text.split(/(\[\[[^\]\r\n]+\]\])/g).map((part, index) => {
     const match = part.match(/^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
     if (!match) return part;
-    const target = match[1];
-    const label = match[2] ?? target;
-    const className =
-      "rounded bg-primary/10 px-0.5 text-primary underline decoration-primary/30 underline-offset-2";
-    return onOpenWikiLink ? (
-      <button
-        type="button"
+    return (
+      <WikiLink
         key={`${keyPrefix}-wiki-${index}`}
+        target={match[1]}
+        label={match[2] ?? match[1]}
+        onOpen={onOpenWikiLink}
+      />
+    );
+  });
+}
+
+/**
+ * One rendered `[[Wiki Link]]`.
+ *
+ * A target with no Page behind it used to be indistinguishable from a live one — same colour, same
+ * underline, the same "Open Page: X" label promising an action that did not exist — and clicking it
+ * did nothing at all: no navigation, no message. It now reads as muted with a dashed underline, says
+ * it is unresolved, and reports the missing target when pressed.
+ */
+function WikiLink({
+  target,
+  label,
+  onOpen,
+}: {
+  target: string;
+  label: string;
+  onOpen?: (target: string) => void;
+}) {
+  const services = useContext(MarkdownWikiLinkContext);
+  // Only a link this context owns can be resolved here. Inside an embed the target resolves against
+  // the embedded Page's own index, which `onOpen` closes over and this context cannot see.
+  const unresolved = !onOpen && services ? !services.resolves(target) : false;
+  const open = onOpen ?? services?.open;
+  const className = unresolved
+    ? "rounded bg-muted px-0.5 text-muted-foreground underline decoration-dashed decoration-muted-foreground/50 underline-offset-2"
+    : "rounded bg-primary/10 px-0.5 text-primary underline decoration-primary/30 underline-offset-2";
+  if (!open) {
+    return (
+      <span
         title={target}
-        aria-label={`Open Page: ${label}`}
         data-wiki-link
+        data-wiki-link-unresolved={unresolved ? "true" : undefined}
         className={className}
-        onClick={(event) => {
-          event.stopPropagation();
-          onOpenWikiLink(target);
-        }}
       >
-        {label}
-      </button>
-    ) : (
-      <span key={`${keyPrefix}-wiki-${index}`} title={target} data-wiki-link className={className}>
         {label}
       </span>
     );
-  });
+  }
+  return (
+    <button
+      type="button"
+      title={target}
+      aria-label={unresolved ? `Unresolved Page link: ${label}` : `Open Page: ${label}`}
+      data-wiki-link
+      data-wiki-link-unresolved={unresolved ? "true" : undefined}
+      className={className}
+      onClick={(event) => {
+        event.stopPropagation();
+        open(target);
+      }}
+    >
+      {label}
+    </button>
+  );
 }

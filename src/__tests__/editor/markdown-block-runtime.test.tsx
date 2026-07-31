@@ -1,6 +1,31 @@
 import { act, createEvent, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+/**
+ * Which Blocks were re-rendered, observed through the editing projection every row builds.
+ *
+ * A row keeps its projection in a `useMemo` keyed on `block`, and `getSnapshot()` hands out a fresh
+ * Block object on every call — so a row that actually re-renders always lands here, and a row the
+ * memo skips never does. This is how the "typing does not touch the other rows" test pins the
+ * mechanism; a wall-clock assertion would be flaky.
+ */
+const { projectedBlockSources } = vi.hoisted(() => ({ projectedBlockSources: [] as string[] }));
+
+vi.mock("@/editor/markdown-block/block-editing-projection", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/editor/markdown-block/block-editing-projection")>();
+  return {
+    ...actual,
+    createBlockEditingProjection: (
+      block: Parameters<typeof actual.createBlockEditingProjection>[0]
+    ) => {
+      projectedBlockSources.push(block.raw);
+      return actual.createBlockEditingProjection(block);
+    },
+  };
+});
+
+import { MarkdownBlockDocument } from "@/editor/markdown-block/markdown-block-document";
 import {
   MarkdownBlockRuntime,
   type MarkdownImageServices,
@@ -12,6 +37,7 @@ import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
+import { useNotificationStore } from "@/stores/notification-store";
 import { usePageSessionStore } from "@/stores/page-session-store";
 
 const updateFile = vi.fn(
@@ -555,6 +581,27 @@ describe("MarkdownBlockRuntime", () => {
     expect(updateFile).toHaveBeenCalledWith(
       "page-1",
       expect.objectContaining({ content: "Alphax\n\t \nBeta\n" })
+    );
+  });
+
+  it("replays keyboard input inside a fenced Block's payload, not past its closing fence", async () => {
+    render(
+      <MarkdownBlockRuntime
+        file={{
+          ...file,
+          content: "```js\nconst a = 1;\n```\n\nAfter.\n",
+        }}
+      />
+    );
+
+    fireEvent.keyDown(window, { key: "x" });
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "```js\nconst a = 1;x\n```\n\nAfter.\n" })
     );
   });
 
@@ -1134,6 +1181,40 @@ describe("MarkdownBlockRuntime", () => {
     expect(screen.getByLabelText("Markdown block")).toHaveValue("Local draft");
     expect(updateFile).not.toHaveBeenCalled();
     expect(useEditorStore.getState().isDirty).toBe(true);
+  });
+
+  it("says a blocked save is blocking the close, and takes the local version when asked", async () => {
+    const { rerender } = render(<MarkdownBlockRuntime file={file} />);
+    fireEvent.click(screen.getByText("Hello"));
+    fireEvent.change(screen.getByLabelText("Markdown block"), {
+      target: { value: "Local draft" },
+    });
+
+    rerender(<MarkdownBlockRuntime file={{ ...file, content: "External\n" }} />);
+    expect(screen.getByRole("alert")).toHaveTextContent(/saving is paused/i);
+
+    // Cmd+S and the shell's flush-before-close both come through `requestSave`. Refusing the write
+    // is right — it would pick a winner behind the user's back — but the refusal used to be silent,
+    // so the keystroke did nothing and the window simply would not close.
+    let refused: boolean | undefined;
+    await act(async () => {
+      refused = await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(refused).toBe(false);
+    expect(updateFile).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(/closing the window/i);
+
+    // The exit that keeps what was typed. Before it existed the banner offered one resolution, and
+    // it was the one that threw the local draft away.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Keep my version" }));
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(updateFile).toHaveBeenCalledWith("page-1", { content: "Local draft\n" });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("Local draft");
+    expect(useEditorStore.getState().isDirty).toBe(false);
   });
 
   it("serializes saves so an older write cannot finish after a newer write", async () => {
@@ -2357,6 +2438,48 @@ describe("MarkdownBlockRuntime", () => {
     expect(screen.getByLabelText("Markdown block")).toHaveValue("Hello");
   });
 
+  it("leaves the caret where the undone split happened, not at the top of the Page", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "One\n\nTwo\n\nThree\n\nFour five\n" }} />
+    );
+    fireEvent.click(screen.getByText("Four five"));
+    const editor = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    editor.setSelectionRange(4, 4);
+    fireEvent.keyDown(editor, { key: "Enter" });
+
+    act(() => useEditorRefStore.getState().requestUndo?.());
+
+    // The tail Block the split minted is gone, so its id cannot be restored — but the Block that
+    // was split is still there, at the same index, and that is where the user was working.
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("Four five");
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(rows).toHaveLength(4);
+    expect(rows[3].querySelector("[aria-label='Markdown block']")).not.toBeNull();
+  });
+
+  /*
+   * The same rule, read the other way round.
+   *
+   * A minted Block always lands *after* the one it grew out of, so the Block that slides into its
+   * index is the origin's follower, not the origin. Landing there put the caret one Block too far
+   * down, and the next keyboard command — the matrix presses Mod+Shift+Backspace straight after this
+   * undo — deleted a Block the user never pointed at.
+   */
+  it("leaves the caret on the duplicated Block, not on the one below it", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "One\n\nTwo\n\nThree\n" }} />
+    );
+    fireEvent.click(screen.getByText("One"));
+    const editor = screen.getByLabelText("Markdown block");
+    fireEvent.keyDown(editor, { key: "d", metaKey: true, shiftKey: true });
+    expect(container.querySelectorAll("[data-native-block-row]")).toHaveLength(4);
+
+    act(() => useEditorRefStore.getState().requestUndo?.());
+
+    expect(container.querySelectorAll("[data-native-block-row]")).toHaveLength(3);
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("One");
+  });
+
   it("moves a Block only from its grip and supports dropping after the last Block", async () => {
     const { container } = render(
       <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
@@ -2568,6 +2691,88 @@ describe("MarkdownBlockRuntime", () => {
     expect(updateFile).toHaveBeenLastCalledWith("page-1", expect.objectContaining({ content: "" }));
   });
 
+  it("keeps the rest of a multi-token fence info string when the language chip is edited", async () => {
+    render(
+      <MarkdownBlockRuntime
+        file={{ ...file, content: '```ts title="example"\nconst a = 1;\n```\n' }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: 'Code language: ts title="example"' }));
+    const field = screen.getByLabelText("Code language");
+    fireEvent.change(field, { target: { value: 'js title="example"' } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenCalledWith(
+      "page-1",
+      expect.objectContaining({ content: '```js title="example"\nconst a = 1;\n```\n' })
+    );
+  });
+
+  it("keeps a multi-Block selection alive while its toolbar is being pressed", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "one\n\ntwo\n\nthree\n" }} />
+    );
+    fireEvent.click(screen.getByText("one"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+
+    // A real press is pointerdown then click. The pointerdown used to reach the document handler
+    // and clear the selection out from under the button before its click ever arrived.
+    const toolbar = screen.getByRole("toolbar", { name: "2 blocks selected" });
+    const remove = within(toolbar).getByRole("button", { name: "Delete selected blocks" });
+    fireEvent.pointerDown(remove);
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(2);
+    fireEvent.click(remove);
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "three\n" })
+    );
+  });
+
+  /*
+   * A gutter action hands the Block back.
+   *
+   * The Block menu portals onto `document.body`, so its press reaches the document handler that
+   * releases the caret — and that release is load-bearing, not incidental: the command runs, the
+   * Block it acted on re-activates, and its editing surface takes the caret, so the very next
+   * keystroke edits the result. Exempting the menu's press from that handler (an attempt to keep a
+   * multi-Block selection alive across it) left Duplicate, Delete and Move with no active Block and
+   * no surface at all, which is a Page the keyboard cannot reach.
+   */
+  it("leaves an editing surface behind after a gutter menu action", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "One\n\nTwo\n\nThree\n" }} />
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Block actions" })[1]);
+    const duplicate = screen.getByRole("menuitem", { name: "Duplicate" });
+    fireEvent.pointerDown(duplicate);
+    fireEvent.click(duplicate);
+
+    expect(container.querySelectorAll("[data-native-block-row]")).toHaveLength(4);
+    expect(container.querySelectorAll('[data-native-block-row][data-active="true"]')).toHaveLength(
+      1
+    );
+    expect(container.querySelectorAll("[data-native-block-editor]")).toHaveLength(1);
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "One\n\nTwo\n\nTwo\n\nThree\n" })
+    );
+  });
+
   it("keeps the shortcut legend out of a cross-Block copy", () => {
     const { container } = render(
       <MarkdownBlockRuntime file={{ ...file, content: "First\n\nSecond\n" }} />
@@ -2706,5 +2911,163 @@ describe("MarkdownBlockRuntime", () => {
     expect(
       [...container.querySelectorAll("[data-native-block-row]")].map((row) => row.textContent)
     ).toEqual([expect.stringContaining("First"), expect.stringContaining("Second")]);
+  });
+  it("re-renders only the edited Block when a keystroke lands in a long Page", () => {
+    const markdown = `${Array.from({ length: 24 }, (_, index) => `Paragraph ${index + 1}.`).join(
+      "\n\n"
+    )}\n`;
+    const { container } = render(<MarkdownBlockRuntime file={{ ...file, content: markdown }} />);
+    expect(container.querySelectorAll("[data-native-block-row]")).toHaveLength(24);
+
+    fireEvent.click(screen.getByText("Paragraph 7."));
+
+    projectedBlockSources.length = 0;
+    fireEvent.change(screen.getByLabelText("Markdown block"), {
+      target: { value: "Paragraph 7 edited." },
+    });
+
+    // Before the rows were memoised every one of the other 23 Blocks appeared here: each row rebuilt
+    // its editing projection and re-parsed its inline Markdown on every keystroke, which is what made
+    // latency scale with document length.
+    expect(projectedBlockSources.filter((raw) => !raw.startsWith("Paragraph 7"))).toEqual([]);
+    expect(projectedBlockSources.length).toBeGreaterThan(0);
+  });
+
+  it("does not rebuild the workspace catalog while the user is typing elsewhere", async () => {
+    const definition =
+      '```doxmind-collection\n{"version":1,"view":"table","filters":[],"columns":[],"sort":[]}\n```\n';
+    const collectionFile: FileItem = {
+      ...file,
+      content: `Prose.\n\n${definition}`,
+      storageHandle: {
+        mode: "disk",
+        kind: "document",
+        id: file.id,
+        relPath: "Collections/Tasks.md",
+        documentType: "markdown",
+      },
+    };
+    const services: MarkdownTransclusionServices = {
+      rebuild: vi.fn(async () => ({
+        pages: [],
+        sourcePages: [],
+        catalogPages: [
+          {
+            id: "task-1",
+            path: "Tasks/One.md",
+            title: "One task",
+            aliases: [],
+            properties: { type: "task" },
+            markdown: "Task body\n",
+            revision: "sha256:task",
+          },
+        ],
+        links: [],
+        backlinks: [],
+        unlinkedMentions: [],
+      })),
+    };
+
+    render(<MarkdownBlockRuntime file={collectionFile} transclusionServices={services} />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("table", { name: "Page collection table" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Prose."));
+    projectedBlockSources.length = 0;
+    fireEvent.change(screen.getByLabelText("Markdown block"), { target: { value: "Prose!" } });
+
+    // The catalog fed to a Collection used to be patched from the live snapshot, so one character
+    // produced a whole new `catalogPages` array, a whole new context object and a re-render of every
+    // Collection Block on the Page — which then re-filtered and re-sorted the entire workspace.
+    expect(projectedBlockSources.filter((raw) => raw.includes("doxmind-collection"))).toEqual([]);
+    expect(projectedBlockSources.length).toBeGreaterThan(0);
+
+    // Settled, not abandoned: the catalog still follows the edit, a beat behind the caret.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(screen.getByRole("table", { name: "Page collection table" })).toHaveTextContent(
+      "One task"
+    );
+  });
+
+  it("does not re-lex the whole Page source on every keystroke", () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "Alpha\n\nBeta\n" }} />);
+    fireEvent.click(screen.getByText("Alpha"));
+
+    // `useRef(MarkdownBlockDocument.fromMarkdown(...))` builds its argument on every render and keeps
+    // only the first, so the whole source was re-lexed for each keystroke.
+    const fromMarkdown = vi.spyOn(MarkdownBlockDocument, "fromMarkdown");
+    try {
+      fireEvent.change(screen.getByLabelText("Markdown block"), { target: { value: "Alpha!" } });
+      expect(fromMarkdown).not.toHaveBeenCalled();
+    } finally {
+      fromMarkdown.mockRestore();
+    }
+  });
+
+  it("marks an unresolved wiki link apart and reports the missing Page when it is clicked", () => {
+    useFileStore.setState({
+      updateFile,
+      files: [
+        { ...file, id: "page-1", name: "Notes.md", preview: "Notes" },
+        { ...file, id: "page-real", name: "Real.md", content: "Real page.\n", preview: "Real" },
+      ],
+    });
+    useNotificationStore.setState({ errors: [] });
+
+    render(
+      <MarkdownBlockRuntime
+        file={{
+          ...file,
+          name: "Notes.md",
+          preview: "Notes",
+          content: "resolved [[Real]] vs missing [[Ghost]].\n",
+        }}
+      />
+    );
+
+    const resolved = screen.getByRole("button", { name: "Open Page: Real" });
+    const unresolved = screen.getByRole("button", { name: "Unresolved Page link: Ghost" });
+    expect(resolved).not.toHaveAttribute("data-wiki-link-unresolved");
+    expect(unresolved).toHaveAttribute("data-wiki-link-unresolved", "true");
+    expect(unresolved.className).not.toEqual(resolved.className);
+    expect(unresolved.className).toContain("text-muted-foreground");
+    expect(unresolved.className).toContain("decoration-dashed");
+
+    fireEvent.click(unresolved);
+
+    expect(useNotificationStore.getState().errors.map((error) => error.title)).toEqual([
+      'No Page named "Ghost"',
+    ]);
+  });
+
+  it("opens a resolvable wiki link without a notification", async () => {
+    const requestCurrentFile = vi.fn(async () => true);
+    useFileStore.setState({
+      updateFile,
+      requestCurrentFile,
+      files: [
+        { ...file, id: "page-1", name: "Notes.md", preview: "Notes" },
+        { ...file, id: "page-real", name: "Real.md", content: "Real page.\n", preview: "Real" },
+      ],
+    });
+    useNotificationStore.setState({ errors: [] });
+
+    render(
+      <MarkdownBlockRuntime
+        file={{ ...file, name: "Notes.md", preview: "Notes", content: "See [[Real]].\n" }}
+      />
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open Page: Real" }));
+    });
+
+    expect(requestCurrentFile).toHaveBeenCalledWith("page-real");
+    expect(useNotificationStore.getState().errors).toEqual([]);
   });
 });

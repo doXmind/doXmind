@@ -38,6 +38,7 @@ import {
 import {
   createMarkdownInlineFormatEdit,
   createMarkdownLinkEdit,
+  type MarkdownInlineFormat,
 } from "@/editor/markdown-block/markdown-inline-format";
 import {
   editableMarkdownBlockSource,
@@ -45,11 +46,14 @@ import {
 } from "@/editor/markdown-block/markdown-block-source";
 import {
   MarkdownBlockRow,
+  MarkdownWikiLinkContext,
   NATIVE_BLOCK_SHORTCUTS_ID,
   sourceOffsetAtPoint,
   type MarkdownCollectionContext,
   type MarkdownImageContext,
+  type MarkdownSlashRun,
   type MarkdownWikiEmbedContext,
+  type MarkdownWikiLinkServices,
 } from "@/editor/markdown-block/markdown-block-row";
 import { projectMarkdownInline } from "@/editor/markdown-block/markdown-inline-projection";
 import { parseWikiEmbedBlock, wikiEmbedIdentity } from "@/editor/markdown-block/wiki-embed";
@@ -122,6 +126,26 @@ const defaultImageServices: MarkdownImageServices = {
 
 const NATIVE_BLOCK_DRAG_MIME = "application/x-doxmind-markdown-block";
 
+/** How long the workspace catalog trails the caret. Long enough to span a typing run, short enough
+ * that a Collection reflects an edit while the user is still looking at it. */
+const CATALOG_SETTLE_DELAY = 400;
+
+/**
+ * `value`, held at its previous reading until it has stopped changing for `delayMs`.
+ *
+ * Not a general-purpose debounce: it exists so one expensive derived structure stops being rebuilt
+ * per keystroke. The first reading is never delayed, so nothing waits on the first render.
+ */
+function useSettledValue<T>(value: T, delayMs: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    if (Object.is(settled, value)) return;
+    const timer = window.setTimeout(() => setSettled(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [delayMs, settled, value]);
+  return settled;
+}
+
 /**
  * Native source-backed Page editor.
  *
@@ -154,8 +178,19 @@ export function MarkdownBlockRuntime({
   const clearOutline = usePageSessionStore((state) => state.clearOutline);
 
   const initialMarkdown = file.content;
-  const documentRef = useRef(MarkdownBlockDocument.fromMarkdown(initialMarkdown));
-  const [snapshot, setSnapshot] = useState(documentRef.current.getSnapshot());
+  /**
+   * The canonical document, built once.
+   *
+   * `useRef(expr)` and `useState(expr)` both evaluate `expr` on every render and throw the result
+   * away after the first, so writing the construction inline re-lexed the whole Markdown source and
+   * rebuilt every Block view on every keystroke. That was the largest per-keystroke cost that scaled
+   * with Page length. Both are now built lazily; the ref is reassigned on a Page switch as before.
+   */
+  const documentRef = useRef<MarkdownBlockDocument>(null as unknown as MarkdownBlockDocument);
+  if (!documentRef.current) {
+    documentRef.current = MarkdownBlockDocument.fromMarkdown(initialMarkdown);
+  }
+  const [snapshot, setSnapshot] = useState(() => documentRef.current.getSnapshot());
   // Markdown does not renumber, so the ordinal on disk is not the one to draw. Counted here because
   // this is the only place that can see an item's siblings.
   const listOrdinals = useMemo(
@@ -169,11 +204,28 @@ export function MarkdownBlockRuntime({
     anchorId: string;
     focusId: string;
   } | null>(null);
+  /**
+   * Latest committed caret Block and Block selection, for handlers that must not change identity.
+   *
+   * Every row is memoised, so a handler that closed over these would hand all N rows a fresh
+   * callback on each keystroke and skip nothing. They are read after commit, from event handlers, so
+   * a ref carries exactly the value the closure used to.
+   */
+  const activeBlockIdRef = useRef(activeBlockId);
+  activeBlockIdRef.current = activeBlockId;
+  const blockSelectionRef = useRef(blockSelection);
+  blockSelectionRef.current = blockSelection;
   const [blockDropBeforeId, setBlockDropBeforeId] = useState<string | null | undefined>(undefined);
   const [pendingSelection, setPendingSelection] = useState<MarkdownBlockSelectionRange | null>(
     null
   );
   const [hasExternalConflict, setHasExternalConflict] = useState(false);
+  // Whether a save the user actually asked for has been refused by that conflict. Cmd+S and the
+  // shell's flush-before-close both go through `saveCurrentNow`, and while a conflict is pending it
+  // returns false — correctly, since writing would clobber one of the two versions. Returning it
+  // silently was the bug: the keystroke did nothing and the close button no-opped, with the banner
+  // still only offering to throw the local edits away.
+  const [saveBlockedByConflict, setSaveBlockedByConflict] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -307,38 +359,57 @@ export function MarkdownBlockRuntime({
     transclusionState.key === transclusionRequestKey
       ? transclusionState
       : { key: transclusionRequestKey, status: "loading", index: null };
-  const effectiveTransclusionIndex = useMemo(() => {
-    const index = effectiveTransclusionState.index;
-    if (!index) return null;
-    return {
-      ...index,
-      sourcePages: index.sourcePages.map((page) =>
+  // Live, deliberately: a Page that embeds itself has to follow the caret, so the embed half of the
+  // index carries the snapshot as it is typed.
+  const transclusionSourcePages = useMemo(
+    () =>
+      effectiveTransclusionState.index?.sourcePages.map((page) =>
         page.id === file.id || sameWorkspacePath(page.path, pagePath)
           ? { ...page, markdown: snapshot.markdown }
           : page
       ),
-      catalogPages: index.catalogPages?.map((page) =>
+    [effectiveTransclusionState.index?.sourcePages, file.id, pagePath, snapshot.markdown]
+  );
+  // Settled, deliberately: the catalog half used to be rebuilt from the same live snapshot, which
+  // handed every Collection Block a brand-new `catalogPages` array on every keystroke and made it
+  // re-filter and re-sort the whole workspace once per character. A Collection row reads titles and
+  // properties, and neither of those can differ between two keystrokes.
+  const catalogMarkdown = useSettledValue(snapshot.markdown, CATALOG_SETTLE_DELAY);
+  const transclusionCatalogPages = useMemo(
+    () =>
+      effectiveTransclusionState.index?.catalogPages?.map((page) =>
         page.id === file.id || sameWorkspacePath(page.path, pagePath)
           ? {
               ...page,
-              markdown: snapshot.markdown,
+              markdown: catalogMarkdown,
               properties: projectWorkspacePageProperties(file.meta),
             }
           : page
       ),
-    };
-  }, [effectiveTransclusionState.index, file.id, file.meta, pagePath, snapshot.markdown]);
-  const openIndexedPage = useCallback(
-    (pageId: string) => {
-      const target = effectiveTransclusionIndex?.sourcePages.find((page) => page.id === pageId);
-      if (target) {
-        void navigateToWorkspacePage(pageId, target.path);
-      } else {
-        void navigateToEditorFile(pageId);
-      }
-    },
-    [effectiveTransclusionIndex?.sourcePages]
+    [catalogMarkdown, effectiveTransclusionState.index?.catalogPages, file.id, file.meta, pagePath]
   );
+  const effectiveTransclusionIndex = useMemo(() => {
+    const index = effectiveTransclusionState.index;
+    if (!index || !transclusionSourcePages) return null;
+    return {
+      ...index,
+      sourcePages: transclusionSourcePages,
+      catalogPages: transclusionCatalogPages,
+    };
+  }, [effectiveTransclusionState.index, transclusionCatalogPages, transclusionSourcePages]);
+  // Read through a ref rather than closed over, so the handler's identity never changes. It is a
+  // prop on every row, and one rebuilt each time the live embed half is patched would put the
+  // Collection rows back to re-rendering on every keystroke through the back door.
+  const transclusionSourcePagesRef = useRef(transclusionSourcePages);
+  transclusionSourcePagesRef.current = transclusionSourcePages;
+  const openIndexedPage = useCallback((pageId: string) => {
+    const target = transclusionSourcePagesRef.current?.find((page) => page.id === pageId);
+    if (target) {
+      void navigateToWorkspacePage(pageId, target.path);
+    } else {
+      void navigateToEditorFile(pageId);
+    }
+  }, []);
   const wikiEmbedContext = useMemo<MarkdownWikiEmbedContext | undefined>(() => {
     if (!hasWikiEmbeds) return undefined;
     return {
@@ -362,14 +433,14 @@ export function MarkdownBlockRuntime({
     if (!hasCollections) return undefined;
     return {
       status: effectiveTransclusionState.status,
-      pages: effectiveTransclusionIndex?.catalogPages ?? null,
+      pages: transclusionCatalogPages ?? null,
       onOpenPage: openIndexedPage,
     };
   }, [
-    effectiveTransclusionIndex?.catalogPages,
     effectiveTransclusionState.status,
     hasCollections,
     openIndexedPage,
+    transclusionCatalogPages,
   ]);
   const imageContext = useMemo<MarkdownImageContext | undefined>(() => {
     if (!hasLocalImages && !hasWikiEmbeds) return undefined;
@@ -378,6 +449,36 @@ export function MarkdownBlockRuntime({
       readAsset: (path) => imageServices.read(rootPath, path),
     };
   }, [hasLocalImages, hasWikiEmbeds, imageServices, pagePath, rootPath]);
+
+  const wikiLinkServices = useMemo<MarkdownWikiLinkServices>(() => {
+    // One resolution per distinct target while the workspace is unchanged. `resolves` runs for every
+    // rendered link and each call walks the whole file list, so a Page with many links to the same
+    // few targets would otherwise pay for it repeatedly.
+    const resolved = new Map<string, boolean>();
+    return {
+      resolves: (target) => {
+        let hit = resolved.get(target);
+        if (hit === undefined) {
+          hit = resolveWikiLinkTarget(useFileStore.getState().files, file.id, target) !== null;
+          resolved.set(target, hit);
+        }
+        return hit;
+      },
+      open: (target) => {
+        const destination = resolveWikiLinkTarget(useFileStore.getState().files, file.id, target);
+        if (!destination) {
+          // Deliberately says only what is certain. A single Page opened outside a workspace folder
+          // resolves nothing at all, so naming a workspace here would be wrong half the time.
+          notify.error(`No Page named "${target}"`);
+          return;
+        }
+        void navigateToEditorFile(destination.id);
+      },
+    };
+    // A Page created, renamed or deleted since this Page opened changes what resolves. Consumers
+    // re-render on the new context value, so a link stops reading as unresolved once its Page exists.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- storageGeneration invalidates the cache
+  }, [file.id, storageGeneration]);
 
   const outlineHeadings = useMemo<PageOutlineItem[]>(() => {
     const headings = snapshot.blocks.flatMap((block) => {
@@ -779,20 +880,24 @@ export function MarkdownBlockRuntime({
       if (!block) return;
 
       event.preventDefault();
-      const source = editableMarkdownBlockSource(block.raw);
+      const editorSource = normalizeEditorLineEndings(
+        createBlockEditingProjection(block).editorText
+      );
       if (key.length === 1) {
+        // At the end of what the Block *edits*, not at the end of its source. A delimited kind's
+        // source ends with its closing delimiter, so appending there wrote the character past the
+        // closing fence — "```x" is no longer a close, and re-reading the file swallowed every
+        // following Block into the code Block.
+        const at = blockSourceOffsetForEditorOffset(block, editorSource.length);
         apply({
           type: "replaceText",
           blockId: block.id,
-          range: { from: source.length, to: source.length },
+          range: { from: at, to: at },
           text: key,
         });
         return;
       }
 
-      const editorSource = normalizeEditorLineEndings(
-        createBlockEditingProjection(block).editorText
-      );
       setActiveBlockId(block.id);
       setPendingSelection({
         blockId: block.id,
@@ -806,30 +911,24 @@ export function MarkdownBlockRuntime({
   }, [activeBlockId, apply, blockSelection, isSearchBarOpen]);
 
   const undo = useCallback(() => {
+    const before = documentRef.current.getSnapshot().blocks;
     const next = documentRef.current.undo();
     setSnapshot(next);
     setBlockSelection(null);
     setBlockDropBeforeId(undefined);
-    setActiveBlockId((current) =>
-      current && next.blocks.some((block) => block.id === current)
-        ? current
-        : (next.blocks[0]?.id ?? null)
-    );
+    setActiveBlockId((current) => activeBlockIdAfterHistory(current, before, next.blocks));
     setPendingSelection(null);
     setDirty(next.markdown !== lastSavedMarkdownRef.current);
     scheduleAutosave(next.markdown);
   }, [scheduleAutosave, setDirty]);
 
   const redo = useCallback(() => {
+    const before = documentRef.current.getSnapshot().blocks;
     const next = documentRef.current.redo();
     setSnapshot(next);
     setBlockSelection(null);
     setBlockDropBeforeId(undefined);
-    setActiveBlockId((current) =>
-      current && next.blocks.some((block) => block.id === current)
-        ? current
-        : (next.blocks[0]?.id ?? null)
-    );
+    setActiveBlockId((current) => activeBlockIdAfterHistory(current, before, next.blocks));
     setPendingSelection(null);
     setDirty(next.markdown !== lastSavedMarkdownRef.current);
     scheduleAutosave(next.markdown);
@@ -837,8 +936,20 @@ export function MarkdownBlockRuntime({
 
   const saveCurrentNow = useCallback(async () => {
     debouncedSave.cancel();
+    if (!isTransient && externalMarkdownRef.current !== null) {
+      // Still refused — writing here would silently pick a winner. What changes is that the refusal
+      // is now on screen, next to the two buttons that end it.
+      setSaveBlockedByConflict(true);
+      return false;
+    }
     return persistMarkdown(documentRef.current.getSnapshot().markdown, { explicit: true });
-  }, [debouncedSave, persistMarkdown]);
+  }, [debouncedSave, isTransient, persistMarkdown]);
+
+  // One place to forget the escalation, rather than a reset beside each of the sites that clear the
+  // conflict.
+  useEffect(() => {
+    if (!hasExternalConflict) setSaveBlockedByConflict(false);
+  }, [hasExternalConflict]);
 
   const discardPendingChanges = useCallback(() => {
     discardRequestedRef.current = true;
@@ -1001,9 +1112,11 @@ export function MarkdownBlockRuntime({
       if (!block) return;
       const fence = splitDelimitedBlockSource(block.kind, editableMarkdownBlockSource(block.raw));
       if (!fence) return;
-      // An info string cannot carry whitespace or fence characters without changing what the line
-      // means, so normalise rather than trust the field.
-      const next = language.trim().replace(/[\s`~]+/g, "");
+      // Only what would change what the line *means* is stripped: a fence character, or a break
+      // that would cut the opening line in two. Internal spaces are content — an info string is
+      // arbitrary in Markdown and the chip is a free-text field over the whole of it, so squeezing
+      // them out rewrote `ts title="example"` as one nonsense token and destroyed the metadata.
+      const next = language.trim().replace(/[`~\r\n]+/g, "");
       if (next === fence.infoString) return;
       apply(
         {
@@ -1076,6 +1189,11 @@ export function MarkdownBlockRuntime({
       if (target?.closest("[data-native-editor-overlay], [data-radix-popper-content-wrapper]")) {
         return;
       }
+      // The Block gutter's own menu portals the same way, but it must NOT be exempted here. Letting
+      // its press through unchanged is what hands the Block back afterwards: the command runs, the
+      // Block it acted on re-activates, and its editing surface takes the caret. Exempting the
+      // press — in any form, whole or caret-only — left every gutter Duplicate, Delete and Move with
+      // no active Block and no surface, so the next keystroke had nowhere to go.
       // A classic (layout-occupying) scrollbar belongs to the scroll container, so a press on the
       // thumb targets it with an offset past its content box. Dragging to scroll must not cost the
       // caret. Where scrollbars are overlays `clientWidth` equals the border box and this can never
@@ -1294,7 +1412,10 @@ export function MarkdownBlockRuntime({
       }
       if (event.key === "Tab" && !event.metaKey && !event.ctrlKey && !event.altKey) {
         const blocks = documentRef.current.getSnapshot().blocks;
-        const currentSelection = blockSelection ?? { anchorId: blockId, focusId: blockId };
+        const currentSelection = blockSelectionRef.current ?? {
+          anchorId: blockId,
+          focusId: blockId,
+        };
         const blockIds = selectedBlockIdsWithSubtrees(blocks, currentSelection);
         if (
           blockIds.length === 0 ||
@@ -1320,7 +1441,10 @@ export function MarkdownBlockRuntime({
         return;
       }
       if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "d") {
-        const currentSelection = blockSelection ?? { anchorId: blockId, focusId: blockId };
+        const currentSelection = blockSelectionRef.current ?? {
+          anchorId: blockId,
+          focusId: blockId,
+        };
         const blockIds = selectedBlockIdsWithSubtrees(
           documentRef.current.getSnapshot().blocks,
           currentSelection
@@ -1337,7 +1461,10 @@ export function MarkdownBlockRuntime({
         (event.key === "ArrowUp" || event.key === "ArrowDown")
       ) {
         const blocks = documentRef.current.getSnapshot().blocks;
-        const currentSelection = blockSelection ?? { anchorId: blockId, focusId: blockId };
+        const currentSelection = blockSelectionRef.current ?? {
+          anchorId: blockId,
+          focusId: blockId,
+        };
         const blockIds = selectedBlockIdsWithSubtrees(blocks, currentSelection);
         const move = hierarchySafeBlockMove(blocks, blockIds, event.key === "ArrowUp" ? -1 : 1);
         if (!move) return;
@@ -1351,7 +1478,10 @@ export function MarkdownBlockRuntime({
         !event.ctrlKey &&
         !event.altKey
       ) {
-        const currentSelection = blockSelection ?? { anchorId: blockId, focusId: blockId };
+        const currentSelection = blockSelectionRef.current ?? {
+          anchorId: blockId,
+          focusId: blockId,
+        };
         const blockIds = selectedBlockIdsWithSubtrees(
           documentRef.current.getSnapshot().blocks,
           currentSelection
@@ -1370,7 +1500,10 @@ export function MarkdownBlockRuntime({
       ) {
         // Collapse the Block selection back to a caret, at the near edge of the near Block.
         const blocks = documentRef.current.getSnapshot().blocks;
-        const currentSelection = blockSelection ?? { anchorId: blockId, focusId: blockId };
+        const currentSelection = blockSelectionRef.current ?? {
+          anchorId: blockId,
+          focusId: blockId,
+        };
         const selected = selectedBlockIdsWithSubtrees(blocks, currentSelection);
         const targetId = event.key === "ArrowLeft" ? selected[0] : selected[selected.length - 1];
         const target = blocks.find((block) => block.id === targetId);
@@ -1393,7 +1526,10 @@ export function MarkdownBlockRuntime({
         // Typing over a Block selection replaces it, the way typing over selected text does. This
         // used to be a dead keystroke: the selection stayed and the character went nowhere.
         const blocks = documentRef.current.getSnapshot().blocks;
-        const currentSelection = blockSelection ?? { anchorId: blockId, focusId: blockId };
+        const currentSelection = blockSelectionRef.current ?? {
+          anchorId: blockId,
+          focusId: blockId,
+        };
         const blockIds = selectedBlockIdsWithSubtrees(blocks, currentSelection);
         if (blockIds.length === 0) return;
         event.preventDefault();
@@ -1418,7 +1554,7 @@ export function MarkdownBlockRuntime({
         focusId: target.id,
       }));
     },
-    [apply, applyBlockSelectionCommand, blockSelection, redo, undo]
+    [apply, applyBlockSelectionCommand, redo, undo]
   );
 
   /**
@@ -1431,7 +1567,8 @@ export function MarkdownBlockRuntime({
   const setBlockKind = useCallback(
     (blockId: string, kind: MarkdownSettableBlockKind, level?: 1 | 2 | 3 | 4 | 5 | 6) => {
       const blocks = documentRef.current.getSnapshot().blocks;
-      const selected = blockSelection ? selectedBlockIdsWithSubtrees(blocks, blockSelection) : [];
+      const selection = blockSelectionRef.current;
+      const selected = selection ? selectedBlockIdsWithSubtrees(blocks, selection) : [];
       if (!selected.includes(blockId) || selected.length <= 1) {
         apply({ type: "setKind", blockId, kind, level });
         return;
@@ -1453,7 +1590,7 @@ export function MarkdownBlockRuntime({
         selected.length
       );
     },
-    [apply, applyBlockSelectionCommand, blockSelection]
+    [apply, applyBlockSelectionCommand]
   );
 
   /**
@@ -1675,9 +1812,8 @@ export function MarkdownBlockRuntime({
   const startBlockDrag = useCallback(
     (blockId: string, event: DragEvent<HTMLButtonElement>) => {
       const blocks = documentRef.current.getSnapshot().blocks;
-      const selectedIds = blockSelection
-        ? selectedBlockIdsWithSubtrees(blocks, blockSelection)
-        : [];
+      const selection = blockSelectionRef.current;
+      const selectedIds = selection ? selectedBlockIdsWithSubtrees(blocks, selection) : [];
       const blockIds = expandSelectedListSubtrees(
         blocks,
         selectedIds.includes(blockId) ? selectedIds : [blockId]
@@ -1714,7 +1850,7 @@ export function MarkdownBlockRuntime({
       rebuildDragBoundaries();
       startDragAutoScroll();
     },
-    [blockSelection, file.id, rebuildDragBoundaries, startDragAutoScroll]
+    [file.id, rebuildDragBoundaries, startDragAutoScroll]
   );
 
   const clearBlockDrag = useCallback(() => {
@@ -1862,6 +1998,364 @@ export function MarkdownBlockRuntime({
     [boundaryFromDragTarget, canDropBlock, clearBlockDrag, dropBlockBefore, nearestDropBoundary]
   );
 
+  /**
+   * Every callback a row is handed, hoisted out of the render so its identity is stable.
+   *
+   * Rows are memoised, and a memo comparator that sees fifteen fresh arrow functions per row per
+   * keystroke skips nothing. Each of these reads the live document through `documentRef` or a latest
+   * ref rather than closing over `snapshot`, so nothing here depends on a value that changes as the
+   * user types.
+   */
+  const handleActivate = useCallback(
+    (blockId: string, clickedSelection?: { anchor: number; head: number }) => {
+      if (isSearchBarOpen) setSearchBarOpen(false);
+      setActiveBlockId(blockId);
+      setBlockSelection(null);
+      setPendingSelection(clickedSelection ? { blockId, ...clickedSelection } : null);
+    },
+    [isSearchBarOpen, setSearchBarOpen]
+  );
+
+  const handleSelectBlock = useCallback((blockId: string, extend = false) => {
+    const caretBlockId = activeBlockIdRef.current;
+    setActiveBlockId(null);
+    setPendingSelection(null);
+    setBlockSelection((current) => {
+      if (extend && current) {
+        return { anchorId: current.anchorId, focusId: blockId };
+      }
+      // Shift+click while a caret is live extends from the caret's Block, so the
+      // gesture selects a range instead of collapsing to the one Block clicked.
+      if (extend && caretBlockId && caretBlockId !== blockId) {
+        return { anchorId: caretBlockId, focusId: blockId };
+      }
+      if (
+        current &&
+        selectedBlockIdsWithSubtrees(documentRef.current.getSnapshot().blocks, current).includes(
+          blockId
+        )
+      ) {
+        return current;
+      }
+      return { anchorId: blockId, focusId: blockId };
+    });
+  }, []);
+
+  const handleChange = useCallback(
+    (
+      blockId: string,
+      source: string,
+      options?: { readonly surfaceChanges?: boolean; readonly caret?: number }
+    ) => {
+      const latest = documentRef.current.getSnapshot();
+      const current = latest.blocks.find((candidate) => candidate.id === blockId);
+      if (!current) return;
+      const currentSource = editableMarkdownBlockSource(current.raw);
+      const projection = createBlockEditingProjection(current);
+      const nextSource = editableMarkdownBlockSource(projection.toSource(source));
+      const patch = minimalEditorPatch(
+        currentSource,
+        nextSource,
+        preferredSourceLineEnding(current.raw, latest.markdown)
+      );
+      if (!patch) return;
+      const composing = composingBlockIdRef.current === blockId;
+      apply(
+        {
+          type: "replaceText",
+          blockId,
+          range: { from: patch.from, to: patch.to },
+          text: patch.text,
+          recordHistory: !composing || !compositionHasHistoryRef.current,
+        },
+        // A text edit leaves the caret to the surface that produced it. An edit that
+        // replaces the surface has no such surface left, so the document's selection has
+        // to be applied or the Block stays active with nothing focused.
+        options?.surfaceChanges === true
+      );
+      if (typeof options?.caret === "number") {
+        setPendingSelection({
+          blockId,
+          anchor: options.caret,
+          head: options.caret,
+        });
+      }
+      if (composing) compositionHasHistoryRef.current = true;
+      else scheduleTypingCheckpoint();
+    },
+    [apply, scheduleTypingCheckpoint]
+  );
+
+  const handlePaste = useCallback(
+    (blockId: string, from: number, to: number, text: string) => {
+      const latest = documentRef.current.getSnapshot();
+      const current = latest.blocks.find((candidate) => candidate.id === blockId);
+      if (!current) return;
+      const lineEnding = preferredSourceLineEnding(current.raw, latest.markdown);
+      apply({
+        type: "replaceText",
+        blockId,
+        range: {
+          from: blockSourceOffsetForEditorOffset(current, from),
+          to: blockSourceOffsetForEditorOffset(current, to),
+        },
+        text: normalizeEditorLineEndings(text).replace(/\n/g, lineEnding),
+      });
+    },
+    [apply]
+  );
+
+  const handleApplyInlineFormat = useCallback(
+    (blockId: string, from: number, to: number, format: MarkdownInlineFormat) => {
+      const latest = documentRef.current.getSnapshot();
+      const current = latest.blocks.find((candidate) => candidate.id === blockId);
+      if (!current) return;
+      const editorSource = normalizeEditorLineEndings(
+        createBlockEditingProjection(current).editorText
+      );
+      const edit = createMarkdownInlineFormatEdit(editorSource, from, to, format);
+      if (!edit) return;
+      const lineEnding = preferredSourceLineEnding(current.raw, latest.markdown);
+      const result = documentRef.current.apply({
+        type: "replaceText",
+        blockId,
+        range: {
+          from: blockSourceOffsetForEditorOffset(current, edit.from),
+          to: blockSourceOffsetForEditorOffset(current, edit.to),
+        },
+        text: edit.text.replace(/\n/g, lineEnding),
+      });
+      publish(result, false);
+      setActiveBlockId(blockId);
+      setBlockSelection(null);
+      setPendingSelection({ blockId, ...edit.selection });
+    },
+    [publish]
+  );
+
+  const handleEditLink = useCallback(
+    (blockId: string, from: number, to: number, url: string) => {
+      const latest = documentRef.current.getSnapshot();
+      const current = latest.blocks.find((candidate) => candidate.id === blockId);
+      if (!current) return;
+      const editorSource = normalizeEditorLineEndings(
+        createBlockEditingProjection(current).editorText
+      );
+      const edit = createMarkdownLinkEdit(editorSource, from, to, url);
+      if (!edit) return;
+      const lineEnding = preferredSourceLineEnding(current.raw, latest.markdown);
+      const result = documentRef.current.apply({
+        type: "replaceText",
+        blockId,
+        range: {
+          from: blockSourceOffsetForEditorOffset(current, edit.from),
+          to: blockSourceOffsetForEditorOffset(current, edit.to),
+        },
+        text: edit.text.replace(/\n/g, lineEnding),
+      });
+      publish(result, false);
+      setActiveBlockId(blockId);
+      setBlockSelection(null);
+      setPendingSelection({ blockId, ...edit.selection });
+    },
+    [publish]
+  );
+
+  const handleSelectCellRange = useCallback((blockId: string, from: number, to: number) => {
+    setActiveBlockId(blockId);
+    setBlockSelection(null);
+    setPendingSelection({ blockId, anchor: from, head: to });
+  }, []);
+
+  const handleCompositionStart = useCallback(
+    (blockId: string) => {
+      composingBlockIdRef.current = blockId;
+      compositionHasHistoryRef.current = false;
+      // A composition is one authored unit: end the surrounding typing run so undo
+      // takes back the whole committed word rather than half of it plus a few Latin
+      // characters typed before the IME opened.
+      documentRef.current.flushHistory();
+      debouncedSave.cancel();
+    },
+    [debouncedSave]
+  );
+
+  const handleCompositionEnd = useCallback(
+    (blockId: string) => {
+      if (composingBlockIdRef.current !== blockId) return;
+      composingBlockIdRef.current = null;
+      compositionHasHistoryRef.current = false;
+      documentRef.current.flushHistory();
+      scheduleAutosave(documentRef.current.getSnapshot().markdown);
+    },
+    [scheduleAutosave]
+  );
+
+  const handleSplit = useCallback(
+    (blockId: string, from: number, to: number) => {
+      const current = documentRef.current
+        .getSnapshot()
+        .blocks.find((candidate) => candidate.id === blockId);
+      if (!current) return;
+      apply({
+        type: "split",
+        blockId,
+        at: blockSourceOffsetForEditorOffset(current, from),
+        to: blockSourceOffsetForEditorOffset(current, to),
+      });
+    },
+    [apply]
+  );
+
+  const handleMergeBackward = useCallback(
+    (blockId: string) => apply({ type: "mergeBackward", blockId }),
+    [apply]
+  );
+
+  const handleInsertAfter = useCallback(
+    (blockId: string, placement?: "below" | "above") =>
+      apply({ type: "insertAfter", blockId, before: placement === "above" }),
+    [apply]
+  );
+
+  const handleCopyBlockMarkdown = useCallback(async (blockId: string) => {
+    const current = documentRef.current.getSnapshot();
+    const selection = blockSelectionRef.current;
+    const selectionIds = selection ? selectedBlockIdsWithSubtrees(current.blocks, selection) : [];
+    const selectedIds = expandSelectedListSubtrees(
+      current.blocks,
+      selectionIds.includes(blockId) ? selectionIds : [blockId]
+    );
+    const selectedSet = new Set(selectedIds);
+    const markdown = current.blocks
+      .filter((candidate) => selectedSet.has(candidate.id))
+      .map((candidate) => candidate.raw)
+      .join("");
+    try {
+      await navigator.clipboard.writeText(markdown);
+    } catch {
+      notify.error("Could not copy Markdown");
+    }
+  }, []);
+
+  const handleDuplicateBlock = useCallback(
+    (blockId: string) => {
+      const current = documentRef.current.getSnapshot();
+      const selection = blockSelectionRef.current;
+      const selectedIds = selection ? selectedBlockIdsWithSubtrees(current.blocks, selection) : [];
+      if (selectedIds.includes(blockId)) {
+        applyBlockSelectionCommand(
+          { type: "duplicateBlocks", blockIds: selectedIds },
+          selectedIds.length
+        );
+        return;
+      }
+      apply({ type: "duplicate", blockId });
+    },
+    [apply, applyBlockSelectionCommand]
+  );
+
+  const handleDeleteBlock = useCallback(
+    (blockId: string) => {
+      const current = documentRef.current.getSnapshot();
+      const selection = blockSelectionRef.current;
+      const selectedIds = selection ? selectedBlockIdsWithSubtrees(current.blocks, selection) : [];
+      if (selectedIds.includes(blockId)) {
+        applyBlockSelectionCommand({ type: "deleteBlocks", blockIds: selectedIds });
+        return;
+      }
+      apply({ type: "delete", blockId });
+    },
+    [apply, applyBlockSelectionCommand]
+  );
+
+  const handleSetTaskChecked = useCallback(
+    (blockId: string, checked: boolean) =>
+      apply({ type: "setTaskChecked", blockId, checked }, false),
+    [apply]
+  );
+
+  const handleMoveBlock = useCallback(
+    (blockId: string, direction: -1 | 1) => {
+      const blocks = documentRef.current.getSnapshot().blocks;
+      const selection = blockSelectionRef.current;
+      const selectedIds = selection ? selectedBlockIdsWithSubtrees(blocks, selection) : [];
+      if (!selectedIds.includes(blockId)) return moveBlock(blockId, direction);
+      const move = hierarchySafeBlockMove(blocks, selectedIds, direction);
+      if (!move) return false;
+      applyBlockSelectionCommand({ type: "moveBlocks", ...move }, move.blockIds.length);
+      return true;
+    },
+    [applyBlockSelectionCommand, moveBlock]
+  );
+
+  const handleIndent = useCallback(
+    (blockId: string, direction: -1 | 1, selection: { anchor: number; head: number }) => {
+      try {
+        const current = documentRef.current.getSnapshot();
+        const result = documentRef.current.apply({
+          type: direction < 0 ? "outdentBlocks" : "indentBlocks",
+          blockIds: expandSelectedListSubtrees(current.blocks, [blockId]),
+        });
+        publish(result, false);
+        setActiveBlockId(blockId);
+        setBlockSelection(null);
+        setPendingSelection({ blockId, ...selection });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [publish]
+  );
+
+  const handleRunSlashCommand = useCallback(
+    (blockId: string, commandId: MarkdownSlashCommandId, run: MarkdownSlashRun) => {
+      const latest = documentRef.current.getSnapshot();
+      const current = latest.blocks.find((candidate) => candidate.id === blockId);
+      if (!current) return;
+      const lineEnding = preferredSourceLineEnding(current.raw, latest.markdown);
+      const template = markdownSlashCommandSource(commandId, lineEnding);
+      // Replace only the `/query` the user typed, mapped from editor offsets to source
+      // offsets. Overwriting the whole Block discarded any text typed before the
+      // trigger, which is why `/` used to be usable only on an otherwise empty Block.
+      const from = blockSourceOffsetForEditorOffset(current, run.start);
+      const to = blockSourceOffsetForEditorOffset(current, run.end);
+      const result = documentRef.current.apply({
+        type: "replaceText",
+        blockId,
+        range: { from, to },
+        text: template,
+      });
+      publish(result, false);
+      // Land the caret inside the template — on a code fence's body line, in a table's
+      // first cell — instead of after its closing delimiter.
+      //
+      // `from` and therefore `caret` are Block-relative, because that is the space
+      // `replaceText` validates against (`range.to > block.raw.length`). Block spans are
+      // document-relative (`raw: markdown.slice(block.from, block.to)`). Comparing the
+      // two found whichever Block happened to span that small number, which is always
+      // the first one, so running a slash command in any Block but the first left the
+      // caret in Block 1 — and everything typed next went into Block 1's text.
+      const edited = result.snapshot.blocks.find((candidate) => candidate.id === blockId);
+      const documentCaret =
+        (edited?.from ?? current.from) + from + markdownSlashCommandCaret(commandId, lineEnding);
+      const insertedBlock = result.snapshot.blocks.find(
+        (candidate) => candidate.from <= documentCaret && documentCaret <= candidate.to
+      );
+      const targetBlock = insertedBlock ?? edited;
+      if (!targetBlock) return;
+      const offset = editorOffsetForBlockSourceOffset(
+        targetBlock,
+        documentCaret - targetBlock.from
+      );
+      setActiveBlockId(targetBlock.id);
+      setBlockSelection(null);
+      setPendingSelection({ blockId: targetBlock.id, anchor: offset, head: offset });
+    },
+    [publish]
+  );
+
   const pageFrameStyle = {
     "--editor-outline-gutter": `${reservedRightInset}px`,
   } as CSSProperties;
@@ -1889,6 +2383,24 @@ export function MarkdownBlockRuntime({
     setPendingSelection(null);
     setHasExternalConflict(false);
     setDirty(false);
+  };
+
+  /**
+   * The other exit from the conflict: the text in the editor becomes the file.
+   *
+   * The disk read that raised the conflict already refreshed the revision this Page writes against,
+   * so this is the ordinary save it would have been. Deliberate, and reachable only from the button
+   * beside the one that reloads — before this existed the banner offered exactly one resolution,
+   * and it was the one that threw away everything the user had typed.
+   */
+  const keepLocalMarkdown = () => {
+    if (externalMarkdownRef.current === null) return;
+    externalMarkdownRef.current = null;
+    conflictGenerationRef.current += 1;
+    setHasExternalConflict(false);
+    // A write that conflicts again raises the banner again, which is the right answer: the file
+    // moved under us a second time and neither version may be picked without being asked.
+    void saveCurrentNow().catch(() => undefined);
   };
 
   const moveSearchResult = (direction: -1 | 1) => {
@@ -1983,14 +2495,29 @@ export function MarkdownBlockRuntime({
           data-native-editor-chrome
           className="flex items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm"
         >
-          <span>This Page changed outside doXmind. Saving is paused to protect both versions.</span>
-          <button
-            type="button"
-            className="shrink-0 rounded border px-2 py-1 text-xs hover:bg-muted"
-            onClick={reloadExternalMarkdown}
-          >
-            Reload disk version
-          </button>
+          <span>
+            {saveBlockedByConflict
+              ? "This Page changed outside doXmind. Saving — and closing the window — stays blocked until you choose which version to keep."
+              : "This Page changed outside doXmind. Saving is paused to protect both versions."}
+          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              title="Replace what is in the editor with the file as it is on disk. Your unsaved edits are lost."
+              className="shrink-0 rounded border px-2 py-1 text-xs hover:bg-muted"
+              onClick={reloadExternalMarkdown}
+            >
+              Reload disk version
+            </button>
+            <button
+              type="button"
+              title="Write what is in the editor over the file. The change made outside doXmind is lost."
+              className="shrink-0 rounded border px-2 py-1 text-xs hover:bg-muted"
+              onClick={keepLocalMarkdown}
+            >
+              Keep my version
+            </button>
+          </div>
         </div>
       ) : null}
       <div
@@ -2134,336 +2661,57 @@ export function MarkdownBlockRuntime({
             <span role="status" aria-live="polite" className="sr-only">
               {blockSelectionAnnouncement}
             </span>
-            {snapshot.blocks.map((block, index) => (
-              <MarkdownBlockRow
-                key={block.id}
-                block={block}
-                index={index}
-                listOrdinal={listOrdinals.get(block.id)}
-                count={snapshot.blocks.length}
-                active={activeBlockId === block.id}
-                autoFocusEditor={!isSearchBarOpen}
-                highlightSelection={searchSelectionBlockId === block.id}
-                keyboardEntry={!activeBlockId && !blockSelection && index === 0}
-                blockSelected={selectedBlockIdSet.has(block.id)}
-                blockSelectionFocus={blockSelection?.focusId === block.id}
-                selection={pendingSelection?.blockId === block.id ? pendingSelection : undefined}
-                onActivate={(blockId, clickedSelection) => {
-                  if (isSearchBarOpen) setSearchBarOpen(false);
-                  setActiveBlockId(blockId);
-                  setBlockSelection(null);
-                  setPendingSelection(clickedSelection ? { blockId, ...clickedSelection } : null);
-                }}
-                onSelectBlock={(blockId, extend = false) => {
-                  const caretBlockId = activeBlockId;
-                  setActiveBlockId(null);
-                  setPendingSelection(null);
-                  setBlockSelection((current) => {
-                    if (extend && current) {
-                      return { anchorId: current.anchorId, focusId: blockId };
-                    }
-                    // Shift+click while a caret is live extends from the caret's Block, so the
-                    // gesture selects a range instead of collapsing to the one Block clicked.
-                    if (extend && caretBlockId && caretBlockId !== blockId) {
-                      return { anchorId: caretBlockId, focusId: blockId };
-                    }
-                    if (
-                      current &&
-                      selectedBlockIdsWithSubtrees(snapshot.blocks, current).includes(blockId)
-                    ) {
-                      return current;
-                    }
-                    return { anchorId: blockId, focusId: blockId };
-                  });
-                }}
-                onBlockSelectionKeyDown={handleBlockSelectionKeyDown}
-                onExtendSelectionToBlock={extendSelectionToBlock}
-                onChange={(blockId, source, options) => {
-                  const current = documentRef.current
-                    .getSnapshot()
-                    .blocks.find((candidate) => candidate.id === blockId);
-                  if (!current) return;
-                  const currentSource = editableMarkdownBlockSource(current.raw);
-                  const projection = createBlockEditingProjection(current);
-                  const nextSource = editableMarkdownBlockSource(projection.toSource(source));
-                  const patch = minimalEditorPatch(
-                    currentSource,
-                    nextSource,
-                    preferredSourceLineEnding(current.raw, snapshot.markdown)
-                  );
-                  if (!patch) return;
-                  const composing = composingBlockIdRef.current === blockId;
-                  apply(
-                    {
-                      type: "replaceText",
-                      blockId,
-                      range: { from: patch.from, to: patch.to },
-                      text: patch.text,
-                      recordHistory: !composing || !compositionHasHistoryRef.current,
-                    },
-                    // A text edit leaves the caret to the surface that produced it. An edit that
-                    // replaces the surface has no such surface left, so the document's selection has
-                    // to be applied or the Block stays active with nothing focused.
-                    options?.surfaceChanges === true
-                  );
-                  if (typeof options?.caret === "number") {
-                    setPendingSelection({
-                      blockId,
-                      anchor: options.caret,
-                      head: options.caret,
-                    });
-                  }
-                  if (composing) compositionHasHistoryRef.current = true;
-                  else scheduleTypingCheckpoint();
-                }}
-                onPaste={(blockId, from, to, text) => {
-                  const current = documentRef.current
-                    .getSnapshot()
-                    .blocks.find((candidate) => candidate.id === blockId);
-                  if (!current) return;
-                  const lineEnding = preferredSourceLineEnding(current.raw, snapshot.markdown);
-                  apply({
-                    type: "replaceText",
-                    blockId,
-                    range: {
-                      from: blockSourceOffsetForEditorOffset(current, from),
-                      to: blockSourceOffsetForEditorOffset(current, to),
-                    },
-                    text: normalizeEditorLineEndings(text).replace(/\n/g, lineEnding),
-                  });
-                }}
-                onApplyInlineFormat={(blockId, from, to, format) => {
-                  const current = documentRef.current
-                    .getSnapshot()
-                    .blocks.find((candidate) => candidate.id === blockId);
-                  if (!current) return;
-                  const editorSource = normalizeEditorLineEndings(
-                    createBlockEditingProjection(current).editorText
-                  );
-                  const edit = createMarkdownInlineFormatEdit(editorSource, from, to, format);
-                  if (!edit) return;
-                  const lineEnding = preferredSourceLineEnding(current.raw, snapshot.markdown);
-                  const result = documentRef.current.apply({
-                    type: "replaceText",
-                    blockId,
-                    range: {
-                      from: blockSourceOffsetForEditorOffset(current, edit.from),
-                      to: blockSourceOffsetForEditorOffset(current, edit.to),
-                    },
-                    text: edit.text.replace(/\n/g, lineEnding),
-                  });
-                  publish(result, false);
-                  setActiveBlockId(blockId);
-                  setBlockSelection(null);
-                  setPendingSelection({ blockId, ...edit.selection });
-                }}
-                onEditLink={(blockId, from, to, url) => {
-                  const current = documentRef.current
-                    .getSnapshot()
-                    .blocks.find((candidate) => candidate.id === blockId);
-                  if (!current) return;
-                  const editorSource = normalizeEditorLineEndings(
-                    createBlockEditingProjection(current).editorText
-                  );
-                  const edit = createMarkdownLinkEdit(editorSource, from, to, url);
-                  if (!edit) return;
-                  const lineEnding = preferredSourceLineEnding(current.raw, snapshot.markdown);
-                  const result = documentRef.current.apply({
-                    type: "replaceText",
-                    blockId,
-                    range: {
-                      from: blockSourceOffsetForEditorOffset(current, edit.from),
-                      to: blockSourceOffsetForEditorOffset(current, edit.to),
-                    },
-                    text: edit.text.replace(/\n/g, lineEnding),
-                  });
-                  publish(result, false);
-                  setActiveBlockId(blockId);
-                  setBlockSelection(null);
-                  setPendingSelection({ blockId, ...edit.selection });
-                }}
-                onSelectCellRange={(blockId, from, to) => {
-                  setActiveBlockId(blockId);
-                  setBlockSelection(null);
-                  setPendingSelection({ blockId, anchor: from, head: to });
-                }}
-                onImportImages={importImages}
-                onCompositionStart={(blockId) => {
-                  composingBlockIdRef.current = blockId;
-                  compositionHasHistoryRef.current = false;
-                  // A composition is one authored unit: end the surrounding typing run so undo
-                  // takes back the whole committed word rather than half of it plus a few Latin
-                  // characters typed before the IME opened.
-                  documentRef.current.flushHistory();
-                  debouncedSave.cancel();
-                }}
-                onCompositionEnd={(blockId) => {
-                  if (composingBlockIdRef.current !== blockId) return;
-                  composingBlockIdRef.current = null;
-                  compositionHasHistoryRef.current = false;
-                  documentRef.current.flushHistory();
-                  scheduleAutosave(documentRef.current.getSnapshot().markdown);
-                }}
-                onSplit={(blockId, from, to) => {
-                  const current = documentRef.current
-                    .getSnapshot()
-                    .blocks.find((candidate) => candidate.id === blockId);
-                  if (!current) return;
-                  apply({
-                    type: "split",
-                    blockId,
-                    at: blockSourceOffsetForEditorOffset(current, from),
-                    to: blockSourceOffsetForEditorOffset(current, to),
-                  });
-                }}
-                onMergeBackward={(blockId) => apply({ type: "mergeBackward", blockId })}
-                onMergeForward={mergeForward}
-                onSetCodeLanguage={setCodeLanguage}
-                onInsertAfter={(blockId, placement) =>
-                  apply({ type: "insertAfter", blockId, before: placement === "above" })
-                }
-                onCopyMarkdown={async (blockId) => {
-                  const current = documentRef.current.getSnapshot();
-                  const selectionIds = blockSelection
-                    ? selectedBlockIdsWithSubtrees(current.blocks, blockSelection)
-                    : [];
-                  const selectedIds = expandSelectedListSubtrees(
-                    current.blocks,
-                    selectionIds.includes(blockId) ? selectionIds : [blockId]
-                  );
-                  const selectedSet = new Set(selectedIds);
-                  const markdown = current.blocks
-                    .filter((candidate) => selectedSet.has(candidate.id))
-                    .map((candidate) => candidate.raw)
-                    .join("");
-                  try {
-                    await navigator.clipboard.writeText(markdown);
-                  } catch {
-                    notify.error("Could not copy Markdown");
-                  }
-                }}
-                onDuplicate={(blockId) => {
-                  const current = documentRef.current.getSnapshot();
-                  const selectedIds = blockSelection
-                    ? selectedBlockIdsWithSubtrees(current.blocks, blockSelection)
-                    : [];
-                  if (selectedIds.includes(blockId)) {
-                    applyBlockSelectionCommand(
-                      { type: "duplicateBlocks", blockIds: selectedIds },
-                      selectedIds.length
-                    );
-                    return;
-                  }
-                  apply({ type: "duplicate", blockId });
-                }}
-                onDelete={(blockId) => {
-                  const current = documentRef.current.getSnapshot();
-                  const selectedIds = blockSelection
-                    ? selectedBlockIdsWithSubtrees(current.blocks, blockSelection)
-                    : [];
-                  if (selectedIds.includes(blockId)) {
-                    applyBlockSelectionCommand({ type: "deleteBlocks", blockIds: selectedIds });
-                    return;
-                  }
-                  apply({ type: "delete", blockId });
-                }}
-                onSetTaskChecked={(blockId, checked) =>
-                  apply({ type: "setTaskChecked", blockId, checked }, false)
-                }
-                onMove={(blockId, direction) => {
-                  const blocks = documentRef.current.getSnapshot().blocks;
-                  const selectedIds = blockSelection
-                    ? selectedBlockIdsWithSubtrees(blocks, blockSelection)
-                    : [];
-                  if (!selectedIds.includes(blockId)) return moveBlock(blockId, direction);
-                  const move = hierarchySafeBlockMove(blocks, selectedIds, direction);
-                  if (!move) return false;
-                  applyBlockSelectionCommand({ type: "moveBlocks", ...move }, move.blockIds.length);
-                  return true;
-                }}
-                onIndent={(blockId, direction, selection) => {
-                  try {
-                    const current = documentRef.current.getSnapshot();
-                    const result = documentRef.current.apply({
-                      type: direction < 0 ? "outdentBlocks" : "indentBlocks",
-                      blockIds: expandSelectedListSubtrees(current.blocks, [blockId]),
-                    });
-                    publish(result, false);
-                    setActiveBlockId(blockId);
-                    setBlockSelection(null);
-                    setPendingSelection({ blockId, ...selection });
-                    return true;
-                  } catch {
-                    return false;
-                  }
-                }}
-                onNavigate={navigateBlock}
-                onSetKind={(blockId, kind, level) => setBlockKind(blockId, kind, level)}
-                onUndo={undo}
-                onRedo={redo}
-                onDragStart={startBlockDrag}
-                onDragEnd={clearBlockDrag}
-                onOpenWikiLink={(target) => {
-                  const destination = resolveWikiLinkTarget(
-                    useFileStore.getState().files,
-                    file.id,
-                    target
-                  );
-                  if (destination) void navigateToEditorFile(destination.id);
-                }}
-                onRunSlashCommand={(blockId, commandId: MarkdownSlashCommandId, run) => {
-                  const current = documentRef.current
-                    .getSnapshot()
-                    .blocks.find((candidate) => candidate.id === blockId);
-                  if (!current) return;
-                  const lineEnding = preferredSourceLineEnding(current.raw, snapshot.markdown);
-                  const template = markdownSlashCommandSource(commandId, lineEnding);
-                  // Replace only the `/query` the user typed, mapped from editor offsets to source
-                  // offsets. Overwriting the whole Block discarded any text typed before the
-                  // trigger, which is why `/` used to be usable only on an otherwise empty Block.
-                  const from = blockSourceOffsetForEditorOffset(current, run.start);
-                  const to = blockSourceOffsetForEditorOffset(current, run.end);
-                  const result = documentRef.current.apply({
-                    type: "replaceText",
-                    blockId,
-                    range: { from, to },
-                    text: template,
-                  });
-                  publish(result, false);
-                  // Land the caret inside the template — on a code fence's body line, in a table's
-                  // first cell — instead of after its closing delimiter.
-                  //
-                  // `from` and therefore `caret` are Block-relative, because that is the space
-                  // `replaceText` validates against (`range.to > block.raw.length`). Block spans are
-                  // document-relative (`raw: markdown.slice(block.from, block.to)`). Comparing the
-                  // two found whichever Block happened to span that small number, which is always
-                  // the first one, so running a slash command in any Block but the first left the
-                  // caret in Block 1 — and everything typed next went into Block 1's text.
-                  const edited = result.snapshot.blocks.find(
-                    (candidate) => candidate.id === blockId
-                  );
-                  const documentCaret =
-                    (edited?.from ?? current.from) +
-                    from +
-                    markdownSlashCommandCaret(commandId, lineEnding);
-                  const insertedBlock = result.snapshot.blocks.find(
-                    (candidate) => candidate.from <= documentCaret && documentCaret <= candidate.to
-                  );
-                  const targetBlock = insertedBlock ?? edited;
-                  if (!targetBlock) return;
-                  const offset = editorOffsetForBlockSourceOffset(
-                    targetBlock,
-                    documentCaret - targetBlock.from
-                  );
-                  setActiveBlockId(targetBlock.id);
-                  setBlockSelection(null);
-                  setPendingSelection({ blockId: targetBlock.id, anchor: offset, head: offset });
-                }}
-                wikiEmbedContext={wikiEmbedContext}
-                collectionContext={collectionContext}
-                imageContext={imageContext}
-              />
-            ))}
+            <MarkdownWikiLinkContext.Provider value={wikiLinkServices}>
+              {snapshot.blocks.map((block, index) => (
+                <MarkdownBlockRow
+                  key={block.id}
+                  block={block}
+                  index={index}
+                  listOrdinal={listOrdinals.get(block.id)}
+                  count={snapshot.blocks.length}
+                  active={activeBlockId === block.id}
+                  autoFocusEditor={!isSearchBarOpen}
+                  highlightSelection={searchSelectionBlockId === block.id}
+                  keyboardEntry={!activeBlockId && !blockSelection && index === 0}
+                  blockSelected={selectedBlockIdSet.has(block.id)}
+                  blockSelectionFocus={blockSelection?.focusId === block.id}
+                  selection={pendingSelection?.blockId === block.id ? pendingSelection : undefined}
+                  onActivate={handleActivate}
+                  onSelectBlock={handleSelectBlock}
+                  onBlockSelectionKeyDown={handleBlockSelectionKeyDown}
+                  onExtendSelectionToBlock={extendSelectionToBlock}
+                  onChange={handleChange}
+                  onPaste={handlePaste}
+                  onApplyInlineFormat={handleApplyInlineFormat}
+                  onEditLink={handleEditLink}
+                  onSelectCellRange={handleSelectCellRange}
+                  onImportImages={importImages}
+                  onCompositionStart={handleCompositionStart}
+                  onCompositionEnd={handleCompositionEnd}
+                  onSplit={handleSplit}
+                  onMergeBackward={handleMergeBackward}
+                  onMergeForward={mergeForward}
+                  onSetCodeLanguage={setCodeLanguage}
+                  onInsertAfter={handleInsertAfter}
+                  onCopyMarkdown={handleCopyBlockMarkdown}
+                  onDuplicate={handleDuplicateBlock}
+                  onDelete={handleDeleteBlock}
+                  onSetTaskChecked={handleSetTaskChecked}
+                  onMove={handleMoveBlock}
+                  onIndent={handleIndent}
+                  onNavigate={navigateBlock}
+                  onSetKind={setBlockKind}
+                  onUndo={undo}
+                  onRedo={redo}
+                  onDragStart={startBlockDrag}
+                  onDragEnd={clearBlockDrag}
+                  onRunSlashCommand={handleRunSlashCommand}
+                  wikiEmbedContext={wikiEmbedContext}
+                  collectionContext={collectionContext}
+                  imageContext={imageContext}
+                />
+              ))}
+            </MarkdownWikiLinkContext.Provider>
             <div
               aria-hidden
               data-native-block-drop-end
@@ -2776,6 +3024,10 @@ function BlockSelectionToolbar({
     <div
       role="toolbar"
       aria-label={`${count} blocks selected`}
+      // Rendered inside the Page rather than portalled, so the document's own pointer handler sees
+      // the press that operates it. Without the marker every button here was inert: the pointerdown
+      // cleared the selection and unmounted the toolbar before its click could arrive.
+      data-native-editor-overlay
       style={{
         position: "fixed",
         top: position.top - 8,
@@ -3008,6 +3260,33 @@ function preferredSourceLineEnding(...sources: string[]): "\r\n" | "\n" | "\r" {
 
 function normalizeEditorLineEndings(source: string): string {
   return source.replace(/\r\n|\r/g, "\n");
+}
+
+/**
+ * Which Block holds the caret after a history step.
+ *
+ * History stores Blocks, not a selection, so the active id can simply be absent from the state it
+ * restores: `split`, `insertAfter` and `duplicate` mint an id for the Block they create, and taking
+ * any of them back takes that id away again. Falling back to the Page's first Block threw the caret
+ * — and, because the row focuses its editor, the viewport — to the top of the document from wherever
+ * the user was working.
+ *
+ * The Block to land on is the one the undone command grew out of, and every command that mints an id
+ * puts the new Block immediately *after* its origin. So it is the neighbour before the vanished
+ * Block, not the one that slid into its index: taking that index gave the Block *following* the
+ * origin, which is how undoing a duplicate of the first Block left the caret on the second and the
+ * next keyboard command deleted the wrong Block.
+ */
+function activeBlockIdAfterHistory(
+  current: string | null,
+  before: readonly MarkdownBlockView[],
+  after: readonly MarkdownBlockView[]
+): string | null {
+  if (!current) return after[0]?.id ?? null;
+  if (after.some((block) => block.id === current)) return current;
+  const index = before.findIndex((block) => block.id === current);
+  if (index < 0) return after[0]?.id ?? null;
+  return after[Math.min(Math.max(index - 1, 0), after.length - 1)]?.id ?? null;
 }
 
 function blockSourceOffsetForEditorOffset(block: MarkdownBlockView, editorOffset: number): number {
