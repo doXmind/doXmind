@@ -14,6 +14,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  markdownTableCellSourceOffset,
+  markdownTableCellText,
   markdownTableClearColumn,
   markdownTableClearRow,
   markdownTableDeleteColumn,
@@ -213,9 +215,16 @@ export function MarkdownTableBlock({
     const visible = visibleOffsetAtPoint(element, event.clientX, event.clientY);
     if (visible !== null) {
       const text = source.slice(cell.from, cell.to);
-      caret = projectMarkdownInline(text).visibleOffsetToSource(
-        Math.min(visible, text.length),
-        "forward"
+      // Measured against the text as it is rendered — escaped pipes resolved — and mapped back to
+      // the source through both of the things that shorten it: the table's own escape, then the
+      // inline syntax the projection hides.
+      const rendered = markdownTableCellText(text);
+      caret = markdownTableCellSourceOffset(
+        text,
+        projectMarkdownInline(rendered).visibleOffsetToSource(
+          Math.min(visible, rendered.length),
+          "forward"
+        )
       );
     }
     pendingCellRef.current = address;
@@ -303,17 +312,33 @@ export function MarkdownTableBlock({
     return axis === "row" ? hovered.row === index : hovered.column === index;
   };
 
+  /**
+   * How a column's cells are to be aligned, as a signal a stylesheet can act on.
+   *
+   * The utility class on its own does not decide it: `.markdown-page th, .markdown-page td` in
+   * editor.css sets `text-align` through an element selector, which outranks a lone class, so a
+   * column the delimiter row centres was still drawn left-aligned inside the grid while the preview
+   * and the export honoured it. The attribute is written on every cell, header cells included, so
+   * the rule that reads it never has to guess which column a `<th>` belongs to.
+   */
+  const alignment = (column: number): "left" | "center" | "right" => {
+    const declared = geometry.alignments[column];
+    if (declared === "center") return "center";
+    if (declared === "right") return "right";
+    return "left";
+  };
+
   const alignmentClass = (column: number) => {
-    const alignment = geometry.alignments[column];
-    if (alignment === "center") return "text-center";
-    if (alignment === "right") return "text-right";
+    const value = alignment(column);
+    if (value === "center") return "text-center";
+    if (value === "right") return "text-right";
     return "text-left";
   };
 
   const renderBody = (cell: MarkdownTableCell | undefined, address: TableCellAddress) => {
     if (!cell) return null;
     const isActive = editable && active?.row === address.row && active?.column === address.column;
-    if (!isActive) return renderCell(source.slice(cell.from, cell.to));
+    if (!isActive) return renderCell(markdownTableCellText(source.slice(cell.from, cell.to)));
     return (
       <SemanticInlineEditor
         label="Table cell"
@@ -369,6 +394,7 @@ export function MarkdownTableBlock({
                 <th
                   key={`header-${column}`}
                   data-table-cell={cell ? `${cell.from}` : undefined}
+                  data-align={alignment(column)}
                   className={`relative border border-border bg-muted/50 px-2 py-1.5 font-medium ${alignmentClass(column)} ${axisOutline(0, column)}`}
                   onPointerEnter={() => setHovered({ row: 0, column })}
                   onPointerDown={(event) =>
@@ -419,6 +445,7 @@ export function MarkdownTableBlock({
                   <td
                     key={`cell-${row}-${column}`}
                     data-table-cell={cell ? `${cell.from}` : undefined}
+                    data-align={alignment(column)}
                     className={`relative border border-border px-2 py-1.5 ${alignmentClass(column)} ${axisOutline(row, column)}`}
                     onPointerEnter={() => setHovered({ row, column })}
                     onPointerDown={(event) =>

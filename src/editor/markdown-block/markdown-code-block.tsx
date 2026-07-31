@@ -176,6 +176,15 @@ export function MarkdownCodeBlock({
     const encoded = lineEnding === "\r\n" ? nextPayload.replace(/\n/g, "\r\n") : nextPayload;
     const next = fence ? `${fence.prefix}${encoded}${fence.suffix}` : encoded;
     if (next === source) return;
+    // A payload carrying a line that would close this fence cannot be spliced back. The parent
+    // re-splits whatever this hands it, so a source that no longer comes apart into the same three
+    // parts is put back together wrapped in its delimiters a second time: typing the third backtick
+    // of a ``` line duplicated the opening fence into the file and cut the Block in two. Refused
+    // rather than written, the way a Mermaid Block refuses the same edit.
+    if (fence) {
+      const resplit = splitDelimitedBlockSource("fenced_code", next);
+      if (!resplit || resplit.prefix !== fence.prefix || resplit.payload !== encoded) return;
+    }
     onChange(blockId, next);
   };
 

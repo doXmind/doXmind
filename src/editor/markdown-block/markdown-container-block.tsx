@@ -96,7 +96,9 @@ export function parseMarkdownContainer(
 }
 
 const CALLOUT_PREFIX = /^ {0,3}>[ \t]?/;
-const CALLOUT_HEADER = /^(\[!([A-Za-z][A-Za-z0-9_-]*)\][+-]?)(?:([ \t]+)(.*))?$/;
+// The `[+-]` fold marker is captured on its own as well as inside the whole marker, because a
+// rewritten header is assembled from the parts around the type and would otherwise leave it out.
+const CALLOUT_HEADER = /^(\[!([A-Za-z][A-Za-z0-9_-]*)\]([+-]?))(?:([ \t]+)(.*))?$/;
 const TOGGLE_OPENING = /^ {0,3}<details(?:[ \t]+open)?[ \t]*>$/i;
 const TOGGLE_CLOSING = /^ {0,3}<\/details[ \t]*>$/i;
 const TOGGLE_SUMMARY = /^( {0,3}<summary>)(.*)(<\/summary>[ \t]*)$/i;
@@ -108,8 +110,9 @@ function parseCalloutSource(source: string): MarkdownContainer | null {
   if (!header) return null;
 
   const marker = header[1];
-  const gap = header[3] ?? "";
-  const title = header[4] ?? "";
+  const fold = header[3];
+  const gap = header[4] ?? "";
+  const title = header[5] ?? "";
   const fallbackEnding = firstLineEnding(source);
   const bodyOf = (line: SourceLine) =>
     line.raw.slice(CALLOUT_PREFIX.exec(line.raw)?.[0].length ?? 0);
@@ -137,7 +140,10 @@ function parseCalloutSource(source: string): MarkdownContainer | null {
       return rewritten + source.slice(lines[0].raw.length);
     },
     withType(next) {
-      const rewritten = `${prefix}[!${next.toUpperCase()}]${gap}${title}`;
+      // The fold marker comes back with the new type. It is the only part of the header this app
+      // does not itself honour, so losing it changed nothing on screen and silently rewrote a byte
+      // the user's other editor reads as "start collapsed".
+      const rewritten = `${prefix}[!${next.toUpperCase()}]${fold}${gap}${title}`;
       return rewritten + source.slice(lines[0].raw.length);
     },
     withoutContainer() {
