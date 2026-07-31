@@ -1568,11 +1568,14 @@ def test_workspace_scan_tolerates_one_undecodable_page(sync_client, tmp_path):
     assert legacy["idSource"] == "path"
     assert legacy["title"] == "Legacy"
 
-    assert invoke(sync_client, "doc_read", {"root": str(tmp_path), "path": "Good.md"})["markdown"] == "Body\n"
+    good = invoke(sync_client, "doc_read", {"root": str(tmp_path), "path": "Good.md"})
+    assert good["markdown"] == "Body\n"
 
-    # Byte fidelity still matters where the bytes are actually used.
-    with pytest.raises(Exception):
-        invoke(sync_client, "doc_read", {"root": str(tmp_path), "path": "Legacy.md"})
+    # Byte fidelity still matters where the bytes are actually used: the scan tolerates the file so
+    # the rest of the workspace stays reachable, but reading it still refuses rather than guessing an
+    # encoding and handing the editor text the file does not contain.
+    refused = error_response(sync_client, "doc_read", {"root": str(tmp_path), "path": "Legacy.md"})
+    assert refused.status_code == 400
 
 
 def test_workspace_scan_carries_frontmatter_aliases(sync_client, tmp_path):
