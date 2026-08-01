@@ -282,13 +282,27 @@ export function DropdownMenuContent({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!open) return;
 
+      // Escape is answered before the rows are read, so a menu whose every row is unavailable can
+      // still be dismissed.
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setOpen(false);
+        return;
+      }
+
       // `itemIds` is a registration log, not a reading order: a menu that mounts extra rows while
       // it is open (the block gutter's filtered "Turn into" group) appends them after the rows
       // they render above, so arrow keys would walk the list in a different order than the eye.
       // Read the live DOM instead — it is the order the user sees. It is also the only place rows
       // that are not `DropdownMenuItem`s appear, since those never register.
+      //
+      // Disabled rows are left out of the walk: a disabled button cannot take DOM focus, so parking
+      // the roving ring on one dropped focus out of the menu and cost the user a keypress that did
+      // nothing visible — reaching Move down past a disabled Move up took two presses, not one.
       const domIds = Array.from(
-        contentRef.current?.querySelectorAll<HTMLElement>("[data-dropdown-item]") ?? [],
+        contentRef.current?.querySelectorAll<HTMLElement>(
+          '[data-dropdown-item]:not([aria-disabled="true"])'
+        ) ?? [],
         (node) => node.dataset.dropdownItem ?? ""
       ).filter(Boolean);
       const ids = domIds.length > 0 ? domIds : itemIds;
@@ -297,10 +311,6 @@ export function DropdownMenuContent({
       const currentIndex = focusedId ? ids.indexOf(focusedId) : -1;
 
       switch (e.key) {
-        case "Escape":
-          e.preventDefault();
-          setOpen(false);
-          break;
         case "ArrowDown":
           e.preventDefault();
           if (currentIndex < ids.length - 1) {

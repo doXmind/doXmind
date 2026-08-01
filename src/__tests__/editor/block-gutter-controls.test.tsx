@@ -207,6 +207,39 @@ describe("BlockGutterControls", () => {
     expect(screen.getByRole("menuitem", { name: "Heading 6" })).toHaveFocus();
   });
 
+  it("arrows straight from Duplicate to Move down when Move up is unavailable", async () => {
+    const user = userEvent.setup();
+    renderControls({ canMoveUp: false });
+
+    await user.click(screen.getByRole("button", { name: "Block actions" }));
+    await screen.findByRole("searchbox", { name: "Search block actions" });
+
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(screen.getByRole("menuitem", { name: "Copy Markdown" })).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(screen.getByRole("menuitem", { name: "Duplicate" })).toHaveFocus();
+
+    // The disabled Move up cannot hold DOM focus, so stopping on it spent a press for nothing.
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(screen.getByRole("menuitem", { name: "Move down" })).toHaveFocus();
+  });
+
+  it("tells the reader how to reach the menu without a pointer", async () => {
+    const user = userEvent.setup();
+    renderControls();
+
+    await user.hover(screen.getByRole("button", { name: "Block actions" }));
+
+    // The gutter menu has exactly one keyboard route from the text, and nothing named it.
+    expect(await screen.findByText("⌘/ or Ctrl+/ to open")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Block actions" })).toHaveAttribute(
+      "aria-keyshortcuts",
+      "Meta+/ Control+/"
+    );
+  });
+
   it("keeps Turn into unavailable for source-only Markdown blocks", async () => {
     const user = userEvent.setup();
     const { props } = renderControls({ currentKind: "table", canTurnInto: false });

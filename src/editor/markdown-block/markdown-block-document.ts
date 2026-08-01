@@ -456,9 +456,10 @@ export class MarkdownBlockDocument {
       const reordered = [...sourceBlocks];
       const selected = reordered.splice(firstIndex, length);
       if (firstIndex > 0 && firstIndex < reordered.length) {
-        reordered[firstIndex - 1] = ensureBlockBoundary(
+        reordered[firstIndex - 1] = ensureMovedBlockBoundary(
           reordered[firstIndex - 1],
           reordered[firstIndex],
+          listLoosenessAt(sourceBlocks, reordered[firstIndex - 1].id),
           preferredLineEnding(
             reordered[firstIndex - 1].raw,
             reordered[firstIndex].raw,
@@ -476,13 +477,17 @@ export class MarkdownBlockDocument {
       // Committing the un-shifted range would write the very indentation the shift exists to avoid,
       // so an unverifiable drop is refused outright rather than landed as source.
       if (normalized === null) return { snapshot: this.getSnapshot() };
-      this.recordHistory();
       reordered.splice(beforeIndex, 0, ...normalized);
       for (const boundaryIndex of [beforeIndex - 1, beforeIndex + selected.length - 1]) {
         if (boundaryIndex < 0 || boundaryIndex >= reordered.length - 1) continue;
-        reordered[boundaryIndex] = ensureBlockBoundary(
+        // Looseness belongs to the list, not to the Block that arrived in it, so it is read from
+        // whichever side of this junction was already there before anything moved.
+        const stationary =
+          boundaryIndex < beforeIndex ? reordered[boundaryIndex] : reordered[boundaryIndex + 1];
+        reordered[boundaryIndex] = ensureMovedBlockBoundary(
           reordered[boundaryIndex],
           reordered[boundaryIndex + 1],
+          listLoosenessAt(sourceBlocks, stationary.id),
           preferredLineEnding(
             reordered[boundaryIndex].raw,
             reordered[boundaryIndex + 1].raw,
@@ -490,6 +495,12 @@ export class MarkdownBlockDocument {
           )
         );
       }
+      // Fail closed: a reorder that would reinterpret a Block it never touched keeps the old bytes.
+      const movedIds = new Set(selected.map((block) => block.id));
+      if (!moveKeepsBystandersIntact(reordered, sourceBlocks, movedIds)) {
+        return { snapshot: this.getSnapshot() };
+      }
+      this.recordHistory();
       this.commitSources(reordered);
       this.revision += 1;
       return {
@@ -1403,6 +1414,78 @@ function ensureBlockBoundary(
     ...left,
     raw: `${content}${newline.repeat(requiredLineEndings)}`,
   };
+}
+
+/**
+ * `ensureBlockBoundary`, but a junction inside one list is written with the number of line endings
+ * that list already used.
+ *
+ * Forcing exactly one turned a list the user had deliberately spaced out into a tight one every time
+ * Alt+Arrow touched it; keeping the moved Block's own separator does the opposite, carrying the
+ * blank line that used to end a list into the middle of a tight one. `looseness` is measured on the
+ * source before the move, from the side of the junction that did not move — `null` when the source
+ * shows no junction to measure, which falls back to the plain boundary rule.
+ */
+function ensureMovedBlockBoundary(
+  left: MarkdownBlockSource,
+  right: MarkdownBlockSource,
+  looseness: number | null,
+  newline: "\r\n" | "\n" | "\r"
+): MarkdownBlockSource {
+  if (looseness === null || !listItemsShareContainer(left, right)) {
+    return ensureBlockBoundary(left, right, newline);
+  }
+  const { content, separator } = splitBlockSource(left.raw);
+  if (countLineEndings(separator) === looseness) return left;
+  return { ...left, raw: `${content}${newline.repeat(looseness)}` };
+}
+
+/**
+ * Line endings the list this Block belongs to puts between its own items, or `null` when the source
+ * holds no such junction next to it.
+ *
+ * A blank line *between* two items makes the list loose; the blank line *after* its last item is
+ * only the boundary with whatever follows. Both live in the same place — the left Block's separator
+ * — so telling them apart means looking at a junction that is still intact.
+ */
+function listLoosenessAt(blocks: readonly MarkdownBlockSource[], blockId: string): number | null {
+  const index = blocks.findIndex((block) => block.id === blockId);
+  if (index < 0) return null;
+  for (const leftIndex of [index, index - 1]) {
+    const left = blocks[leftIndex];
+    const right = blocks[leftIndex + 1];
+    if (!left || !right || !listItemsShareContainer(left, right)) continue;
+    return countLineEndings(splitBlockSource(left.raw).separator);
+  }
+  return null;
+}
+
+/**
+ * Whether every Block the move did not pick up still means what it meant before.
+ *
+ * `normalizeMovedListIndent` validates the range being moved; nothing validated the Blocks left
+ * behind. Dropping a paragraph between two nested items ends the list, so the item under the drop
+ * keeps the two leading spaces the user can see and silently stops being a child of anything — one
+ * dragged paragraph, and an unrelated item loses the indentation it visibly had. Checked on the
+ * final bytes, after the boundaries are repaired, because a mid-repair candidate reads as a lazy
+ * continuation and would refuse drops that are perfectly safe.
+ */
+function moveKeepsBystandersIntact(
+  reordered: readonly MarkdownBlockSource[],
+  previous: readonly MarkdownBlockSource[],
+  movedIds: ReadonlySet<string>
+): boolean {
+  const scanned = scanMarkdownSource(reordered.map((block) => block.raw).join(""));
+  if (scanned.length !== reordered.length) return false;
+  const before = new Map(previous.map((block) => [block.id, block]));
+  return reordered.every((block, index) => {
+    const was = before.get(block.id);
+    if (!was) return true;
+    const now = blockFromSource(scanned[index].raw, block.id, scanned[index].listDepth);
+    if (now.kind !== was.kind) return false;
+    // A Block that moved is allowed to be re-indented; one that stayed put is not.
+    return movedIds.has(block.id) || (now.depth ?? null) === (was.depth ?? null);
+  });
 }
 
 function ensureDuplicateInsertionBoundary(

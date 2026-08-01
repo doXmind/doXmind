@@ -125,6 +125,37 @@ describe("MarkdownFigureBlock", () => {
       await settle();
     });
 
+    it("holds the line Enter opened until there is something to write on it", async () => {
+      const { onChange } = renderFigure("block_math", "$$\na^2\n$$");
+      const field = sourceField("block_math");
+
+      // Enter at the end of the formula. The line cannot go into the file yet — a blank line above
+      // the closing `$$` ends the Block — but the field snapping back to `a^2` is why Enter read as
+      // a key that does nothing, and `\begin{aligned}` was unwritable without the clipboard.
+      fireEvent.change(field, { target: { value: "a^2\n" } });
+
+      expect(onChange).not.toHaveBeenCalled();
+      expect(field).toHaveValue("a^2\n");
+
+      fireEvent.change(field, { target: { value: "a^2\nb" } });
+
+      expect(onChange).toHaveBeenCalledWith("block-1", "$$\na^2\nb\n$$");
+      await settle();
+    });
+
+    it("still drops a payload the Block cannot hold at all", async () => {
+      const { onChange } = renderFigure("block_math", "$$\na\n$$");
+      const field = sourceField("block_math");
+
+      fireEvent.change(field, { target: { value: "- a" } });
+
+      // Only a trailing empty line is held. A refused payload still reverts, because holding it
+      // would show the user an equation the file does not have.
+      expect(onChange).not.toHaveBeenCalled();
+      expect(field).toHaveValue("a");
+      await settle();
+    });
+
     it("collapses a blank line rather than letting it split the equation in two", async () => {
       const { onChange } = renderFigure("block_math", "$$\na\n$$");
 

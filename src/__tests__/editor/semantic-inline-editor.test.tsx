@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { useState } from "react";
+import { Component, useState, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -234,6 +234,68 @@ describe("SemanticInlineEditor", () => {
     expect(screen.getByRole("img", { name: "Map" })).toBeInTheDocument();
   });
 
+  /**
+   * The browser edits this element directly, and two of its own normalisations move nodes React
+   * owns. Both were measured in the packaged app with a MutationObserver on the host, and both are
+   * replayed here exactly as Chrome performed them.
+   */
+  describe("a host the browser has restructured underneath React", () => {
+    it("does not keep the character the browser typed beside the controlled span", () => {
+      const onSourceChange = vi.fn();
+      render(<ControlledSurface initial="" onSourceChange={onSourceChange} />);
+      const editor = screen.getByRole("textbox", { name: "Markdown block" });
+      const content = editor.firstChild as HTMLElement;
+
+      // Focusing a surface with no text at all leaves the caret on the host itself, so the first
+      // character lands as a child of the host, beside the controlled span rather than inside it.
+      const stray = document.createTextNode("h");
+      editor.insertBefore(stray, content);
+      setDomSelection(stray, 1);
+      fireEvent.input(editor, { inputType: "insertText", data: "h" });
+
+      expect(onSourceChange).toHaveBeenLastCalledWith("h", expect.any(Object));
+      // Not "hh": the stray node survived the rerender, so the character was on screen twice and
+      // every following keystroke committed the whole accumulated prefix again.
+      expect(editor.textContent).toBe("h");
+      expect(editor.childNodes).toHaveLength(1);
+
+      const text = editor.querySelector("[data-markdown-inline-segment]")?.firstChild;
+      if (!text) throw new Error("Expected committed text");
+      text.nodeValue = "he";
+      setDomSelection(text, 2);
+      fireEvent.input(editor, { inputType: "insertText", data: "e" });
+
+      expect(onSourceChange).toHaveBeenLastCalledWith("he", expect.any(Object));
+      expect(editor.textContent).toBe("he");
+    });
+
+    it("survives the browser removing the controlled span when the last character goes", () => {
+      const onSourceChange = vi.fn();
+      const onError = vi.fn();
+      render(
+        <CatchRender onError={onError}>
+          <ControlledSurface initial="x" onSourceChange={onSourceChange} />
+        </CatchRender>
+      );
+      const editor = screen.getByRole("textbox", { name: "Markdown block" });
+      const content = editor.firstChild as HTMLElement;
+
+      // Emptying a contenteditable takes the whole inline chain with it and leaves the browser's
+      // own placeholder behind. React then has a child to remove that is no longer its child.
+      editor.removeChild(content);
+      editor.appendChild(document.createElement("br"));
+      setDomSelection(editor, 0);
+      fireEvent.input(editor, { inputType: "deleteContentBackward" });
+
+      expect(onError).not.toHaveBeenCalled();
+      // The placeholder is the browser's, not the user's: reading it as a newline committed a
+      // character into the cell they had just cleared.
+      expect(onSourceChange).toHaveBeenLastCalledWith("", expect.any(Object));
+      expect(editor.textContent).toBe("");
+      expect(screen.getByRole("textbox", { name: "Markdown block" })).toBeInTheDocument();
+    });
+  });
+
   it("points at the slash command panel it never hands focus to", () => {
     render(
       <SemanticInlineEditor
@@ -276,6 +338,47 @@ describe("SemanticInlineEditor", () => {
     expect(editor).not.toHaveAttribute("aria-activedescendant");
   });
 });
+
+/** The surface as its callers drive it: the source it reports back is the source it is given. */
+function ControlledSurface({
+  initial,
+  onSourceChange,
+}: {
+  initial: string;
+  onSourceChange: (source: string, selection: SemanticInlineSelection) => void;
+}) {
+  const [source, setSource] = useState(initial);
+  return (
+    <SemanticInlineEditor
+      source={source}
+      autoFocus
+      onSourceChange={(next, selection) => {
+        onSourceChange(next, selection);
+        setSource(next);
+      }}
+    />
+  );
+}
+
+/** Stands in for the Page's own error boundary, which is what the user sees this crash through. */
+class CatchRender extends Component<
+  { children: ReactNode; onError: (error: Error) => void },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error) {
+    this.props.onError(error);
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 function setDomSelection(node: Node, offset: number) {
   const selection = window.getSelection();

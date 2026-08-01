@@ -111,6 +111,8 @@ export function MarkdownCodeBlock({
   const appliedActivationRef = useRef(false);
   const composingRef = useRef(false);
   const [composingValue, setComposingValue] = useState<string | null>(null);
+  /** The delimiter a refused edit would have closed the Block with, while the notice is up. */
+  const [refusedDelimiter, setRefusedDelimiter] = useState<string | null>(null);
 
   const fence = splitDelimitedBlockSource("fenced_code", source);
   // A null split means the source is not a fence this component can take apart without risking the
@@ -142,6 +144,7 @@ export function MarkdownCodeBlock({
     if (!editable) {
       appliedActivationRef.current = false;
       pendingSelectionRef.current = null;
+      setRefusedDelimiter(null);
       return;
     }
     if (appliedActivationRef.current) return;
@@ -170,6 +173,27 @@ export function MarkdownCodeBlock({
     textarea.setSelectionRange(pending.start, pending.end);
   });
 
+  /**
+   * Put the field back the way it was, and say why.
+   *
+   * Refusing is the right answer — the alternative is re-cutting the Block somewhere the user did
+   * not ask for — but refusing in silence is not: a pasted snippet containing a ``` line simply
+   * vanished, with no toast, no notice and no styling change, so the only way to find out was to
+   * read the file afterwards. The caret goes back to where the refused edit began rather than to the
+   * end of the payload, which is where a controlled field otherwise leaves it: losing the paste and
+   * the insertion point is two losses for one gesture.
+   */
+  const refuse = (nextPayload: string, delimiter: string) => {
+    const at = commonPrefixLength(payload, nextPayload);
+    pendingSelectionRef.current = { start: at, end: at };
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.value = payload;
+      textarea.setSelectionRange(at, at);
+    }
+    setRefusedDelimiter(delimiter);
+  };
+
   /** Splice a new payload between the delimiters the file already has. */
   const commit = (nextPayload: string, selection: PendingSelection) => {
     pendingSelectionRef.current = selection;
@@ -183,8 +207,12 @@ export function MarkdownCodeBlock({
     // rather than written, the way a Mermaid Block refuses the same edit.
     if (fence) {
       const resplit = splitDelimitedBlockSource("fenced_code", next);
-      if (!resplit || resplit.prefix !== fence.prefix || resplit.payload !== encoded) return;
+      if (!resplit || resplit.prefix !== fence.prefix || resplit.payload !== encoded) {
+        refuse(nextPayload, fence.delimiter);
+        return;
+      }
     }
+    if (refusedDelimiter) setRefusedDelimiter(null);
     onChange(blockId, next);
   };
 
@@ -375,6 +403,18 @@ export function MarkdownCodeBlock({
         }}
         onKeyDown={handleKeyDown}
       />
+      {refusedDelimiter ? (
+        // Out of flow, below the Block, so a refusal cannot move the code the user is looking at.
+        // `role="status"` rather than an alert: nothing was written and nothing is at risk, the user
+        // simply has to be told that the characters they typed or pasted did not go in.
+        <p
+          role="status"
+          data-code-edit-refused
+          className="pointer-events-none absolute left-0 right-0 top-full z-20 mt-1 text-xs text-muted-foreground"
+        >
+          {`A ${refusedDelimiter} line would end this code Block, so that edit was not applied.`}
+        </p>
+      ) : null}
       {onSetLanguage ? (
         <CodeLanguageChip language={language} onCommit={(next) => onSetLanguage(blockId, next)} />
       ) : language ? (
@@ -556,6 +596,19 @@ function payloadLineEnding(prefix: string, rawPayload: string): "\r\n" | "\n" {
   const breaks = rawPayload.match(/\r\n|\n|\r/g);
   if (breaks) return breaks.every((candidate) => candidate === "\r\n") ? "\r\n" : "\n";
   return prefix.endsWith("\r\n") ? "\r\n" : "\n";
+}
+
+/**
+ * Where two payloads stop agreeing, which is where the refused edit began.
+ *
+ * A field reports its whole value, not the edit that produced it, so this is what recovers the
+ * caret: the paste that was turned away started exactly here, and this is where the user was.
+ */
+function commonPrefixLength(before: string, after: string): number {
+  const limit = Math.min(before.length, after.length);
+  let index = 0;
+  while (index < limit && before[index] === after[index]) index += 1;
+  return index;
 }
 
 /** Whether an arrow key at this caret would leave the payload rather than move inside it. */

@@ -3070,4 +3070,248 @@ describe("MarkdownBlockRuntime", () => {
     expect(requestCurrentFile).toHaveBeenCalledWith("page-real");
     expect(useNotificationStore.getState().errors).toEqual([]);
   });
+
+  /*
+   * A real mouse press is `pointerdown` and *then* `click`.
+   *
+   * Every menu case above drives the item with `click` alone, which is why the whole gutter/toolbar
+   * menu family passed here while being inert or wrong in the app: the pointerdown that a mouse
+   * sends first is the one that reaches the document handler and rewrites the state the item's own
+   * click then reads. These press the item the way a mouse does.
+   */
+  function pressMenuItem(item: HTMLElement) {
+    fireEvent.pointerDown(item);
+    fireEvent.click(item);
+  }
+
+  it("leaves an editing surface behind after a gutter Turn into", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "One\n\nTwo\n" }} />
+    );
+
+    const grip = screen.getAllByRole("button", { name: "Block actions" })[0];
+    fireEvent.pointerDown(grip);
+    fireEvent.click(grip);
+    pressMenuItem(screen.getByRole("menuitem", { name: "Turn into" }));
+    pressMenuItem(screen.getByRole("menuitem", { name: "Heading 2" }));
+
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(rows[0]).toHaveAttribute("data-block-kind", "heading");
+    // The conversion always landed; what was lost was every way to keep typing into the result.
+    expect(container.querySelectorAll('[data-native-block-row][data-active="true"]')).toHaveLength(
+      1
+    );
+    expect(container.querySelectorAll("[data-native-block-editor]")).toHaveLength(1);
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "## One\n\nTwo\n" })
+    );
+  });
+
+  it("turns a whole Block selection when the toolbar's menu item is really pressed", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "one\n\ntwo\n\nthree\n" }} />
+    );
+    fireEvent.click(screen.getByText("one"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown", shiftKey: true });
+
+    const toolbar = screen.getByRole("toolbar", { name: "3 blocks selected" });
+    fireEvent.click(within(toolbar).getByText("Turn into"));
+    pressMenuItem(screen.getByRole("menuitem", { name: "Heading 2" }));
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "## one\n\n## two\n\n## three\n" })
+    );
+  });
+
+  it("turns a Block selection into a tight list, the shape the editor writes everywhere else", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime
+        file={{ ...file, content: "Para one\n\nPara two\n\nPara three\n\nKeep me\n" }}
+      />
+    );
+    fireEvent.click(screen.getByText("Para one"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown", shiftKey: true });
+
+    const toolbar = screen.getByRole("toolbar", { name: "3 blocks selected" });
+    fireEvent.click(within(toolbar).getByText("Turn into"));
+    pressMenuItem(screen.getByRole("menuitem", { name: "Bulleted list" }));
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({
+        content: "- Para one\n- Para two\n- Para three\n\nKeep me\n",
+      })
+    );
+  });
+
+  it("applies a really-pressed gutter menu item to the whole Block selection", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime
+        file={{ ...file, content: "Keep top\n\nPara A\n\nPara B\n\nPara C\n\nUntouched X\n" }}
+      />
+    );
+    fireEvent.click(screen.getByText("Para A"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[1], { key: "ArrowDown", shiftKey: true });
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown", shiftKey: true });
+    expect(container.querySelectorAll('[data-block-selected="true"]')).toHaveLength(3);
+
+    // The grip of the *middle* Block of the band, which is what makes the one-Block answer visible.
+    const grip = screen.getAllByRole("button", { name: "Block actions" })[2];
+    fireEvent.pointerDown(grip);
+    fireEvent.click(grip);
+    pressMenuItem(screen.getByRole("menuitem", { name: "Delete" }));
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "Keep top\n\nUntouched X\n" })
+    );
+  });
+
+  it("leaves a key pressed on a focused control outside the Page to that control", async () => {
+    render(
+      <div>
+        <button type="button">Graph</button>
+        <MarkdownBlockRuntime file={file} />
+      </div>
+    );
+
+    const chrome = screen.getByRole("button", { name: "Graph" });
+    chrome.focus();
+    for (const key of ["h", "e", "Enter", " "]) {
+      const event = createEvent.keyDown(chrome, { key, bubbles: true, cancelable: true });
+      fireEvent(chrome, event);
+      expect(event.defaultPrevented, key).toBe(false);
+    }
+
+    expect(screen.queryByLabelText("Markdown block")).not.toBeInTheDocument();
+    expect(useEditorStore.getState().isDirty).toBe(false);
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).not.toHaveBeenCalled();
+  });
+
+  it("inserts a slash command's Block after the text instead of into it", async () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "Alpha /table\n\nTAIL\n" }} />);
+
+    fireEvent.click(screen.getByText("Alpha /table"));
+    const editor = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
+    editor.setSelectionRange(12, 12);
+    fireEvent.keyUp(editor, { key: "e" });
+    fireEvent.keyDown(editor, { key: "Enter" });
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    // The trailing space is the user's own byte, typed before the trigger, and stays theirs.
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({
+        content: "Alpha \n\n| Column 1 | Column 2 |\n| --- | --- |\n|  |  |\n\nTAIL\n",
+      })
+    );
+    expect(screen.getByText("Alpha")).toBeInTheDocument();
+  });
+
+  it("hands the Block back after Copy Markdown, which writes nothing", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "AAAA\n\nBBBB\n\nCCCC\n" }} />
+    );
+
+    fireEvent.click(screen.getByText("CCCC"));
+    const grip = screen.getAllByRole("button", { name: "Block actions" })[2];
+    fireEvent.pointerDown(grip);
+    fireEvent.click(grip);
+    pressMenuItem(screen.getByRole("menuitem", { name: "Copy Markdown" }));
+
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(rows[2]).toHaveAttribute("data-active", "true");
+    expect(rows[2].querySelector("[data-native-block-editor]")).not.toBeNull();
+    expect(container.querySelector("[data-native-markdown-document]")).toHaveAttribute(
+      "data-revision",
+      "0"
+    );
+  });
+
+  it("moves and deletes from row focus with the shortcuts the row announces", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "alpha\n\nbeta\n\ngamma\n" }} />
+    );
+    const legend = container.querySelector("#native-block-shortcuts")?.textContent ?? "";
+    expect(legend).toContain("Alt plus Arrow keys to move");
+    expect(legend).toContain("Mod plus Shift plus Backspace to delete");
+
+    fireEvent.click(screen.getByText("beta"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowUp", altKey: true });
+
+    let rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect([...rows].map((row) => row.textContent)).toEqual([
+      expect.stringContaining("beta"),
+      expect.stringContaining("alpha"),
+      expect.stringContaining("gamma"),
+    ]);
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: "Backspace",
+      metaKey: true,
+      shiftKey: true,
+    });
+    rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(rows).toHaveLength(2);
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "alpha\n\ngamma\n" })
+    );
+  });
+
+  it("undoes a Block-selection delete onto the restored Blocks, not onto Block 1", () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "One\n\nTwo\n\nThree\n\nFour\n" }} />
+    );
+    fireEvent.click(screen.getByText("Two"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown", shiftKey: true });
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Backspace" });
+    expect(container.querySelectorAll("[data-native-block-row]")).toHaveLength(2);
+
+    act(() => useEditorRefStore.getState().requestUndo?.());
+
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    expect(rows).toHaveLength(4);
+    // Block 1 is untouched content the user never pointed at; the next keystroke must not land there.
+    expect(rows[0].querySelector("[data-native-block-editor]")).toBeNull();
+    expect(rows[1].querySelector("[data-native-block-editor]")).not.toBeNull();
+  });
 });

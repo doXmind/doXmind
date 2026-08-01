@@ -1548,3 +1548,46 @@ describe("MarkdownBlockRow wiki links", () => {
     expect(open).toHaveBeenCalledWith("Ghost");
   });
 });
+
+describe("MarkdownBlockRow keys on a Block with no text", () => {
+  /*
+   * A divider, an image and a Collection have no caret of their own.
+   *
+   * When one of them is the last Block on the Page there is also no Block below to arrow into, so
+   * every key was answered with nothing: typing was discarded silently and the keyboard had no way
+   * left to add anything after it. Enter is the key that means "a new Block here" everywhere else in
+   * the editor, and it has to mean that here too.
+   */
+  for (const [label, source] of [
+    ["divider", "---\n"],
+    ["image", "![Shot](assets/shot.png)\n"],
+  ] as const) {
+    it(`creates a Block after a ${label} that ends the Page`, () => {
+      const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
+      const onInsertAfter = vi.fn();
+      render(
+        <MarkdownBlockRow
+          block={block}
+          index={0}
+          count={1}
+          active
+          {...slashHandlers()}
+          onInsertAfter={onInsertAfter}
+          onNavigate={() => false}
+        />
+      );
+
+      const shell = document.querySelector<HTMLElement>("[data-native-block-editor]");
+      expect(shell).not.toBeNull();
+      const event = createEvent.keyDown(shell as HTMLElement, {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      });
+      fireEvent(shell as HTMLElement, event);
+
+      expect(onInsertAfter).toHaveBeenCalledWith(block.id);
+      expect(event.defaultPrevented).toBe(true);
+    });
+  }
+});

@@ -872,6 +872,7 @@ export function MarkdownBlockRuntime({
 
     const handleEditIntent = (event: KeyboardEvent) => {
       if (isEventFromEditableElement(event.target)) return;
+      if (isEventFromFocusedControl(event.target)) return;
       const key = keyboardEditIntentKey(event);
       if (key === null) return;
 
@@ -1189,11 +1190,20 @@ export function MarkdownBlockRuntime({
       if (target?.closest("[data-native-editor-overlay], [data-radix-popper-content-wrapper]")) {
         return;
       }
-      // The Block gutter's own menu portals the same way, but it must NOT be exempted here. Letting
-      // its press through unchanged is what hands the Block back afterwards: the command runs, the
-      // Block it acted on re-activates, and its editing surface takes the caret. Exempting the
-      // press — in any form, whole or caret-only — left every gutter Duplicate, Delete and Move with
+      // The Block gutter's own menu portals the same way, and its press must NOT be exempted from
+      // releasing the caret. Letting that half through unchanged is what hands the Block back
+      // afterwards: the command runs, the Block it acted on re-activates, and its editing surface
+      // takes the caret. Exempting the whole press left every gutter Duplicate, Delete and Move with
       // no active Block and no surface, so the next keystroke had nowhere to go.
+      //
+      // Clearing the Block *selection* is a different matter, and it was the reason every
+      // whole-selection command behind a menu was dead to the mouse. `pointerdown` on a menu item
+      // emptied `blockSelection` before the item's own `onClick` read it, so Turn into from the
+      // selection toolbar did nothing at all and the gutter's Delete, Duplicate and Move each acted
+      // on one Block out of a visibly highlighted three. The keyboard path worked, because a menu
+      // driven by arrow keys sends no press. Nothing here needs the selection gone: the command
+      // either replaces it or leaves it standing.
+      const portalledMenuPress = !!target?.closest("[data-dropdown-portal]");
       // A classic (layout-occupying) scrollbar belongs to the scroll container, so a press on the
       // thumb targets it with an offset past its content box. Dragging to scroll must not cost the
       // caret. Where scrollbars are overlays `clientWidth` equals the border box and this can never
@@ -1220,7 +1230,7 @@ export function MarkdownBlockRuntime({
         };
       }
       if (target?.closest("[data-block-id]")) return;
-      setBlockSelection(null);
+      if (!portalledMenuPress) setBlockSelection(null);
       // Release the caret before deciding whether this press also appends. The append branch below
       // re-assigns both, so clearing first costs it nothing.
       setActiveBlockId(null);
@@ -1454,11 +1464,14 @@ export function MarkdownBlockRuntime({
         applyBlockSelectionCommand({ type: "duplicateBlocks", blockIds }, blockIds.length);
         return;
       }
+      // Both spellings of "move this Block". The legend every focused row points a screen reader at
+      // names Alt+Arrow, and Alt+Arrow is what the editing surface answers to — but a selected row
+      // took only Mod+Shift+Arrow, so three of the four shortcuts the row announces did nothing in
+      // exactly the state that announces them.
       if (
-        (event.metaKey || event.ctrlKey) &&
-        event.shiftKey &&
-        !event.altKey &&
-        (event.key === "ArrowUp" || event.key === "ArrowDown")
+        (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+        (((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey) ||
+          (event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey))
       ) {
         const blocks = documentRef.current.getSnapshot().blocks;
         const currentSelection = blockSelectionRef.current ?? {
@@ -1472,11 +1485,12 @@ export function MarkdownBlockRuntime({
         applyBlockSelectionCommand({ type: "moveBlocks", ...move }, move.blockIds.length);
         return;
       }
+      // Bare Backspace, and the Mod+Shift+Backspace the row announces — which a selected row used to
+      // refuse outright, because this branch demanded no modifier at all.
       if (
         (event.key === "Backspace" || event.key === "Delete") &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey
+        !event.altKey &&
+        (!(event.metaKey || event.ctrlKey) || event.shiftKey)
       ) {
         const currentSelection = blockSelectionRef.current ?? {
           anchorId: blockId,
@@ -1570,10 +1584,29 @@ export function MarkdownBlockRuntime({
       const selection = blockSelectionRef.current;
       const selected = selection ? selectedBlockIdsWithSubtrees(blocks, selection) : [];
       if (!selected.includes(blockId) || selected.length <= 1) {
-        apply({ type: "setKind", blockId, kind, level });
+        // `setKind` reports no selection of its own — the Block keeps its id and its text, so there
+        // is nothing for the document to point at. Every other gutter command returns one, which is
+        // what re-activates the Block after the menu's press released the caret; Turn into returned
+        // none and left the Page with no active Block, no editing surface and focus on `<body>`. The
+        // conversion was correct and the user was locked out of the result until they clicked.
+        const result = documentRef.current.apply({ type: "setKind", blockId, kind, level });
+        publish(result, false);
+        const converted = result.snapshot.blocks.find((block) => block.id === blockId);
+        setBlockSelection(null);
+        if (!converted?.editable) return;
+        const source = normalizeEditorLineEndings(
+          createBlockEditingProjection(converted).editorText
+        );
+        setActiveBlockId(blockId);
+        setPendingSelection({ blockId, anchor: source.length, head: source.length });
         return;
       }
       const lineEnding = preferredSourceLineEnding(documentRef.current.getSnapshot().markdown);
+      // A list is written the way this editor writes every other list: tight. Emitting a blank line
+      // between converted items produced a loose list — each item paragraph-wrapped by any other
+      // Markdown renderer — in a file whose other lists, typed with Enter or read from disk, are
+      // tight.
+      const separator = isListBlockKind(kind) ? lineEnding : `${lineEnding}${lineEnding}`;
       const markdown = selected
         .map((id) => {
           const block = blocks.find((candidate) => candidate.id === id);
@@ -1582,15 +1615,24 @@ export function MarkdownBlockRuntime({
           const content = normalizeEditorLineEndings(
             createBlockEditingProjection(block).editorText
           ).replace(/\n/g, lineEnding);
-          return `${settableKindPrefix(kind, level)}${content}${lineEnding}${lineEnding}`;
+          return `${settableKindPrefix(kind, level)}${content}${separator}`;
         })
         .join("");
+      // The boundary to whatever follows the range is the document's to draw — `replaceBlocks`
+      // re-establishes it. At the end of the Page there is nothing to separate from, so the second
+      // ending was a blank line appended to EOF by a command that only changed Block kinds.
       applyBlockSelectionCommand(
-        { type: "replaceBlocks", blockIds: selected, markdown },
+        {
+          type: "replaceBlocks",
+          blockIds: selected,
+          markdown: markdown.endsWith(`${lineEnding}${lineEnding}`)
+            ? markdown.slice(0, markdown.length - lineEnding.length)
+            : markdown,
+        },
         selected.length
       );
     },
-    [apply, applyBlockSelectionCommand]
+    [applyBlockSelectionCommand, publish]
   );
 
   /**
@@ -2231,6 +2273,19 @@ export function MarkdownBlockRuntime({
       .filter((candidate) => selectedSet.has(candidate.id))
       .map((candidate) => candidate.raw)
       .join("");
+    // Copy is the one command in the Block menu that changes nothing, and it was the only one that
+    // left the Page with no caret: the others re-activate through the selection their command
+    // returns, and this one issues no command at all. The menu's press had already released the
+    // caret, so the next key was routed by edit intent into whichever Block was near the top of the
+    // viewport — a read-only gesture that ended in a stray edit to an untouched Block. Restored
+    // before the write is awaited, so the caret does not depend on the clipboard answering.
+    const copied = current.blocks.find((candidate) => candidate.id === blockId);
+    if (selectedIds.length <= 1 && copied?.editable) {
+      const source = normalizeEditorLineEndings(createBlockEditingProjection(copied).editorText);
+      setActiveBlockId(blockId);
+      setBlockSelection(null);
+      setPendingSelection({ blockId, anchor: source.length, head: source.length });
+    }
     try {
       await navigator.clipboard.writeText(markdown);
     } catch {
@@ -2243,7 +2298,14 @@ export function MarkdownBlockRuntime({
       const current = documentRef.current.getSnapshot();
       const selection = blockSelectionRef.current;
       const selectedIds = selection ? selectedBlockIdsWithSubtrees(current.blocks, selection) : [];
-      if (selectedIds.includes(blockId)) {
+      // Only a selection the user can actually see takes the whole-selection route. Opening the gutter
+      // menu marks its own row selected, so `includes(blockId)` alone was true for an ordinary
+      // single-Block Duplicate — which then went through `applyBlockSelectionCommand`, and that path
+      // deliberately ends on a Block selection rather than a caret. Measured on the packaged app,
+      // that is what left a plain gutter Duplicate with `active: 0, editors: 0` and the editor
+      // keyboard-dead, the state 37 e2e cases encode. One Block is a Block command; a band is a
+      // selection command.
+      if (selectedIds.length > 1 && selectedIds.includes(blockId)) {
         applyBlockSelectionCommand(
           { type: "duplicateBlocks", blockIds: selectedIds },
           selectedIds.length
@@ -2260,7 +2322,7 @@ export function MarkdownBlockRuntime({
       const current = documentRef.current.getSnapshot();
       const selection = blockSelectionRef.current;
       const selectedIds = selection ? selectedBlockIdsWithSubtrees(current.blocks, selection) : [];
-      if (selectedIds.includes(blockId)) {
+      if (selectedIds.length > 1 && selectedIds.includes(blockId)) {
         applyBlockSelectionCommand({ type: "deleteBlocks", blockIds: selectedIds });
         return;
       }
@@ -2280,7 +2342,12 @@ export function MarkdownBlockRuntime({
       const blocks = documentRef.current.getSnapshot().blocks;
       const selection = blockSelectionRef.current;
       const selectedIds = selection ? selectedBlockIdsWithSubtrees(blocks, selection) : [];
-      if (!selectedIds.includes(blockId)) return moveBlock(blockId, direction);
+      // Same rule as Duplicate and Delete: a band moves as a band, one Block moves as a Block. The
+      // gutter menu marks its own row selected, so without the length test an ordinary Move up went
+      // through the selection path and ended on a selection instead of a caret.
+      if (selectedIds.length <= 1 || !selectedIds.includes(blockId)) {
+        return moveBlock(blockId, direction);
+      }
       const move = hierarchySafeBlockMove(blocks, selectedIds, direction);
       if (!move) return false;
       applyBlockSelectionCommand({ type: "moveBlocks", ...move }, move.blockIds.length);
@@ -2321,6 +2388,60 @@ export function MarkdownBlockRuntime({
       // trigger, which is why `/` used to be usable only on an otherwise empty Block.
       const from = blockSourceOffsetForEditorOffset(current, run.start);
       const to = blockSourceOffsetForEditorOffset(current, run.end);
+      const source = editableMarkdownBlockSource(current.raw);
+      const retained = source.slice(0, from) + source.slice(to);
+      // Land the caret inside the template — on a code fence's body line, in a table's
+      // first cell — instead of after its closing delimiter.
+      //
+      // `documentCaret` is document-relative, because Block spans are
+      // (`raw: markdown.slice(block.from, block.to)`). Passing a Block-relative offset found
+      // whichever Block happened to span that small number, which is always the first one, so
+      // running a slash command in any Block but the first left the caret in Block 1 — and
+      // everything typed next went into Block 1's text.
+      const landCaret = (
+        result: MarkdownBlockApplyResult,
+        documentCaret: number,
+        fallback: MarkdownBlockView | undefined
+      ) => {
+        const targetBlock =
+          result.snapshot.blocks.find(
+            (candidate) => candidate.from <= documentCaret && documentCaret <= candidate.to
+          ) ?? fallback;
+        if (!targetBlock) return;
+        const offset = editorOffsetForBlockSourceOffset(
+          targetBlock,
+          documentCaret - targetBlock.from
+        );
+        setActiveBlockId(targetBlock.id);
+        setBlockSelection(null);
+        setPendingSelection({ blockId: targetBlock.id, anchor: offset, head: offset });
+      };
+
+      // A template that is a Block of its own cannot be spliced into a line of text. Doing it anyway
+      // wrote the table — or the fence, or the divider — into the middle of the user's sentence:
+      // `Alpha /table` became a table whose last row read `|  |  |Alpha`, so the word "Alpha" was
+      // still in the file but on no row and reachable by no caret. The text the user already had
+      // stays exactly where it is, byte for byte, and the Block the command inserts goes after it.
+      // An inline template — `[[Page]]`, `![[Page]]` — still lands at the caret, which is the whole
+      // point of those.
+      if (retained.trim() && !isInlineSlashTemplate(template)) {
+        const result = documentRef.current.apply({
+          type: "replaceBlocks",
+          blockIds: [blockId],
+          markdown: `${retained}${lineEnding}${lineEnding}${template}${lineEnding}`,
+        });
+        publish(result, false);
+        const keptIndex = result.snapshot.blocks.findIndex((candidate) => candidate.id === blockId);
+        const templateBlock = result.snapshot.blocks[keptIndex + 1];
+        if (!templateBlock) return;
+        landCaret(
+          result,
+          templateBlock.from + markdownSlashCommandCaret(commandId, lineEnding),
+          templateBlock
+        );
+        return;
+      }
+
       const result = documentRef.current.apply({
         type: "replaceText",
         blockId,
@@ -2328,30 +2449,12 @@ export function MarkdownBlockRuntime({
         text: template,
       });
       publish(result, false);
-      // Land the caret inside the template — on a code fence's body line, in a table's
-      // first cell — instead of after its closing delimiter.
-      //
-      // `from` and therefore `caret` are Block-relative, because that is the space
-      // `replaceText` validates against (`range.to > block.raw.length`). Block spans are
-      // document-relative (`raw: markdown.slice(block.from, block.to)`). Comparing the
-      // two found whichever Block happened to span that small number, which is always
-      // the first one, so running a slash command in any Block but the first left the
-      // caret in Block 1 — and everything typed next went into Block 1's text.
       const edited = result.snapshot.blocks.find((candidate) => candidate.id === blockId);
-      const documentCaret =
-        (edited?.from ?? current.from) + from + markdownSlashCommandCaret(commandId, lineEnding);
-      const insertedBlock = result.snapshot.blocks.find(
-        (candidate) => candidate.from <= documentCaret && documentCaret <= candidate.to
+      landCaret(
+        result,
+        (edited?.from ?? current.from) + from + markdownSlashCommandCaret(commandId, lineEnding),
+        edited
       );
-      const targetBlock = insertedBlock ?? edited;
-      if (!targetBlock) return;
-      const offset = editorOffsetForBlockSourceOffset(
-        targetBlock,
-        documentCaret - targetBlock.from
-      );
-      setActiveBlockId(targetBlock.id);
-      setBlockSelection(null);
-      setPendingSelection({ blockId: targetBlock.id, anchor: offset, head: offset });
     },
     [publish]
   );
@@ -2603,12 +2706,18 @@ export function MarkdownBlockRuntime({
                   const ids = new Set(
                     blockSelection ? selectedBlockIdsWithSubtrees(blocks, blockSelection) : []
                   );
-                  void navigator.clipboard?.writeText(
-                    blocks
-                      .filter((block) => ids.has(block.id))
-                      .map((block) => block.raw)
-                      .join("")
-                  );
+                  // Told, not swallowed. The write can be refused outright — the desktop shell hands
+                  // the renderer no clipboard permission — and this call site had no rejection
+                  // handler, so the button was indistinguishable from a successful copy and the
+                  // user's next paste delivered whatever was on the clipboard before.
+                  void navigator.clipboard
+                    ?.writeText(
+                      blocks
+                        .filter((block) => ids.has(block.id))
+                        .map((block) => block.raw)
+                        .join("")
+                    )
+                    .catch(() => notify.error("Could not copy Markdown"));
                 }}
                 onDuplicate={() => {
                   const blockIds = blockSelection
@@ -3135,6 +3244,21 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * Can a slash command's template live inside another Block's line of text?
+ *
+ * A wiki link and an embed can — they are inline spans, and inserting one mid-sentence is exactly
+ * what they are for. A heading marker, a divider, a table, a fence, an image cannot: each one *is* a
+ * Block, and splicing it at the caret produced source that no longer means what either half of it
+ * said. Read from the template itself rather than from a second list of command ids beside the one
+ * in `slash-commands.ts`, so a command added there cannot forget to answer this.
+ */
+function isInlineSlashTemplate(template: string): boolean {
+  if (template.trim().length === 0) return true;
+  const blocks = MarkdownBlockDocument.fromMarkdown(template).getSnapshot().blocks;
+  return blocks.length === 1 && blocks[0].kind === "paragraph";
+}
+
 function markdownPendingKey(fileId: string, markdown: string): string {
   return `${fileId}\u0000${markdown}`;
 }
@@ -3183,6 +3307,25 @@ function keyboardEditIntentKey(event: KeyboardEvent): string | null {
 function isEventFromEditableElement(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   return target.closest('input,textarea,select,[contenteditable="true"]') !== null;
+}
+
+/**
+ * A key pressed while a control has focus belongs to that control, not to the Page.
+ *
+ * Edit intent exists for the state where nothing is focused — the caret has been released and the
+ * keydown arrives on `window` or `<body>` — so that typing puts the character back into the Page
+ * instead of dropping it. It was matching every keydown in the window, so the first key a
+ * keyboard-only user pressed after tabbing to any chrome button was swallowed, inserted into
+ * Block 1 and autosaved: the button never activated and a Page nobody had opened for editing gained
+ * text. A focused control answers its own keys.
+ */
+function isEventFromFocusedControl(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return (
+    target.closest(
+      'a[href], button, [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="tab"], [role="checkbox"], [role="switch"]'
+    ) !== null
+  );
 }
 
 function visibleEditableBlock(
@@ -3276,13 +3419,32 @@ function normalizeEditorLineEndings(source: string): string {
  * Block, not the one that slid into its index: taking that index gave the Block *following* the
  * origin, which is how undoing a duplicate of the first Block left the caret on the second and the
  * next keyboard command deleted the wrong Block.
+ *
+ * With no caret at all — the state every Block-selection command leaves behind — the step is read
+ * from the Blocks themselves instead. Falling straight through to the first Block of the Page put
+ * the caret, and with it the viewport, at the top of the document after undoing a delete forty
+ * Blocks down: the restored content was off screen and the next keystroke appended to a Block the
+ * user had never touched. Content the step brought back, or the first Block it reordered, is where
+ * the user was working.
  */
 function activeBlockIdAfterHistory(
   current: string | null,
   before: readonly MarkdownBlockView[],
   after: readonly MarkdownBlockView[]
 ): string | null {
-  if (!current) return after[0]?.id ?? null;
+  if (!current) {
+    const beforeIds = new Set(before.map((block) => block.id));
+    const restored = after.find((block) => !beforeIds.has(block.id));
+    if (restored) return restored.id;
+    // Same Blocks, different order: a reorder taken back. Only when the counts match, so undoing a
+    // duplicate — where the first differing index is the Block *after* the copies — still lands on
+    // the Block the copies were made from.
+    if (before.length === after.length) {
+      const reordered = after.find((block, index) => before[index]?.id !== block.id);
+      if (reordered) return reordered.id;
+    }
+    return after[0]?.id ?? null;
+  }
   if (after.some((block) => block.id === current)) return current;
   const index = before.findIndex((block) => block.id === current);
   if (index < 0) return after[0]?.id ?? null;

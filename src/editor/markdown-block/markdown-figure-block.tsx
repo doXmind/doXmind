@@ -62,10 +62,11 @@ export function MarkdownFigureBlock({
   // it is refused rather than allowed to re-cut the Block somewhere the user did not ask for.
   const locked = kind === "mermaid" && FENCE_CLOSING_LINE.test(split.payload);
 
-  const commit = (payload: string) => {
+  const commit = (payload: string): boolean => {
     const next = assembleFigureSource(kind, split, payload);
-    if (next === null || next === source) return;
+    if (next === null || next === source) return false;
     onChange(blockId, next);
+    return true;
   };
 
   return (
@@ -107,7 +108,7 @@ function FigureSourceField({
   kind: MarkdownFigureKind;
   payload: string;
   readOnly: boolean;
-  onPayloadChange: (payload: string) => void;
+  onPayloadChange: (payload: string) => boolean;
   onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
 }) {
   const fieldRef = useRef<HTMLTextAreaElement>(null);
@@ -121,6 +122,21 @@ function FigureSourceField({
    */
   const [composingValue, setComposingValue] = useState<string | null>(null);
   const composingRef = useRef(false);
+  /**
+   * The empty line Enter has just opened, held here until there is something on it.
+   *
+   * An equation cannot carry a trailing blank line: it would sit against the closing `$$` and end
+   * the Block, so `assembleFigureSource` trims it and the assembled source comes back identical to
+   * the one on disk. Nothing is written, the controlled field snaps back, and Enter reads as a key
+   * that does nothing at all — `\begin{aligned}` could only be written through the clipboard. Held
+   * locally instead, the same way this field already holds an in-flight composition: the caret sits
+   * on the new line, and the first character typed there commits both.
+   */
+  const [openedLine, setOpenedLine] = useState<string | null>(null);
+
+  useEffect(() => {
+    setOpenedLine(null);
+  }, [payload]);
 
   // The caret goes to the end of what is already written, which is where a person who just clicked an
   // equation to change it expects to continue. Doing it on mount rather than on every render matters:
@@ -155,13 +171,15 @@ function FigureSourceField({
         spellCheck={false}
         rows={Math.min(Math.max(lines, 2), 14)}
         readOnly={readOnly}
-        value={composingValue ?? payload}
+        value={composingValue ?? openedLine ?? payload}
         onChange={(event) => {
           if (composingRef.current) {
             setComposingValue(event.target.value);
             return;
           }
-          onPayloadChange(event.target.value);
+          const value = event.target.value;
+          const written = onPayloadChange(value);
+          setOpenedLine(written || !opensTrailingLine(payload, value) ? null : value);
         }}
         onCompositionStart={(event) => {
           composingRef.current = true;
@@ -184,6 +202,18 @@ function FigureSourceField({
       />
     </div>
   );
+}
+
+/**
+ * Whether the only thing this value adds to the payload is empty lines at the end.
+ *
+ * That is the one refusal worth holding on screen: the file already says everything the value says,
+ * so nothing is being shown that the document does not have. A payload refused for any other reason
+ * — a list marker, a fence line — still reverts, because keeping it would leave the field claiming
+ * an equation the file never got.
+ */
+function opensTrailingLine(payload: string, value: string): boolean {
+  return value !== payload && value.replace(/(?:[ \t]*(?:\r\n|\n|\r))+[ \t]*$/, "") === payload;
 }
 
 /**

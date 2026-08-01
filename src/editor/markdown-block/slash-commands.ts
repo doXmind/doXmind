@@ -212,7 +212,10 @@ const COMMANDS: readonly MarkdownSlashCommand[] = [
     pinyin: ["gongshi"],
     initials: ["gs"],
     icon: "Sigma",
-    shortcut: "$$",
+    // The delimiters both ways round, because that is what the user has to type to get an equation:
+    // a lone `$$` is a paragraph whose text is `$$`, and the row used to advertise it as if it were
+    // a shortcut.
+    shortcut: "$$ $$",
   },
   {
     id: "mermaid",
@@ -351,7 +354,12 @@ export function markdownSlashCommandSource(
     case "image":
       return "![Image](assets/image.png)";
     case "equation":
-      return ["$$", "", "$$"].join(lineEnding);
+      // One line, not the `$$`/blank/`$$` shape this used to write. A blank line is a Block
+      // boundary, so that template parsed as two `$$` paragraphs and the command could not produce
+      // an equation at all: typing into it only ever grew the first paragraph's literal `$$` text.
+      // `$$ $$` is the same empty-equation shape `assembleFigureSource` collapses a cleared equation
+      // to, it is a `block_math` Block the moment it lands, and it stays one as it is typed into.
+      return "$$ $$";
     case "mermaid":
       return ["```mermaid", "flowchart LR", "  A --> B", "```"].join(lineEnding);
     case "wiki-link":
@@ -373,9 +381,10 @@ export function markdownSlashCommandCaret(
   const template = markdownSlashCommandSource(id, lineEnding);
   switch (id) {
     case "code":
-    case "equation":
     case "mermaid":
       return afterFirstLine(template, lineEnding);
+    case "equation":
+      return afterOpeningMathDelimiter(template);
     case "table":
       return firstCellOfLastRow(template, lineEnding);
     case "toggle":
@@ -387,7 +396,13 @@ export function markdownSlashCommandCaret(
   }
 }
 
-/** Start of the body line that follows an opening `$$`/fence line. */
+/** Inside the delimiters of a one-line equation, where the formula goes. */
+function afterOpeningMathDelimiter(template: string): number {
+  const opening = template.indexOf("$$");
+  return opening < 0 ? template.length : opening + "$$".length;
+}
+
+/** Start of the body line that follows an opening fence line. */
 function afterFirstLine(template: string, lineEnding: "\r\n" | "\n" | "\r"): number {
   const breakAt = template.indexOf(lineEnding);
   return breakAt < 0 ? template.length : breakAt + lineEnding.length;

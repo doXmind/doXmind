@@ -2023,3 +2023,75 @@ describe("setext headings", () => {
     );
   });
 });
+
+describe("a move keeps the looseness of the list it touches", () => {
+  const moveBlocks = (markdown: string, movedText: string, beforeText: string | null) => {
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const blocks = document.getSnapshot().blocks;
+    const moved = blocks.find((block) => block.raw.includes(movedText));
+    if (!moved) throw new Error(`no Block contains ${movedText}`);
+    const beforeId =
+      beforeText === null
+        ? null
+        : (blocks.find((block) => block.raw.includes(beforeText))?.id ?? null);
+    return document.apply({ type: "moveBlocks", blockIds: [moved.id], beforeId }).snapshot.markdown;
+  };
+
+  it("keeps a loose list loose when one of its items moves", () => {
+    // Alt+ArrowDown on the first item used to collapse both junctions it touched, rewriting a list
+    // the user had deliberately spaced out into a tight one.
+    expect(moveBlocks("- alpha\n\n- beta\n\n- gamma\n", "alpha", "gamma")).toBe(
+      "- beta\n\n- alpha\n\n- gamma\n"
+    );
+  });
+
+  it("keeps a tight list tight when an item lands in it from a looser junction", () => {
+    // `- two` carried the blank line that separated the list from `After`; that separator belongs
+    // to the boundary it left behind, not to the item.
+    expect(moveBlocks("- one\n- two\n\nAfter\n", "two", "one")).toBe("- two\n- one\n\nAfter\n");
+  });
+});
+
+describe("a drop that would reinterpret the Blocks under it is refused", () => {
+  it("refuses a paragraph dropped between two nested list items", () => {
+    // `  - beta two` keeps its two leading spaces, but a paragraph in front of it ends the list, so
+    // those spaces stop meaning "child of beta" and the item silently jumps to the top level.
+    const markdown = "- alpha\n- beta\n  - beta one\n  - beta two\n- gamma\n\nTail paragraph\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const blocks = document.getSnapshot().blocks;
+    const moved = blocks.find((block) => block.raw.includes("Tail paragraph"))!;
+    const before = blocks.find((block) => block.raw.includes("beta two"))!;
+
+    const result = document.apply({
+      type: "moveBlocks",
+      blockIds: [moved.id],
+      beforeId: before.id,
+    });
+
+    expect(result.snapshot.markdown).toBe(markdown);
+    expect(document.undo().markdown).toBe(markdown);
+  });
+
+  it("still allows a paragraph dropped between two top-level list items", () => {
+    const markdown = "- alpha\n- beta\n\nTail paragraph\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const blocks = document.getSnapshot().blocks;
+    const moved = blocks.find((block) => block.raw.includes("Tail paragraph"))!;
+    const before = blocks.find((block) => block.raw.includes("beta"))!;
+
+    const result = document.apply({
+      type: "moveBlocks",
+      blockIds: [moved.id],
+      beforeId: before.id,
+    });
+
+    // The blank line at EOF is the separate, still-open trailing-separator defect; what this pins
+    // is that a drop whose neighbours all keep their meaning is not refused.
+    expect(result.snapshot.markdown).toBe("- alpha\n\nTail paragraph\n\n- beta\n\n");
+    expect(
+      MarkdownBlockDocument.fromMarkdown(result.snapshot.markdown)
+        .getSnapshot()
+        .blocks.map((block) => `${block.kind}@${block.depth ?? "-"}`)
+    ).toEqual(["bullet_list_item@0", "paragraph@-", "bullet_list_item@0"]);
+  });
+});

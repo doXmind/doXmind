@@ -24,6 +24,7 @@ import {
   markdownTableDuplicateRow,
   markdownTableInsertColumn,
   markdownTableInsertRow,
+  markdownTablePressedCell,
   markdownTableSetColumnAlignment,
   type MarkdownTableAlignment,
   type MarkdownTableCell,
@@ -201,7 +202,11 @@ export function MarkdownTableBlock({
     address: TableCellAddress,
     cell: MarkdownTableCell | undefined
   ) => {
-    if (!cell) return;
+    // A row with fewer cells than the header still has a `<td>` drawn for every column. The press
+    // is answered with the last cell that row really has, so the caret stays in the row that was
+    // pressed instead of falling back to the header.
+    const pressed = cell ?? markdownTablePressedCell(geometry, address);
+    if (!pressed) return;
     // A press already inside an editing surface belongs to that surface: it is how the caret is
     // placed and how a drag-selection starts, and taking it over here would break both.
     if ((event.target as HTMLElement | null)?.closest("[data-native-block-editor]")) return;
@@ -211,10 +216,12 @@ export function MarkdownTableBlock({
     // a Block that looks focused with every keystroke going to the document. Placing the caret is
     // this handler's job, so the default focus is not wanted.
     event.preventDefault();
-    let caret: ActiveCell["caret"] = null;
-    const visible = visibleOffsetAtPoint(element, event.clientX, event.clientY);
+    // Nothing was pressed inside the cell that answered, so the end of its text is where the caret
+    // belongs — the press was past the end of the row.
+    let caret: ActiveCell["caret"] = cell ? null : "end";
+    const visible = cell ? visibleOffsetAtPoint(element, event.clientX, event.clientY) : null;
     if (visible !== null) {
-      const text = source.slice(cell.from, cell.to);
+      const text = source.slice(pressed.from, pressed.to);
       // Measured against the text as it is rendered — escaped pipes resolved — and mapped back to
       // the source through both of the things that shorten it: the table's own escape, then the
       // inline syntax the projection hides.
@@ -227,9 +234,10 @@ export function MarkdownTableBlock({
         )
       );
     }
-    pendingCellRef.current = address;
+    const target = { row: pressed.row, column: pressed.column };
+    pendingCellRef.current = target;
     pendingCaretOffsetRef.current = caret;
-    if (editable) setActive({ ...address, caret });
+    if (editable) setActive({ ...target, caret });
   };
 
   const moveTo = (row: number, column: number, caret: "start" | "end") => {
@@ -393,6 +401,11 @@ export function MarkdownTableBlock({
               return (
                 <th
                   key={`header-${column}`}
+                  // Without it a screen reader has a header row it cannot attach to anything: the
+                  // cells below announce as an unlabelled grid of text. It costs no text in the
+                  // cell, which is the one thing this component cannot add — the caret mapping
+                  // counts every character inside a cell.
+                  scope="col"
                   data-table-cell={cell ? `${cell.from}` : undefined}
                   data-align={alignment(column)}
                   className={`relative border border-border bg-muted/50 px-2 py-1.5 font-medium ${alignmentClass(column)} ${axisOutline(0, column)}`}
@@ -454,27 +467,34 @@ export function MarkdownTableBlock({
                   >
                     <span className="relative block">
                       {column === 0 ? (
-                        <TableAxisMenu
-                          enabled={editable}
-                          axis="row"
-                          label={`Row ${row + 1} actions`}
-                          visible={handleVisible("row", row)}
-                          onOpenChange={(open) =>
-                            setOpenAxis(open ? { axis: "row", index: row } : null)
-                          }
-                          canDelete
-                          onInsertBefore={() =>
-                            commit(markdownTableInsertRow(source, geometry, row, "above"))
-                          }
-                          onInsertAfter={() =>
-                            commit(markdownTableInsertRow(source, geometry, row, "below"))
-                          }
-                          onDuplicate={() =>
-                            commit(markdownTableDuplicateRow(source, geometry, row))
-                          }
-                          onClear={() => commit(markdownTableClearRow(source, geometry, row))}
-                          onDelete={() => commit(markdownTableDeleteRow(source, geometry, row))}
-                        />
+                        // Out of flow, exactly as the header wraps its own handle. The menu's root
+                        // is an `inline-block` element, so mounting it in flow beside the cell body
+                        // cost nothing until the body became a block on activation and pushed it
+                        // onto a line box of its own: the pressed row grew 24px, its text sank away
+                        // from the pointer, and every Block below the table jumped down with it.
+                        <span className="pointer-events-none absolute inset-0">
+                          <TableAxisMenu
+                            enabled={editable}
+                            axis="row"
+                            label={`Row ${row + 1} actions`}
+                            visible={handleVisible("row", row)}
+                            onOpenChange={(open) =>
+                              setOpenAxis(open ? { axis: "row", index: row } : null)
+                            }
+                            canDelete
+                            onInsertBefore={() =>
+                              commit(markdownTableInsertRow(source, geometry, row, "above"))
+                            }
+                            onInsertAfter={() =>
+                              commit(markdownTableInsertRow(source, geometry, row, "below"))
+                            }
+                            onDuplicate={() =>
+                              commit(markdownTableDuplicateRow(source, geometry, row))
+                            }
+                            onClear={() => commit(markdownTableClearRow(source, geometry, row))}
+                            onDelete={() => commit(markdownTableDeleteRow(source, geometry, row))}
+                          />
+                        </span>
                       ) : null}
                       {renderBody(cell, { row, column })}
                     </span>
