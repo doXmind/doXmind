@@ -216,11 +216,13 @@ function parseToggleSource(source: string): MarkdownContainer | null {
       return joinSourceLines(rebuilt, fallbackEnding);
     },
     withoutContainer() {
-      // Summary and body as plain lines. The `<details>`, `<summary>` and the blank lines that make a
-      // Markdown parser read the middle as Markdown are all scaffolding and all go.
-      const kept = [summary[2], ...bodyLines.map((line) => line.raw)].filter(
-        (text) => text.trim().length > 0
-      );
+      // Summary and body as plain lines. The `<details>` and `<summary>` tags go, and so do the
+      // blank lines at the two ends — but not the ones between two body paragraphs. Those are the
+      // user's, and are the whole of what makes two paragraphs two Blocks: dropping them turned a
+      // summary and two paragraphs into one run-on paragraph with hard line breaks, on one press,
+      // with undo the only way back. The blank line between the summary and the body is put back for
+      // the same reason: the summary was its own Block, not the first line of the first paragraph.
+      const kept = withoutBlankEnds([summary[2], "", ...bodyLines.map((line) => line.raw)]);
       return joinSourceLines(
         (kept.length > 0 ? kept : [""]).map((raw, index) => ({
           raw,
@@ -254,6 +256,14 @@ function parseToggleSource(source: string): MarkdownContainer | null {
       return joinSourceLines(rebuilt, fallbackEnding);
     },
   };
+}
+
+/** The same lines without the blank ones at either end. */
+function withoutBlankEnds(lines: readonly string[]): string[] {
+  const kept = [...lines];
+  while (kept.length > 0 && kept[0].trim().length === 0) kept.shift();
+  while (kept.length > 0 && kept[kept.length - 1].trim().length === 0) kept.pop();
+  return kept;
 }
 
 function splitSourceLines(source: string): SourceLine[] {
@@ -363,6 +373,23 @@ const EDITOR_CLASS =
   "native-block-editor-surface native-block-textarea block w-full whitespace-pre-wrap break-words bg-transparent outline-none";
 
 /**
+ * The one character that makes an empty last line of a body a place the caret can be.
+ *
+ * Chrome will not put a caret after a text node's trailing newline. Measured in the packaged app: a
+ * caret asked for at the end of `aaa\n` reports a zero-height rect at 0,0 and the browser silently
+ * snaps it back to the end of `aaa`, so pressing Enter at the end of a callout or a toggle body
+ * looked like it had done nothing — the box did not grow, no caret was anywhere on screen — and the
+ * next character was typed onto the line above, while the line itself had already gone into the
+ * file. Nothing in CSS moves it: `pre`, `pre-wrap`, `break-spaces` and a `::after` all lay the empty
+ * line out and none of them lets the caret into it. Only a character after the newline does.
+ *
+ * It is added to what is drawn, never to what is written. `withoutTrailingAnchor` takes it off again
+ * before every commit, and the rendering keeps it under `aria-hidden`, so no byte of it can reach
+ * the file and no offset in the region shifts because of it.
+ */
+const TRAILING_LINE_ANCHOR = "\u200b";
+
+/**
  * A callout or a toggle that stays a callout or a toggle while it is being edited.
  *
  * Clicking either of these used to replace the whole box with a textarea holding its raw source, so
@@ -454,6 +481,9 @@ export function MarkdownContainerBlock({
   if (!container) return null;
 
   const { heading, body } = container;
+  // The body as both surfaces draw it: one whose last line is empty gets an anchor on that line, or
+  // neither the line nor a caret on it would be drawn at all.
+  const anchoredBody = body.endsWith("\n") ? body + TRAILING_LINE_ANCHOR : body;
   // A closed disclosure does not lay its body out, so an editor mounted in it cannot take focus.
   // Resolving the region here rather than letting it stand keeps the promise that an active Block
   // has exactly one focused editing surface.
@@ -516,11 +546,15 @@ export function MarkdownContainerBlock({
     if (visibleTextLength(element) === projection.visibleText.length) {
       const visible = visibleOffsetAtPoint(element, event.clientX, event.clientY);
       if (visible !== null) at = projection.visibleOffsetToSource(visible, "forward");
-    } else {
+    }
+    if (at === null) {
       // The end of the region, not the caret the measurement would have given. Leaving this null
       // sends the caret to offset zero, which is the worst of the three answers: a press somewhere
       // in the middle of a body would put the caret in front of the first character and the next
-      // thing typed would appear at the top of the toggle.
+      // thing typed would appear at the top of the toggle. A press that produced no offset at all is
+      // the same case as a length that did not match: it landed on something the caret walker
+      // rejects, which is what the anchor on an empty last line is — pressing that line put the
+      // caret at the top of the body, and Backspace there then ate the line above.
       at = "end";
     }
     pendingRegionRef.current = region;
@@ -557,7 +591,22 @@ export function MarkdownContainerBlock({
     focusRegion(origin.region, { anchor: origin.at, head });
   };
 
+  /**
+   * Tab belongs to the document, not to the browser's focus order.
+   *
+   * Left to its default action it took focus out of the editing surface altogether — from a callout
+   * body to the next toggle's `<summary>`, from a toggle to a link in the app chrome — and the caret
+   * was gone with no way back but the mouse. Every kind that edits through a textarea already
+   * swallows it for the same reason, and a container's two contenteditables were the gap.
+   */
+  const tabStaysInside = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Tab" || event.metaKey || event.ctrlKey || event.altKey) return false;
+    event.preventDefault();
+    return true;
+  };
+
   const handleHeadingKeyDown = (event: KeyboardEvent<HTMLElement>, selection?: SourceSelection) => {
+    if (tabStaysInside(event)) return;
     // Backspace at the very start takes the container off and leaves the words behind. Both reference
     // products do this, and both make it two presses: the first strips the styling, and only then does
     // a second Backspace at the start of the resulting text merge it upward. Handing the key on after
@@ -601,8 +650,11 @@ export function MarkdownContainerBlock({
   };
 
   const handleBodyKeyDown = (event: KeyboardEvent<HTMLElement>, selection: SourceSelection) => {
-    const from = Math.min(selection.anchor, selection.head);
-    const to = Math.max(selection.anchor, selection.head);
+    if (tabStaysInside(event)) return;
+    // The surface's offsets are into the body *and* its trailing-line anchor, so an offset past the
+    // end of the body itself is one that sits on the anchor and means the end of the body.
+    const from = Math.min(Math.min(selection.anchor, selection.head), body.length);
+    const to = Math.min(Math.max(selection.anchor, selection.head), body.length);
     if (event.key === "Enter" && !event.shiftKey) {
       // Enter is handled here rather than left to the contenteditable, which answers it by
       // inserting a `<div>` or a `<br>` — neither of which reads back as the newline the source
@@ -624,6 +676,16 @@ export function MarkdownContainerBlock({
       // the Block-level handler has no bare-Backspace branch for a kind that holds text.
       event.preventDefault();
       if (event.repeat) return;
+      // A callout the file wrote without a title has no line above the body holding any of the
+      // user's text: the line above is the `[!NOTE]` marker. Joining the first body line onto it
+      // writes `> [!NOTE] callout body`, which this app still draws as a callout and GitHub does not
+      // read as an alert at all, so a merge here quietly changes how the file renders everywhere
+      // else. The caret goes to the empty title instead, from where a second Backspace takes the
+      // container off the way it does from any other heading.
+      if (kind === "callout" && heading.length === 0) {
+        focusRegion("heading", "end");
+        return;
+      }
       const firstLine = body.indexOf("\n");
       const head = firstLine === -1 ? body : body.slice(0, firstLine);
       const rest = firstLine === -1 ? "" : body.slice(firstLine + 1);
@@ -647,6 +709,23 @@ export function MarkdownContainerBlock({
   const commitBody = (next: string, at: ActiveRegion["caret"]) => {
     setActive({ region: "body", caret: at });
     commit(container.withBody(next));
+  };
+
+  /**
+   * The text a body surface handed back, with what the browser put at the end of it taken off.
+   *
+   * Two things can be there and neither is the user's. An anchored surface ends with the anchor, and
+   * it comes off — only when this render put one there, so a zero-width space the user's own file
+   * already held is never removed. And whenever the surface's text would end in a newline it cannot
+   * draw, Chrome inserts a `<br>` of its own, which reads back as a second newline: measured, taking
+   * a character off the last line of a body *added* an empty line to the file instead of removing
+   * one. That `<br>` is never where the caret is — the edit that produced it left the caret on the
+   * line above — while a newline the user really did put at the end, by pasting one, leaves the
+   * caret after it. That is what tells the two apart.
+   */
+  const withoutTrailingAnchor = (next: string, caret: number) => {
+    if (anchoredBody !== body && next.endsWith(TRAILING_LINE_ANCHOR)) return next.slice(0, -1);
+    return next.endsWith("\n") && caret < next.length ? next.slice(0, -1) : next;
   };
 
   const headingEditor = (label: string, placeholder?: string) => (
@@ -674,14 +753,15 @@ export function MarkdownContainerBlock({
   const bodyEditor = (label: string, placeholder?: string) => (
     <SemanticInlineEditor
       label={label}
-      source={body}
+      source={anchoredBody}
       selection={selectionFor(caret, body.length)}
       placeholder={placeholder}
       autoFocus
       className={EDITOR_CLASS}
-      onSourceChange={(next, nextSelection) =>
-        commitBody(next, Math.min(nextSelection.head, next.length))
-      }
+      onSourceChange={(next, nextSelection) => {
+        const text = withoutTrailingAnchor(next, nextSelection.head);
+        commitBody(text, Math.min(nextSelection.head, text.length));
+      }}
       onKeyDown={handleBodyKeyDown}
     />
   );
@@ -702,6 +782,12 @@ export function MarkdownContainerBlock({
           <span>{renderInline(line)}</span>
         </Fragment>
       ))}
+      {text.endsWith("\n") ? (
+        // The rendering has to draw the empty last line the editing surface draws, or the Block
+        // would change height the moment it took the caret. `aria-hidden` keeps the anchor out of
+        // the walker that maps a press to an offset, the way the type label is kept out.
+        <span aria-hidden="true">{TRAILING_LINE_ANCHOR}</span>
+      ) : null}
     </div>
   );
 
@@ -728,10 +814,11 @@ export function MarkdownContainerBlock({
             <button
               type="button"
               aria-label={`${style.label} callout, change type`}
-              disabled={!editable}
-              className={`mt-0.5 h-4 w-4 shrink-0 rounded transition-colors duration-[20ms] ease-in ${style.accent} ${
-                editable ? "hover:bg-foreground/10" : ""
-              }`}
+              // Pressable whether or not the Block is active. Disabled while inactive, the first
+              // press on the affordance the callout documents as its control did nothing at all —
+              // no menu, and not even an activation — so the user had to click the text first and
+              // then press the icon they had already pressed once.
+              className={`mt-0.5 h-4 w-4 shrink-0 rounded transition-colors duration-[20ms] ease-in hover:bg-foreground/10 ${style.accent}`}
               onPointerDown={(event) => event.stopPropagation()}
             >
               <Icon className="h-4 w-4" aria-hidden="true" />
@@ -829,6 +916,11 @@ export function MarkdownContainerBlock({
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
+            // Collapsing takes the body off screen, so a caret inside it has to be given somewhere
+            // to go. The end of the summary is where the user can carry on typing; leaving it to the
+            // region resolver put it in front of the summary's first character instead, silently,
+            // and the next keystroke rewrote a title nobody was aiming at.
+            if (open && activeRegion === "body") setActive({ region: "heading", caret: "end" });
             setOpenOverride(!open);
           }}
         >

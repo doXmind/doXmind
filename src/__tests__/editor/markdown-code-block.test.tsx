@@ -152,6 +152,49 @@ describe("MarkdownCodeBlock", () => {
     await settle();
   });
 
+  it("says so when it refuses an edit, instead of dropping it in silence", async () => {
+    render(<Harness initial={"```js\ncode\n```"} editable />);
+
+    // What the user actually did: pasted a snippet that contains a fence, or typed the third
+    // backtick of one. Refusing is right; refusing without a word is what left them believing the
+    // paste had landed.
+    fireEvent.change(editingSurface(), { target: { value: "code\n```\nnested\n```" } });
+
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent("```");
+    expect(notice.textContent).toMatch(/code Block/);
+    await settle();
+  });
+
+  it("leaves the caret where a refused edit began, not at the end of the Block", async () => {
+    render(<Harness initial={"```py\nprint(1)\n```"} editable />);
+    const textarea = editingSurface();
+    selectRange(textarea, 3, 3);
+
+    // A paste at offset 3 of `print(1)`: the payload the field reports is the pasted text spliced
+    // in at the caret. The insertion point is the one thing the user cannot get back by hand.
+    fireEvent.change(textarea, {
+      target: { value: "pri```js\nconst x = 1;\n```\nnt(1)" },
+    });
+
+    expect(textarea).toHaveValue("print(1)");
+    expect(textarea.selectionStart).toBe(3);
+    expect(textarea.selectionEnd).toBe(3);
+    await settle();
+  });
+
+  it("takes the notice back down once an edit is accepted", async () => {
+    render(<Harness initial={"```js\ncode\n```"} editable />);
+
+    fireEvent.change(editingSurface(), { target: { value: "code\n```" } });
+    expect(await screen.findByRole("status")).toBeInTheDocument();
+
+    fireEvent.change(editingSurface(), { target: { value: "code!" } });
+
+    expect(screen.queryByRole("status")).toBeNull();
+    await settle();
+  });
+
   it("takes a fence line that does not close the delimiter this Block opened with", async () => {
     const onChange = vi.fn();
     render(<Harness initial={"~~~md\ndocs\n~~~"} editable onChange={onChange} />);

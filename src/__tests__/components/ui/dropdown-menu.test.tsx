@@ -99,6 +99,62 @@ describe("DropdownMenuContent keyboard navigation", () => {
     expect(document.activeElement).toHaveTextContent("Turn into");
   });
 
+  it("walks past a disabled row instead of spending a keypress on it", () => {
+    render(
+      <DropdownMenu open anchorPoint={{ x: 0, y: 0 }}>
+        <DropdownMenuContent>
+          <DropdownMenuItem>Duplicate</DropdownMenuItem>
+          <DropdownMenuItem disabled>Move up</DropdownMenuItem>
+          <DropdownMenuItem>Delete</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(document.activeElement).toHaveTextContent("Duplicate");
+
+    // A disabled button cannot take DOM focus, so landing the roving ring on one dropped focus out
+    // of the menu entirely and the press did nothing the user could see.
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(document.activeElement).toHaveTextContent("Delete");
+
+    fireEvent.keyDown(document, { key: "ArrowUp" });
+    expect(document.activeElement).toHaveTextContent("Duplicate");
+  });
+
+  it("skips a disabled row at the end of the walk", () => {
+    render(
+      <DropdownMenu open anchorPoint={{ x: 0, y: 0 }}>
+        <DropdownMenuContent>
+          <DropdownMenuItem>Duplicate</DropdownMenuItem>
+          <DropdownMenuItem disabled>Move down</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+
+    fireEvent.keyDown(document, { key: "End" });
+    expect(document.activeElement).toHaveTextContent("Duplicate");
+  });
+
+  it("still closes on Escape when every row is disabled", () => {
+    function AllDisabled() {
+      const [open, setOpen] = useState(true);
+      return (
+        <DropdownMenu open={open} onOpenChange={setOpen} anchorPoint={{ x: 0, y: 0 }}>
+          <DropdownMenuContent>
+            <DropdownMenuItem disabled>Move up</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      );
+    }
+
+    render(<AllDisabled />);
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
   it("still cycles a menu whose rows all mounted together", () => {
     render(
       <DropdownMenu open anchorPoint={{ x: 0, y: 0 }}>

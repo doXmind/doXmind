@@ -4,8 +4,44 @@ import {
   markdownSlashCommandCaret,
   markdownSlashCommandSource,
   searchMarkdownSlashCommands,
+  type MarkdownSlashCommandId,
 } from "@/editor/markdown-block/slash-commands";
-import { MarkdownBlockDocument } from "@/editor/markdown-block/markdown-block-document";
+import {
+  MarkdownBlockDocument,
+  type MarkdownBlockKind,
+} from "@/editor/markdown-block/markdown-block-document";
+
+/**
+ * The Block kind each menu row promises, keyed by command id.
+ *
+ * A row that inserts source which parses as something else is a broken command however good the
+ * template looks: `/equation` used to insert `$$\n\n$$`, which is a blank line between two `$$`
+ * paragraphs, so the one gesture the product offers for writing an equation could not produce one.
+ * The two link rows are inline constructs and correctly land inside a paragraph.
+ */
+const PROMISED_KIND: Record<MarkdownSlashCommandId, MarkdownBlockKind> = {
+  text: "paragraph",
+  "heading-1": "heading",
+  "heading-2": "heading",
+  "heading-3": "heading",
+  "bullet-list": "bullet_list_item",
+  "numbered-list": "ordered_list_item",
+  task: "task_list_item",
+  quote: "blockquote",
+  toggle: "toggle",
+  callout: "callout",
+  divider: "thematic_break",
+  code: "fenced_code",
+  table: "table",
+  collection: "collection",
+  "collection-board": "collection",
+  "collection-calendar": "collection",
+  image: "image",
+  equation: "block_math",
+  mermaid: "mermaid",
+  "wiki-link": "paragraph",
+  embed: "paragraph",
+};
 
 describe("native Markdown slash commands", () => {
   it("finds commands by English and Chinese terms with stable ranking", () => {
@@ -72,6 +108,50 @@ describe("native Markdown slash commands", () => {
     );
     expect(markdownSlashCommandCaret("callout")).toBe(markdownSlashCommandSource("callout").length);
     expect(markdownSlashCommandCaret("text")).toBe(0);
+  });
+
+  it("inserts source that parses as the Block kind its row promises", () => {
+    for (const command of searchMarkdownSlashCommands("")) {
+      const source = `${markdownSlashCommandSource(command.id)}\n`;
+      const { blocks } = MarkdownBlockDocument.fromMarkdown(source).getSnapshot();
+
+      expect({ id: command.id, blocks: blocks.length, kind: blocks[0]?.kind }).toEqual({
+        id: command.id,
+        blocks: 1,
+        kind: PROMISED_KIND[command.id],
+      });
+    }
+  });
+
+  it("advertises only Markdown shortcuts that reach the same Block kind", () => {
+    const kindOf = (source: string) =>
+      MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks[0]?.kind;
+
+    for (const command of searchMarkdownSlashCommands("")) {
+      if (!command.shortcut) continue;
+      // A hint is either complete on its own (`---`) or a prefix the user keeps typing after
+      // (`#`), so one of the two has to land. `$$` did neither: it is a paragraph whose text is
+      // `$$`, so the only hint on the Equation row led nowhere at all.
+      const reached = [`${command.shortcut}\n`, `${command.shortcut} X\n`].map(kindOf);
+
+      expect({ id: command.id, reached: reached.includes(PROMISED_KIND[command.id]) }).toEqual({
+        id: command.id,
+        reached: true,
+      });
+    }
+  });
+
+  it("keeps an inserted equation an equation as it is typed into", () => {
+    const template = markdownSlashCommandSource("equation");
+    const caret = markdownSlashCommandCaret("equation");
+    const typed = `${template.slice(0, caret)}E = mc^2${template.slice(caret)}`;
+    const { blocks } = MarkdownBlockDocument.fromMarkdown(`${typed}\n`).getSnapshot();
+
+    // The caret has to land between the delimiters, and what is typed there has to stay one
+    // equation — not two paragraphs whose text happens to read `$$E = mc^2`.
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].kind).toBe("block_math");
+    expect(blocks[0].raw).toContain("E = mc^2");
   });
 
   it.each([

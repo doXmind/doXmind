@@ -274,6 +274,10 @@ export function BlockGutterControls({
             <span className="block text-center">
               Drag to move
               <span className="block opacity-60">Click to open menu</span>
+              {/* The only route into this menu from the text is the shortcut, and nothing named it
+                  anywhere the user could read. `aria-keyshortcuts` below says the same thing to
+                  assistive tech, which cannot see a tooltip. */}
+              <span className="block opacity-60">⌘/ or Ctrl+/ to open</span>
             </span>
           }
         >
