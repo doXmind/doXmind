@@ -97,6 +97,7 @@ export function SemanticInlineEditor({
   onCompositionEnd,
 }: SemanticInlineEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLSpanElement>(null);
   const composingRef = useRef(false);
   const restoringSelectionRef = useRef(false);
   const pendingSelectionRef = useRef<SemanticInlineSelection | null>(null);
@@ -170,16 +171,43 @@ export function SemanticInlineEditor({
     [currentSourceSelection, onSourceChange, projection, restoreControlledDom, source]
   );
 
+  /**
+   * Put the host's children back to the one node React rendered into it.
+   *
+   * The browser edits this element directly, and two of its own normalisations move nodes React
+   * owns. Typing into a surface that holds no text at all leaves the caret on the host, so the
+   * character arrives as a child of the host *beside* the controlled span — which then survives the
+   * rerender, so the text is on screen twice and every following keystroke commits the whole
+   * accumulated prefix again. Deleting the last character is worse: the browser takes the empty
+   * inline chain away with it and drops in its own `<br>`, so React's next `removeChild` is handed a
+   * node that is no longer its child and throws, which takes the whole Page down behind the error
+   * boundary with the deletion already committed.
+   *
+   * Restoring the child list here — the last moment this component controls before the commit that
+   * triggers the rerender — means React always finds the tree it left behind. A host the browser has
+   * not restructured is left exactly as it is, so the ordinary typing path is untouched and a
+   * just-typed character still inside the controlled span is never disturbed.
+   */
+  const repairHostChildren = useCallback(() => {
+    const editor = editorRef.current;
+    const content = contentRef.current;
+    if (!editor || !content) return;
+    if (editor.childNodes.length === 1 && editor.firstChild === content) return;
+    editor.replaceChildren(content);
+  }, []);
+
   const commitCurrentDom = useCallback(() => {
     const editor = editorRef.current;
     if (!editor) return false;
     const sourceSelectionHint = currentSourceSelection();
+    const visibleText = readHostVisibleText(editor);
     const visibleSelection = readVisibleSelection(editor) ?? {
-      anchor: readVisibleText(editor).length,
-      head: readVisibleText(editor).length,
+      anchor: visibleText.length,
+      head: visibleText.length,
     };
-    return commitVisibleText(readVisibleText(editor), visibleSelection, sourceSelectionHint);
-  }, [commitVisibleText, currentSourceSelection]);
+    repairHostChildren();
+    return commitVisibleText(visibleText, visibleSelection, sourceSelectionHint);
+  }, [commitVisibleText, currentSourceSelection, repairHostChildren]);
 
   useLayoutEffect(() => {
     const editor = editorRef.current;
@@ -308,7 +336,11 @@ export function SemanticInlineEditor({
         commitCurrentDom();
       }}
     >
-      <span key={`${source}\u0000${restoreRevision}`} data-semantic-inline-content="">
+      <span
+        key={`${source}\u0000${restoreRevision}`}
+        ref={contentRef}
+        data-semantic-inline-content=""
+      >
         {projection.segments.map((segment) => (
           <SemanticSegment
             key={`${segment.sourceFrom}:${segment.sourceTo}:${segment.kind}`}
@@ -525,6 +557,19 @@ function restoreSourceSelection(
   }
   domSelection.removeAllRanges();
   domSelection.addRange(range);
+}
+
+/**
+ * The text the host shows, discounting the placeholder the browser keeps its own line box with.
+ *
+ * A contenteditable emptied to nothing is given a `<br>` by the browser so the caret still has
+ * somewhere to sit. It is not content, and reading it as the newline every other `<br>` stands for
+ * committed a character into a region the user had just cleared. Only a `<br>` that is the host's
+ * sole child qualifies: anything the user typed leaves text beside it.
+ */
+function readHostVisibleText(editor: HTMLElement): string {
+  if (editor.childNodes.length === 1 && editor.firstChild instanceof HTMLBRElement) return "";
+  return readVisibleText(editor);
 }
 
 function readVisibleText(root: Node): string {

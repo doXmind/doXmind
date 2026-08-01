@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
@@ -8,6 +8,7 @@ import {
   markdownTableCellSourceOffset,
   markdownTableCellText,
   markdownTableNeighbourCell,
+  markdownTablePressedCell,
   parseMarkdownTableSource,
 } from "@/editor/markdown-block/markdown-table";
 import { MarkdownTableBlock } from "@/editor/markdown-block/markdown-table-block";
@@ -96,6 +97,23 @@ describe("table cell navigation", () => {
     expect(markdownTableCellAt(geometry, 0)).toMatchObject({ row: 0, column: 0 });
   });
 
+  it("answers a press on a column its row does not have with that row's last cell", () => {
+    // A hand-written table whose first body row declares two cells against a three-column header.
+    const ragged = "| A | B | C |\n| --- | --- | --- |\n| a1 | b1 |\n| a2 | b2 | c2 |";
+    const geometry = parseMarkdownTableSource(ragged)!;
+
+    expect(markdownTablePressedCell(geometry, { row: 1, column: 1 })).toMatchObject({
+      row: 1,
+      column: 1,
+    });
+    // Never the header at the opposite corner of the grid, which is where the caret used to land.
+    expect(markdownTablePressedCell(geometry, { row: 1, column: 2 })).toMatchObject({
+      row: 1,
+      column: 1,
+    });
+    expect(markdownTablePressedCell(geometry, { row: 9, column: 0 })).toBeNull();
+  });
+
   it("builds a blank row matching the column count", () => {
     expect(markdownTableBlankRow(parseMarkdownTableSource(TABLE)!)).toBe("\n|  |  |");
     expect(markdownTableBlankRow(parseMarkdownTableSource("|a|b|c|\n|-|-|-|\n|1|2|3|")!)).toBe(
@@ -143,6 +161,41 @@ describe("rendered grid", () => {
     const { container } = renderGrid(ALIGNED);
     expect(container.textContent).toContain("`x | y`");
     expect(container.textContent).not.toContain("\\|");
+  });
+
+  it("mounts a row's handle out of flow, the way the header mounts its own", () => {
+    // The menu root is an `inline-block` element. In flow beside the cell body it cost nothing
+    // until activation made the body a block and pushed it onto its own line box, growing the
+    // pressed row by 24px and dropping its text out from under the pointer.
+    const { container } = renderGrid(ALIGNED);
+    const handles = container.querySelectorAll("[data-axis-handle]");
+    // Two columns and one body row.
+    expect(handles).toHaveLength(3);
+    for (const handle of handles) {
+      expect(handle.closest(".absolute")).not.toBeNull();
+    }
+  });
+
+  it("puts the caret in the pressed row when that row has no such column", () => {
+    const ragged = "| A | B | C |\n| --- | --- | --- |\n| a1 | b1 |\n| a2 | b2 | c2 |";
+    const geometry = parseMarkdownTableSource(ragged)!;
+    const { container } = render(
+      createElement(MarkdownTableBlock, {
+        blockId: "block-1",
+        source: ragged,
+        geometry,
+        editable: true,
+        renderCell: (text: string) => createElement("span", null, text),
+      })
+    );
+
+    const phantom = container.querySelectorAll("tbody tr")[0].querySelectorAll("td")[2];
+    fireEvent.pointerDown(phantom);
+
+    const cell = screen.getByRole("textbox", { name: "Table cell" });
+    expect(cell).toHaveTextContent("b1");
+    // Not the header cell `A`, which is where the typed text used to go.
+    expect(cell.closest("th")).toBeNull();
   });
 
   it("says how each column is aligned on every cell, header cells included", () => {

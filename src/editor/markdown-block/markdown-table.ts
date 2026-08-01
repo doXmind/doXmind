@@ -227,6 +227,31 @@ export function markdownTableCellAt(
   return best ?? geometry.cells[0] ?? null;
 }
 
+/**
+ * The cell a press on one address belongs to, when the row may not have that many cells.
+ *
+ * A row is allowed to declare fewer cells than the header does — a hand-written table often does —
+ * and the grid still draws a `<td>` for every column, because the row has to keep the shape of the
+ * table it sits in. Pressing one of those drawn-but-empty cells recorded nothing at all, so
+ * activation fell back to `{row: 0, column: 0}` and the caret landed in the header at the opposite
+ * corner of the grid, with the next keystroke going there. The last cell the row really has is the
+ * nearest thing the press can mean, and it is at least inside the row that was pressed.
+ */
+export function markdownTablePressedCell(
+  geometry: MarkdownTableGeometry,
+  address: { readonly row: number; readonly column: number }
+): MarkdownTableCell | null {
+  let fallback: MarkdownTableCell | null = null;
+  for (const cell of geometry.cells) {
+    if (cell.row !== address.row) continue;
+    if (cell.column === address.column) return cell;
+    if (cell.column < address.column && (!fallback || cell.column > fallback.column)) {
+      fallback = cell;
+    }
+  }
+  return fallback;
+}
+
 /** The cell one step forward or back in reading order, or null at either end. */
 export function markdownTableNeighbourCell(
   geometry: MarkdownTableGeometry,
