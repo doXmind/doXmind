@@ -498,6 +498,16 @@ function MarkdownBlockRowView({
       if (!event.repeat) onDelete(block.id);
       return;
     }
+    // Enter on a Block with nothing to type into means what it means everywhere else in the editor:
+    // a new Block here. Without it, inserting a divider, an image or a Collection as the *last* Block
+    // of a Page was a dead end — there was no later Block for an arrow to escape into, so typing was
+    // discarded with no feedback and no key could create anything after it. Notion leaves a fresh
+    // paragraph below a divider for the same reason.
+    if (!mod && !event.altKey && !event.shiftKey && event.key === "Enter" && cellFree) {
+      event.preventDefault();
+      if (!event.repeat) onInsertAfter(block.id);
+      return;
+    }
     // An arrow leaves the Block. There is no caret inside one of these to move first, so pressing
     // Down on a divider simply did nothing — the Block swallowed the key and the only way out was the
     // mouse. Every kind that *does* hold text keeps its arrows for its own caret, which is why this
