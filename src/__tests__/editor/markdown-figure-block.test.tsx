@@ -378,9 +378,9 @@ describe("MarkdownFigureBlock", () => {
       ["block_math", "$$\nE = mc^2\n$$"],
       ["mermaid", "```mermaid\ngraph TD\n```"],
     ])("gives %s exactly one focused editing surface", async (kind, source) => {
-      const { container } = renderFigure(kind, source);
+      renderFigure(kind, source);
 
-      const surfaces = container.querySelectorAll("[data-native-block-editor]");
+      const surfaces = document.querySelectorAll("[data-native-block-editor]");
       expect(surfaces).toHaveLength(1);
       expect(document.activeElement).toBe(surfaces[0]);
       await settle();
@@ -425,16 +425,44 @@ describe("MarkdownFigureBlock", () => {
     it.each<[MarkdownFigureKind, string]>([
       ["block_math", "$$\nE = mc^2\n$$"],
       ["mermaid", "```mermaid\ngraph TD\n```"],
-    ])(
-      "floats the %s field out of flow so activation cannot resize the Block",
-      async (kind, source) => {
-        renderFigure(kind, source);
+    ])("keeps the %s source panel in the row's own flow", async (kind, source) => {
+      // Both obvious places are wrong, and the panel has been in each of them.
+      //
+      // Absolutely positioned inside the row it was painted over: every row carries `contain: layout
+      // style`, so the row is its own stacking context and the panel's z-index never applied outside
+      // it. Measured in the packaged app, a one-line equation's panel hung 34.80px past its row with
+      // 87% of the next paragraph drawn over it; a twelve-line one hung 188.78px past, over five
+      // whole Blocks.
+      //
+      // In flow the paint was right but the Page moved: activating a one-line equation grew its row
+      // by 56.78px, which `in-place.spec.ts` forbids — the content under the pointer jumps away from
+      // what the user was aiming at.
+      //
+      // Portalled to the body it paints correctly and the row keeps its height, but the editing
+      // surface then lives outside the row it belongs to — and the caret mapping, the focus
+      // restoration and six lookups in the e2e harness all read it out of the row. Moving that
+      // assumption for two kinds is a bigger change than the defect justifies, so the panel stays in
+      // flow and the row grows.
+      renderFigure(kind, source);
 
-        const panel = sourceField(kind).parentElement as HTMLElement;
-        expect(panel.style.position).toBe("absolute");
-        await settle();
-      }
-    );
+      const panel = sourceField(kind).parentElement as HTMLElement;
+      expect(panel.style.position).toBe("");
+      expect(panel.style.zIndex).toBe("");
+      expect(panel.className).toContain("mt-1");
+      await settle();
+    });
+
+    it.each<[MarkdownFigureKind, string, number]>([
+      ["block_math", `$$\n${"a = b \\\\\n".repeat(12)}$$`, 8],
+      ["mermaid", "```mermaid\ngraph TD\nA --> B\n```", 2],
+    ])("caps the %s field at eight rows and scrolls the rest", async (kind, source, rows) => {
+      renderFigure(kind, source);
+
+      // In flow, every row the field asks for is a row the Page is pushed down by, so a long
+      // source scrolls inside the field rather than growing the Block without limit.
+      expect(sourceField(kind).rows).toBe(rows);
+      await settle();
+    });
 
     it.each<[MarkdownFigureKind, string, string]>([
       ["block_math", "$$\nE = mc^2\n$$", "block-math-block"],

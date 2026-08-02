@@ -159,7 +159,11 @@ export function DesktopEditor() {
                       anchor to the outer fixed-width column above and the
                       math would still work — but explicit relative keeps
                       the contract local. */}
-                  <div className="pointer-events-auto relative h-full w-full">
+                  {/* Stays pointer-transparent: OutlineCollapsed opts its own
+                      hit surfaces back in (the mark-sized hover sensor and the
+                      popover), so the empty rail column no longer intercepts
+                      clicks meant for the Blocks behind it. */}
+                  <div className="relative h-full w-full">
                     <OutlineCollapsed
                       headings={headings}
                       activeId={activeId}

@@ -496,6 +496,44 @@ describe("MarkdownCodeBlock", () => {
     await settle();
   });
 
+  it("shows the language at rest, on a plate, inside the padding above line 1", async () => {
+    const onSetLanguage = vi.fn();
+    render(
+      <Harness
+        initial={"```ts\nconst a = 1;\n```"}
+        editable={false}
+        onSetLanguage={onSetLanguage}
+      />
+    );
+    const chip = screen.getByRole("button", { name: "Code language: ts" });
+
+    // Measured before this: every chip was `opacity: 0` until the row was hovered, so what language
+    // a Block is could only be found by hunting for it.
+    expect(chip.className).not.toContain("opacity-0");
+    expect(chip.className).not.toContain("group-hover/native-block:opacity-100");
+    // An opaque plate in every state. Sized by its own text and dropped 6px, it was 25px tall and
+    // overlapped line 1's glyph band by its full height with a transparent background.
+    expect(chip.className).toContain("bg-muted");
+    expect(chip.className).toContain("leading-[14px]");
+    expect(chip.className).toContain("top-0.5");
+    expect(chip.className).toContain("py-0");
+    await settle();
+  });
+
+  it("keeps the language field the same size as the chip it replaces", async () => {
+    const user = userEvent.setup();
+    const onSetLanguage = vi.fn();
+    render(<Harness initial={"```ts\nconst a = 1;\n```"} editable onSetLanguage={onSetLanguage} />);
+    await user.click(screen.getByRole("button", { name: "Code language: ts" }));
+    const field = screen.getByRole("textbox", { name: "Code language" });
+    // A ring rather than a border: a border adds 2px to a box measured to fit the `pre`'s 16px of
+    // top padding exactly, and the field would reach the first line the chip is clear of.
+    expect(field.className).toContain("ring-1");
+    expect(field.className).not.toContain("border ");
+    expect(field.className).toContain("leading-[14px]");
+    await settle();
+  });
+
   it("carries exactly one editor element, and only while it is editable", async () => {
     const { container, rerender } = render(
       <Harness initial={"```ts\nconst a = 1;\n```"} editable={false} />

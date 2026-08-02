@@ -443,11 +443,13 @@ export function DropdownMenuItem({
       data-dropdown-item={itemId}
       tabIndex={isFocused ? 0 : -1}
       className={cn(
-        "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors",
-        // doXmind highlights menu rows with the neutral sidebar-hover gray
-        // (theme-independent) rather than the theme's accent colour, so dark
-        // themes don't paint a loud blue bar on the focused/selected row.
-        isFocused && "bg-[var(--sidebar-hover)]",
+        "relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors duration-[20ms] ease-in",
+        // One highlight per menu: `accent` is the fill the slash panel and the block gutter's own
+        // "Turn into" row already use, so a panel that mixes shared items with a caller's own rows
+        // paints them the same colour. It was the neutral sidebar-hover gray, which is a cooler,
+        // blue-leaning tone and split the block actions menu into two hues down one 265px panel.
+        // `cursor-pointer` for the same reason — the custom rows are pointer, these were default.
+        isFocused && "bg-accent text-accent-foreground",
         "focus-visible:ring-1 focus-visible:ring-ring",
         disabled && "pointer-events-none opacity-50",
         inset && "pl-8",
@@ -646,8 +648,8 @@ export function DropdownMenuSubTrigger({
       aria-haspopup="menu"
       aria-expanded={open}
       className={cn(
-        "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors",
-        (isFocused || open) && "bg-[var(--sidebar-hover)]",
+        "relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors duration-[20ms] ease-in",
+        (isFocused || open) && "bg-accent text-accent-foreground",
         "focus-visible:ring-1 focus-visible:ring-ring",
         className
       )}

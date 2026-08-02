@@ -192,11 +192,11 @@ function QuickSwitcherContent() {
                   role="option"
                   aria-selected={isSelected}
                   className={cn(
-                    "flex w-full items-center gap-3 px-4 py-2.5 text-sm",
-                    "transition-colors duration-75",
+                    "flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-sm",
+                    "transition-colors duration-[20ms] ease-in",
                     isSelected
                       ? "bg-accent text-accent-foreground"
-                      : "text-foreground hover:bg-accent/50"
+                      : "text-foreground hover:bg-accent"
                   )}
                   onClick={() => navigateToFile(file.id)}
                   onMouseEnter={() => setSelectedIndex(index)}

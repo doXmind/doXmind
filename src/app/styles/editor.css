@@ -30,8 +30,40 @@
    * this rail stays a round 4rem. Hover tint, selection fill and the drop indicator all hang off
    * this one value so they can never disagree. */
   --editor-content-rail: 4rem;
+  /*
+   * One body leading for the whole document.
+   *
+   * Every 16px run in the content column resolves to this: prose, list items, to-dos, quotes, table
+   * cells, and the text inside callouts and toggles. Headings (1.3) and code (1.45) keep their own
+   * ratios — those are part of their type, not of the page's density. Routing the value through a
+   * variable is what gives the Line spacing setting something to move: the body rule below used to
+   * pin `1.75rem !important`, so Compact and Relaxed reached nothing but the text inside containers
+   * and pulled it out of step with the prose around it.
+   */
+  --editor-body-leading: 1.75rem;
+  /*
+   * Where a prose Block's glyphs sit inside its row box: 4px of padding plus half its leading.
+   * 19px is the content-area height of 16px system-ui, so `(leading − 19px) / 2` is the half-leading
+   * above the glyphs — which means the rhythm follows the Line spacing setting instead of drifting
+   * out of step with it. Below the glyphs it is the same, plus whatever the Block's 36px minimum
+   * height had to pad in: at any leading under 28px the line box no longer fills that floor and the
+   * slack lands under the text, which is what made Compact space prose 4px wider than everything
+   * else on the Page.
+   */
+  --prose-ink-top: calc(4px + (var(--editor-body-leading) - 19px) / 2);
+  --prose-ink-bottom: calc(var(--prose-ink-top) + max(0px, 28px - var(--editor-body-leading)));
   font-size: 1rem;
   line-height: 1.75;
+}
+
+.editor-leading-compact .markdown-page {
+  --editor-body-leading: 1.5rem;
+  line-height: 1.5;
+}
+
+.editor-leading-relaxed .markdown-page {
+  --editor-body-leading: 2rem;
+  line-height: 2;
 }
 
 /*
@@ -46,38 +78,158 @@
  *
  * `--row-lead` mirrors the padding so the hover tint, selection fill and drop indicator can be
  * drawn over the Block itself rather than over its leading gap.
+ *
+ *
+ * The gap is between ink, not between boxes.
+ *
+ * Row boxes are contiguous, so the space a reader actually sees between two Blocks is the space
+ * between the last pixel one paints and the first pixel the next one paints — and every kind insets
+ * its own ink differently. A paragraph holds its glyphs 8.5px inside its box (4px padding plus half
+ * its leading); a code Block, a callout and a quote paint their box edge to edge and inset nothing;
+ * a divider centres a 1px rule in a 36px click target and insets 17.5px. Leading every row by the
+ * same 2px therefore delivered 29 different gaps from one nominal rule — 4px between two code
+ * Blocks and 48.5px between two tables.
+ *
+ * So the *gap* is declared, per relationship, and the lead is whatever is left once both
+ * neighbours' ink insets are paid for:
+ *
+ *   --row-lead = --block-gap − the row's own 2px bottom padding − the ink above − the ink below
+ *
+ *   --block-gap   20px between any two Blocks
+ *                 40 / 32 / 24px above an h1 / h2 / h3–h6
+ *                 16px below any heading, so a heading always binds harder to the text it
+ *                 introduces than to the section it ends
+ *   --own-ink     prose 4px + half the leading · heading 5px · container 0 · table 12 above,
+ *                 4 below · divider 17.5px
+ *
+ * A kind whose structural inset already exceeds the target keeps the floor rather than going
+ * negative: a divider lands on 28px, because the 36px minimum click height it is centred in is not
+ * this stylesheet's to give back.
+ *
+ * Every rule below is written on `+`, so the first row in the Page is led by nothing at all — no
+ * `:first-child` exception to lose a specificity fight with, which is how a Page opening with a
+ * heading used to start 28px lower than one opening with a paragraph.
  */
 .markdown-page > [data-native-block-row] {
+  --own-ink: var(--prose-ink-top);
+  --prev-ink: 0px;
+  --block-gap: 20px;
   --row-lead: 0px;
   padding-top: var(--row-lead);
   contain: layout style;
 }
 
 .markdown-page > [data-native-block-row] + [data-native-block-row] {
-  --row-lead: 2px;
+  --prev-ink: var(--prose-ink-bottom);
+  --row-lead: max(0px, calc(var(--block-gap) - 2px - var(--prev-ink) - var(--own-ink)));
 }
 
-.markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="1"] {
-  --row-lead: 1.75rem;
+/* Container kinds paint their box, so their ink starts where their row's content starts. */
+.markdown-page
+  > [data-native-block-row]:is(
+    [data-block-kind="blockquote"],
+    [data-block-kind="callout"],
+    [data-block-kind="toggle"],
+    [data-block-kind="collection"],
+    [data-block-kind="image"],
+    [data-block-kind="fenced_code"],
+    [data-block-kind="unsupported"],
+    [data-block-kind="block_math"],
+    [data-block-kind="mermaid"]
+  ) {
+  --own-ink: 0px;
 }
 
-.markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="2"] {
-  --row-lead: 1.375rem;
+.markdown-page
+  > [data-native-block-row]:is(
+    [data-block-kind="blockquote"],
+    [data-block-kind="callout"],
+    [data-block-kind="toggle"],
+    [data-block-kind="collection"],
+    [data-block-kind="image"],
+    [data-block-kind="fenced_code"],
+    [data-block-kind="unsupported"],
+    [data-block-kind="block_math"],
+    [data-block-kind="mermaid"]
+  )
+  + [data-native-block-row] {
+  --prev-ink: 0px;
 }
 
-.markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="3"] {
-  --row-lead: 1.125rem;
+/* A heading's half-leading is ~5.6% of its own size at 1.3, so 5px stands in for all six levels to
+ * within a pixel — smaller than the sub-pixel spread the levels already have between them. */
+.markdown-page > [data-native-block-row][data-block-kind="heading"] {
+  --own-ink: 5px;
 }
 
-.markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="4"],
-.markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="5"],
-.markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="6"] {
-  --row-lead: 0.875rem;
+.markdown-page > [data-native-block-row][data-block-kind="heading"] + [data-native-block-row] {
+  --prev-ink: 5px;
+  --block-gap: 16px;
 }
 
-/* The first row in the Page has no leading gap to inherit. */
-.markdown-page > [data-native-block-row]:first-child {
-  --row-lead: 0px;
+/* The table reserves 12px above its border for the column handles, which hang outside it and are
+ * clipped by the same scroll box; below it reserves 4px. That asymmetry is the handles', not the
+ * rhythm's, so it is declared rather than corrected. */
+.markdown-page > [data-native-block-row][data-block-kind="table"] {
+  --own-ink: 12px;
+}
+
+.markdown-page > [data-native-block-row][data-block-kind="table"] + [data-native-block-row] {
+  --prev-ink: 4px;
+}
+
+.markdown-page > [data-native-block-row][data-block-kind="thematic_break"] {
+  --own-ink: 17.5px;
+}
+
+.markdown-page
+  > [data-native-block-row][data-block-kind="thematic_break"]
+  + [data-native-block-row] {
+  --prev-ink: 17.5px;
+}
+
+/*
+ * A heading takes its space from the section above it. These out-specify the "below a heading" rule,
+ * so a heading that follows a heading starts a section rather than trailing one.
+ */
+.markdown-page
+  > [data-native-block-row]
+  + [data-native-block-row][data-block-kind="heading"][data-block-level="1"] {
+  --block-gap: 40px;
+}
+
+.markdown-page
+  > [data-native-block-row]
+  + [data-native-block-row][data-block-kind="heading"][data-block-level="2"] {
+  --block-gap: 32px;
+}
+
+.markdown-page
+  > [data-native-block-row]
+  + [data-native-block-row][data-block-kind="heading"][data-block-level="3"],
+.markdown-page
+  > [data-native-block-row]
+  + [data-native-block-row][data-block-kind="heading"][data-block-level="4"],
+.markdown-page
+  > [data-native-block-row]
+  + [data-native-block-row][data-block-kind="heading"][data-block-level="5"],
+.markdown-page
+  > [data-native-block-row]
+  + [data-native-block-row][data-block-kind="heading"][data-block-level="6"] {
+  --block-gap: 24px;
+}
+
+/*
+ * Outer spacing belongs to the row, and to nothing else.
+ *
+ * Six preview components carried their own `my-1`/`my-4` and the table its own `my-4`, which is what
+ * turned one nominal lead into a per-kind scale nobody chose — a toggle 4px, an equation 16px, a
+ * table 16px on top of its wrapper's own inset.
+ */
+.markdown-page [data-native-block-content] > *,
+.markdown-page [data-native-block-content] > * > table {
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 /*
@@ -178,39 +330,51 @@
 }
 
 .markdown-page [data-native-block-row][data-block-kind="fenced_code"],
-.markdown-page [data-native-block-row][data-block-kind="mermaid"],
 .markdown-page [data-native-block-row][data-block-kind="unsupported"] {
   --controls-lead: 12.5px;
 }
 
 .markdown-page [data-native-block-row][data-block-kind="block_math"] {
-  --controls-lead: 24px;
+  --controls-lead: 8px;
 }
 
-.markdown-page [data-native-block-row][data-block-kind="callout"],
-.markdown-page [data-native-block-row][data-block-kind="toggle"] {
+.markdown-page [data-native-block-row][data-block-kind="mermaid"] {
+  --controls-lead: 0px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="callout"] {
   --controls-lead: 4.5px;
 }
 
+.markdown-page [data-native-block-row][data-block-kind="toggle"] {
+  --controls-lead: 0.5px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="image"] {
+  --controls-lead: 2px;
+}
+
 .markdown-page [data-native-block-row][data-block-kind="table"] {
-  --controls-lead: 27px;
+  --controls-lead: 11px;
 }
 
 .markdown-page [data-native-block-row][data-block-kind="thematic_break"] {
   --controls-lead: 8px;
 }
 
-.editor-leading-compact .markdown-page {
-  line-height: 1.4;
-}
-
-.editor-leading-relaxed .markdown-page {
-  line-height: 1.75;
-}
-
 .markdown-page strong,
 .markdown-page b {
   color: inherit;
+  /*
+   * Declared, not inherited.
+   *
+   * Nothing set a weight for `strong`, so the UA's `bolder` resolved against whatever hosted it:
+   * 700 inside 400 prose, but 900 inside a 600 heading or a callout title — the same four asterisks
+   * producing two different faces one line apart inside a callout, 5.5% apart in advance width at
+   * the same size. 600 is the top of this editor's own scale, so bold inside a heading now reads as
+   * part of the heading instead of as a different typeface dropped into it.
+   */
+  font-weight: 600;
 }
 
 .markdown-page blockquote {
@@ -422,7 +586,7 @@
 .markdown-page [data-native-block-row] [data-editor-kind="task_list_item"],
 .markdown-page [data-native-block-row] [data-editor-kind="blockquote"] {
   font-size: 1rem !important;
-  line-height: 1.75rem !important;
+  line-height: var(--editor-body-leading) !important;
   /* Both editing surfaces break a long unbreakable token — the contenteditable through
    * `break-words`, the textarea through the UA default — and no preview did. A token with no space,
    * slash or hyphen to break at therefore overflowed on one line while unfocused and wrapped the
@@ -459,6 +623,29 @@
   outline: none;
   box-shadow: none;
   appearance: none;
+}
+
+/*
+ * Completion and inertness survive the caret.
+ *
+ * Both of these are properties of the Block, not of whether it is focused, and both used to be
+ * carried only by the rendered preview. `.native-block-editor-surface { color: inherit }` above
+ * out-specifies the `text-muted-foreground` the editing surface asks for, and `text-decoration`
+ * does not cross into a textarea at all, so clicking a finished to-do turned it solid black and
+ * dropped the strike line — the row then contradicted its own still-ticked checkbox — and clicking
+ * raw HTML promoted it to the same ink as the prose it is deliberately drawn back from.
+ */
+.markdown-page
+  [data-native-block-edit-surface][data-editor-kind="task_list_item"]:has(input:checked)
+  .native-block-textarea {
+  color: hsl(var(--muted-foreground));
+  text-decoration-line: line-through;
+}
+
+.markdown-page
+  [data-native-block-edit-surface][data-editor-kind="unsupported"]
+  .native-block-textarea {
+  color: hsl(var(--muted-foreground));
 }
 
 /*
@@ -509,6 +696,16 @@
 }
 
 .markdown-page [data-editor-kind="heading"] {
+  /*
+   * A heading's box is its own line, not a 36px slot.
+   *
+   * `min-h-9` on the heading element only bound from h3 down, where it padded 2–9.8px of dead space
+   * in *below* the glyphs. That inverted the one relationship a heading has to hold: the space under
+   * it grew as the type shrank, until an h6 sat equidistant between the paragraph it titles and the
+   * one before it. The row keeps its own `min-h-9`, so the click target is unchanged, and the
+   * `:empty` rule below still holds a line box for an empty heading.
+   */
+  min-height: 0;
   font-weight: 600;
   letter-spacing: -0.018em;
   /* See the body rule above: without this a heading holding one unbreakable token grew 117px on
@@ -612,7 +809,9 @@
   padding: 6px 9px;
   border: 1px solid hsl(var(--foreground) / 0.094);
   font-size: 1rem;
-  line-height: 1.5;
+  /* A cell holds prose at prose size, so it holds it at prose leading too. 1.5 made table cells the
+   * only 16px run in the document at 24px, 4px tighter per line than the paragraph beside them. */
+  line-height: var(--editor-body-leading);
   vertical-align: top;
   word-break: break-word;
   overflow-wrap: anywhere;

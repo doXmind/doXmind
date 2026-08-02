@@ -44,10 +44,18 @@
     --secondary: 40 10% 95%; /* warm hover/muted surface */
     --secondary-foreground: 45 8% 20%;
     --muted: 40 10% 95%;
-    --muted-foreground: 40 3% 46%;
+    /* The muted grey lands on --muted as often as on the page (chips, code
+       comments, raw Blocks). At 46% L it measured 4.07:1 there while the dark
+       theme's 61% measured 4.77:1 — the same token passing in dark and failing
+       in light. 40% clears 4.5:1 on both surfaces. */
+    --muted-foreground: 40 3% 40%;
     --accent: 40 10% 95%;
     --accent-foreground: 45 8% 20%;
-    --destructive: 0 84.2% 60.2%;
+    /* Doubles as `text-destructive`. The dark token below was bumped so the
+       "Delete" label registers as danger; light was left on Tailwind's stock
+       red-500 (3.76:1 on white), which made it the weakest label in the menu
+       rather than the loudest. 45% L gives 5.74:1 and is still plainly red. */
+    --destructive: 0 74% 45%;
     --destructive-foreground: 0 0% 98%;
     --border: 60 4% 91%; /* #E9E9E7 — Notion's exact border */
     --border-subtle: 60 4% 94%;
@@ -117,11 +125,11 @@
        menu items like "Move to Trash". On near-black popover surfaces
        the previous 65% lightness still read as a muted brick red — bumped
        to ~74% (Tailwind red-400 territory) so the label clearly registers
-       as "danger" without crossing into neon. Foreground stays near-white
-       for buttons that flip the relationship (light text on the
-       destructive bg). */
+       as "danger" without crossing into neon. That makes `--destructive` a
+       *light* fill here, so the buttons that flip the relationship need ink,
+       not paper: near-white on it measured 2.36:1, dark ink measures 6.49:1. */
     --destructive: 0 92% 74%;
-    --destructive-foreground: 0 0% 98%;
+    --destructive-foreground: 0 0% 13%;
     --border: 0 0% 18%; /* #2f2f2f — Notion's exact border */
     --border-subtle: 0 0% 14%;
     --input: 0 0% 18%;

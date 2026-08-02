@@ -1591,3 +1591,84 @@ describe("MarkdownBlockRow keys on a Block with no text", () => {
     });
   }
 });
+
+/**
+ * One marker column for every list kind, in both states.
+ *
+ * jsdom has no layout, so the class list is the measurement here; the numbers below were taken in
+ * the packaged app and the classes are what produce them.
+ */
+describe("MarkdownBlockRow list marker column", () => {
+  function markerColumn(): HTMLElement {
+    const column = document.querySelector<HTMLElement>("[data-native-block-content] .w-5");
+    expect(column).not.toBeNull();
+    return column as HTMLElement;
+  }
+
+  for (const [label, markdown, ordinal] of [
+    ["a bulleted item", "- item\n", undefined],
+    ["the tenth ordinal", "10. item\n", 10],
+    ["a to-do", "- [ ] item\n", undefined],
+  ] as const) {
+    for (const active of [false, true]) {
+      it(`hangs ${label}'s marker in the shared column while ${active ? "active" : "at rest"}`, () => {
+        const [block] = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot().blocks;
+        render(
+          <MarkdownBlockRow
+            block={block}
+            index={0}
+            count={1}
+            active={active}
+            listOrdinal={ordinal}
+            {...slashHandlers()}
+          />
+        );
+
+        // 20px wide, contents aligned to its right edge, followed by the row's own 8px gap. The
+        // to-do used to drop its bare 16px checkbox straight into the row, which started its label
+        // 4.00px left of every other list kind's at depths 0, 1 and 2.
+        const column = markerColumn();
+        expect(column.className).toContain("flex");
+        expect(column.className).toContain("justify-end");
+        expect(column.className).toContain("shrink-0");
+        // `text-right` is what wrapped a two-digit ordinal; the flex column replaces it outright.
+        expect(column.className).not.toContain("text-right");
+      });
+    }
+  }
+
+  it("never lets a two-digit ordinal wrap out of the 20px column", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("10. item\n").getSnapshot().blocks;
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active={false}
+        listOrdinal={10}
+        {...slashHandlers()}
+      />
+    );
+
+    // "10." is 20.66px of glyph in a 20.00px box. Right-aligned with `text-right` its period
+    // dropped to a second line and the row grew from 40.00px to 68.00px — 22 of the first 33
+    // ordinals did that. As a `nowrap` flex child aligned to the column's end it overflows
+    // leftward into the 10px grip gap instead, and the label's x never moves.
+    const ink = markerColumn().firstElementChild as HTMLElement;
+    expect(ink.textContent).toBe("10.");
+    expect(ink.className).toContain("whitespace-nowrap");
+    expect(ink.className).toContain("shrink-0");
+  });
+
+  it("puts the to-do checkbox inside that column rather than beside it", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("- [ ] item\n").getSnapshot().blocks;
+    render(
+      <MarkdownBlockRow block={block} index={0} count={1} active={false} {...slashHandlers()} />
+    );
+
+    const checkbox = screen.getByRole("checkbox", { name: "item" });
+    expect(markerColumn()).toContainElement(checkbox);
+    // The glyph itself stays 16px; only the column around it is 20px.
+    expect(checkbox.className).toContain("h-4 w-4");
+  });
+});

@@ -387,11 +387,47 @@ export function MarkdownTableBlock({
     (_, index) => index + 1
   );
 
+  /**
+   * The handle for one row, the header included.
+   *
+   * The header used to be the one row without one — three handles for four rows, while every column
+   * got one — so hovering down the left edge of a table the affordance simply vanished at the top,
+   * which read as the header being un-hoverable rather than as a deliberate restriction. The two
+   * operations a header cannot answer are shown disabled rather than left out, because the source
+   * layer already refuses both and says why: there is no way to write a row above the header line,
+   * and a table whose first line is the delimiter stops parsing as a table at all.
+   */
+  const rowHandle = (row: number) => (
+    <TableAxisMenu
+      enabled={editable}
+      axis="row"
+      label={`Row ${row + 1} actions`}
+      visible={handleVisible("row", row)}
+      onOpenChange={(open) => setOpenAxis(open ? { axis: "row", index: row } : null)}
+      canInsertBefore={row > 0}
+      canDelete={row > 0}
+      onInsertBefore={() => commit(markdownTableInsertRow(source, geometry, row, "above"))}
+      onInsertAfter={() => commit(markdownTableInsertRow(source, geometry, row, "below"))}
+      onDuplicate={() => commit(markdownTableDuplicateRow(source, geometry, row))}
+      onClear={() => commit(markdownTableClearRow(source, geometry, row))}
+      onDelete={() => commit(markdownTableDeleteRow(source, geometry, row))}
+    />
+  );
+
   return (
-    <div className="min-h-9 overflow-x-auto py-1 pl-3 pt-3">
+    // The scroll box bleeds 6px into the left margin and pays it straight back as padding, so the
+    // table itself starts on the content rail like every other Block while the row handles — which
+    // straddle the table's left border line and so reach 4.5px outside it — stay inside the box that
+    // clips. Reserving the room as plain `pl-3` instead put the table 12px right of every paragraph
+    // on the Page, which is the one step in an otherwise dead-straight left edge. `pt-3` is left
+    // alone: `--controls-lead` for a table in editor.css is measured against it.
+    <div className="-ml-1.5 min-h-9 overflow-x-auto py-1 pl-1.5 pt-3">
       <table
         aria-label="Markdown table"
-        className="w-full border-collapse text-left text-sm"
+        // No type size of its own: `.markdown-page th, td` sizes every cell at 1rem through an
+        // element selector, so a `text-sm` here applied to nothing today and would have silently
+        // shrunk anything added to the table that is not a cell.
+        className="w-full border-collapse text-left"
         onPointerLeave={() => setHovered(null)}
       >
         <thead>
@@ -414,36 +450,33 @@ export function MarkdownTableBlock({
                     pressCell(event.nativeEvent, event.currentTarget, { row: 0, column }, cell)
                   }
                 >
-                  <span className="relative block">
-                    <span className="pointer-events-none absolute inset-0">
-                      <TableAxisMenu
-                        enabled={editable}
-                        axis="column"
-                        label={`Column ${column + 1} actions`}
-                        visible={handleVisible("column", column)}
-                        onOpenChange={(open) =>
-                          setOpenAxis(open ? { axis: "column", index: column } : null)
-                        }
-                        canDelete={geometry.columnCount > 1}
-                        alignment={geometry.alignments[column] ?? null}
-                        onSetAlignment={(next) =>
-                          commit(markdownTableSetColumnAlignment(source, geometry, column, next))
-                        }
-                        onInsertBefore={() =>
-                          commit(markdownTableInsertColumn(source, geometry, column, "left"))
-                        }
-                        onInsertAfter={() =>
-                          commit(markdownTableInsertColumn(source, geometry, column, "right"))
-                        }
-                        onDuplicate={() =>
-                          commit(markdownTableDuplicateColumn(source, geometry, column))
-                        }
-                        onClear={() => commit(markdownTableClearColumn(source, geometry, column))}
-                        onDelete={() => commit(markdownTableDeleteColumn(source, geometry, column))}
-                      />
-                    </span>
-                    {renderBody(cell, { row: 0, column })}
-                  </span>
+                  <TableAxisMenu
+                    enabled={editable}
+                    axis="column"
+                    label={`Column ${column + 1} actions`}
+                    visible={handleVisible("column", column)}
+                    onOpenChange={(open) =>
+                      setOpenAxis(open ? { axis: "column", index: column } : null)
+                    }
+                    canDelete={geometry.columnCount > 1}
+                    alignment={geometry.alignments[column] ?? null}
+                    onSetAlignment={(next) =>
+                      commit(markdownTableSetColumnAlignment(source, geometry, column, next))
+                    }
+                    onInsertBefore={() =>
+                      commit(markdownTableInsertColumn(source, geometry, column, "left"))
+                    }
+                    onInsertAfter={() =>
+                      commit(markdownTableInsertColumn(source, geometry, column, "right"))
+                    }
+                    onDuplicate={() =>
+                      commit(markdownTableDuplicateColumn(source, geometry, column))
+                    }
+                    onClear={() => commit(markdownTableClearColumn(source, geometry, column))}
+                    onDelete={() => commit(markdownTableDeleteColumn(source, geometry, column))}
+                  />
+                  {column === 0 ? rowHandle(0) : null}
+                  <span className="block">{renderBody(cell, { row: 0, column })}</span>
                 </th>
               );
             })}
@@ -465,39 +498,8 @@ export function MarkdownTableBlock({
                       pressCell(event.nativeEvent, event.currentTarget, { row, column }, cell)
                     }
                   >
-                    <span className="relative block">
-                      {column === 0 ? (
-                        // Out of flow, exactly as the header wraps its own handle. The menu's root
-                        // is an `inline-block` element, so mounting it in flow beside the cell body
-                        // cost nothing until the body became a block on activation and pushed it
-                        // onto a line box of its own: the pressed row grew 24px, its text sank away
-                        // from the pointer, and every Block below the table jumped down with it.
-                        <span className="pointer-events-none absolute inset-0">
-                          <TableAxisMenu
-                            enabled={editable}
-                            axis="row"
-                            label={`Row ${row + 1} actions`}
-                            visible={handleVisible("row", row)}
-                            onOpenChange={(open) =>
-                              setOpenAxis(open ? { axis: "row", index: row } : null)
-                            }
-                            canDelete
-                            onInsertBefore={() =>
-                              commit(markdownTableInsertRow(source, geometry, row, "above"))
-                            }
-                            onInsertAfter={() =>
-                              commit(markdownTableInsertRow(source, geometry, row, "below"))
-                            }
-                            onDuplicate={() =>
-                              commit(markdownTableDuplicateRow(source, geometry, row))
-                            }
-                            onClear={() => commit(markdownTableClearRow(source, geometry, row))}
-                            onDelete={() => commit(markdownTableDeleteRow(source, geometry, row))}
-                          />
-                        </span>
-                      ) : null}
-                      {renderBody(cell, { row, column })}
-                    </span>
+                    {column === 0 ? rowHandle(row) : null}
+                    <span className="block">{renderBody(cell, { row, column })}</span>
                   </td>
                 );
               })}
@@ -539,11 +541,33 @@ function sanitiseCellPayload(value: string): string {
 }
 
 /**
- * The handle and menu for one row or column.
+ * Half of the 1px border `border-collapse` paints straddling a cell's own edge.
+ *
+ * A handle is positioned against the cell's padding box, because that is the containing block for an
+ * absolute child of the cell, and the padding box starts half a border inside the cell's rect.
+ * Backing that out puts the handle's centre on the border *line* — the table's top edge for a column
+ * handle, its left edge for a row handle — which is where both already straddled and where they
+ * should stay.
+ */
+const CELL_BORDER_HALF = 0.5;
+
+/**
+ * The handle and menu for one row or column, centred on the row or column it controls.
  *
  * It lives inside the cell's own padding rather than in a reserved gutter: the grid scrolls
  * horizontally, so anything positioned outside it would be clipped, and reserving space would shift
  * the table relative to the body text around it.
+ *
+ * The one rule is that the handle's centre sits on the cell's border box: mid-column on the table's
+ * top border for a column handle, mid-row on the table's left border for a row handle. That has to be
+ * expressed on a wrapper this component owns, because the handle cannot be positioned against the
+ * cell itself — `DropdownMenu` puts a `relative inline-block` div of its own around the trigger, and
+ * an absolutely positioned trigger resolves against *that*. The div is empty when its only child is
+ * out of flow, so it collapses to zero width at whatever static position the cell's `text-align`
+ * happened to put it: a column handle landed on the left edge of a left-aligned column, the right
+ * edge of a right-aligned one and the middle of a centred one — 66px to 338px from the column it
+ * names — and a row handle sat on the first line's baseline, 6px below its row's centre. The
+ * positioning therefore belongs outside that div, and the trigger inside it is left in flow.
  */
 function TableAxisMenu({
   enabled,
@@ -587,121 +611,129 @@ function TableAxisMenu({
   onClear: () => void;
   onDelete: () => void;
 }) {
+  /** A tick column, reserved on every item, so one menu shows one column of labels. */
+  const tick = (checked: boolean) =>
+    onSetAlignment ? (
+      <span className="w-4 shrink-0 text-muted-foreground" aria-hidden="true">
+        {checked ? "✓" : ""}
+      </span>
+    ) : null;
+
   return (
-    <DropdownMenu onOpenChange={onOpenChange}>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
+    <span
+      className="pointer-events-none absolute flex"
+      // Inline rather than utility classes, and measured rather than derived. The offsets have to be
+      // exact for the pill to sit on the table's own border line instead of over the cell's first
+      // characters, and a class assembled at runtime can silently fail to generate and drop it back
+      // into the text — which is the whole complaint. `translate(-50%, -50%)` centres the wrapper on
+      // the point rather than hanging it off one corner, so the pill tracks its row or column at any
+      // width.
+      style={
+        axis === "row"
+          ? { top: "50%", left: -CELL_BORDER_HALF, transform: "translate(-50%, -50%)" }
+          : { left: "50%", top: -CELL_BORDER_HALF, transform: "translate(-50%, -50%)" }
+      }
+    >
+      <DropdownMenu onOpenChange={onOpenChange}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={label}
+            title={label}
+            disabled={!enabled}
+            tabIndex={enabled ? 0 : -1}
+            data-axis-handle
+            // Hidden rather than shown-but-inert while the Block is inactive. Every other affordance
+            // in the editor is live the moment it is visible, and a pill that appeared under the
+            // pointer and then answered a press with nothing at all — no menu, no selection, not even
+            // focus — read as the app being broken rather than as the Block being unfocused.
+            className={`pointer-events-auto flex items-center justify-center rounded-[3px] text-white transition-opacity duration-[20ms] ease-in focus-visible:opacity-100 ${
+              visible && enabled ? "opacity-100" : "opacity-0"
+            }`}
+            // The blue is the one the Block selection fill uses, which is the reference product's
+            // measured accent; `bg-primary` is near-black in this theme and read as a smudge.
+            style={
+              axis === "row"
+                ? { width: 9, height: 22, backgroundColor: "rgb(35, 131, 226)" }
+                : { width: 22, height: 9, backgroundColor: "rgb(35, 131, 226)" }
+            }
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            {/* No text inside: a visually hidden label here would be real text inside the cell, and
+                the caret mapping counts it — every press in that column then lands several characters
+                off. The accessible name is on the button itself. */}
+            {axis === "row" ? (
+              <GripVertical className="h-3 w-3" aria-hidden="true" />
+            ) : (
+              <GripHorizontal className="h-3 w-3" aria-hidden="true" />
+            )}
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
           aria-label={label}
-          title={label}
-          disabled={!enabled}
-          tabIndex={enabled ? 0 : -1}
-          data-axis-handle
-          // Absolutely positioned so the handle cannot contribute height or width. Mounting it in
-          // flow grew the gutter row from 13px to 37px the moment the Block was activated — the same
-          // grow-on-focus this whole component exists to make impossible.
-          className={`pointer-events-auto absolute flex items-center justify-center rounded-[3px] text-white transition-opacity duration-[20ms] ease-in focus-visible:opacity-100 ${
-            visible ? "opacity-100" : "opacity-0"
-          }`}
-          // Inline rather than utility classes, and measured rather than derived. The offsets have to
-          // be exact for the pill to sit in the margin instead of over the cell's first characters,
-          // and a class assembled at runtime can silently fail to generate and drop it back into the
-          // text — which is the whole complaint. Derivation does not work either: the containing block
-          // is the overlay inside the cell's padding, not the cell, so arithmetic from the cell's own
-          // box is off by the padding and the border, and the column pill landed 11.5px *below* the
-          // cell's top edge, on top of the header text, until it was measured in the running app.
-          //
-          // The blue is the one the Block selection fill uses, which is the reference product's
-          // measured accent; `bg-primary` is near-black in this theme and read as a smudge.
-          style={
-            axis === "row"
-              ? {
-                  top: "50%",
-                  left: -14,
-                  width: 9,
-                  height: 22,
-                  transform: "translateY(-50%)",
-                  backgroundColor: "rgb(35, 131, 226)",
-                }
-              : {
-                  left: "50%",
-                  top: -29,
-                  height: 9,
-                  width: 22,
-                  transform: "translateX(-50%)",
-                  backgroundColor: "rgb(35, 131, 226)",
-                }
-          }
-          onPointerDown={(event) => event.stopPropagation()}
+          className="w-48 rounded-xl border-border/80 bg-popover/95 p-1.5 shadow-xl backdrop-blur-xl"
         >
-          {/* No text inside: a visually hidden label here would be real text inside the cell, and the
-              caret mapping counts it — every press in that column then lands several characters off.
-              The accessible name is on the button itself. */}
-          {axis === "row" ? (
-            <GripVertical className="h-3 w-3" aria-hidden="true" />
-          ) : (
-            <GripHorizontal className="h-3 w-3" aria-hidden="true" />
-          )}
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        aria-label={label}
-        className="w-48 rounded-xl border-border/80 bg-popover/95 p-1.5 shadow-xl backdrop-blur-xl"
-      >
-        <DropdownMenuItem
-          className="h-8 rounded-lg px-2.5"
-          disabled={!canInsertBefore}
-          onClick={onInsertBefore}
-        >
-          {axis === "row" ? "Insert above" : "Insert left"}
-        </DropdownMenuItem>
-        <DropdownMenuItem className="h-8 rounded-lg px-2.5" onClick={onInsertAfter}>
-          {axis === "row" ? "Insert below" : "Insert right"}
-        </DropdownMenuItem>
-        {onSetAlignment ? (
-          <>
-            <DropdownMenuSeparator />
-            {/* The grid has always honoured `:--`, `:-:` and `--:`; nothing could write one, so the
-                only way to align a column was to edit the file somewhere else. The current one is
-                ticked rather than hidden, so the menu says what the column already is. */}
-            {(
-              [
-                ["left", "Align left"],
-                ["center", "Align centre"],
-                ["right", "Align right"],
-                [null, "Default alignment"],
-              ] as [MarkdownTableAlignment, string][]
-            ).map(([value, text]) => (
-              <DropdownMenuItem
-                key={text}
-                className="h-8 rounded-lg px-2.5"
-                onClick={() => onSetAlignment(value)}
-              >
-                <span className="w-4 shrink-0 text-muted-foreground" aria-hidden="true">
-                  {alignment === value ? "✓" : ""}
-                </span>
-                {text}
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-          </>
-        ) : null}
-        <DropdownMenuItem className="h-8 rounded-lg px-2.5" onClick={onDuplicate}>
-          Duplicate
-        </DropdownMenuItem>
-        <DropdownMenuItem className="h-8 rounded-lg px-2.5" onClick={onClear}>
-          Clear contents
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          className="h-8 rounded-lg px-2.5"
-          disabled={!canDelete}
-          onClick={onDelete}
-        >
-          Delete
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          <DropdownMenuItem
+            className="h-8 rounded-lg px-2.5"
+            disabled={!canInsertBefore}
+            onClick={onInsertBefore}
+          >
+            {tick(false)}
+            {axis === "row" ? "Insert above" : "Insert left"}
+          </DropdownMenuItem>
+          <DropdownMenuItem className="h-8 rounded-lg px-2.5" onClick={onInsertAfter}>
+            {tick(false)}
+            {axis === "row" ? "Insert below" : "Insert right"}
+          </DropdownMenuItem>
+          {onSetAlignment ? (
+            <>
+              <DropdownMenuSeparator />
+              {/* The grid has always honoured `:--`, `:-:` and `--:`; nothing could write one, so the
+                  only way to align a column was to edit the file somewhere else. The current one is
+                  ticked rather than hidden, so the menu says what the column already is. The tick's
+                  column is reserved on every item above and below, because reserving it only here
+                  stepped four labels 16px right of the other five and read as two menus glued
+                  together. */}
+              {(
+                [
+                  ["left", "Align left"],
+                  ["center", "Align centre"],
+                  ["right", "Align right"],
+                  [null, "Default alignment"],
+                ] as [MarkdownTableAlignment, string][]
+              ).map(([value, text]) => (
+                <DropdownMenuItem
+                  key={text}
+                  className="h-8 rounded-lg px-2.5"
+                  onClick={() => onSetAlignment(value)}
+                >
+                  {tick(alignment === value)}
+                  {text}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
+          <DropdownMenuItem className="h-8 rounded-lg px-2.5" onClick={onDuplicate}>
+            {tick(false)}
+            Duplicate
+          </DropdownMenuItem>
+          <DropdownMenuItem className="h-8 rounded-lg px-2.5" onClick={onClear}>
+            {tick(false)}
+            Clear contents
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className="h-8 rounded-lg px-2.5"
+            disabled={!canDelete}
+            onClick={onDelete}
+          >
+            {tick(false)}
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </span>
   );
 }

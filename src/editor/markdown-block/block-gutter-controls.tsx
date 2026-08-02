@@ -241,7 +241,12 @@ export function BlockGutterControls({
     <div
       role="group"
       aria-label="Block controls"
-      className={cn("flex items-center gap-0.5", className)}
+      // `leading-[0]` is what keeps the two 24×24 controls level. The grip's trigger is wrapped by
+      // `DropdownMenu` in an `inline-block`, so its flex item is a line box, not the button: at the
+      // row's inherited 28px line-height that item measured 28px tall against the `+`'s 24px, and
+      // `items-center` then dropped the `+` exactly 2.00px below the grip on all 48 rows of a
+      // fixture. With no leading to add, the line box is the 24px button and both resolve alike.
+      className={cn("flex items-center gap-0.5 leading-[0]", className)}
     >
       <Tooltip
         side="top"

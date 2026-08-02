@@ -544,6 +544,68 @@ describe("MarkdownContainerBlock — leaving and collapsing a container", () => 
 
     expect(screen.getByRole("button", { name: "Note callout, change type" })).toBeEnabled();
   });
+
+  /**
+   * Both leading icons are centred on their own first line box by the same expression.
+   *
+   * Measured before this, against the first line's glyph centre: the callout's icon sat 4px high
+   * and the toggle's chevron 4px high too, each nudged by a fixed `mt-0.5` that assumes a 20px
+   * line. They are the two icons a reader sees side by side down a Page, and two different offsets
+   * is exactly the 2-4px inconsistency that reads as broken rather than as a choice.
+   */
+  it("centres a callout's icon and a toggle's chevron on their own first line", () => {
+    renderContainer("callout", "> [!NOTE] Title\n> Body", { editable: false });
+    const icon = screen.getByRole("button", { name: "Note callout, change type" });
+    // Half the leading the text actually has, not a fixed nudge, so it holds at any line-height.
+    expect(icon.style.marginTop).toMatch(/1lh/);
+    expect(icon.style.marginTop).toMatch(/1rem/);
+    expect(icon.className).not.toContain("mt-0.5");
+
+    renderContainer("toggle", "<details open>\n<summary>S</summary>\n\nBody\n\n</details>", {
+      editable: false,
+    });
+    const chevron = screen.getByRole("button", { name: "Collapse toggle" });
+    // The same expression, so the two icons a reader sees down a Page cannot disagree.
+    expect(chevron.style.marginTop).toBe(icon.style.marginTop);
+    expect(chevron.className).not.toContain("mt-0.5");
+    // The 14px glyph is already centred inside a 16px box, so the box is the only thing to move.
+    expect(chevron.className).toContain("h-4");
+    expect(chevron.className).toContain("items-center");
+  });
+
+  it("insets a toggle's body to the summary's own text origin, with no full-bleed divider", () => {
+    // 12px card padding + a 16px chevron + a 6px gap. Full-bleed, the body sat 22px *left* of the
+    // title it belongs to and the hierarchy read backwards; the edge-to-edge rule reinforced it.
+    const { container } = renderContainer(
+      "toggle",
+      "<details open>\n<summary>S</summary>\n\nBody\n\n</details>",
+      { editable: false }
+    );
+    const body = container.querySelector("[data-native-toggle-content]")!;
+    expect(body.className).toContain("pl-[34px]");
+    expect(body.className).not.toContain("border-t");
+  });
+
+  it("carries a light callout accent dark enough to be seen on its own tint", () => {
+    // The two palettes are maintained separately and only the dark one had been checked: the `-600`
+    // accents measured 3.04:1 (warning) to 3.87:1 (note) on the 6% light container, against
+    // 6.72-7.68:1 for their dark counterparts. `-700` puts the light set at 4.80-6.60:1.
+    for (const [type, accent] of [
+      ["NOTE", "text-sky-700"],
+      ["TIP", "text-emerald-700"],
+      ["IMPORTANT", "text-violet-700"],
+      ["WARNING", "text-amber-700"],
+      ["CAUTION", "text-red-700"],
+    ] as const) {
+      const { container, unmount } = renderContainer("callout", `> [!${type}] Title\n> Body`, {
+        editable: false,
+      });
+      const icon = container.querySelector("button")!;
+      expect(icon.className).toContain(accent);
+      expect(icon.className).toContain("dark:text-");
+      unmount();
+    }
+  });
 });
 
 /**

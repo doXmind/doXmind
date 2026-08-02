@@ -407,7 +407,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-[var(--sidebar-hover)] hover:text-foreground"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-accent hover:text-foreground"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -463,11 +463,15 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
                       role="option"
                       aria-selected={isSelected}
                       className={cn(
-                        "flex w-full items-center gap-3 px-4 py-2 text-sm",
-                        "transition-colors duration-75",
+                        "flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-sm",
+                        "transition-colors duration-[20ms] ease-in",
+                        // `--sidebar-active` is #ffffff — an elevated pill against the sidebar's
+                        // tinted ground, but invisible on this panel, which is bg-popover (also
+                        // #ffffff). The keyboard-selected row painted nothing. Use the same
+                        // `accent` fill every other menu row in the app uses.
                         isSelected
-                          ? "bg-[var(--sidebar-active)] text-foreground"
-                          : "text-foreground hover:bg-[var(--sidebar-hover)]"
+                          ? "bg-accent text-accent-foreground"
+                          : "text-foreground hover:bg-accent"
                       )}
                       onClick={() => cmd.action()}
                       onMouseEnter={() => setSelectedIndex(currentIndex)}

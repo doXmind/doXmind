@@ -420,7 +420,7 @@ export function MarkdownCodeBlock({
       ) : language ? (
         <span
           data-code-language
-          className="pointer-events-none absolute right-2 top-1.5 z-10 select-none font-mono text-[11px] text-muted-foreground"
+          className={`pointer-events-none select-none bg-muted text-muted-foreground ${CODE_CHIP_CLASSES}`}
         >
           {language}
         </span>
@@ -505,12 +505,35 @@ const CODE_INNER_METRICS: CSSProperties = {
 };
 
 /**
+ * Where the language label sits, and how big it is allowed to be.
+ *
+ * It has to fit *entirely inside the `pre`'s 16px top padding*, above line 1's glyph band. Sized by
+ * its own text and dropped 6px down, it was 25px tall and overlapped the first line by its full
+ * height — a grey word composited straight onto the first line of code, with no plate behind it
+ * because the background only appeared under the pointer. `leading-[14px]` with no vertical padding
+ * makes the chip exactly 14px, and `top-0.5` leaves it 1.5px clear of the first glyph at any line
+ * length, so it cannot reach the code however long line 1 is.
+ *
+ * Every state carries an opaque background — `bg-muted`, the `pre`'s own surface, so it is seamless
+ * at rest — because a transparent label is what let it composite over glyphs. The padding above line
+ * 1 is the same 16px on the textarea, so the region the chip takes out of the editing surface holds
+ * no character to put a caret on. The field uses a ring rather than a border, which would add 2px to
+ * a box measured to fit the padding exactly.
+ */
+const CODE_CHIP_CLASSES =
+  "absolute right-2 top-0.5 z-10 rounded px-1.5 py-0 font-mono text-[11px] leading-[14px]";
+
+/**
  * The code Block's language, as an editable chip.
  *
  * Absolutely positioned and mounted in both states, so it can neither add height on activation nor
  * disappear from a Block that is being edited. A free-text field rather than a menu, because a fence
  * info string is arbitrary in Markdown and a closed list would silently drop whatever the file
  * already says.
+ *
+ * Shown at rest rather than on hover. At `opacity: 0` a Block's language was unreadable until the
+ * pointer was on the row, so the one thing that says what a code Block *is* could only be found by
+ * hunting for it — and both reference products label the Block permanently.
  *
  * A copy of the row's `CodeLanguageChip`, which is module-private there; it goes away with the row's
  * fenced-code arm.
@@ -544,7 +567,7 @@ function CodeLanguageChip({
         value={draft}
         placeholder="language"
         spellCheck={false}
-        className="absolute right-2 top-1.5 z-10 w-24 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className={`w-24 bg-background text-foreground outline-none ring-1 ring-ring ${CODE_CHIP_CLASSES}`}
         onChange={(event) => setDraft(event.target.value)}
         onClick={(event) => event.stopPropagation()}
         onBlur={commit}
@@ -570,7 +593,7 @@ function CodeLanguageChip({
       aria-label={language ? `Code language: ${language}` : "Set code language"}
       // `z-10` keeps the chip above the editing surface. The textarea covers the whole Block, so
       // without it the chip is unclickable for exactly as long as the Block is being edited.
-      className="absolute right-2 top-1.5 z-10 rounded px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground opacity-0 transition-opacity duration-[20ms] hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover/native-block:opacity-100"
+      className={`bg-muted text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${CODE_CHIP_CLASSES}`}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
         event.stopPropagation();

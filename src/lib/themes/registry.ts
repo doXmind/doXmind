@@ -44,10 +44,21 @@ const doxmind: ThemeDefinition = {
     secondary: "0 0% 96%", // hover / muted surface
     secondaryForeground: "0 0% 13%",
     muted: "0 0% 96%",
-    mutedForeground: "0 0% 45%", // #737373
+    // #666666. The muted grey lands on `bg-muted` (#F5F5F5) as often as on the
+    // page — code language chips, wiki-link chips, `.hljs-comment`, raw Blocks.
+    // At 45% it read 4.35:1 there while the dark theme's 60% read 4.77:1, so a
+    // whole tier of light-mode labels sat under the bar its dark twin cleared.
+    // 40% clears 4.5:1 on both surfaces (5.27:1 muted, 5.74:1 page).
+    mutedForeground: "0 0% 40%",
     accent: "0 0% 94%",
     accentForeground: "0 0% 13%",
-    destructive: "0 84.2% 60.2%",
+    // #C81E1E. `--destructive` doubles as `text-destructive`, and the dark
+    // theme was already bumped so "Delete" reads as danger on a dark popover
+    // (see `doxmindDark` below). Light was left on Tailwind's stock red-500,
+    // which measures 3.76:1 on white — the weakest label in the menu instead of
+    // the loudest. Dropping the lightness to 45% gives 5.74:1 on the page /
+    // 5.27:1 on `bg-muted`, and it is still unambiguously red.
+    destructive: "0 74% 45%",
     destructiveForeground: "0 0% 98%",
     border: "0 0% 90%", // #E5E5E5
     borderSubtle: "0 0% 93%",
@@ -80,7 +91,11 @@ const doxmindDark: ThemeDefinition = {
     accent: "0 0% 22%",
     accentForeground: "0 0% 95%",
     destructive: "0 91% 71%",
-    destructiveForeground: "0 0% 95%",
+    // #212121. `--destructive` has to stay light here so `text-destructive`
+    // reads as danger on a near-black popover, which makes it a *light* fill —
+    // near-white text on it measured 2.45:1 on the confirm dialog's Delete
+    // button. Ink instead of paper: 5.86:1 on the same fill.
+    destructiveForeground: "0 0% 13%",
     border: "0 0% 23%",
     borderSubtle: "0 0% 18%",
     input: "0 0% 23%",

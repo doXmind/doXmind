@@ -116,6 +116,26 @@ function loadKatex(): Promise<typeof import("katex").default> {
   return katexPromise;
 }
 
+/**
+ * The marker column every list kind hangs its leading control in.
+ *
+ * 20px wide, its contents aligned to the column's right edge, followed by the row's own 8px gap —
+ * so a bullet, an ordinal and a to-do checkbox all leave the label at one x per depth. The to-do
+ * used to put its 16px checkbox straight into the row, which started its label 4.0px left of every
+ * other list kind's at depth 0, 1 and 2, and a mixed checklist read with a ragged left edge that
+ * nothing on screen explained.
+ *
+ * A flex column rather than `text-right`, because an ordinal can be wider than the column and the
+ * two overflow in opposite directions. As `w-5 text-right`, "10." (20.66px of glyph in a 20.00px
+ * box) wrapped: the period dropped to a second line and the row grew from 40px to 68px, which
+ * happened to 22 of the first 33 ordinals. Right-aligned in a flex box the ordinal overflows
+ * *leftward* into the 10px grip gap instead, so the label's x never moves.
+ */
+const LIST_MARKER_COLUMN = "flex w-5 shrink-0 justify-end";
+
+/** The marker glyphs themselves: never wrapped, never shrunk to fit the 20px column. */
+const LIST_MARKER_INK = "shrink-0 whitespace-nowrap";
+
 interface MarkdownBlockRowProps {
   block: MarkdownBlockView;
   index: number;
@@ -1288,21 +1308,23 @@ function MarkdownBlockRowView({
                 />
               ) : null}
               {block.kind === "task_list_item" && activeListItem ? (
-                <input
-                  type="checkbox"
-                  aria-label={activeListItem.content || "Empty task"}
-                  className="mt-1.5 h-4 w-4 shrink-0 rounded border-muted-foreground/50"
-                  checked={block.checked ?? false}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={(event) => event.stopPropagation()}
-                  onChange={(event) => onSetTaskChecked(block.id, event.target.checked)}
-                />
+                <span className={LIST_MARKER_COLUMN}>
+                  <input
+                    type="checkbox"
+                    aria-label={activeListItem.content || "Empty task"}
+                    className="mt-1.5 h-4 w-4 shrink-0 rounded border-muted-foreground/50"
+                    checked={block.checked ?? false}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => onSetTaskChecked(block.id, event.target.checked)}
+                  />
+                </span>
               ) : activeListItem ? (
                 <span
-                  className="w-5 shrink-0 select-none text-right text-muted-foreground"
+                  className={`${LIST_MARKER_COLUMN} select-none text-muted-foreground`}
                   aria-hidden
                 >
-                  {activeListItem.marker}
+                  <span className={LIST_MARKER_INK}>{activeListItem.marker}</span>
                 </span>
               ) : null}
               {useSemanticInlineEditor ? (
@@ -2535,15 +2557,17 @@ function BlockPreview({
     if (block.kind === "task_list_item") {
       return (
         <div data-editor-kind="task_list_item" className="flex min-h-9 items-start gap-2 px-1 py-1">
-          <input
-            type="checkbox"
-            aria-label={listItem.content || "Empty task"}
-            className="mt-1.5 h-4 w-4 shrink-0 rounded border-muted-foreground/50"
-            checked={block.checked ?? false}
-            disabled={readOnly}
-            onClick={(event) => event.stopPropagation()}
-            onChange={(event) => onSetTaskChecked(block.id, event.target.checked)}
-          />
+          <span className={LIST_MARKER_COLUMN}>
+            <input
+              type="checkbox"
+              aria-label={listItem.content || "Empty task"}
+              className="mt-1.5 h-4 w-4 shrink-0 rounded border-muted-foreground/50"
+              checked={block.checked ?? false}
+              disabled={readOnly}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => onSetTaskChecked(block.id, event.target.checked)}
+            />
+          </span>
           <span className={block.checked ? "text-muted-foreground line-through" : undefined}>
             {content}
           </span>
@@ -2552,8 +2576,8 @@ function BlockPreview({
     }
     return (
       <div data-editor-kind={block.kind} className="flex min-h-9 items-start gap-2 px-1 py-1">
-        <span className="w-5 shrink-0 select-none text-right text-muted-foreground" aria-hidden>
-          {listItem.marker}
+        <span className={`${LIST_MARKER_COLUMN} select-none text-muted-foreground`} aria-hidden>
+          <span className={LIST_MARKER_INK}>{listItem.marker}</span>
         </span>
         <span className="min-w-0 whitespace-pre-wrap">{content}</span>
       </div>

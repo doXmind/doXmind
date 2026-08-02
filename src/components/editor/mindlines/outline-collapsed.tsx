@@ -42,6 +42,15 @@ const POPOVER_ROW_ESTIMATE_PX = 28;
 const POPOVER_VERTICAL_PADDING_PX = 16;
 const POPOVER_ROW_OVERSCAN = 6;
 const HOVER_SAFE_AREA_PADDING_PX = 10;
+// The rail's own box: `py-1` on the marker column, and the two marker sizes it
+// switches between. The hover sensor is sized from these so its hit area is
+// the marks it represents (plus a small grace) rather than the full height of
+// the rail column — which reached 196px past the last mark and opened the
+// popover, unbidden, over the text.
+const RAIL_PADDING_Y_PX = 4;
+const RAIL_MARKER_HEIGHT_PX = { compact: 8, default: 12 } as const;
+const RAIL_MARKER_GAP_PX = { compact: 2, default: 5 } as const;
+const HOVER_SENSOR_GRACE_PX = 8;
 // Cap the rail's DOM marker count. Above this, neighbouring headings are
 // collapsed into equal-position buckets so very large outlines stay cheap to
 // render without losing the active row's exact placement.
@@ -229,6 +238,10 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
   }, [cancelClose, closePopoverImmediate, isPointerInSafeArea, phase, schedulePopoverClose]);
 
   const compactRail = headings.length > 28;
+  const railMarkerHeightPx = compactRail
+    ? RAIL_MARKER_HEIGHT_PX.compact
+    : RAIL_MARKER_HEIGHT_PX.default;
+  const railMarkerGapPx = compactRail ? RAIL_MARKER_GAP_PX.compact : RAIL_MARKER_GAP_PX.default;
   const popoverMounted = phase === "open" || phase === "closing";
 
   // Bound the rail to MAX_RAIL_MARKERS DOM nodes; the active heading is
@@ -304,6 +317,14 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
     rowVirtualizer.scrollToIndex(target, { align: "center", behavior: "auto" });
   }, [popoverMounted, rowVirtualizer]);
 
+  // What the rail actually occupies: the markers stack from the column's top,
+  // but the column itself spans 18vh..86vh, so the two are hundreds of pixels
+  // apart on a short outline.
+  const railMarkerExtentPx =
+    RAIL_PADDING_Y_PX * 2 +
+    railMarkers.length * railMarkerHeightPx +
+    Math.max(0, railMarkers.length - 1) * railMarkerGapPx;
+
   if (headings.length === 0) return null;
 
   const handleNavigate = (heading: Heading) => {
@@ -314,7 +335,11 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
   return (
     <div
       data-testid="outline-rail-root"
-      className="group/outline-rail pointer-events-auto absolute right-0 top-0 flex h-full justify-end"
+      // Not hit-testable itself: the sensor below is the rail's hit area, and
+      // it is sized to the marks. With the root taking pointer events, hovering
+      // anywhere in the 40x612 column — including 196px past the last mark —
+      // opened the popover over the text.
+      className="group/outline-rail pointer-events-none absolute right-0 top-0 flex h-full justify-end"
       style={{
         width: "100%",
       }}
@@ -338,7 +363,8 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
       <div
         aria-hidden="true"
         data-testid="outline-rail-hover-sensor"
-        className="pointer-events-auto absolute inset-y-0 right-0 z-10 w-full"
+        className="pointer-events-auto absolute right-0 top-0 z-10 w-full"
+        style={{ height: `min(100%, ${railMarkerExtentPx + HOVER_SENSOR_GRACE_PX}px)` }}
         onClick={openPopoverNow}
         onMouseEnter={schedulePopoverOpen}
         onMouseLeave={handlePointerExit}
@@ -360,7 +386,7 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
             ? "opacity-0 duration-100"
             : "opacity-[0.14] group-focus-within/outline-rail:opacity-[0.85] group-hover/outline-rail:opacity-[0.85]"
         )}
-        style={{ gap: compactRail ? 2 : 5, width: "100%" }}
+        style={{ gap: railMarkerGapPx, width: "100%" }}
         aria-hidden={popoverMounted}
       >
         {railMarkers.map((marker) => {
@@ -387,7 +413,7 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
               onFocus={() => setHoveredLineId(marker.id)}
               onBlur={() => setHoveredLineId(null)}
               className="flex shrink-0 cursor-pointer items-center rounded-sm bg-transparent p-0 outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
-              style={{ height: compactRail ? 8 : 12 }}
+              style={{ height: railMarkerHeightPx }}
               aria-label={`Navigate to: ${labelText}`}
               aria-current={marker.isActive ? "location" : undefined}
               tabIndex={popoverMounted ? -1 : 0}

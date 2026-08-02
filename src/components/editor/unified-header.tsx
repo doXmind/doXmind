@@ -286,7 +286,7 @@ export function UnifiedHeader() {
                   onClick={toggleFilesSidebar}
                   aria-label={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")}
                 >
-                  <PanelLeft className="h-[13px] w-[13px]" />
+                  <PanelLeft className="h-4 w-4" />
                 </Button>
               </Tooltip>
 
@@ -306,7 +306,7 @@ export function UnifiedHeader() {
                   onClick={openCommandPalette}
                   aria-label={t("searchTooltip", { shortcut: formatShortcut("Ctrl+K") })}
                 >
-                  <Search className="h-[15px] w-[15px]" />
+                  <Search className="h-4 w-4" />
                 </Button>
               </Tooltip>
             </>
@@ -443,10 +443,18 @@ export function UnifiedHeader() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="desktop-header-button h-7 w-7 rounded-md bg-background/70 backdrop-blur-md"
+                      className={cn(
+                        "desktop-header-button relative h-7 w-7 rounded-md bg-background/70 backdrop-blur-md",
+                        // Same traffic-light offset the other two header
+                        // buttons (and the tab strip, and the title chip)
+                        // carry. Without it this one button sat on the
+                        // header's geometric centre, 5px above every other
+                        // control in the bar.
+                        isMacElectron && "top-[5px]"
+                      )}
                       aria-label={t("moreActions")}
                     >
-                      <MoreHorizontal className="h-[15px] w-[15px]" />
+                      <MoreHorizontal className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                 </Tooltip>

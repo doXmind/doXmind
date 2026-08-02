@@ -109,7 +109,10 @@ test("Markdown opens in read mode and promotes to editable on click", async ({ p
     el.scrollTop = 0;
   });
   const beforeOutlineScroll = await scroll.evaluate((el) => el.scrollTop);
-  await page.getByTestId("outline-rail-root").hover();
+  // The sensor, not the root: the root is deliberately `pointer-events-none` so that hovering the
+  // empty column below the last mark cannot open the popover over the text. The sensor is the
+  // rail's real hit area and is sized to the marks, so this is where a user aims.
+  await page.getByTestId("outline-rail-hover-sensor").hover();
   await page
     .getByRole("navigation", { name: "Document outline" })
     .getByRole("button", { name: "Deep Section" })
