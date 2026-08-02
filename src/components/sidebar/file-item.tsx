@@ -625,7 +625,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
               top: contextMenu.y,
               left: contextMenu.x,
             }}
-            className="animate-in fade-in-0 zoom-in-95 z-50 min-w-[180px] overflow-hidden rounded-md border border-border bg-popover p-1 shadow-lg"
+            className="z-50 min-w-[180px] overflow-hidden rounded-md border border-border bg-popover p-1 shadow-lg animate-in fade-in-0 zoom-in-95"
           >
             <FileActionsMenuItems
               variant="context"

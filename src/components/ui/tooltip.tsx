@@ -125,7 +125,7 @@ export function Tooltip({ children, content, side = "top", delayDuration = 200 }
               visibility: position ? "visible" : "hidden",
             }}
             className={cn(
-              "animate-in fade-in-0 zoom-in-95 pointer-events-none z-[9999] overflow-hidden whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground"
+              "pointer-events-none z-[9999] overflow-hidden whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95"
             )}
           >
             {content}
