@@ -276,13 +276,11 @@ export function UnifiedHeader() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className={cn(
-                    "desktop-header-button relative z-10 h-7 w-7 rounded-md",
-                    // Push the buttons down to sit level with the macOS traffic
-                    // lights, whose visual center lands a few px below the
-                    // header's natural flex center (see trafficLightPosition).
-                    isMacElectron && "top-[5px]"
-                  )}
+                  // No top offset: `trafficLightPosition` (electron/main.js) is
+                  // already set from the assumption that these buttons sit on
+                  // the header's own centre line. Nudging them down 5px put
+                  // every control in the bar 5px below that centre instead.
+                  className="desktop-header-button relative z-10 h-7 w-7 rounded-md"
                   onClick={toggleFilesSidebar}
                   aria-label={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")}
                 >
@@ -299,10 +297,7 @@ export function UnifiedHeader() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className={cn(
-                    "desktop-header-button relative z-10 h-7 w-7 rounded-md",
-                    isMacElectron && "top-[5px]"
-                  )}
+                  className="desktop-header-button relative z-10 h-7 w-7 rounded-md"
                   onClick={openCommandPalette}
                   aria-label={t("searchTooltip", { shortcut: formatShortcut("Ctrl+K") })}
                 >
@@ -369,7 +364,7 @@ export function UnifiedHeader() {
                         {displayName}
                       </span>
                       {isActive && isPage && isSaving ? (
-                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
                       ) : isActive && isPage && isDirty ? (
                         <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
                       ) : null}
@@ -393,7 +388,7 @@ export function UnifiedHeader() {
                           !isActive && "opacity-0 group-hover:opacity-100"
                         )}
                       >
-                        <X className="h-3.5 w-3.5" />
+                        <X className="h-4 w-4" />
                       </button>
                     </div>
                   );
@@ -427,15 +422,16 @@ export function UnifiedHeader() {
                     title={t("closeDocument")}
                     className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <X className="h-4 w-4" />
                   </button>
                 )}
               </div>
             </div>
           )}
 
-          {/* Options menu — pinned to the header's far-right corner. */}
-          <div className="absolute right-4 top-0 flex h-full items-center md:right-6">
+          {/* Options menu — pinned to the header's far-right corner, on the
+              one 16px chrome inset the outline rail and the word count use. */}
+          <div className="absolute right-4 top-0 flex h-full items-center">
             {currentFileName && isCurrentPage && (
               <DropdownMenu>
                 <Tooltip content={t("moreTooltip")} side="bottom">
@@ -443,15 +439,7 @@ export function UnifiedHeader() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className={cn(
-                        "desktop-header-button relative h-7 w-7 rounded-md bg-background/70 backdrop-blur-md",
-                        // Same traffic-light offset the other two header
-                        // buttons (and the tab strip, and the title chip)
-                        // carry. Without it this one button sat on the
-                        // header's geometric centre, 5px above every other
-                        // control in the bar.
-                        isMacElectron && "top-[5px]"
-                      )}
+                      className="desktop-header-button relative h-7 w-7 rounded-md bg-background/70 backdrop-blur-md"
                       aria-label={t("moreActions")}
                     >
                       <MoreHorizontal className="h-4 w-4" />
@@ -463,11 +451,11 @@ export function UnifiedHeader() {
                         mirrored here because PDF/Excel have no status bar. */}
                   <div className="text-ui-xs flex items-center gap-1.5 px-2 py-1.5 text-muted-foreground">
                     {isSaving ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : isDirty ? (
                       <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                     ) : (
-                      <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-500" />
+                      <Check className="h-4 w-4 text-green-600 dark:text-green-500" />
                     )}
                     <span>{saveLabel}</span>
                   </div>

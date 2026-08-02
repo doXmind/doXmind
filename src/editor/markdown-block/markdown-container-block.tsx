@@ -826,7 +826,11 @@ export function MarkdownContainerBlock({
               // press on the affordance the callout documents as its control did nothing at all —
               // no menu, and not even an activation — so the user had to click the text first and
               // then press the icon they had already pressed once.
-              className={`h-4 w-4 shrink-0 rounded transition-colors duration-[20ms] ease-in hover:bg-foreground/10 ${style.accent}`}
+              // `editor-control` is the editor's one table of interaction states (editor.css). The
+              // `hover:bg-foreground/10` it used to carry was 2.1x every other icon button's tint —
+              // -20.7/-21.7/-22.1 per channel against their -10/-10/-10 — because a 10% fill of the
+              // ink reads twice as strong as the neutral `bg-muted` those controls hover to.
+              className={`editor-control h-4 w-4 shrink-0 rounded ${style.accent}`}
               // Centred on the title's first line box rather than nudged down by a fixed 2px, which
               // left it 4px high against a 28px line. `1lh` is the leading the title actually has,
               // so this stays 0.0 at any editor line-height setting; the toggle's chevron is centred

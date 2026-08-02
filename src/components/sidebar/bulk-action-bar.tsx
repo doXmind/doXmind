@@ -90,7 +90,7 @@ export function BulkActionBar() {
                     <span>{t("root")}</span>
                   </span>
                 </DropdownMenuItem>
-                {folders.length > 0 && <div className="my-1 h-px bg-border" />}
+                {folders.length > 0 && <div className="-mx-1.5 my-1 h-px bg-border" />}
                 {folders.map((folder) => (
                   <DropdownMenuItem key={folder.id} onClick={() => handleMove(folder.id)}>
                     <span className="truncate">{folder.name}</span>

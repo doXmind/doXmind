@@ -647,8 +647,20 @@ function TableAxisMenu({
             // in the editor is live the moment it is visible, and a pill that appeared under the
             // pointer and then answered a press with nothing at all — no menu, no selection, not even
             // focus — read as the app being broken rather than as the Block being unfocused.
-            className={`pointer-events-auto flex items-center justify-center rounded-[3px] text-white transition-opacity duration-[20ms] ease-in focus-visible:opacity-100 ${
-              visible && enabled ? "opacity-100" : "opacity-0"
+            // `editor-control` is the editor's one table of interaction states (editor.css): hover
+            // and pressed tints at 20ms and the app's focus ring, which this handle answered a
+            // pointer with none of — idle, hover and pressed measured byte-identical on every paint
+            // property, so the only feedback a press gave was the menu opening.
+            //
+            // `pointer-events` follows visibility, which is the contract the gutter's own rule
+            // states. All seven handles were `pointer-events: auto` at `opacity: 0`, so
+            // `elementFromPoint` over any cell in the header row or the first column returned an
+            // invisible handle rather than the cell: a press there opened a menu for a control the
+            // user could not see. Keyboard focus keeps them live, since `focus-visible` shows them.
+            className={`editor-control flex items-center justify-center rounded-[3px] text-white focus-visible:pointer-events-auto focus-visible:opacity-100 ${
+              visible && enabled
+                ? "pointer-events-auto opacity-100"
+                : "pointer-events-none opacity-0"
             }`}
             // The blue is the one the Block selection fill uses, which is the reference product's
             // measured accent; `bg-primary` is near-black in this theme and read as a smudge.

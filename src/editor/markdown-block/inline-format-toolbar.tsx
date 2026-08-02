@@ -95,7 +95,11 @@ export function InlineFormatToolbar({
       type="button"
       aria-label={`Change block type: ${typeLabel}`}
       title="Change block type"
-      className="flex h-8 max-w-32 items-center gap-1 rounded-lg px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      // `editor-control` is the editor's one table of interaction states (editor.css): 20ms hover,
+      // a pressed state at twice the hover tint, and the app's focus ring. The bare
+      // `transition-colors` this used to carry inherited Tailwind's 150ms default, which made the
+      // toolbar the slowest-reacting control on the Page by a factor of seven.
+      className="editor-control flex h-8 max-w-32 items-center gap-1 rounded-lg px-2 text-xs font-medium text-foreground"
       onClick={blockTypeOptions.length && onTurnInto ? undefined : onType}
     >
       {currentTypeOption ? (
@@ -178,7 +182,7 @@ export function InlineFormatToolbar({
         type="button"
         aria-label="More actions"
         title="More actions"
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="editor-control flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground"
         onClick={onMore}
       >
         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
@@ -208,7 +212,7 @@ function FormatButton({
       aria-pressed={active}
       title={label}
       className={cn(
-        "flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        "editor-control flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground",
         active && "bg-muted text-foreground"
       )}
       onClick={onClick}

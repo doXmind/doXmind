@@ -308,6 +308,189 @@
 }
 
 /*
+ * The grace period is for leaving the column, not for moving inside it.
+ *
+ * The fade-out above is a 90ms delay and a 110ms ramp, and it fired on *any* row that lost the
+ * pointer — including the row the pointer had just left for the row below it, and including a row
+ * that moved out from under a parked pointer because the Page scrolled. Both painted two gutters at
+ * once: measured with the pointer parked and the wheel turned 300px, a stale cluster at y=196 and a
+ * live one at y=494 were both at full opacity for >=72ms and both still on screen at 182ms. It reads
+ * as a smear following the pointer, and it is one defect, not two — the gutter was drawn on a row
+ * the pointer is no longer on.
+ *
+ * So the grace is conditioned on where the pointer actually is: while it is anywhere over the Page,
+ * a row that is not the hovered one drops its controls in the same frame. The forgiving fade is left
+ * for the case it was written for — the pointer leaving the Page entirely, where nothing else is
+ * lighting up to take over. Timing only: `opacity` is not touched here, so a focused row or one
+ * holding an open menu keeps its controls exactly as the rule above says.
+ */
+.markdown-page:hover [data-native-block-row]:not(:hover) [data-native-block-controls] {
+  transition-delay: 0ms;
+  transition-duration: 0ms;
+}
+
+/*
+ * ONE TABLE OF INTERACTION STATES
+ *
+ * Every pressable thing in the editor answers a pointer the same way, because the answer is written
+ * here once instead of per component. Before this, eight controls had five different behaviours: the
+ * inline toolbar faded over 150ms while the gutter took 20ms, the callout icon's tint was 2.1x
+ * everyone else's, four controls fell back to the UA's orange focus ring, the to-do checkbox and
+ * wiki links had no hover state at all, and nothing anywhere acknowledged a press.
+ *
+ *   state           paint                                        duration
+ *   idle            nothing                                      —
+ *   hover           tint at --editor-state-hover-alpha            20ms
+ *   focus-visible   1px ring in --ring, 2px offset, no UA outline 20ms
+ *   active          tint at --editor-state-active-alpha (2x)      20ms
+ *   disabled        opacity .5, no hover and no press             —
+ *
+ * 20ms is Notion's measured `background 0.02s ease-in` (docs/BLOCK_UX_REFERENCE.md, "Button hover
+ * feedback"). The reference's Motion section is explicit that hover is effectively instant and that
+ * *only* menus get an entry animation, around 150ms — so no state in this table may exceed 20ms.
+ *
+ * The tint is painted as an inset `box-shadow`, not as `background-color`, because these controls do
+ * not share a ground: the gutter buttons are transparent over the page, the callout icon sits on a
+ * type-tinted card, a wiki link carries its own chip fill and a table axis handle is a saturated
+ * blue pill with an inline background. A `background-color` hover replaces the ground and therefore
+ * lands somewhere different on each of them — it is why `hover:bg-foreground/10` on the callout icon
+ * measured -20.7/-21.7/-22.1 against the gutter's -10/-10/-10. An overlay composites over whatever
+ * is underneath, so one alpha gives every control the same delta, and none of them has to restate a
+ * colour that belongs to its component.
+ *
+ * The alphas are solved against `bg-muted`, the value the four controls that were already right
+ * used: 0.045 of #212121 on white is rgb(245,245,245), and 0.0625 of #ECECEC on #212121 is
+ * rgb(46,46,46) — the two themes' `--muted` exactly. Pressed doubles the alpha, which is the ratio
+ * Notion uses between its own hover and pressed fills (0.08 -> 0.16).
+ */
+:root {
+  --editor-state-duration: 20ms;
+  /* The tint's colour, as an `hsl()` triple. A control on a saturated ground overrides it. */
+  --editor-state-ink: var(--foreground);
+  --editor-state-hover-alpha: 0.045;
+  --editor-state-active-alpha: 0.09;
+}
+
+.dark {
+  --editor-state-hover-alpha: 0.0625;
+  --editor-state-active-alpha: 0.125;
+}
+
+/*
+ * `.editor-control` is the opt-in for components that can carry a class; the selectors beside it are
+ * the same table reaching controls whose markup lives elsewhere. The two shadow slots are composed
+ * from custom properties so the tint and the focus ring can be present at once without either
+ * having to know about the other.
+ */
+.editor-control,
+.markdown-page [data-native-block-controls] button,
+.markdown-page [data-native-toggle] > summary > button,
+.markdown-page [data-code-language],
+.markdown-page button[data-wiki-link],
+.markdown-page input[type="checkbox"] {
+  --editor-state-tint: transparent;
+  --editor-state-fill: inset 0 0 0 999px var(--editor-state-tint);
+  --editor-state-ring: 0 0 0 0 transparent;
+  transition-property: color, background-color, border-color, fill, stroke, box-shadow, opacity;
+  transition-duration: var(--editor-state-duration);
+  transition-timing-function: ease-in;
+  box-shadow: var(--editor-state-fill), var(--editor-state-ring);
+}
+
+.editor-control:hover:not(:disabled),
+.markdown-page [data-native-block-controls] button:hover:not(:disabled),
+.markdown-page [data-native-toggle] > summary > button:hover:not(:disabled),
+.markdown-page [data-code-language]:hover:not(:disabled),
+.markdown-page button[data-wiki-link]:hover:not(:disabled),
+.markdown-page input[type="checkbox"]:hover:not(:disabled) {
+  --editor-state-tint: hsl(var(--editor-state-ink) / var(--editor-state-hover-alpha));
+}
+
+.editor-control:active:not(:disabled),
+.markdown-page [data-native-block-controls] button:active:not(:disabled),
+.markdown-page [data-native-toggle] > summary > button:active:not(:disabled),
+.markdown-page [data-code-language]:active:not(:disabled),
+.markdown-page button[data-wiki-link]:active:not(:disabled),
+.markdown-page input[type="checkbox"]:active:not(:disabled) {
+  --editor-state-tint: hsl(var(--editor-state-ink) / var(--editor-state-active-alpha));
+}
+
+/* The app's ring, written out rather than borrowed: four of the eight controls had no
+ * `focus-visible` treatment and so answered the keyboard with the UA's own 1px orange outline at a
+ * different offset and a different shape. `outline: 2px solid transparent` is what Tailwind's
+ * `outline-none` computes to, and is kept so a forced-colours mode still has an outline to paint. */
+.editor-control:focus-visible,
+.markdown-page [data-native-block-controls] button:focus-visible,
+.markdown-page [data-native-toggle] > summary > button:focus-visible,
+.markdown-page [data-code-language]:focus-visible,
+.markdown-page button[data-wiki-link]:focus-visible,
+.markdown-page input[type="checkbox"]:focus-visible {
+  --editor-state-ring: 0 0 0 1px hsl(var(--ring));
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+.editor-control:disabled,
+.markdown-page [data-native-block-controls] button:disabled,
+.markdown-page [data-native-toggle] > summary > button:disabled,
+.markdown-page [data-code-language]:disabled,
+.markdown-page button[data-wiki-link]:disabled,
+.markdown-page input[type="checkbox"]:disabled {
+  opacity: 0.5;
+}
+
+/*
+ * Controls that shipped their own opaque hover fill before this table existed. The overlay above is
+ * the whole hover now, so the fill is cleared rather than added to — stacked, the two darken twice
+ * as far as everything else.
+ */
+.markdown-page [data-native-block-controls] button:hover,
+.markdown-page [data-native-toggle] > summary > button:hover,
+.markdown-page [data-code-language]:hover {
+  background-color: transparent;
+}
+
+/*
+ * A native checkbox paints itself, so an inset overlay lands under its own control and shows
+ * nothing. It gets the same tint as a halo instead — 4px around a 16px box is the 24px square the
+ * gutter buttons are, so a to-do's hover target reads the same size as theirs.
+ *
+ * The halo has square corners because it has no choice: Blink resolves `border-radius` to 0 on any
+ * `appearance: auto` form control, and it ignores an inline `9px` just as it ignores a stylesheet's,
+ * so a shadow spread has nothing to round to. Rounding it would mean `appearance: none` and drawing
+ * the box and its tick by hand, which is a bigger change than a hover state is worth; at a 10-per-
+ * channel tint the corner is not what a reader sees.
+ */
+.markdown-page input[type="checkbox"] {
+  --editor-state-fill: 0 0 0 4px var(--editor-state-tint);
+  accent-color: #2383e2;
+}
+
+/*
+ * A table axis handle is a saturated accent pill, and 4.5% of near-black over it moves nothing a
+ * reader can see. It keeps the table's shape — one duration, pressed at twice hover, the same ring —
+ * with the one thing that has to differ declared: black at an alpha that lands the same order of
+ * visible change on rgb(35,131,226) as the neutral tint does on the page.
+ */
+.markdown-page [data-axis-handle] {
+  --editor-state-ink: 0 0% 0%;
+  --editor-state-hover-alpha: 0.14;
+  --editor-state-active-alpha: 0.28;
+}
+
+/*
+ * The indicator lands with the thing it indicates.
+ *
+ * The chevron rotated over 150ms while the content it discloses appeared in a single frame —
+ * measured, the row reached its final height at 6.8ms with the caret still at 1.5 degrees, and the
+ * caret did not settle until ~150ms. One state change, two halves, 145ms apart. It is also the only
+ * transition on a Block affordance that was not 20ms.
+ */
+.markdown-page [data-native-toggle] > summary > button > svg {
+  transition-duration: var(--editor-state-duration);
+}
+
+/*
  * Vertical alignment of the gutter controls.
  *
  * The controls belong on the Block's first text line, not in the middle of the row. Values are
@@ -802,10 +985,6 @@
 
 .markdown-page [data-native-block-drop-end][data-drop-active="true"]::before {
   top: 0;
-}
-
-.markdown-page input[type="checkbox"] {
-  accent-color: #2383e2;
 }
 
 .markdown-page table {

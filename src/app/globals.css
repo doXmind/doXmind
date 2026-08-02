@@ -79,6 +79,74 @@
     --editor-content-width: 966px;
     --radius: 0.5rem;
 
+    /* ── Measured colour tokens (light) ───────────────────────────────────
+     *
+     * Every token below has a twin in `.dark` and a measured contrast ratio
+     * against the surface it is painted on. They exist because the same
+     * defect kept recurring: a colour written as a one-off hex in a rule or a
+     * Tailwind class, tuned by eye on one theme, then shipped into the other
+     * — the light syntax palette averaged 3.75:1 while its dark twin averaged
+     * 6.41:1, and inline code was a single `#eb5757` that failed in *both*.
+     * A one-off hex has nowhere to record what it was checked against; a
+     * token pair does, and `theme-contrast.test.ts` recomputes every ratio
+     * here on both surfaces and fails below the bar.
+     *
+     * Ratios quoted are against doXmind's own themes (`registry.ts`); the
+     * test also checks them against this file's base palette, which is what
+     * paints before a theme is applied.
+     */
+
+    /* highlight.js scopes in a rendered code Block, painted on --muted.
+     * Hues are One-Light's; the lightness is dropped until each clears 4.5:1
+     * on #F5F5F5, which the published One-Light values never did (number
+     * 2.93, string 2.94, title 3.71, attr 4.46, tag 3.36).
+     * `.hljs-comment` is deliberately absent — it reads --muted-foreground,
+     * which is already a measured pair. */
+    --code-keyword: 301 63% 40%; /* #A626A4 — 5.61:1 */
+    --code-string: 120 45% 31%; /* #2B732B — 5.37:1 */
+    --code-number: 41 100% 26%; /* #855B00 — 5.51:1 */
+    --code-title: 220 75% 47%; /* #1E5AD2 — 5.59:1 */
+    --code-attr: 28 100% 31%; /* #9E4A00 — 5.61:1 */
+    --code-name: 5 74% 45%; /* #C82C1E — 5.02:1 */
+    /* Inline code, also on --muted. Replaces `#eb5757` (3.19:1 light,
+     * 3.90:1 dark — the one text colour in the app with no dark variant). */
+    --code-inline: 350 72% 46%; /* #CA213D — 5.07:1 */
+
+    /* Empty-Block placeholder, on --background. A placeholder is text: the
+     * old per-theme alphas (0.26 / 0.32 of --foreground) measured 1.72:1
+     * light and 2.65:1 dark, i.e. neither readable nor equal. An explicit
+     * colour per theme is the only way to state the ratio rather than
+     * inherit it as a by-product of one alpha applied to two inks. */
+    --placeholder-fg: 0 0% 46%; /* #757575 — 4.61:1 */
+
+    /* Outline popover heading rungs, on --popover. Same reasoning as the
+     * placeholder: `text-foreground/[0.55]` gave 3.69:1 light against
+     * 4.65:1 dark. H1 stays --foreground. */
+    --outline-heading-2-fg: 0 0% 32%; /* #525252 — 7.81:1 */
+    --outline-heading-3-fg: 0 0% 44%; /* #707070 — 4.95:1 */
+
+    /* Armed-control fill (gutter +/grip hover), on --background. `bg-muted`
+     * gave 1.09:1 light against 1.19:1 dark for the same gesture. */
+    --control-hover: 0 0% 92%; /* #EBEBEB — 1.19:1 */
+
+    /* Table grid. The border is the only thing that makes a table read as a
+     * grid, and at --border it measured 1.20:1 light / 1.30:1 dark. Notion's
+     * own #E9E9E7 is ~1.2:1 so the neutral --border stays as it is; the
+     * table gets its own stronger, symmetric line plus a zebra fill, which
+     * is the cheaper structural cue. */
+    --table-border: 0 0% 72%; /* #B8B8B8 — 1.98:1 */
+    --table-row-alt: 0 0% 95%; /* #F2F2F2 — 1.12:1 */
+
+    /* Popover elevation. The old shadow was one hard-coded rgba(25,25,25,·)
+     * string used in both themes, so dark menus got no shadow at all, and in
+     * light the panel sat white-on-white behind a 1.25:1 ring — 1.00:1 of
+     * surface delta and nothing to replace it. The ring is now its own token
+     * so the two themes can state the same edge strength. */
+    --popover-ring: 0 0% 80%; /* #CCCCCC — 1.61:1 vs the page */
+    --popover-shadow:
+      0 20px 24px rgba(25, 25, 25, 0.1), 0 5px 8px rgba(25, 25, 25, 0.06),
+      0 0 0 1px hsl(var(--popover-ring));
+
     /* Animation durations */
     --duration-fast: 150ms;
     --duration-normal: 300ms;
@@ -152,6 +220,42 @@
     --chrome-material-bg: rgba(22, 22, 22, 0.55);
     --chrome-border: rgba(255, 255, 255, 0.075);
     --content-surface-bg: hsl(var(--background));
+
+    /* ── Measured colour tokens (dark) ────────────────────────────────────
+     * Twins of the `:root` block above; see the reasoning there. Ratios are
+     * against doXmind's dark theme (page #212121, --muted / --popover
+     * #2E2E2E). */
+
+    /* One-Dark hues. Five of the seven are the published values, which
+     * already clear the bar; `--code-name` is lifted because One-Dark's
+     * #E06C75 measures 4.25:1 here, and `--code-number` is brought down from
+     * #E5C07B (7.86:1) so it is not 1.5x its own light twin. */
+    --code-keyword: 286 60% 67%; /* #C678DD — 4.61:1 */
+    --code-string: 95 38% 62%; /* #98C379 — 6.74:1 */
+    --code-number: 39 62% 64%; /* #DCB46A — 6.97:1 */
+    --code-title: 207 82% 66%; /* #61AFEF — 5.75:1 */
+    --code-attr: 29 54% 61%; /* #D19A66 — 5.51:1 */
+    --code-name: 355 80% 72%; /* #F17E88 — 5.22:1 */
+    --code-inline: 350 85% 74%; /* #F58497 — 5.58:1 */
+
+    --placeholder-fg: 0 0% 55%; /* #8C8C8C — 4.79:1 */
+
+    --outline-heading-2-fg: 0 0% 76%; /* #C2C2C2 — 7.62:1 */
+    --outline-heading-3-fg: 0 0% 62%; /* #9E9E9E — 5.07:1 */
+
+    --control-hover: 0 0% 19%; /* #303030 — 1.22:1 */
+
+    --table-border: 0 0% 32%; /* #525252 — 2.06:1 */
+    --table-row-alt: 0 0% 17%; /* #2B2B2B — 1.14:1 */
+
+    /* A dark popover needs black to cast a shadow at all; rgba(25,25,25,·)
+     * over #212121 is invisible. Alphas are Feishu's order of magnitude for
+     * a dark menu (`0 8px 16px rgba(0,0,0,.28)`), spread over Notion's
+     * two-layer geometry. */
+    --popover-ring: 0 0% 27%; /* #454545 — 1.68:1 vs the page */
+    --popover-shadow:
+      0 20px 24px rgba(0, 0, 0, 0.45), 0 5px 8px rgba(0, 0, 0, 0.3),
+      0 0 0 1px hsl(var(--popover-ring));
 
     /* Diff Review — Notion-inspired palette (dark): gray deleted, blue inserted */
 

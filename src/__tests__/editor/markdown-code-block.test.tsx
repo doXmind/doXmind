@@ -534,6 +534,59 @@ describe("MarkdownCodeBlock", () => {
     await settle();
   });
 
+  it("scrolls a long line sideways instead of wrapping it", async () => {
+    const { container } = render(
+      <Harness initial={"```ts\nconst x = 1; // a line far wider than any content column\n```"} />
+    );
+
+    const pre = screen.getByTestId("fenced-code-block");
+    const textarea = editingSurface();
+    // `pre-wrap` on both layers made the `overflow-x: auto` that `.markdown-page pre` declares
+    // unreachable: measured on the packaged app, `scrollWidth === clientWidth` on every code Block,
+    // so a 191-character line came out as five wrapped visual lines and the declaration never fired.
+    expect(pre.style.whiteSpace).toBe("pre");
+    expect(textarea.style.whiteSpace).toBe("pre");
+    expect(textarea.getAttribute("wrap")).toBe("off");
+
+    // The scroll box is the two layers' shared parent, never the `<pre>`. A `<pre>` that scrolled on
+    // its own would carry the glyphs sideways and leave the caret behind.
+    const scroll = container.querySelector("[data-code-scroll]");
+    expect(scroll).not.toBeNull();
+    expect(scroll?.contains(pre)).toBe(true);
+    expect(scroll?.contains(textarea)).toBe(true);
+    expect(pre.parentElement).not.toBe(scroll);
+    expect((scroll as HTMLElement).style.overflowX).toBe("auto");
+    // Only sideways: a vertical bar would clip nothing and cost height on every Block.
+    expect((scroll as HTMLElement).style.overflowY).toBe("hidden");
+    // `autohide-scrollbar` reserves a vertical gutter, which took 11px of content width off every
+    // code Block on the Page — including the ones with nothing to scroll.
+    expect((scroll as HTMLElement).style.scrollbarGutter).toBe("auto");
+
+    // Sized by the longest line, so the box has something to scroll; never narrower than the Block,
+    // so two words of code still read as a code Block rather than a chip.
+    const sizer = pre.parentElement as HTMLElement;
+    expect(sizer.style.width).toBe("max-content");
+    expect(sizer.style.minWidth).toBe("100%");
+    await settle();
+  });
+
+  it("clips the Block's corners from the box the reader sees, not from the code", async () => {
+    const { container } = render(<Harness initial={"```ts\nconst a = 1;\n```"} />);
+
+    // The `<pre>` still paints the surface — `min-width: 100%` above is what guarantees it reaches
+    // the Block's edge — but its own corners sit at the two ends of the scrollable width, so at any
+    // scroll offset but zero the rounded left corner is off-screen and the visible edge is square.
+    // Repeating the radius on the box that does not move is what keeps the corners where they look.
+    const scroll = container.querySelector("[data-code-scroll]") as HTMLElement;
+    expect(scroll.className).toContain("rounded-lg");
+    const pre = screen.getByTestId("fenced-code-block");
+    expect(pre.className).toContain("bg-muted");
+    // `.markdown-page pre` declares `overflow-x: auto`, which inside the scroll box would be a
+    // second scroll container — and the wrong one, since it is the layer without the caret.
+    expect(pre.style.overflow).toBe("visible");
+    await settle();
+  });
+
   it("carries exactly one editor element, and only while it is editable", async () => {
     const { container, rerender } = render(
       <Harness initial={"```ts\nconst a = 1;\n```"} editable={false} />

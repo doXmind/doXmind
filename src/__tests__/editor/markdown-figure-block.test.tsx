@@ -490,4 +490,54 @@ describe("MarkdownFigureBlock", () => {
       await settle();
     });
   });
+
+  describe("the equation's hover surface", () => {
+    it("hangs no style hook off the rendered formula", async () => {
+      const { container } = renderFigure("block_math", "$$\nE = mc^2\n$$", { editable: false });
+      await waitFor(() => expect(screen.getByTestId("rendered-math")).toBeInTheDocument());
+
+      // `math-rendered` exists for exactly two rules in math-mermaid.css: `cursor: pointer` and a
+      // hover tint. BLOCK_UX_REFERENCE records that a row hover tint was shipped and then removed
+      // because it painted a full-column band over a short piece of content; this one survived the
+      // removal and did the same thing — measured on the packaged app, hovering `E = mc^2` painted
+      // 923px of band while hovering the paragraph above it painted nothing.
+      expect(container.querySelector(".math-rendered")).toBeNull();
+      await settle();
+    });
+  });
+
+  describe("a diagram's own size", () => {
+    it("copies the viewBox onto the SVG root so the image has an intrinsic size", async () => {
+      const { withIntrinsicSize } =
+        await vi.importActual<typeof import("@/lib/mermaid-renderer")>("@/lib/mermaid-renderer");
+
+      // Mermaid's own output shape. Through an `<img>` this is an image with a ratio and no size,
+      // which the sizing rules resolve by filling the container: measured on the packaged app, a
+      // two-node `graph TD` was drawn at 294.34x460 — a 3.07x upscale stopped only by the 460px
+      // height cap it had grown into rather than been fitted to.
+      const sized = withIntrinsicSize(
+        '<svg id="d" width="100%" viewBox="0 0 111.34 174" style="max-width: 111.34px;"><g/></svg>'
+      );
+      expect(sized).toContain('width="111.34"');
+      expect(sized).toContain('height="174"');
+      expect(sized).not.toContain('width="100%"');
+      // Everything else is left exactly as Mermaid wrote it.
+      expect(sized).toContain('viewBox="0 0 111.34 174"');
+      expect(sized).toContain('style="max-width: 111.34px;"');
+      expect(sized).toContain("<g/></svg>");
+    });
+
+    it("leaves an SVG it cannot measure alone", async () => {
+      const { withIntrinsicSize } =
+        await vi.importActual<typeof import("@/lib/mermaid-renderer")>("@/lib/mermaid-renderer");
+
+      // Guessing a size would be worse than the container-filling behaviour it replaces.
+      const noViewBox = '<svg width="100%"><g/></svg>';
+      expect(withIntrinsicSize(noViewBox)).toBe(noViewBox);
+      const degenerate = '<svg viewBox="0 0 0 174"></svg>';
+      expect(withIntrinsicSize(degenerate)).toBe(degenerate);
+      const unparseable = '<svg viewBox="nonsense"></svg>';
+      expect(withIntrinsicSize(unparseable)).toBe(unparseable);
+    });
+  });
 });

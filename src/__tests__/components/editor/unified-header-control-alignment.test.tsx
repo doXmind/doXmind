@@ -59,16 +59,35 @@ describe("Header control alignment", () => {
     vi.unstubAllGlobals();
   });
 
-  // On macOS every control in the 44px bar — the tab strip, the title chip and
-  // the two left buttons — is nudged 5px down to sit level with the native
-  // traffic lights. "More actions" was the one control left on the header's
-  // geometric centre, 5px above its neighbours, so the bar had no horizon.
-  it("puts every header button on the same macOS traffic-light line", () => {
+  // The buttons carry no vertical nudge at all, so all three sit on the 44px
+  // header's own centre line (y=22 measured in the packaged app). They used to
+  // be pushed down 5px "to meet the traffic lights", but electron/main.js sets
+  // `trafficLightPosition` from the assumption that these buttons are centred —
+  // the nudge moved every control in the bar 5px below the centre it was
+  // supposed to share, and nothing was aligned to anything.
+  it("leaves every header button on the header's own centre line", () => {
     renderHeader();
 
     for (const label of HEADER_ACTIONS) {
-      expect(headerAction(label).className.split(/\s+/)).toContain("top-[5px]");
+      const classes = headerAction(label).className.split(/\s+/);
+      expect(classes, String(label)).not.toContain("top-[5px]");
+      expect(
+        classes.filter((name) => /^-?top-/.test(name)),
+        String(label)
+      ).toEqual([]);
     }
+  });
+
+  // Three things hang off the window's right edge — this button, the outline
+  // rail and the word count. They stopped at 24px, 8px and 16px. One inset.
+  it("pins the more-actions button to the one 16px chrome inset", () => {
+    renderHeader();
+
+    const rail = headerAction(/^More actions$/).closest("div.absolute");
+    expect(rail).not.toBeNull();
+    const classes = rail!.className.split(/\s+/);
+    expect(classes).toContain("right-4");
+    expect(classes.filter((name) => /^(md:)?right-/.test(name))).toEqual(["right-4"]);
   });
 
   // 13px, 15px and 15px across three adjacent 28px buttons read as three

@@ -3,7 +3,11 @@
 import { Copy, ExternalLink, FileDown, FolderOpen, Home, Pencil, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
-import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  MENU_ROW_CLASS,
+} from "@/components/ui/dropdown-menu";
 
 export interface FileActionsMenuItemsProps {
   /** Action handlers */
@@ -156,7 +160,8 @@ export function FileActionsMenuItems({
 
   const contextItemClass = (index: number, destructive?: boolean) =>
     cn(
-      "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
+      // Same row as every other menu in the app: 28px, 6px radius, 20ms hover.
+      MENU_ROW_CLASS,
       destructive && "text-destructive",
       contextMenuReady &&
         (destructive ? "hover:bg-destructive/10" : "hover:bg-[var(--sidebar-hover)]"),
@@ -205,7 +210,7 @@ export function FileActionsMenuItems({
 
       {hasParent && (
         <>
-          <div className="my-1 h-px bg-border" />
+          <div className="-mx-1.5 my-1 h-px bg-border" />
 
           {/* Move to Root */}
           <button
@@ -222,7 +227,7 @@ export function FileActionsMenuItems({
 
       {!isAttachment && (
         <>
-          <div className="my-1 h-px bg-border" />
+          <div className="-mx-1.5 my-1 h-px bg-border" />
 
           {/* Copy the complete portable Markdown source. */}
           <button
@@ -248,7 +253,7 @@ export function FileActionsMenuItems({
         </>
       )}
 
-      <div className="my-1 h-px bg-border" />
+      <div className="-mx-1.5 my-1 h-px bg-border" />
 
       {/* Move to Trash */}
       <button

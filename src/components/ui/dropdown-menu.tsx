@@ -4,6 +4,25 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
+/**
+ * The one menu geometry in the app. Notion's measured values (see
+ * docs/BLOCK_UX_REFERENCE.md): a 28px row on a 6px radius with a 20ms
+ * background transition, inside a 10px-radius panel padded 6px whose outermost
+ * shadow layer is a hairline ring rather than a border.
+ *
+ * The block gutter's menu already hit these numbers by overriding every row it
+ * rendered; they live here now so the more-actions dropdown, the sidebar
+ * context menus and the block menu are one system instead of four. Callers that
+ * still pass the same classes are simply agreeing with the default.
+ */
+export const MENU_PANEL_CLASS =
+  "rounded-[10px] border-0 bg-popover p-1.5 text-popover-foreground shadow-[0_20px_24px_rgba(25,25,25,0.05),0_5px_8px_rgba(25,25,25,0.027),0_0_0_1px_hsl(var(--border))]";
+// `min-h-7`, not `h-7`: a single-line row measures exactly 28px, and the few
+// rows that carry two lines or a swatch (the workspace switcher's recents, the
+// settings theme picker) still grow instead of clipping.
+export const MENU_ROW_CLASS =
+  "relative flex min-h-7 w-full cursor-pointer select-none items-center rounded-md px-2 text-sm outline-none transition-colors duration-[20ms] ease-in";
+
 interface DropdownMenuProps {
   children: React.ReactNode;
   open?: boolean;
@@ -357,7 +376,8 @@ export function DropdownMenuContent({
       data-dropdown-portal=""
       onMouseDown={(e) => e.preventDefault()}
       className={cn(
-        "fixed z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
+        "fixed z-50 min-w-[8rem] overflow-hidden",
+        MENU_PANEL_CLASS,
         "animate-in fade-in-0 zoom-in-95",
         "max-h-[65vh] overflow-y-auto",
         className
@@ -443,7 +463,7 @@ export function DropdownMenuItem({
       data-dropdown-item={itemId}
       tabIndex={isFocused ? 0 : -1}
       className={cn(
-        "relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors duration-[20ms] ease-in",
+        MENU_ROW_CLASS,
         // One highlight per menu: `accent` is the fill the slash panel and the block gutter's own
         // "Turn into" row already use, so a panel that mixes shared items with a caller's own rows
         // paints them the same colour. It was the neutral sidebar-hover gray, which is a cooler,
@@ -494,7 +514,8 @@ export function useDropdownMenuItemFocus(itemId: string) {
 }
 
 export function DropdownMenuSeparator() {
-  return <div role="separator" className="-mx-1 my-1 h-px bg-muted" />;
+  // -mx-1.5 matches MENU_PANEL_CLASS's 6px padding so the rule spans the panel.
+  return <div role="separator" className="-mx-1.5 my-1 h-px bg-muted" />;
 }
 
 export function DropdownMenuLabel({
@@ -648,7 +669,7 @@ export function DropdownMenuSubTrigger({
       aria-haspopup="menu"
       aria-expanded={open}
       className={cn(
-        "relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors duration-[20ms] ease-in",
+        MENU_ROW_CLASS,
         (isFocused || open) && "bg-accent text-accent-foreground",
         "focus-visible:ring-1 focus-visible:ring-ring",
         className
@@ -844,7 +865,8 @@ export function DropdownMenuSubContent({
         onMouseEnter={cancelClose}
         onMouseLeave={startClose}
         className={cn(
-          "fixed z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
+          "fixed z-50 min-w-[8rem] overflow-hidden",
+          MENU_PANEL_CLASS,
           "animate-in fade-in-0 zoom-in-95",
           "max-h-[65vh] overflow-y-auto",
           className

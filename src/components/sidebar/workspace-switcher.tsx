@@ -141,7 +141,7 @@ export function WorkspaceSwitcher({ label, titleAttr }: WorkspaceSwitcherProps) 
               {label}
             </span>
             <ChevronDown
-              className="h-3.5 w-3.5 shrink-0 text-[var(--sidebar-title)] opacity-50 transition-opacity group-hover/switcher:opacity-100"
+              className="h-4 w-4 shrink-0 text-[var(--sidebar-title)] opacity-50 transition-opacity group-hover/switcher:opacity-100"
               aria-hidden="true"
             />
           </button>

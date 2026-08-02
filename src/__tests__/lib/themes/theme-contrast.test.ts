@@ -98,19 +98,23 @@ const PAIRS: ReadonlyArray<readonly [keyof ThemeTokens, keyof ThemeTokens]> = [
   ["destructiveForeground", "destructive"],
 ];
 
-/** The `:root` / `.dark` blocks of globals.css, read as a token set of the same shape. */
-function readGlobalsPalette(selector: ":root" | ".dark"): ThemeTokens {
-  const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8").replace(
-    /\/\*[\s\S]*?\*\//g,
-    ""
-  );
+const GLOBALS_PATH = join(process.cwd(), "src/app/globals.css");
+
+/** globals.css with comments stripped, so a ratio quoted in prose is never parsed as a value. */
+function readGlobalsBlock(selector: ":root" | ".dark"): string {
+  const css = readFileSync(GLOBALS_PATH, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   // Anchored so `.dark` does not also match `.dark.high-contrast`.
   const block = new RegExp(
     `(^|[\\s{}])${selector.replace(".", "\\.")}\\s*\\{([^{}]*)\\}`,
     "m"
   ).exec(css);
   expect(block, `globals.css has a ${selector} block`).not.toBeNull();
-  const body = block![2];
+  return block![2];
+}
+
+/** The `:root` / `.dark` blocks of globals.css, read as a token set of the same shape. */
+function readGlobalsPalette(selector: ":root" | ".dark"): ThemeTokens {
+  const body = readGlobalsBlock(selector);
   const cssVarFor: Record<string, string> = {
     background: "--background",
     foreground: "--foreground",
@@ -181,6 +185,132 @@ describe.each(PALETTES)("$name", ({ light, dark }) => {
       round(drift),
       `${String(fgKey)} on ${String(bgKey)}: light ${round(lightRatio)}:1 vs dark ${round(darkRatio)}:1`
     ).toBeLessThanOrEqual(SYMMETRY_FACTOR);
+  });
+});
+
+/**
+ * The colour tokens that live only in globals.css, because they have no slot in `ThemeTokens`.
+ *
+ * These replace values that used to be written as a one-off hex or a single alpha inside a rule or
+ * a Tailwind class — the shape of the defect every colour audit of this app found, because a hex
+ * in a rule has nowhere to record the surface it was checked against. Each is a light/dark pair
+ * measured against the surface it is actually painted on, in every palette this product ships.
+ */
+type SurfaceKey = "background" | "muted" | "popover";
+
+interface TokenSpec {
+  /** CSS custom property name, without the leading `--`. */
+  readonly token: string;
+  readonly on: SurfaceKey;
+  readonly min: number;
+  /**
+   * Set only for tokens that are a *surface delta* rather than text — a hover fill, a grid line, a
+   * zebra row, a popover ring. Those have a ceiling as well as a floor: too weak and the state is
+   * invisible, too strong and a quiet document turns into a spreadsheet. The band is what keeps the
+   * two themes at the same perceived weight, which a floor alone cannot do.
+   */
+  readonly max?: number;
+}
+
+const AA = 4.5;
+
+const GLOBALS_ONLY_TOKENS: readonly TokenSpec[] = [
+  // highlight.js scopes, painted on a code Block's --muted surface at 12px.
+  { token: "code-keyword", on: "muted", min: AA },
+  { token: "code-string", on: "muted", min: AA },
+  { token: "code-number", on: "muted", min: AA },
+  { token: "code-title", on: "muted", min: AA },
+  { token: "code-attr", on: "muted", min: AA },
+  { token: "code-name", on: "muted", min: AA },
+  // Inline code sits on the same tint, at prose size.
+  { token: "code-inline", on: "muted", min: AA },
+  // Placeholder text is text.
+  { token: "placeholder-fg", on: "background", min: AA },
+  // Outline popover rungs, 13px on the panel.
+  { token: "outline-heading-2-fg", on: "popover", min: AA },
+  { token: "outline-heading-3-fg", on: "popover", min: AA },
+  // Surface deltas.
+  { token: "control-hover", on: "background", min: 1.15, max: 1.35 },
+  { token: "table-border", on: "background", min: 1.8, max: 2.35 },
+  { token: "table-row-alt", on: "background", min: 1.05, max: 1.25 },
+  { token: "popover-ring", on: "background", min: 1.5, max: 1.85 },
+];
+
+function readGlobalsToken(selector: ":root" | ".dark", token: string): string {
+  const body = readGlobalsBlock(selector);
+  const match = new RegExp(`--${token}:\\s*([\\d.]+\\s+[\\d.]+%\\s+[\\d.]+%)\\s*;`).exec(body);
+  expect(match, `globals.css ${selector} declares --${token} as an HSL triple`).not.toBeNull();
+  return match![1];
+}
+
+const GLOBALS_TOKEN_MODES = [
+  { mode: "light" as const, selector: ":root" as const },
+  { mode: "dark" as const, selector: ".dark" as const },
+];
+
+describe.each(PALETTES)("globals-only tokens over the $name surfaces", ({ light, dark }) => {
+  const surfaces = { light, dark };
+
+  describe.each(GLOBALS_TOKEN_MODES)("$mode", ({ mode, selector }) => {
+    it.each(GLOBALS_ONLY_TOKENS)("--$token on --$on", ({ token, on, min, max }) => {
+      const fg = hslTokenToRgb(readGlobalsToken(selector, token));
+      const bg = hslTokenToRgb(surfaces[mode][on]);
+      const ratio = round(contrast(fg, bg));
+      const label = `--${token} ${hex(fg)} on --${on} ${hex(bg)} = ${ratio}:1`;
+      expect(ratio, label).toBeGreaterThanOrEqual(min);
+      if (max !== undefined) expect(ratio, label).toBeLessThanOrEqual(max);
+    });
+  });
+
+  // The defect itself: one theme tuned, the other inheriting the number by accident.
+  it.each(GLOBALS_ONLY_TOKENS)("keeps --$token comparable in both themes", ({ token, on, max }) => {
+    const lightRatio = contrast(
+      hslTokenToRgb(readGlobalsToken(":root", token)),
+      hslTokenToRgb(light[on])
+    );
+    const darkRatio = contrast(
+      hslTokenToRgb(readGlobalsToken(".dark", token)),
+      hslTokenToRgb(dark[on])
+    );
+    // A surface delta lives near 1.0, where a ratio-of-ratios is a blunt instrument: 1.09 vs 1.19
+    // is only 1.09x apart yet one reads and the other does not. The band above is the real check
+    // there, so hold deltas to a tighter drift than text.
+    const allowed = max === undefined ? SYMMETRY_FACTOR : 1.15;
+    const drift = Math.max(lightRatio, darkRatio) / Math.min(lightRatio, darkRatio);
+    expect(
+      round(drift),
+      `--${token} on --${on}: light ${round(lightRatio)}:1 vs dark ${round(darkRatio)}:1`
+    ).toBeLessThanOrEqual(allowed);
+  });
+});
+
+/**
+ * The popover's drop shadow was a single hard-coded `rgba(25,25,25,·)` string repeated at five call
+ * sites, so a dark menu got a shadow that cannot paint over #212121 — the elevation cue simply did
+ * not exist in one of the two themes. Structure, not ratio, is what is wrong there, so it is pinned
+ * structurally.
+ */
+describe("popover elevation", () => {
+  const shadowFor = (selector: ":root" | ".dark") => {
+    const match = /--popover-shadow:\s*([^;]+);/.exec(readGlobalsBlock(selector));
+    expect(match, `globals.css ${selector} declares --popover-shadow`).not.toBeNull();
+    return match![1].replace(/\s+/g, " ").trim();
+  };
+
+  it("gives each theme its own shadow rather than one string used twice", () => {
+    expect(shadowFor(":root")).not.toBe(shadowFor(".dark"));
+  });
+
+  it("casts the dark shadow in black, the only ink that darkens a near-black page", () => {
+    const dark = shadowFor(".dark");
+    expect(dark).toMatch(/rgba\(0, ?0, ?0, ?0\.[3-9]/);
+    expect(dark).not.toMatch(/rgba\(25, ?25, ?25/);
+  });
+
+  it("routes both rings through --popover-ring so the two edges stay measured", () => {
+    for (const selector of [":root", ".dark"] as const) {
+      expect(shadowFor(selector)).toContain("hsl(var(--popover-ring))");
+    }
   });
 });
 

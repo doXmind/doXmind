@@ -85,6 +85,206 @@ describe("editor.css multi-Block selection band", () => {
   });
 });
 
+/**
+ * One table of interaction states.
+ *
+ * Eight controls had five behaviours between them: the inline toolbar hovered over 150ms while the
+ * gutter took 20ms, the callout icon's tint measured 2.1x everyone else's, four controls fell back
+ * to the UA's focus ring, the to-do checkbox and wiki links had no hover state at all, and nothing
+ * acknowledged a press. The fix is one set of rules in editor.css that every control shares, so
+ * these read the declarations back and check they are still one set.
+ */
+describe("editor.css interaction states", () => {
+  const css = readStyles("editor.css");
+  const editorRules = rules(css);
+
+  /** The selector list the table is written on, taken from the transition rule that defines it. */
+  const tableRule = editorRules.find(
+    (rule) =>
+      rule.selectors.includes(".editor-control") &&
+      /transition-duration:\s*var\(--editor-state-duration\)/.test(rule.body)
+  );
+  const controls = tableRule?.selectors ?? [];
+
+  /** Every state rule, keyed by the pseudo-class it answers. */
+  const stateRule = (pseudo: string) =>
+    editorRules.find((rule) => rule.selectors.some((s) => s === `.editor-control${pseudo}`));
+
+  it("declares one duration for every state, and it is Notion's 20ms", () => {
+    const tokens = editorRules.find((rule) => rule.selectors.includes(":root"));
+    expect(tokens?.body).toMatch(/--editor-state-duration:\s*20ms/);
+    expect(tableRule?.body).toMatch(/transition-duration:\s*var\(--editor-state-duration\)/);
+    // The reference is explicit that only menus animate, and only around 150ms. Nothing that
+    // answers a pointer in this stylesheet may sit on Tailwind's 150ms default: a state either
+    // takes the shared duration or is instant, and nothing in between is allowed to accumulate.
+    const stateDurations = editorRules
+      .filter((rule) => rule.selectors.some((s) => /:(hover|active|focus-visible)\b/.test(s)))
+      .flatMap((rule) =>
+        [...rule.body.matchAll(/transition-duration:\s*([^;]+);/g)].map((m) => m[1])
+      );
+    expect(stateDurations.length).toBeGreaterThan(0);
+    for (const value of stateDurations) {
+      expect(["var(--editor-state-duration)", "0ms"]).toContain(value.trim());
+    }
+  });
+
+  it("gives the same five states to every control on the list", () => {
+    // The list itself is the point: a control missing from one state rule is a control with a
+    // hover but no press, which is the shape the audit found on four of the eight.
+    expect(controls.length).toBeGreaterThan(1);
+    expect(controls).toContain(".editor-control");
+    for (const pseudo of [
+      ":hover:not(:disabled)",
+      ":active:not(:disabled)",
+      ":focus-visible",
+      ":disabled",
+    ]) {
+      const rule = stateRule(pseudo);
+      expect(rule, `no rule for ${pseudo}`).toBeDefined();
+      const bases = rule!.selectors.map((s) => s.replace(pseudo, ""));
+      expect(bases.sort()).toEqual([...controls].sort());
+    }
+  });
+
+  it("presses at exactly twice the hover tint, in both themes", () => {
+    // Notion's own ratio between its hover and pressed fills is 2 (0.08 -> 0.16).
+    const alphas = (selector: string) => {
+      const rule = editorRules.find((candidate) => candidate.selectors.includes(selector));
+      const read = (name: string) =>
+        Number.parseFloat(
+          rule?.body.match(new RegExp(`--editor-state-${name}-alpha:\\s*([\\d.]+)`))?.[1] ?? "NaN"
+        );
+      return { hover: read("hover"), active: read("active") };
+    };
+    for (const selector of [":root", ".dark"]) {
+      const { hover, active } = alphas(selector);
+      expect(hover, selector).toBeGreaterThan(0);
+      expect(active / hover, selector).toBeCloseTo(2, 5);
+    }
+    // Solved against `bg-muted`, the value the controls that were already right hovered to:
+    // 0.045 of #212121 on white is rgb(245,245,245); 0.0625 of #ECECEC on #212121 is rgb(46,46,46).
+    expect(alphas(":root").hover).toBeCloseTo(0.045, 5);
+    expect(alphas(".dark").hover).toBeCloseTo(0.0625, 5);
+  });
+
+  it("tints with an overlay rather than a background, so one alpha fits every ground", () => {
+    // These controls do not share a ground — transparent gutter, tinted callout card, a wiki link's
+    // own chip, a saturated blue axis handle — so a `background-color` hover lands somewhere
+    // different on each. It is why `hover:bg-foreground/10` on the callout icon measured
+    // -20.7/-21.7/-22.1 against the gutter's -10/-10/-10.
+    expect(tableRule?.body).toMatch(
+      /--editor-state-fill:\s*inset 0 0 0 999px var\(--editor-state-tint\)/
+    );
+    expect(tableRule?.body).toMatch(
+      /box-shadow:\s*var\(--editor-state-fill\),\s*var\(--editor-state-ring\)/
+    );
+    expect(stateRule(":hover:not(:disabled)")?.body).toMatch(
+      /--editor-state-tint:\s*hsl\(var\(--editor-state-ink\)\s*\/\s*var\(--editor-state-hover-alpha\)\)/
+    );
+  });
+
+  it("clears the opaque hovers the overlay would otherwise stack on", () => {
+    const clear = editorRules.find(
+      (rule) =>
+        rule.selectors.includes(".markdown-page [data-native-block-controls] button:hover") &&
+        /background-color:\s*transparent/.test(rule.body)
+    );
+    expect(clear, "an opaque hover fill left in place darkens twice as far").toBeDefined();
+    expect(clear?.selectors).toContain(".markdown-page [data-code-language]:hover");
+    expect(clear?.selectors).toContain(
+      ".markdown-page [data-native-toggle] > summary > button:hover"
+    );
+    // Each clear must out-specify the Tailwind hover utility it is clearing. A `hover:bg-*` utility
+    // is one class plus `:hover`, i.e. (0,2,0).
+    for (const selector of clear?.selectors ?? []) {
+      expect(outranks(selector, ".bg-muted:hover"), selector).toBe(true);
+    }
+  });
+
+  it("answers the keyboard with the app's ring and never the UA's", () => {
+    const focus = stateRule(":focus-visible");
+    expect(focus?.body).toMatch(/--editor-state-ring:\s*0 0 0 1px hsl\(var\(--ring\)\)/);
+    // `outline: 2px solid transparent` is what Tailwind's own `outline-none` computes to; without
+    // it the UA paints its 1px orange ring at its own offset on whatever this rule did not reach.
+    expect(focus?.body).toMatch(/outline:\s*2px solid transparent/);
+    expect(focus?.body).toMatch(/outline-offset:\s*2px/);
+  });
+
+  it("gives a native checkbox a halo, since an inset overlay lands under its own control", () => {
+    const checkbox = editorRules.find(
+      (rule) =>
+        rule.selectors.length === 1 &&
+        rule.selectors[0] === '.markdown-page input[type="checkbox"]' &&
+        /--editor-state-fill:/.test(rule.body)
+    );
+    expect(checkbox?.body).toMatch(/--editor-state-fill:\s*0 0 0 4px var\(--editor-state-tint\)/);
+    expect(checkbox?.body).not.toMatch(/inset/);
+  });
+
+  it("keeps a saturated accent control on the table by declaring its ink, not its own rules", () => {
+    const handle = editorRules.find((rule) =>
+      rule.selectors.includes(".markdown-page [data-axis-handle]")
+    );
+    expect(handle?.body).toMatch(/--editor-state-ink:/);
+    const hover = Number.parseFloat(
+      handle?.body.match(/--editor-state-hover-alpha:\s*([\d.]+)/)?.[1] ?? "NaN"
+    );
+    const active = Number.parseFloat(
+      handle?.body.match(/--editor-state-active-alpha:\s*([\d.]+)/)?.[1] ?? "NaN"
+    );
+    expect(active / hover).toBeCloseTo(2, 5);
+    // Nothing but the ink and its two alphas: the duration, the ring and the disabled state are
+    // still the table's.
+    expect(handle?.body).not.toMatch(/transition|box-shadow|outline/);
+  });
+
+  it("lands the toggle caret in the same frame as the content it discloses", () => {
+    // The chevron rotated over 150ms while the row reached its final height at 6.8ms — one state
+    // change with 145ms between its two halves, and the only non-20ms transition on a Block
+    // affordance.
+    const caret = editorRules.find((rule) =>
+      rule.selectors.includes(".markdown-page [data-native-toggle] > summary > button > svg")
+    );
+    expect(caret?.body).toMatch(/transition-duration:\s*var\(--editor-state-duration\)/);
+    expect(
+      outranks(".markdown-page [data-native-toggle] > summary > button > svg", ".duration-150")
+    ).toBe(true);
+  });
+});
+
+/**
+ * The gutter's grace period is for leaving the column, not for moving inside it.
+ *
+ * The 90ms delay plus 110ms fade fired on any row that lost the pointer, including one that moved
+ * out from under a parked pointer because the Page scrolled. Measured: two clusters at full opacity
+ * 298px apart for >=72ms, both still painted at 182ms.
+ */
+describe("editor.css gutter reveal", () => {
+  const editorRules = rules(readStyles("editor.css"));
+
+  it("drops a gutter in the same frame once another row has the pointer", () => {
+    const instant = editorRules.find(
+      (rule) =>
+        rule.selectors.length === 1 &&
+        rule.selectors[0] ===
+          ".markdown-page:hover [data-native-block-row]:not(:hover) [data-native-block-controls]"
+    );
+    expect(instant, "a row that is not hovered must not keep fading").toBeDefined();
+    expect(instant?.body).toMatch(/transition-delay:\s*0ms/);
+    expect(instant?.body).toMatch(/transition-duration:\s*0ms/);
+    // Timing only. Touching opacity here would take the controls off a focused row or one holding
+    // an open menu, which the reveal rule below deliberately keeps lit.
+    expect(instant?.body).not.toMatch(/opacity|pointer-events/);
+  });
+
+  it("keeps the forgiving fade for the pointer leaving the Page altogether", () => {
+    const rest = editorRules.find((rule) =>
+      rule.selectors.includes(".markdown-page [data-native-block-controls]")
+    );
+    expect(rest?.body).toMatch(/transition:\s*opacity 110ms ease-out 90ms/);
+  });
+});
+
 describe("editor.css table alignment", () => {
   const editorRules = rules(readStyles("editor.css"));
 

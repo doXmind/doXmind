@@ -587,6 +587,42 @@ async function ensureInitialized(): Promise<typeof import("mermaid").default> {
 }
 
 /**
+ * The diagram's own size, written onto the SVG root.
+ *
+ * Mermaid emits `width="100%"` and no height. Loaded through an `<img>`, that is an image with an
+ * intrinsic *ratio* and no intrinsic size, and the sizing rules then make it fill its container:
+ * measured on the packaged app, a two-node `graph TD` whose viewBox is 111.34×174 was drawn at
+ * 294.34×460 — a 3.07× upscale of two boxes and an arrow, stopped only by the 460px height cap in
+ * math-mermaid.css, which the diagram had grown into rather than been fitted to. Every diagram
+ * therefore came out the same height regardless of what was in it, and the small ones came out
+ * blurry, because an SVG upscaled past its own type metrics is still laid out at the small size.
+ *
+ * Copying the viewBox onto `width`/`height` gives the image the intrinsic size Mermaid already
+ * computed for it, so `width: auto` draws it at 1.0×. The existing `max-width: 100%` and
+ * `max-height` still cap a genuinely large diagram, and now they only ever scale one down.
+ *
+ * Left untouched when there is no viewBox to read: guessing a size would be worse than the
+ * container-filling behaviour it replaces.
+ */
+export function withIntrinsicSize(svg: string): string {
+  const openTag = /<svg\b[^>]*>/.exec(svg);
+  if (!openTag) return svg;
+  const viewBox = /\bviewBox\s*=\s*"([^"]*)"/.exec(openTag[0]);
+  if (!viewBox) return svg;
+  const numbers = viewBox[1]
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  if (numbers.length !== 4 || numbers.some((value) => !Number.isFinite(value))) return svg;
+  const [, , width, height] = numbers;
+  if (width <= 0 || height <= 0) return svg;
+  const sized = openTag[0]
+    .replace(/\s\b(?:width|height)\s*=\s*"[^"]*"/g, "")
+    .replace(/^<svg\b/, `<svg width="${width}" height="${height}"`);
+  return svg.slice(0, openTag.index) + sized + svg.slice(openTag.index + openTag[0].length);
+}
+
+/**
  * Internal: perform a single render attempt.
  */
 async function doRender(code: string): Promise<string> {
@@ -600,7 +636,7 @@ async function doRender(code: string): Promise<string> {
     tempEl.remove();
   }
 
-  return svg;
+  return withIntrinsicSize(svg);
 }
 
 /**
@@ -669,7 +705,9 @@ export function renderMermaidSvgLight(code: string): Promise<string> {
         if (tempEl && !tempEl.closest(".mermaid-rendered")) {
           tempEl.remove();
         }
-        resolve(svg);
+        // The same intrinsic size as the on-screen copy, so an exported diagram is the diagram the
+        // user was looking at rather than a differently-scaled one.
+        resolve(withIntrinsicSize(svg));
       } catch (err) {
         reject(err);
       }

@@ -269,7 +269,18 @@ function BlockMathRender({ latex }: { latex: string }) {
       data-latex={latex}
       className="block-math-wrapper min-h-9 overflow-x-auto rounded-md bg-muted/35 px-3 py-2 text-center"
     >
-      <div className="math-rendered">
+      {/*
+       * Deliberately unclassed.
+       *
+       * `math-rendered` exists for exactly two rules in math-mermaid.css — `cursor: pointer` and a
+       * hover tint — and nothing else in the app reads it. BLOCK_UX_REFERENCE records that a row
+       * hover tint was shipped and then removed because it painted a full-column band over a short
+       * piece of content; this one survived that removal and did the same thing. Measured on the
+       * packaged app, hovering `E = mc^2` painted 923px of band for a formula whose ink is a
+       * fraction of it, while hovering the paragraph above it painted nothing. The gutter controls
+       * are the hover affordance everywhere else in the matrix, and they are enough here.
+       */}
+      <div>
         {html ? (
           <span dangerouslySetInnerHTML={{ __html: html }} />
         ) : (

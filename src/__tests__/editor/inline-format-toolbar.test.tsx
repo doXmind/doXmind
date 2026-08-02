@@ -148,4 +148,42 @@ describe("InlineFormatToolbar", () => {
 
     expect(mouseDown.defaultPrevented).toBe(true);
   });
+
+  /*
+   * The toolbar answers a pointer the way the rest of the editor does.
+   *
+   * It carried a bare `transition-colors`, which inherits Tailwind's 150ms default, so all seven
+   * buttons filled over 0.15s while every other control in the editor took 0.02s — measured
+   * half-fill 48ms and 90% at 94ms against the gutter's 20ms. It is portalled onto `document.body`,
+   * so it cannot be reached by the `.markdown-page`-scoped half of the state table in editor.css;
+   * the `.editor-control` class is how it opts into the same rules.
+   */
+  it("puts every button on the editor's one table of interaction states", () => {
+    render(
+      <InlineFormatToolbar {...baseProps} visible typeLabel="Text" activeFormats={{ bold: true }} />
+    );
+
+    const toolbar = screen.getByRole("toolbar", { name: "Text formatting" });
+    const buttons = [...toolbar.querySelectorAll("button")];
+    expect(buttons).toHaveLength(7);
+
+    for (const button of buttons) {
+      expect(button.className, button.getAttribute("aria-label") ?? "").toContain("editor-control");
+      // The states live in the stylesheet, so a per-button duration or hover fill here can only
+      // disagree with them.
+      expect(button.className).not.toMatch(/\btransition-colors\b/);
+      expect(button.className).not.toMatch(/\bduration-\[?\d/);
+      expect(button.className).not.toMatch(/hover:bg-/);
+      expect(button.className).not.toMatch(/focus-visible:ring/);
+    }
+  });
+
+  it("still marks an applied format without reaching for a hover token", () => {
+    render(<InlineFormatToolbar {...baseProps} visible activeFormats={{ bold: true }} />);
+
+    // `bg-muted` on a pressed button is the format's own state, not a hover state: the table's tint
+    // is an overlay, so the two compose instead of fighting.
+    expect(screen.getByRole("button", { name: "Bold" }).className).toContain("bg-muted");
+    expect(screen.getByRole("button", { name: "Italic" }).className).not.toContain("bg-muted");
+  });
 });

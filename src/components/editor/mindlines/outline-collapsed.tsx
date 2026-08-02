@@ -35,7 +35,17 @@ const POPOVER_INDENT_PER_LEVEL_PX = 16;
 // rail and popover, before the safe-area check kicks in.
 const POPOVER_OPEN_DELAY_MS = 0;
 const POPOVER_CLOSE_DELAY_MS = 60;
-const POPOVER_WIDTH_PX = 260;
+// The popover's preferred width, and the floor it will not shrink past. The
+// rail reserves a fixed gutter in the editor's content frame; the popover was
+// 260px against a ~200px gutter, so it painted 68px of every Page's own text
+// column at every window width. The width is now measured against the frame's
+// real right edge on open (see `measurePopoverWidth`) and clamped into the
+// space the reservation actually bought, which is what keeps a control's paint
+// area inside the region it points at.
+const POPOVER_MAX_WIDTH_PX = 260;
+const POPOVER_MIN_WIDTH_PX = 176;
+// Breathing room between the Page's right-most glyph and the popover's edge.
+const POPOVER_CONTENT_GAP_PX = 4;
 const POPOVER_MAX_HEIGHT_PX = 640;
 const POPOVER_VERTICAL_VIEWPORT_GUTTER_PX = 160;
 const POPOVER_ROW_ESTIMATE_PX = 28;
@@ -89,9 +99,27 @@ function popoverColorClass(level: number, isActive: boolean) {
   return "text-foreground/[0.55]";
 }
 
+/**
+ * How wide the popover may be without covering the Page's text column, given
+ * where the rail's right edge sits. `.markdown-page` is the Page frame the
+ * editor's reserved outline gutter is applied to, so its right edge is exactly
+ * the boundary this control must not cross.
+ */
+function measurePopoverWidth(railElement: HTMLElement | null): number {
+  if (!railElement || typeof document === "undefined") return POPOVER_MAX_WIDTH_PX;
+  const frame = document.querySelector(".markdown-page");
+  if (!frame) return POPOVER_MAX_WIDTH_PX;
+  const available =
+    railElement.getBoundingClientRect().right -
+    frame.getBoundingClientRect().right -
+    POPOVER_CONTENT_GAP_PX;
+  return Math.round(Math.min(POPOVER_MAX_WIDTH_PX, Math.max(POPOVER_MIN_WIDTH_PX, available)));
+}
+
 export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineCollapsedProps) {
   const [hoveredLineId, setHoveredLineId] = useState<string | null>(null);
   const [phase, setPhase] = useState<InteractionPhase>("idle");
+  const [popoverWidth, setPopoverWidth] = useState(POPOVER_MAX_WIDTH_PX);
   const openTimer = useRef<number | null>(null);
   const closeTimer = useRef<number | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
@@ -112,14 +140,23 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
     }
   }, []);
 
+  // Measured before the popover paints, not in an effect after it: an effect
+  // would show one frame at the preferred width, i.e. one frame of paint over
+  // the text column — the exact thing being fixed.
+  const syncPopoverWidth = useCallback(() => {
+    setPopoverWidth(measurePopoverWidth(railRef.current));
+  }, []);
+
   const openPopoverNow = useCallback(() => {
     cancelOpen();
     cancelClose();
+    syncPopoverWidth();
     setPhase("open");
-  }, [cancelClose, cancelOpen]);
+  }, [cancelClose, cancelOpen, syncPopoverWidth]);
 
   const schedulePopoverOpen = useCallback(() => {
     cancelClose();
+    syncPopoverWidth();
     if (POPOVER_OPEN_DELAY_MS <= 0) {
       cancelOpen();
       setPhase("open");
@@ -133,7 +170,7 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
       setPhase("open");
       openTimer.current = null;
     }, POPOVER_OPEN_DELAY_MS);
-  }, [cancelClose, cancelOpen]);
+  }, [cancelClose, cancelOpen, syncPopoverWidth]);
 
   const schedulePopoverClose = useCallback(() => {
     cancelOpen();
@@ -172,10 +209,10 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
     const popoverElement = popoverRef.current;
     const popoverRect = popoverElement
       ? rectFromDomRect(popoverElement.getBoundingClientRect())
-      : projectLeftAnchoredPopoverRect(triggerRect, POPOVER_WIDTH_PX, estimatedPopoverHeight());
+      : projectLeftAnchoredPopoverRect(triggerRect, popoverWidth, estimatedPopoverHeight());
 
     return { triggerRect, popoverRect };
-  }, [estimatedPopoverHeight]);
+  }, [estimatedPopoverHeight, popoverWidth]);
 
   const isPointerInSafeArea = useCallback(
     (point: { x: number; y: number }) => {
@@ -234,8 +271,19 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
     };
 
     window.addEventListener("pointermove", handlePointerMove);
-    return () => window.removeEventListener("pointermove", handlePointerMove);
-  }, [cancelClose, closePopoverImmediate, isPointerInSafeArea, phase, schedulePopoverClose]);
+    window.addEventListener("resize", syncPopoverWidth);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("resize", syncPopoverWidth);
+    };
+  }, [
+    cancelClose,
+    closePopoverImmediate,
+    isPointerInSafeArea,
+    phase,
+    schedulePopoverClose,
+    syncPopoverWidth,
+  ]);
 
   const compactRail = headings.length > 28;
   const railMarkerHeightPx = compactRail
@@ -453,7 +501,7 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
               transition: { duration: 0.1, ease: EASE_IN },
             }}
             className="font-brand-sans pointer-events-auto absolute right-0 top-0 z-50 flex origin-right flex-col rounded-md border border-foreground/[0.09] bg-popover text-popover-foreground shadow-[0_1px_0_rgba(15,15,15,0.02),0_4px_16px_rgba(15,15,15,0.04)]"
-            style={{ width: POPOVER_WIDTH_PX, transformOrigin: "right top" }}
+            style={{ width: popoverWidth, transformOrigin: "right top" }}
           >
             <div
               ref={listRef}

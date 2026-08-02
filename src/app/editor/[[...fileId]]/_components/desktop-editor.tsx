@@ -149,7 +149,12 @@ export function DesktopEditor() {
               {!isFocusMode && hasLiveHeadings && (
                 <div
                   data-native-editor-chrome
-                  className="pointer-events-none absolute bottom-[14vh] right-2 top-[18vh] z-30 overflow-visible transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] md:right-2"
+                  // right-4 is the one chrome inset: the same 16px the word
+                  // count and the header's more-actions button use. The rail
+                  // used to sit at 8px and the more-actions button at 24px,
+                  // so three things hanging off the same edge stopped at
+                  // three different x values.
+                  className="pointer-events-none absolute bottom-[14vh] right-4 top-[18vh] z-30 overflow-visible transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]"
                   style={{ width: outlineRailWidth }}
                 >
                   {/* `relative` so the OutlineCollapsed root, which is
