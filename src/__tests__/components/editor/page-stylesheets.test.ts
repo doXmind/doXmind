@@ -47,6 +47,44 @@ const withoutComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
 const outranks = (a: string, b: string) => specificity(a) > specificity(b);
 
+describe("editor.css multi-Block selection band", () => {
+  const editorRules = rules(readStyles("editor.css"));
+
+  /*
+   * The band is one shape, not a chip per Block.
+   *
+   * The fill starts below each row's lead, and the lead IS the inter-Block gap — so it was never
+   * painted. A uniform 2px gap hid that behind the rule's own `-1px`; a lead that varies by kind does
+   * not. Measured before the sibling rule below: heading pairs gapped 10-18px, and once containers
+   * got their own lead so did callout->callout, blockquote->fenced_code and eight other pairs, at
+   * 4-16px each. After it, all eleven pairs of a twelve-Block selection measure -2px, i.e. joined.
+   */
+  it("starts a continued selection at the row's own top edge, not below its lead", () => {
+    const continued = editorRules.find(
+      (rule) =>
+        rule.selectors.some(
+          (selector) =>
+            selector.includes('[data-block-selected="true"]') &&
+            selector.includes("+") &&
+            selector.includes("::after")
+        ) && /top:\s*-1px/.test(rule.body)
+    );
+    expect(
+      continued,
+      "a selected row following a selected row must reclaim its lead"
+    ).toBeDefined();
+  });
+
+  it("keeps the first row of a selection inset by its lead", () => {
+    const base = editorRules.find(
+      (rule) =>
+        rule.selectors.includes(".markdown-page > [data-native-block-row]::after") &&
+        /top:\s*calc\(var\(--row-lead\)/.test(rule.body)
+    );
+    expect(base, "a selection must still begin where its first Block begins").toBeDefined();
+  });
+});
+
 describe("editor.css table alignment", () => {
   const editorRules = rules(readStyles("editor.css"));
 

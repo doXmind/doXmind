@@ -268,6 +268,24 @@
 }
 
 /*
+ * A run of selected Blocks is one band, not a stack of chips.
+ *
+ * The fill starts below the row's lead, so the lead — which is the inter-Block gap — was never
+ * painted. A 2px gap hid that; a lead that varies by kind does not. Measured before this rule:
+ * heading pairs gapped 10-18px, and once the spacing scale gave containers their own lead so did
+ * callout->callout, blockquote->fenced_code and eight other pairs, at 4-16px each.
+ *
+ * A selected row whose previous sibling is also selected therefore starts at its own top edge, which
+ * is where the band above ends. Only the first row of a run keeps the lead inset, so a selection
+ * still begins where the Block begins.
+ */
+.markdown-page
+  > [data-native-block-row][data-block-selected="true"]
+  + [data-native-block-row][data-block-selected="true"]::after {
+  top: -1px;
+}
+
+/*
  * Gutter controls: instant in, forgiving out.
  *
  * Revealing with a fade makes the handle feel like it is catching up with the pointer. Hiding
