@@ -40,13 +40,23 @@ const FIELD_LABEL: Record<MarkdownFigureKind, string> = {
  * a fixed position in this component's tree and is never unmounted (rule 1); the source field is an
  * addition to it, not a replacement for it.
  *
- * The field is anchored out of flow, below the figure, rather than reserved as blank space in both
- * states (rule 2). Its height is the height of whatever the user wrote, so a twelve-line flowchart
- * would reserve twelve empty lines under the diagram for every reader who is not editing it — a
- * permanent cost paid to serve one transient moment. Out of flow it cannot contribute a pixel either
- * way, which is the property rule 2 actually asks for. It is anchored to a plain wrapper `div` and
- * not to the figure itself, because both figures scroll their overflow and an `overflow-x: auto` box
- * computes `overflow-y` to `auto` as well, which would have clipped the panel away entirely.
+ * The field sits in flow under the figure, and only while the Block is active, so the row grows to
+ * contain it and no reader who is not editing pays for it.
+ *
+ * The two obvious alternatives are both worse. Out of flow inside the row it was painted over: every
+ * row carries `contain: layout style`, which makes the row its own stacking context, so the panel's
+ * z-index never applied outside it and the following rows drew straight through it — measured, a
+ * one-line equation's panel hung 34.8px past its row with 87% of the next paragraph over it, and a
+ * twelve-line one hung 188.8px past, over five whole Blocks. Portalled to the body it paints
+ * correctly and the row keeps its height, but the editing surface then lives outside the row it
+ * belongs to, and the caret mapping, the focus restoration and six lookups in the e2e harness all
+ * read the surface out of the row — that is a load-bearing assumption across the whole matrix, and
+ * moving it for two kinds is a larger change than the defect justifies.
+ *
+ * In flow, activation grows the row: 56.8px for a one-line equation, capped by the eight-row limit
+ * below. The figure itself does not move, only what follows it does, which is the same trade Feishu
+ * makes for its own equation editor. `in-place.spec.ts` records why these two kinds are the
+ * exception to its no-resize rule.
  */
 export function MarkdownFigureBlock({
   blockId,
@@ -70,7 +80,7 @@ export function MarkdownFigureBlock({
   };
 
   return (
-    <div className="relative">
+    <div>
       {kind === "block_math" ? (
         <BlockMathRender latex={split.payload.trim()} />
       ) : (
@@ -90,13 +100,10 @@ export function MarkdownFigureBlock({
 }
 
 /**
- * The floating source field, mounted only while the Block is active.
+ * The source panel, mounted only while the Block is active.
  *
- * Mounting it conditionally is safe here precisely because it is absolutely positioned: the objection
- * rule 2 raises to controls that appear on activation is that they grow the Block, and a box taken
- * out of flow cannot. It is also the element rule 4 requires — the one thing carrying
- * `data-native-block-editor` and holding focus — so a figure still answers Escape and the Block
- * shortcuts while the caret is inside it.
+ * It is the element rule 4 requires — the one thing carrying `data-native-block-editor` and holding
+ * focus — so a figure still answers Escape and the Block shortcuts while the caret is inside it.
  */
 function FigureSourceField({
   kind,
@@ -153,11 +160,8 @@ function FigureSourceField({
 
   return (
     <div
-      // Inline offsets rather than utility classes, because the panel has to sit immediately under
-      // the figure and a class assembled at runtime can silently fail to generate, which would drop
-      // the field on top of the render it is supposed to sit below.
-      style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, zIndex: 20 }}
-      className="rounded-md border border-border bg-popover p-2 shadow-lg"
+      data-figure-source-panel={kind}
+      className="mt-1 rounded-md border border-border bg-popover p-2 shadow-lg"
     >
       <textarea
         ref={fieldRef}
@@ -169,7 +173,12 @@ function FigureSourceField({
         // several characters away from where it was aimed.
         className="native-block-editor-surface block w-full resize-none bg-transparent font-mono text-xs leading-5 text-foreground outline-none"
         spellCheck={false}
-        rows={Math.min(Math.max(lines, 2), 14)}
+        // The panel is in flow, so every row it asks for is a row the Page is pushed down by. Eight
+        // is the point where a longer source scrolls inside the field instead of growing the Block
+        // further: at fourteen a `\begin{aligned}` block grew the row by more than a screenful of
+        // paragraphs, which is the same "an equation swallowed the document" complaint the overlay
+        // used to produce by painting over them.
+        rows={Math.min(Math.max(lines, 2), 8)}
         readOnly={readOnly}
         value={composingValue ?? openedLine ?? payload}
         onChange={(event) => {
@@ -258,9 +267,33 @@ function BlockMathRender({ latex }: { latex: string }) {
     <div
       data-testid="block-math-block"
       data-latex={latex}
-      className="block-math-wrapper min-h-9 overflow-x-auto rounded-md bg-muted/35 px-3 py-2 text-center"
+      // Left, and only left. The wrapper used to ask for `text-center` while math-mermaid.css
+      // pinned `.katex-display` and `.katex-display > .katex` to `text-align: left`, so the Block
+      // held two opposite answers and the stylesheet won every time — an equation that computed
+      // `center` on its own box and painted flush left. Left is the intended one: the two rules
+      // were written deliberately to match Notion, whose equation Block is not centred, and they
+      // are what every equation on every Page has actually rendered as since.
+      //
+      // Removing the class is not cosmetic. The fallback below is a bare `<code>` shown until
+      // KaTeX has loaded, and nothing pins *it* left — so a fresh equation was drawn centred and
+      // then jumped to the left margin the moment the render arrived. Measured on the packaged app
+      // in a 947px content column, `E = mc^2` was laid out at x 807.97 centred and lands at x
+      // 389.0: 418.97px of sideways travel on first paint, on the one Block whose content is
+      // supposed to sit still while it loads.
+      className="block-math-wrapper min-h-9 overflow-x-auto rounded-md bg-muted/35 px-3 py-2"
     >
-      <div className="math-rendered">
+      {/*
+       * Deliberately unclassed.
+       *
+       * `math-rendered` exists for exactly two rules in math-mermaid.css — `cursor: pointer` and a
+       * hover tint — and nothing else in the app reads it. BLOCK_UX_REFERENCE records that a row
+       * hover tint was shipped and then removed because it painted a full-column band over a short
+       * piece of content; this one survived that removal and did the same thing. Measured on the
+       * packaged app, hovering `E = mc^2` painted 923px of band for a formula whose ink is a
+       * fraction of it, while hovering the paragraph above it painted nothing. The gutter controls
+       * are the hover affordance everywhere else in the matrix, and they are enough here.
+       */}
+      <div>
         {html ? (
           <span dangerouslySetInnerHTML={{ __html: html }} />
         ) : (

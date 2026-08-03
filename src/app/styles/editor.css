@@ -30,8 +30,40 @@
    * this rail stays a round 4rem. Hover tint, selection fill and the drop indicator all hang off
    * this one value so they can never disagree. */
   --editor-content-rail: 4rem;
+  /*
+   * One body leading for the whole document.
+   *
+   * Every 16px run in the content column resolves to this: prose, list items, to-dos, quotes, table
+   * cells, and the text inside callouts and toggles. Headings (1.3) and code (1.45) keep their own
+   * ratios — those are part of their type, not of the page's density. Routing the value through a
+   * variable is what gives the Line spacing setting something to move: the body rule below used to
+   * pin `1.75rem !important`, so Compact and Relaxed reached nothing but the text inside containers
+   * and pulled it out of step with the prose around it.
+   */
+  --editor-body-leading: 1.75rem;
+  /*
+   * Where a prose Block's glyphs sit inside its row box: 4px of padding plus half its leading.
+   * 19px is the content-area height of 16px system-ui, so `(leading − 19px) / 2` is the half-leading
+   * above the glyphs — which means the rhythm follows the Line spacing setting instead of drifting
+   * out of step with it. Below the glyphs it is the same, plus whatever the Block's 36px minimum
+   * height had to pad in: at any leading under 28px the line box no longer fills that floor and the
+   * slack lands under the text, which is what made Compact space prose 4px wider than everything
+   * else on the Page.
+   */
+  --prose-ink-top: calc(4px + (var(--editor-body-leading) - 19px) / 2);
+  --prose-ink-bottom: calc(var(--prose-ink-top) + max(0px, 28px - var(--editor-body-leading)));
   font-size: 1rem;
   line-height: 1.75;
+}
+
+.editor-leading-compact .markdown-page {
+  --editor-body-leading: 1.5rem;
+  line-height: 1.5;
+}
+
+.editor-leading-relaxed .markdown-page {
+  --editor-body-leading: 2rem;
+  line-height: 2;
 }
 
 /*
@@ -46,38 +78,158 @@
  *
  * `--row-lead` mirrors the padding so the hover tint, selection fill and drop indicator can be
  * drawn over the Block itself rather than over its leading gap.
+ *
+ *
+ * The gap is between ink, not between boxes.
+ *
+ * Row boxes are contiguous, so the space a reader actually sees between two Blocks is the space
+ * between the last pixel one paints and the first pixel the next one paints — and every kind insets
+ * its own ink differently. A paragraph holds its glyphs 8.5px inside its box (4px padding plus half
+ * its leading); a code Block, a callout and a quote paint their box edge to edge and inset nothing;
+ * a divider centres a 1px rule in a 36px click target and insets 17.5px. Leading every row by the
+ * same 2px therefore delivered 29 different gaps from one nominal rule — 4px between two code
+ * Blocks and 48.5px between two tables.
+ *
+ * So the *gap* is declared, per relationship, and the lead is whatever is left once both
+ * neighbours' ink insets are paid for:
+ *
+ *   --row-lead = --block-gap − the row's own 2px bottom padding − the ink above − the ink below
+ *
+ *   --block-gap   20px between any two Blocks
+ *                 40 / 32 / 24px above an h1 / h2 / h3–h6
+ *                 16px below any heading, so a heading always binds harder to the text it
+ *                 introduces than to the section it ends
+ *   --own-ink     prose 4px + half the leading · heading 5px · container 0 · table 12 above,
+ *                 4 below · divider 17.5px
+ *
+ * A kind whose structural inset already exceeds the target keeps the floor rather than going
+ * negative: a divider lands on 28px, because the 36px minimum click height it is centred in is not
+ * this stylesheet's to give back.
+ *
+ * Every rule below is written on `+`, so the first row in the Page is led by nothing at all — no
+ * `:first-child` exception to lose a specificity fight with, which is how a Page opening with a
+ * heading used to start 28px lower than one opening with a paragraph.
  */
 .markdown-page > [data-native-block-row] {
+  --own-ink: var(--prose-ink-top);
+  --prev-ink: 0px;
+  --block-gap: 20px;
   --row-lead: 0px;
   padding-top: var(--row-lead);
   contain: layout style;
 }
 
 .markdown-page > [data-native-block-row] + [data-native-block-row] {
-  --row-lead: 2px;
+  --prev-ink: var(--prose-ink-bottom);
+  --row-lead: max(0px, calc(var(--block-gap) - 2px - var(--prev-ink) - var(--own-ink)));
 }
 
-.markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="1"] {
-  --row-lead: 1.75rem;
+/* Container kinds paint their box, so their ink starts where their row's content starts. */
+.markdown-page
+  > [data-native-block-row]:is(
+    [data-block-kind="blockquote"],
+    [data-block-kind="callout"],
+    [data-block-kind="toggle"],
+    [data-block-kind="collection"],
+    [data-block-kind="image"],
+    [data-block-kind="fenced_code"],
+    [data-block-kind="unsupported"],
+    [data-block-kind="block_math"],
+    [data-block-kind="mermaid"]
+  ) {
+  --own-ink: 0px;
 }
 
-.markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="2"] {
-  --row-lead: 1.375rem;
+.markdown-page
+  > [data-native-block-row]:is(
+    [data-block-kind="blockquote"],
+    [data-block-kind="callout"],
+    [data-block-kind="toggle"],
+    [data-block-kind="collection"],
+    [data-block-kind="image"],
+    [data-block-kind="fenced_code"],
+    [data-block-kind="unsupported"],
+    [data-block-kind="block_math"],
+    [data-block-kind="mermaid"]
+  )
+  + [data-native-block-row] {
+  --prev-ink: 0px;
 }
 
-.markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="3"] {
-  --row-lead: 1.125rem;
+/* A heading's half-leading is ~5.6% of its own size at 1.3, so 5px stands in for all six levels to
+ * within a pixel — smaller than the sub-pixel spread the levels already have between them. */
+.markdown-page > [data-native-block-row][data-block-kind="heading"] {
+  --own-ink: 5px;
 }
 
-.markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="4"],
-.markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="5"],
-.markdown-page > [data-native-block-row][data-block-kind="heading"][data-block-level="6"] {
-  --row-lead: 0.875rem;
+.markdown-page > [data-native-block-row][data-block-kind="heading"] + [data-native-block-row] {
+  --prev-ink: 5px;
+  --block-gap: 16px;
 }
 
-/* The first row in the Page has no leading gap to inherit. */
-.markdown-page > [data-native-block-row]:first-child {
-  --row-lead: 0px;
+/* The table reserves 12px above its border for the column handles, which hang outside it and are
+ * clipped by the same scroll box; below it reserves 4px. That asymmetry is the handles', not the
+ * rhythm's, so it is declared rather than corrected. */
+.markdown-page > [data-native-block-row][data-block-kind="table"] {
+  --own-ink: 12px;
+}
+
+.markdown-page > [data-native-block-row][data-block-kind="table"] + [data-native-block-row] {
+  --prev-ink: 4px;
+}
+
+.markdown-page > [data-native-block-row][data-block-kind="thematic_break"] {
+  --own-ink: 17.5px;
+}
+
+.markdown-page
+  > [data-native-block-row][data-block-kind="thematic_break"]
+  + [data-native-block-row] {
+  --prev-ink: 17.5px;
+}
+
+/*
+ * A heading takes its space from the section above it. These out-specify the "below a heading" rule,
+ * so a heading that follows a heading starts a section rather than trailing one.
+ */
+.markdown-page
+  > [data-native-block-row]
+  + [data-native-block-row][data-block-kind="heading"][data-block-level="1"] {
+  --block-gap: 40px;
+}
+
+.markdown-page
+  > [data-native-block-row]
+  + [data-native-block-row][data-block-kind="heading"][data-block-level="2"] {
+  --block-gap: 32px;
+}
+
+.markdown-page
+  > [data-native-block-row]
+  + [data-native-block-row][data-block-kind="heading"][data-block-level="3"],
+.markdown-page
+  > [data-native-block-row]
+  + [data-native-block-row][data-block-kind="heading"][data-block-level="4"],
+.markdown-page
+  > [data-native-block-row]
+  + [data-native-block-row][data-block-kind="heading"][data-block-level="5"],
+.markdown-page
+  > [data-native-block-row]
+  + [data-native-block-row][data-block-kind="heading"][data-block-level="6"] {
+  --block-gap: 24px;
+}
+
+/*
+ * Outer spacing belongs to the row, and to nothing else.
+ *
+ * Six preview components carried their own `my-1`/`my-4` and the table its own `my-4`, which is what
+ * turned one nominal lead into a per-kind scale nobody chose — a toggle 4px, an equation 16px, a
+ * table 16px on top of its wrapper's own inset.
+ */
+.markdown-page [data-native-block-content] > *,
+.markdown-page [data-native-block-content] > * > table {
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 /*
@@ -116,6 +268,24 @@
 }
 
 /*
+ * A run of selected Blocks is one band, not a stack of chips.
+ *
+ * The fill starts below the row's lead, so the lead — which is the inter-Block gap — was never
+ * painted. A 2px gap hid that; a lead that varies by kind does not. Measured before this rule:
+ * heading pairs gapped 10-18px, and once the spacing scale gave containers their own lead so did
+ * callout->callout, blockquote->fenced_code and eight other pairs, at 4-16px each.
+ *
+ * A selected row whose previous sibling is also selected therefore starts at its own top edge, which
+ * is where the band above ends. Only the first row of a run keeps the lead inset, so a selection
+ * still begins where the Block begins.
+ */
+.markdown-page
+  > [data-native-block-row][data-block-selected="true"]
+  + [data-native-block-row][data-block-selected="true"]::after {
+  top: -1px;
+}
+
+/*
  * Gutter controls: instant in, forgiving out.
  *
  * Revealing with a fade makes the handle feel like it is catching up with the pointer. Hiding
@@ -135,6 +305,189 @@
   transition-delay: 0ms;
   transition-duration: 0ms;
   pointer-events: auto;
+}
+
+/*
+ * The grace period is for leaving the column, not for moving inside it.
+ *
+ * The fade-out above is a 90ms delay and a 110ms ramp, and it fired on *any* row that lost the
+ * pointer — including the row the pointer had just left for the row below it, and including a row
+ * that moved out from under a parked pointer because the Page scrolled. Both painted two gutters at
+ * once: measured with the pointer parked and the wheel turned 300px, a stale cluster at y=196 and a
+ * live one at y=494 were both at full opacity for >=72ms and both still on screen at 182ms. It reads
+ * as a smear following the pointer, and it is one defect, not two — the gutter was drawn on a row
+ * the pointer is no longer on.
+ *
+ * So the grace is conditioned on where the pointer actually is: while it is anywhere over the Page,
+ * a row that is not the hovered one drops its controls in the same frame. The forgiving fade is left
+ * for the case it was written for — the pointer leaving the Page entirely, where nothing else is
+ * lighting up to take over. Timing only: `opacity` is not touched here, so a focused row or one
+ * holding an open menu keeps its controls exactly as the rule above says.
+ */
+.markdown-page:hover [data-native-block-row]:not(:hover) [data-native-block-controls] {
+  transition-delay: 0ms;
+  transition-duration: 0ms;
+}
+
+/*
+ * ONE TABLE OF INTERACTION STATES
+ *
+ * Every pressable thing in the editor answers a pointer the same way, because the answer is written
+ * here once instead of per component. Before this, eight controls had five different behaviours: the
+ * inline toolbar faded over 150ms while the gutter took 20ms, the callout icon's tint was 2.1x
+ * everyone else's, four controls fell back to the UA's orange focus ring, the to-do checkbox and
+ * wiki links had no hover state at all, and nothing anywhere acknowledged a press.
+ *
+ *   state           paint                                        duration
+ *   idle            nothing                                      —
+ *   hover           tint at --editor-state-hover-alpha            20ms
+ *   focus-visible   1px ring in --ring, 2px offset, no UA outline 20ms
+ *   active          tint at --editor-state-active-alpha (2x)      20ms
+ *   disabled        opacity .5, no hover and no press             —
+ *
+ * 20ms is Notion's measured `background 0.02s ease-in` (docs/BLOCK_UX_REFERENCE.md, "Button hover
+ * feedback"). The reference's Motion section is explicit that hover is effectively instant and that
+ * *only* menus get an entry animation, around 150ms — so no state in this table may exceed 20ms.
+ *
+ * The tint is painted as an inset `box-shadow`, not as `background-color`, because these controls do
+ * not share a ground: the gutter buttons are transparent over the page, the callout icon sits on a
+ * type-tinted card, a wiki link carries its own chip fill and a table axis handle is a saturated
+ * blue pill with an inline background. A `background-color` hover replaces the ground and therefore
+ * lands somewhere different on each of them — it is why `hover:bg-foreground/10` on the callout icon
+ * measured -20.7/-21.7/-22.1 against the gutter's -10/-10/-10. An overlay composites over whatever
+ * is underneath, so one alpha gives every control the same delta, and none of them has to restate a
+ * colour that belongs to its component.
+ *
+ * The alphas are solved against `bg-muted`, the value the four controls that were already right
+ * used: 0.045 of #212121 on white is rgb(245,245,245), and 0.0625 of #ECECEC on #212121 is
+ * rgb(46,46,46) — the two themes' `--muted` exactly. Pressed doubles the alpha, which is the ratio
+ * Notion uses between its own hover and pressed fills (0.08 -> 0.16).
+ */
+:root {
+  --editor-state-duration: 20ms;
+  /* The tint's colour, as an `hsl()` triple. A control on a saturated ground overrides it. */
+  --editor-state-ink: var(--foreground);
+  --editor-state-hover-alpha: 0.045;
+  --editor-state-active-alpha: 0.09;
+}
+
+.dark {
+  --editor-state-hover-alpha: 0.0625;
+  --editor-state-active-alpha: 0.125;
+}
+
+/*
+ * `.editor-control` is the opt-in for components that can carry a class; the selectors beside it are
+ * the same table reaching controls whose markup lives elsewhere. The two shadow slots are composed
+ * from custom properties so the tint and the focus ring can be present at once without either
+ * having to know about the other.
+ */
+.editor-control,
+.markdown-page [data-native-block-controls] button,
+.markdown-page [data-native-toggle] > summary > button,
+.markdown-page [data-code-language],
+.markdown-page button[data-wiki-link],
+.markdown-page input[type="checkbox"] {
+  --editor-state-tint: transparent;
+  --editor-state-fill: inset 0 0 0 999px var(--editor-state-tint);
+  --editor-state-ring: 0 0 0 0 transparent;
+  transition-property: color, background-color, border-color, fill, stroke, box-shadow, opacity;
+  transition-duration: var(--editor-state-duration);
+  transition-timing-function: ease-in;
+  box-shadow: var(--editor-state-fill), var(--editor-state-ring);
+}
+
+.editor-control:hover:not(:disabled),
+.markdown-page [data-native-block-controls] button:hover:not(:disabled),
+.markdown-page [data-native-toggle] > summary > button:hover:not(:disabled),
+.markdown-page [data-code-language]:hover:not(:disabled),
+.markdown-page button[data-wiki-link]:hover:not(:disabled),
+.markdown-page input[type="checkbox"]:hover:not(:disabled) {
+  --editor-state-tint: hsl(var(--editor-state-ink) / var(--editor-state-hover-alpha));
+}
+
+.editor-control:active:not(:disabled),
+.markdown-page [data-native-block-controls] button:active:not(:disabled),
+.markdown-page [data-native-toggle] > summary > button:active:not(:disabled),
+.markdown-page [data-code-language]:active:not(:disabled),
+.markdown-page button[data-wiki-link]:active:not(:disabled),
+.markdown-page input[type="checkbox"]:active:not(:disabled) {
+  --editor-state-tint: hsl(var(--editor-state-ink) / var(--editor-state-active-alpha));
+}
+
+/* The app's ring, written out rather than borrowed: four of the eight controls had no
+ * `focus-visible` treatment and so answered the keyboard with the UA's own 1px orange outline at a
+ * different offset and a different shape. `outline: 2px solid transparent` is what Tailwind's
+ * `outline-none` computes to, and is kept so a forced-colours mode still has an outline to paint. */
+.editor-control:focus-visible,
+.markdown-page [data-native-block-controls] button:focus-visible,
+.markdown-page [data-native-toggle] > summary > button:focus-visible,
+.markdown-page [data-code-language]:focus-visible,
+.markdown-page button[data-wiki-link]:focus-visible,
+.markdown-page input[type="checkbox"]:focus-visible {
+  --editor-state-ring: 0 0 0 1px hsl(var(--ring));
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+.editor-control:disabled,
+.markdown-page [data-native-block-controls] button:disabled,
+.markdown-page [data-native-toggle] > summary > button:disabled,
+.markdown-page [data-code-language]:disabled,
+.markdown-page button[data-wiki-link]:disabled,
+.markdown-page input[type="checkbox"]:disabled {
+  opacity: 0.5;
+}
+
+/*
+ * Controls that shipped their own opaque hover fill before this table existed. The overlay above is
+ * the whole hover now, so the fill is cleared rather than added to — stacked, the two darken twice
+ * as far as everything else.
+ */
+.markdown-page [data-native-block-controls] button:hover,
+.markdown-page [data-native-toggle] > summary > button:hover,
+.markdown-page [data-code-language]:hover {
+  background-color: transparent;
+}
+
+/*
+ * A native checkbox paints itself, so an inset overlay lands under its own control and shows
+ * nothing. It gets the same tint as a halo instead — 4px around a 16px box is the 24px square the
+ * gutter buttons are, so a to-do's hover target reads the same size as theirs.
+ *
+ * The halo has square corners because it has no choice: Blink resolves `border-radius` to 0 on any
+ * `appearance: auto` form control, and it ignores an inline `9px` just as it ignores a stylesheet's,
+ * so a shadow spread has nothing to round to. Rounding it would mean `appearance: none` and drawing
+ * the box and its tick by hand, which is a bigger change than a hover state is worth; at a 10-per-
+ * channel tint the corner is not what a reader sees.
+ */
+.markdown-page input[type="checkbox"] {
+  --editor-state-fill: 0 0 0 4px var(--editor-state-tint);
+  accent-color: #2383e2;
+}
+
+/*
+ * A table axis handle is a saturated accent pill, and 4.5% of near-black over it moves nothing a
+ * reader can see. It keeps the table's shape — one duration, pressed at twice hover, the same ring —
+ * with the one thing that has to differ declared: black at an alpha that lands the same order of
+ * visible change on rgb(35,131,226) as the neutral tint does on the page.
+ */
+.markdown-page [data-axis-handle] {
+  --editor-state-ink: 0 0% 0%;
+  --editor-state-hover-alpha: 0.14;
+  --editor-state-active-alpha: 0.28;
+}
+
+/*
+ * The indicator lands with the thing it indicates.
+ *
+ * The chevron rotated over 150ms while the content it discloses appeared in a single frame —
+ * measured, the row reached its final height at 6.8ms with the caret still at 1.5 degrees, and the
+ * caret did not settle until ~150ms. One state change, two halves, 145ms apart. It is also the only
+ * transition on a Block affordance that was not 20ms.
+ */
+.markdown-page [data-native-toggle] > summary > button > svg {
+  transition-duration: var(--editor-state-duration);
 }
 
 /*
@@ -174,43 +527,55 @@
 }
 
 .markdown-page [data-native-block-row][data-block-kind="blockquote"] {
-  --controls-lead: 2px;
+  --controls-lead: 6px;
 }
 
 .markdown-page [data-native-block-row][data-block-kind="fenced_code"],
-.markdown-page [data-native-block-row][data-block-kind="mermaid"],
 .markdown-page [data-native-block-row][data-block-kind="unsupported"] {
   --controls-lead: 12.5px;
 }
 
 .markdown-page [data-native-block-row][data-block-kind="block_math"] {
-  --controls-lead: 24px;
-}
-
-.markdown-page [data-native-block-row][data-block-kind="callout"],
-.markdown-page [data-native-block-row][data-block-kind="toggle"] {
-  --controls-lead: 4.5px;
-}
-
-.markdown-page [data-native-block-row][data-block-kind="table"] {
-  --controls-lead: 27px;
-}
-
-.markdown-page [data-native-block-row][data-block-kind="thematic_break"] {
   --controls-lead: 8px;
 }
 
-.editor-leading-compact .markdown-page {
-  line-height: 1.4;
+.markdown-page [data-native-block-row][data-block-kind="mermaid"] {
+  --controls-lead: 5.5px;
 }
 
-.editor-leading-relaxed .markdown-page {
-  line-height: 1.75;
+.markdown-page [data-native-block-row][data-block-kind="callout"] {
+  --controls-lead: 11px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="toggle"] {
+  --controls-lead: 11px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="image"] {
+  --controls-lead: 2px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="table"] {
+  --controls-lead: 21px;
+}
+
+.markdown-page [data-native-block-row][data-block-kind="thematic_break"] {
+  --controls-lead: 6px;
 }
 
 .markdown-page strong,
 .markdown-page b {
   color: inherit;
+  /*
+   * Declared, not inherited.
+   *
+   * Nothing set a weight for `strong`, so the UA's `bolder` resolved against whatever hosted it:
+   * 700 inside 400 prose, but 900 inside a 600 heading or a callout title — the same four asterisks
+   * producing two different faces one line apart inside a callout, 5.5% apart in advance width at
+   * the same size. 600 is the top of this editor's own scale, so bold inside a heading now reads as
+   * part of the heading instead of as a different typeface dropped into it.
+   */
+  font-weight: 600;
 }
 
 .markdown-page blockquote {
@@ -219,6 +584,19 @@
   font-style: normal;
 }
 
+/*
+ * 16px here is not this rule's to give up.
+ *
+ * It looks like the stylesheet silently beating the `px-3 py-2` the preview components ask for, and
+ * for the raw/unsupported preview it is exactly that. But the same 16px is declared twice more in
+ * places this file cannot reach: `markdown-block-row.tsx`'s active surface for `fenced_code` and
+ * `unsupported` carries its own `p-4`, and `markdown-code-block.tsx` sets `padding: "1rem"` as an
+ * inline style on both layers of the code Block — the `<pre>` and the transparent textarea laid
+ * exactly over it, which have to agree to the pixel or the caret leaves the glyphs. Dropping the
+ * padding here alone would take the preview to 8/12 while its own editing surface stayed at 16, so
+ * clicking a raw Block would move it 8px down and 4px across. The four values are one decision
+ * spread over three files; it has to move in all three at once.
+ */
 .markdown-page pre {
   @apply overflow-x-auto rounded-lg bg-muted p-4 font-mono text-sm;
 }
@@ -235,18 +613,55 @@
  */
 .markdown-page code {
   @apply rounded bg-muted px-1 py-0.5 font-mono;
-  color: #eb5757;
+  /* `#eb5757` measured 3.19:1 on this chip in light and 3.90:1 in dark — the one text colour in the
+   * editor with no dark variant at all, so both themes painted the same red on two different
+   * grounds and neither reached AA. `--code-inline` is that colour re-solved per theme against
+   * `--muted`, which is the surface this chip actually paints on. */
+  color: hsl(var(--code-inline));
   font-size: 1em !important;
   /* Mono glyphs run optically large at the same px, so hold the line box to the prose leading. */
   line-height: inherit !important;
 }
 
 /*
+ * A wiki link costs its line exactly what an inline-code chip costs it.
+ *
+ * Both are the same thing typographically — a tinted chip inside a run of prose — but one was a
+ * `<button>`, so it laid out as `inline-block` and its box became the whole 28px line box while
+ * `<code>` stayed `inline` and painted 19px of ink plus 2px of padding either side. The tint is the
+ * chip, so a paragraph containing a wiki link painted 4.5px further up and 4.5px further down than
+ * an identical-looking paragraph next to it, and the *visible* gap between two Blocks moved with
+ * whatever happened to be inline in them: measured plain->plain 20.00px, code->code 16.50px,
+ * wiki->wiki 11.00px — a 9px spread across six pairs of paragraphs that are all nominally 20px
+ * apart. That is the most visible spacing defect on a Page, because nothing in the text explains it.
+ *
+ * The height is taken back through `line-height`, not through `display`. A chip in a line of text
+ * should be `display: inline` like `<code>` is, but Blink pins a `<button>` to an atomic inline and
+ * silently keeps `inline-block`: measured on the packaged app, the computed value is `inline-block`
+ * with `display: inline` declared. An `inline-block` takes its height from its own line-height, so
+ * declaring `normal` — which is the font's own line height, at any editor font size and under any
+ * Line spacing setting — gives the box the 19px the glyphs occupy, and the padding then matches
+ * inline code's `px-1 py-0.5` exactly. Two chips, one shape, 23px each.
+ */
+.markdown-page [data-wiki-link] {
+  padding: 2px 4px;
+  line-height: normal;
+}
+
+/*
  * Syntax colours for `highlight.js` scopes.
  *
- * A small palette rather than a vendored theme: only the scopes our grammars actually emit, tuned
- * against the editor's own surfaces so a code Block reads as part of the Page in both themes. The
- * inline-code red is reused for strings so the two agree.
+ * A small palette rather than a vendored theme: only the scopes our grammars actually emit. The
+ * values are One-Light and One-Dark re-solved against the surface they are painted on — a code
+ * Block's `--muted` tint at 12px — and they live in globals.css as `--code-*`, one pair per scope,
+ * because a hex written into a rule has nowhere to record which ground it was measured against.
+ * That is why this palette was wrong for two releases while the tokens beside it were right:
+ * published One-Light on #F5F5F5 measures 2.93:1 for a number, 2.94:1 for a string, 3.71:1 for a
+ * title and 3.36:1 for a tag, none of which a reader can hold at code size. Every scope now reads
+ * its token, so there is one place to answer for a colour and one place to re-measure it.
+ *
+ * There is deliberately no `.dark` half any more: each token is declared per theme, so the two
+ * palettes cannot drift out of step the way they did when this file carried both by hand.
  */
 .markdown-page pre .hljs-comment,
 .markdown-page pre .hljs-quote {
@@ -259,7 +674,7 @@
 .markdown-page pre .hljs-literal,
 .markdown-page pre .hljs-doctag,
 .markdown-page pre .hljs-meta .hljs-keyword {
-  color: #a626a4;
+  color: hsl(var(--code-keyword));
 }
 
 .markdown-page pre .hljs-string,
@@ -267,7 +682,7 @@
 .markdown-page pre .hljs-addition,
 .markdown-page pre .hljs-attribute,
 .markdown-page pre .hljs-meta .hljs-string {
-  color: #50a14f;
+  color: hsl(var(--code-string));
 }
 
 .markdown-page pre .hljs-number,
@@ -277,14 +692,14 @@
 .markdown-page pre .hljs-selector-attr,
 .markdown-page pre .hljs-selector-pseudo,
 .markdown-page pre .hljs-built_in {
-  color: #c18401;
+  color: hsl(var(--code-number));
 }
 
 .markdown-page pre .hljs-title,
 .markdown-page pre .hljs-section,
 .markdown-page pre .hljs-title.class_,
 .markdown-page pre .hljs-title.function_ {
-  color: #4078f2;
+  color: hsl(var(--code-title));
 }
 
 .markdown-page pre .hljs-attr,
@@ -292,7 +707,7 @@
 .markdown-page pre .hljs-symbol,
 .markdown-page pre .hljs-bullet,
 .markdown-page pre .hljs-link {
-  color: #986801;
+  color: hsl(var(--code-attr));
 }
 
 .markdown-page pre .hljs-deletion,
@@ -300,7 +715,7 @@
 .markdown-page pre .hljs-selector-id,
 .markdown-page pre .hljs-selector-class,
 .markdown-page pre .hljs-tag {
-  color: #e45649;
+  color: hsl(var(--code-name));
 }
 
 .markdown-page pre .hljs-emphasis {
@@ -309,55 +724,6 @@
 
 .markdown-page pre .hljs-strong {
   font-weight: 600;
-}
-
-.dark .markdown-page pre .hljs-keyword,
-.dark .markdown-page pre .hljs-selector-tag,
-.dark .markdown-page pre .hljs-literal,
-.dark .markdown-page pre .hljs-doctag,
-.dark .markdown-page pre .hljs-meta .hljs-keyword {
-  color: #c678dd;
-}
-
-.dark .markdown-page pre .hljs-string,
-.dark .markdown-page pre .hljs-regexp,
-.dark .markdown-page pre .hljs-addition,
-.dark .markdown-page pre .hljs-attribute,
-.dark .markdown-page pre .hljs-meta .hljs-string {
-  color: #98c379;
-}
-
-.dark .markdown-page pre .hljs-number,
-.dark .markdown-page pre .hljs-variable,
-.dark .markdown-page pre .hljs-template-variable,
-.dark .markdown-page pre .hljs-type,
-.dark .markdown-page pre .hljs-selector-attr,
-.dark .markdown-page pre .hljs-selector-pseudo,
-.dark .markdown-page pre .hljs-built_in {
-  color: #e5c07b;
-}
-
-.dark .markdown-page pre .hljs-title,
-.dark .markdown-page pre .hljs-section,
-.dark .markdown-page pre .hljs-title.class_,
-.dark .markdown-page pre .hljs-title.function_ {
-  color: #61afef;
-}
-
-.dark .markdown-page pre .hljs-attr,
-.dark .markdown-page pre .hljs-property,
-.dark .markdown-page pre .hljs-symbol,
-.dark .markdown-page pre .hljs-bullet,
-.dark .markdown-page pre .hljs-link {
-  color: #d19a66;
-}
-
-.dark .markdown-page pre .hljs-deletion,
-.dark .markdown-page pre .hljs-name,
-.dark .markdown-page pre .hljs-selector-id,
-.dark .markdown-page pre .hljs-selector-class,
-.dark .markdown-page pre .hljs-tag {
-  color: #e06c75;
 }
 
 .markdown-page pre code {
@@ -422,7 +788,7 @@
 .markdown-page [data-native-block-row] [data-editor-kind="task_list_item"],
 .markdown-page [data-native-block-row] [data-editor-kind="blockquote"] {
   font-size: 1rem !important;
-  line-height: 1.75rem !important;
+  line-height: var(--editor-body-leading) !important;
   /* Both editing surfaces break a long unbreakable token — the contenteditable through
    * `break-words`, the textarea through the UA default — and no preview did. A token with no space,
    * slash or hyphen to break at therefore overflowed on one line while unfocused and wrapped the
@@ -462,40 +828,53 @@
 }
 
 /*
+ * Completion and inertness survive the caret.
+ *
+ * Both of these are properties of the Block, not of whether it is focused, and both used to be
+ * carried only by the rendered preview. `.native-block-editor-surface { color: inherit }` above
+ * out-specifies the `text-muted-foreground` the editing surface asks for, and `text-decoration`
+ * does not cross into a textarea at all, so clicking a finished to-do turned it solid black and
+ * dropped the strike line — the row then contradicted its own still-ticked checkbox — and clicking
+ * raw HTML promoted it to the same ink as the prose it is deliberately drawn back from.
+ */
+.markdown-page
+  [data-native-block-edit-surface][data-editor-kind="task_list_item"]:has(input:checked)
+  .native-block-textarea {
+  color: hsl(var(--muted-foreground));
+  text-decoration-line: line-through;
+}
+
+.markdown-page
+  [data-native-block-edit-surface][data-editor-kind="unsupported"]
+  .native-block-textarea {
+  color: hsl(var(--muted-foreground));
+}
+
+/*
  * Placeholders.
  *
  * Drawn with `attr()`/`::placeholder` so the text is never part of the source, never lands in a
  * clipboard copy, and never reaches a PDF export. No transition — a fading placeholder reads as a
  * rendering glitch on a caret-anchored element.
+ *
+ * One colour, not an alpha per theme. A placeholder is text, and text has a contrast to answer for:
+ * the three surfaces below used to fade `--foreground` by 0.26 in light and 0.32 in dark, which
+ * measured 1.72:1 and 2.65:1 — neither readable, and not even equal to each other, because an alpha
+ * states a fade rather than a ratio and the two inks it fades are different colours. `--placeholder-
+ * fg` is declared per theme in globals.css against `--background`, so the number the two themes
+ * share is the ratio.
  */
-.markdown-page .native-block-textarea::placeholder {
-  color: hsl(var(--foreground) / 0.26);
-}
-
-.dark .markdown-page .native-block-textarea::placeholder {
-  color: hsl(var(--foreground) / 0.32);
+.markdown-page .native-block-textarea::placeholder,
+.markdown-page [data-native-semantic-editor][data-placeholder]:empty::before,
+.markdown-page [data-native-semantic-editor][data-placeholder]:has(> :only-child:empty)::before,
+.markdown-page [data-block-placeholder] {
+  color: hsl(var(--placeholder-fg));
 }
 
 .markdown-page [data-native-semantic-editor][data-placeholder]:empty::before,
 .markdown-page [data-native-semantic-editor][data-placeholder]:has(> :only-child:empty)::before {
-  color: hsl(var(--foreground) / 0.26);
   content: attr(data-placeholder);
   pointer-events: none;
-}
-
-.dark .markdown-page [data-native-semantic-editor][data-placeholder]:empty::before,
-.dark
-  .markdown-page
-  [data-native-semantic-editor][data-placeholder]:has(> :only-child:empty)::before {
-  color: hsl(var(--foreground) / 0.32);
-}
-
-.markdown-page [data-block-placeholder] {
-  color: hsl(var(--foreground) / 0.26);
-}
-
-.dark .markdown-page [data-block-placeholder] {
-  color: hsl(var(--foreground) / 0.32);
 }
 
 /* An empty heading keeps its line box so activating it never shifts the Page. */
@@ -509,6 +888,16 @@
 }
 
 .markdown-page [data-editor-kind="heading"] {
+  /*
+   * A heading's box is its own line, not a 36px slot.
+   *
+   * `min-h-9` on the heading element only bound from h3 down, where it padded 2–9.8px of dead space
+   * in *below* the glyphs. That inverted the one relationship a heading has to hold: the space under
+   * it grew as the type shrank, until an h6 sat equidistant between the paragraph it titles and the
+   * one before it. The row keeps its own `min-h-9`, so the click target is unchanged, and the
+   * `:empty` rule below still holds a line box for an empty heading.
+   */
+  min-height: 0;
   font-weight: 600;
   letter-spacing: -0.018em;
   /* See the body rule above: without this a heading holding one unbreakable token grew 117px on
@@ -589,12 +978,12 @@
   top: 0;
 }
 
-.markdown-page input[type="checkbox"] {
-  accent-color: #2383e2;
-}
-
+/* No `my-4`: the row owns a table's outer spacing, and the reset above already zeroes this one —
+ * measured, a table's computed margin is 0px top and bottom with the declaration still here. A rule
+ * that states a value it is guaranteed to lose is worse than no rule: it reads as the place a
+ * table's spacing is decided, and it is the one place it is not. */
 .markdown-page table {
-  @apply my-4 border-collapse;
+  @apply border-collapse;
   width: 100%;
   max-width: 100%;
   table-layout: auto;
@@ -610,9 +999,15 @@
   text-align: left;
   min-width: 60px;
   padding: 6px 9px;
-  border: 1px solid hsl(var(--foreground) / 0.094);
+  /* The grid line is the only thing that makes a table read as a table, and an alpha off the ink
+   * cannot state how strong it is: 0.094 of `--foreground` resolved to 1.13:1 against the Page in
+   * light and 1.30:1 in dark, so the same declaration drew a fainter grid in one theme than the
+   * other and neither was a line. `--table-border` is that edge stated as a measured pair. */
+  border: 1px solid hsl(var(--table-border));
   font-size: 1rem;
-  line-height: 1.5;
+  /* A cell holds prose at prose size, so it holds it at prose leading too. 1.5 made table cells the
+   * only 16px run in the document at 24px, 4px tighter per line than the paragraph beside them. */
+  line-height: var(--editor-body-leading);
   vertical-align: top;
   word-break: break-word;
   overflow-wrap: anywhere;
@@ -620,7 +1015,10 @@
 
 .markdown-page th {
   @apply font-medium text-foreground;
-  background: hsl(var(--foreground) / 0.035);
+  /* The header is the one row in a Markdown table that carries a fill, so it takes the table's own
+   * fill token rather than a third alpha off the ink — 0.035 of `--foreground` was 1.03:1 against
+   * the Page, which is a fill only in the sense that it is not nothing. */
+  background: hsl(var(--table-row-alt));
 }
 
 /*

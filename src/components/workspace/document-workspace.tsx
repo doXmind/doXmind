@@ -12,7 +12,9 @@ import { PageGraphPanel } from "@/components/editor/page-graph-panel";
 import { isExcelFile, isHtmlFile, isMarkdownFile, isPdfFile } from "@/lib/document-types";
 import { buildLegacyPageRecovery, downloadLegacyPageRecovery } from "@/lib/legacy-page-recovery";
 import { createStorageAdapter, type PageRecoveryInspection } from "@/lib/storage";
+import { cn } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
+import { useLayoutStore } from "@/stores/layout-store";
 
 interface DocumentWorkspaceProps {
   file: FileItem;
@@ -116,6 +118,7 @@ function MarkdownPageWorkspace({
   const [isInspecting, setIsInspecting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const isFocusMode = useLayoutStore((s) => s.isFocusMode);
   const inspectionRequest = useRef(0);
   const pagePath = file.storageHandle?.relPath || file.storageHandle?.path || null;
 
@@ -162,6 +165,25 @@ function MarkdownPageWorkspace({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
+      {/* Opaque backing for the Page-controls band. The floating chrome model
+          is "paint an opaque backing so editor content never shows through"
+          (see DesktopEditor) — the 44px header does that, this row did not, so
+          every Block scrolled visibly through y=44..80 across the whole column
+          while only the pills (38% of the width, and translucent at that) hid
+          anything. The band ends at the pills' bottom edge (80px); it starts
+          at the header's bottom edge, or at the surface's top in focus mode
+          where there is no header to start from. `pointer-events-none` keeps
+          the wheel and the caret talking to the scroll surface underneath,
+          exactly as before. */}
+      <div
+        aria-hidden
+        data-native-editor-chrome
+        data-testid="page-controls-backdrop"
+        className={cn(
+          "pointer-events-none absolute inset-x-0 z-30 bg-background",
+          isFocusMode ? "top-0 h-20" : "top-11 h-9"
+        )}
+      />
       <div data-native-editor-chrome className="absolute left-4 top-12 z-40 flex items-start gap-2">
         <PagePropertiesPanel file={file} />
         <PageBacklinksPanel file={file} />

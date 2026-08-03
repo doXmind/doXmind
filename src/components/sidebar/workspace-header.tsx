@@ -2,6 +2,7 @@
 
 import { ChevronsDownUp } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { NewButton } from "@/components/home/new-button";
 import { WorkspaceSwitcher } from "@/components/sidebar/workspace-switcher";
@@ -52,13 +53,20 @@ export function WorkspaceHeader({
           />
           {canCollapseAll && (
             <Tooltip content={t("collapseAll")} side="bottom">
-              <button
+              {/* Same Button as NewButton next to it, not a bare <button>. As a
+                  bare button `.sidebar-action-button:hover` won and this filled
+                  with the opaque --sidebar-hover while its neighbour filled with
+                  the ghost variant's rgba(33,33,33,0.06) — two identical 28px
+                  buttons in one cluster hovering to two different colours. */}
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={onCollapseAll}
-                className="sidebar-action-button flex h-7 w-7 items-center justify-center rounded-lg transition-colors"
+                className="sidebar-action-button h-7 w-7 rounded-lg"
                 aria-label={t("collapseAll")}
               >
                 <ChevronsDownUp className="h-4 w-4" />
-              </button>
+              </Button>
             </Tooltip>
           )}
         </div>

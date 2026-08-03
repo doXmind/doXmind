@@ -1,7 +1,9 @@
 /* Native source-backed math and Mermaid previews. */
 
+/* No outer margin: the row leads every Block, and `my-4` here was 16px of it that only equations
+ * and diagrams got, which is what floated them away from the sentence introducing them. */
 .markdown-page .block-math-wrapper {
-  @apply my-4 block;
+  @apply block;
 }
 
 .markdown-page .math-rendered {
@@ -27,9 +29,36 @@
 }
 
 .markdown-page .mermaid-chart-wrapper {
-  @apply my-4 block;
+  @apply block;
   font-size: 16px;
   line-height: 1.5;
+}
+
+/*
+ * The figure's label is Block chrome, but it lives inside the document, so it takes the editor's
+ * scale and not the 13px UI slider's. `text-xs` routes through globals.css's chrome scale with
+ * `!important` (11px, the only 11px sans in the content column) and `tracking-wide` gave it the
+ * only positive letter-spacing on the Page — small-caps chrome dropped into a body whose every
+ * other run is normally or negatively tracked. 12px is what the code Block's language chip uses.
+ */
+.markdown-page .mermaid-chart-wrapper > figcaption {
+  font-size: 0.75rem !important;
+  line-height: 1.45 !important;
+  letter-spacing: normal;
+}
+
+/*
+ * A source surface is a source surface.
+ *
+ * The equation and diagram editors carried `font-mono text-xs leading-5`, and `.text-xs` in
+ * globals.css is the 13px *chrome* scale with `!important` — so they rendered at 11px/15.4px while
+ * the fenced and raw surfaces three Blocks away rendered at 12px/17.4px, and raising the code-font
+ * slider moved one and not the other. These are the two values `CODE_LAYER_METRICS` spreads onto
+ * both layers of a fenced Block; `!important` is what it takes to beat the utility.
+ */
+.markdown-page [data-figure-source-field] {
+  font-size: var(--ui-code-font-size-base) !important;
+  line-height: 1.45 !important;
 }
 
 .markdown-page .mermaid-chart-wrapper .mermaid-rendered {

@@ -122,7 +122,12 @@ export function FilesSidebar() {
 
       <UpdatePill />
 
-      <div className="px-1.5 pb-3 pt-2">
+      {/* `autohide-scrollbar` + `overflow-y-hidden` reserves the same
+          scrollbar gutter the tree's ScrollArea reserves (scrollbar-gutter:
+          stable applies to any scroll container, including a hidden one), so
+          this row's right edge lands on the tree rows' right edge instead of
+          11px past it. */}
+      <div className="autohide-scrollbar overflow-y-hidden px-1.5 pb-3 pt-2">
         <Link
           href="/settings"
           className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-1.5 font-semibold text-[var(--sidebar-text)] transition-colors hover:bg-[var(--sidebar-hover)]"

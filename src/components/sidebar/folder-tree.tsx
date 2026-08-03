@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
+import { MENU_PANEL_CLASS, MENU_ROW_CLASS } from "@/components/ui/dropdown-menu";
 import { FileItem } from "./file-item";
 import { useFileStore } from "@/stores/file-store";
 import type { FileItem as FileItemType } from "@/types";
@@ -898,7 +899,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
           <div
             ref={folderMenuRef}
             role="menu"
-            className="fixed z-[9999] min-w-[200px] rounded-md border border-border bg-popover p-1 shadow-lg"
+            className={cn("fixed z-[9999] min-w-[200px]", MENU_PANEL_CLASS)}
             style={{ left: folderMenu.x, top: folderMenu.y }}
           >
             {folderMenu.items.map((item, index) => (
@@ -912,7 +913,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
                   item.onClick();
                 }}
                 className={cn(
-                  "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
+                  MENU_ROW_CLASS,
                   item.destructive && "text-destructive",
                   folderMenuReady &&
                     (item.destructive
@@ -936,7 +937,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
           <div
             ref={emptyMenuRef}
             role="menu"
-            className="fixed z-[9999] min-w-[180px] rounded-md border border-border bg-popover p-1 shadow-lg"
+            className={cn("fixed z-[9999] min-w-[180px]", MENU_PANEL_CLASS)}
             style={{ left: emptyMenu.x, top: emptyMenu.y }}
           >
             {emptyMenu.items.map((item, index) => (
@@ -950,7 +951,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
                   item.onClick();
                 }}
                 className={cn(
-                  "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
+                  MENU_ROW_CLASS,
                   "hover:bg-[var(--sidebar-hover)]",
                   emptyMenuFocus === index && "bg-[var(--sidebar-active)]"
                 )}

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { MENU_PANEL_CLASS } from "@/components/ui/dropdown-menu";
 
 interface PopoverContextValue {
   open: boolean;
@@ -159,7 +160,14 @@ export function PopoverContent({
     <div
       ref={contentRef}
       className={cn(
-        "absolute z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md",
+        // Same panel chrome as every menu — a popover anchored to a chrome
+        // button is the same object to the eye, and it read as a different one
+        // at 6px radius with a border while the menus were at 10px with a ring.
+        "absolute z-50 min-w-[8rem] overflow-hidden",
+        MENU_PANEL_CLASS,
+        // The panel class carries the menus' 6px row padding; a popover's
+        // content sets its own, so keep the historical zero default here.
+        "p-0",
         "animate-in fade-in-0 zoom-in-95",
         align === "start" && "left-0",
         align === "center" && "left-1/2 -translate-x-1/2",

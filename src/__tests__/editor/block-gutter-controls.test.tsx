@@ -252,4 +252,20 @@ describe("BlockGutterControls", () => {
     await user.click(text);
     expect(props.onTurnInto).not.toHaveBeenCalled();
   });
+
+  it("holds the + and the grip in one 24px line box so they sit level", () => {
+    // `DropdownMenu` wraps the grip's trigger in an `inline-block`, so the grip's flex item is a
+    // line box rather than the button. At the row's inherited 28px line-height that item measured
+    // 28px against the `+`'s 24px, and `items-center` then dropped the `+` exactly 2.00px below the
+    // grip on all 48 rows of a fixture — measured in the packaged app. With no leading to add, the
+    // line box is the 24px button and both items resolve alike.
+    renderControls();
+
+    const controls = screen.getByRole("group", { name: "Block controls" });
+    expect(controls.className).toContain("items-center");
+    expect(controls.className).toContain("leading-[0]");
+    for (const name of ["Add block", "Block actions"]) {
+      expect(screen.getByRole("button", { name }).className).toContain("h-6 w-6");
+    }
+  });
 });

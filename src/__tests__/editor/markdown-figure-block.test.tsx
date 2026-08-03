@@ -91,6 +91,20 @@ describe("MarkdownFigureBlock", () => {
       );
     });
 
+    it("asks for one alignment, the one math-mermaid.css already enforces", async () => {
+      // The wrapper carried `text-center` while `.markdown-page .katex-display` and
+      // `.markdown-page .katex-display > .katex` both pin `text-align: left`. The stylesheet won
+      // every time, so the Block computed `center` on its own box and painted flush left — and the
+      // pre-KaTeX `<code>` fallback, which no rule pins, was drawn centred and then jumped 418.97px
+      // to the left margin the moment the render arrived.
+      renderFigure("block_math", "$$\nE = mc^2\n$$");
+
+      const wrapper = screen.getByTestId("block-math-block");
+      expect(wrapper.className).toContain("block-math-wrapper");
+      expect(wrapper.className).not.toContain("text-center");
+      await settle();
+    });
+
     it("shows the formula in the field without the delimiters that surround it", async () => {
       renderFigure("block_math", "$$\nE = mc^2\n$$");
 
@@ -378,9 +392,9 @@ describe("MarkdownFigureBlock", () => {
       ["block_math", "$$\nE = mc^2\n$$"],
       ["mermaid", "```mermaid\ngraph TD\n```"],
     ])("gives %s exactly one focused editing surface", async (kind, source) => {
-      const { container } = renderFigure(kind, source);
+      renderFigure(kind, source);
 
-      const surfaces = container.querySelectorAll("[data-native-block-editor]");
+      const surfaces = document.querySelectorAll("[data-native-block-editor]");
       expect(surfaces).toHaveLength(1);
       expect(document.activeElement).toBe(surfaces[0]);
       await settle();
@@ -425,16 +439,44 @@ describe("MarkdownFigureBlock", () => {
     it.each<[MarkdownFigureKind, string]>([
       ["block_math", "$$\nE = mc^2\n$$"],
       ["mermaid", "```mermaid\ngraph TD\n```"],
-    ])(
-      "floats the %s field out of flow so activation cannot resize the Block",
-      async (kind, source) => {
-        renderFigure(kind, source);
+    ])("keeps the %s source panel in the row's own flow", async (kind, source) => {
+      // Both obvious places are wrong, and the panel has been in each of them.
+      //
+      // Absolutely positioned inside the row it was painted over: every row carries `contain: layout
+      // style`, so the row is its own stacking context and the panel's z-index never applied outside
+      // it. Measured in the packaged app, a one-line equation's panel hung 34.80px past its row with
+      // 87% of the next paragraph drawn over it; a twelve-line one hung 188.78px past, over five
+      // whole Blocks.
+      //
+      // In flow the paint was right but the Page moved: activating a one-line equation grew its row
+      // by 56.78px, which `in-place.spec.ts` forbids — the content under the pointer jumps away from
+      // what the user was aiming at.
+      //
+      // Portalled to the body it paints correctly and the row keeps its height, but the editing
+      // surface then lives outside the row it belongs to — and the caret mapping, the focus
+      // restoration and six lookups in the e2e harness all read it out of the row. Moving that
+      // assumption for two kinds is a bigger change than the defect justifies, so the panel stays in
+      // flow and the row grows.
+      renderFigure(kind, source);
 
-        const panel = sourceField(kind).parentElement as HTMLElement;
-        expect(panel.style.position).toBe("absolute");
-        await settle();
-      }
-    );
+      const panel = sourceField(kind).parentElement as HTMLElement;
+      expect(panel.style.position).toBe("");
+      expect(panel.style.zIndex).toBe("");
+      expect(panel.className).toContain("mt-1");
+      await settle();
+    });
+
+    it.each<[MarkdownFigureKind, string, number]>([
+      ["block_math", `$$\n${"a = b \\\\\n".repeat(12)}$$`, 8],
+      ["mermaid", "```mermaid\ngraph TD\nA --> B\n```", 2],
+    ])("caps the %s field at eight rows and scrolls the rest", async (kind, source, rows) => {
+      renderFigure(kind, source);
+
+      // In flow, every row the field asks for is a row the Page is pushed down by, so a long
+      // source scrolls inside the field rather than growing the Block without limit.
+      expect(sourceField(kind).rows).toBe(rows);
+      await settle();
+    });
 
     it.each<[MarkdownFigureKind, string, string]>([
       ["block_math", "$$\nE = mc^2\n$$", "block-math-block"],
@@ -460,6 +502,56 @@ describe("MarkdownFigureBlock", () => {
 
       expect(screen.getByTestId(testId).className).toBe(before);
       await settle();
+    });
+  });
+
+  describe("the equation's hover surface", () => {
+    it("hangs no style hook off the rendered formula", async () => {
+      const { container } = renderFigure("block_math", "$$\nE = mc^2\n$$", { editable: false });
+      await waitFor(() => expect(screen.getByTestId("rendered-math")).toBeInTheDocument());
+
+      // `math-rendered` exists for exactly two rules in math-mermaid.css: `cursor: pointer` and a
+      // hover tint. BLOCK_UX_REFERENCE records that a row hover tint was shipped and then removed
+      // because it painted a full-column band over a short piece of content; this one survived the
+      // removal and did the same thing — measured on the packaged app, hovering `E = mc^2` painted
+      // 923px of band while hovering the paragraph above it painted nothing.
+      expect(container.querySelector(".math-rendered")).toBeNull();
+      await settle();
+    });
+  });
+
+  describe("a diagram's own size", () => {
+    it("copies the viewBox onto the SVG root so the image has an intrinsic size", async () => {
+      const { withIntrinsicSize } =
+        await vi.importActual<typeof import("@/lib/mermaid-renderer")>("@/lib/mermaid-renderer");
+
+      // Mermaid's own output shape. Through an `<img>` this is an image with a ratio and no size,
+      // which the sizing rules resolve by filling the container: measured on the packaged app, a
+      // two-node `graph TD` was drawn at 294.34x460 — a 3.07x upscale stopped only by the 460px
+      // height cap it had grown into rather than been fitted to.
+      const sized = withIntrinsicSize(
+        '<svg id="d" width="100%" viewBox="0 0 111.34 174" style="max-width: 111.34px;"><g/></svg>'
+      );
+      expect(sized).toContain('width="111.34"');
+      expect(sized).toContain('height="174"');
+      expect(sized).not.toContain('width="100%"');
+      // Everything else is left exactly as Mermaid wrote it.
+      expect(sized).toContain('viewBox="0 0 111.34 174"');
+      expect(sized).toContain('style="max-width: 111.34px;"');
+      expect(sized).toContain("<g/></svg>");
+    });
+
+    it("leaves an SVG it cannot measure alone", async () => {
+      const { withIntrinsicSize } =
+        await vi.importActual<typeof import("@/lib/mermaid-renderer")>("@/lib/mermaid-renderer");
+
+      // Guessing a size would be worse than the container-filling behaviour it replaces.
+      const noViewBox = '<svg width="100%"><g/></svg>';
+      expect(withIntrinsicSize(noViewBox)).toBe(noViewBox);
+      const degenerate = '<svg viewBox="0 0 0 174"></svg>';
+      expect(withIntrinsicSize(degenerate)).toBe(degenerate);
+      const unparseable = '<svg viewBox="nonsense"></svg>';
+      expect(withIntrinsicSize(unparseable)).toBe(unparseable);
     });
   });
 });

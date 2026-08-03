@@ -16,7 +16,8 @@ import {
   X,
   CalendarDays,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatShortcut } from "@/lib/utils";
+import { MENU_PANEL_CLASS, MENU_ROW_CLASS } from "@/components/ui/dropdown-menu";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -347,19 +348,6 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
     }
   };
 
-  // Detect macOS for shortcut display
-  const [isMac, setIsMac] = React.useState(false);
-  React.useEffect(() => {
-    setIsMac(navigator.platform.toUpperCase().indexOf("MAC") >= 0);
-  }, []);
-
-  const formatKey = (key: string) => {
-    if (isMac && key === "Ctrl") return "⌘";
-    if (isMac && key === "Alt") return "⌥";
-    if (isMac && key === "Shift") return "⇧";
-    return key;
-  };
-
   if (!mounted) return null;
 
   let globalIndex = 0;
@@ -379,7 +367,14 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
         aria-label="Command palette"
         className={cn(
           "relative z-50 w-full max-w-lg",
-          "rounded-xl border border-border bg-popover shadow-2xl",
+          // Same surface as every other menu in the app: 10px radius, no
+          // border, the hairline-ring shadow. This panel used to be a 12px
+          // radius with a 1px border and shadow-2xl, which read as a different
+          // kind of object from the menu it is a sibling of.
+          MENU_PANEL_CLASS,
+          // The menus' 6px lives on this dialog's list instead — the header and
+          // footer are full-bleed rows with their own divider.
+          "p-0",
           "animate-in fade-in-0 zoom-in-95 slide-in-from-top-2",
           "overflow-hidden",
           // Mobile: add horizontal margin
@@ -387,8 +382,9 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
         )}
         onKeyDown={handleKeyDown}
       >
-        {/* Search input */}
-        <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+        {/* Search input. px-3.5 puts the glyph on the same 14px as a row's
+            icon (the list's own 6px padding plus the row's 8px). */}
+        <div className="flex items-center gap-2 border-b border-border px-3.5 py-3">
           <Search className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
           <input
             ref={inputRef}
@@ -407,7 +403,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-[var(--sidebar-hover)] hover:text-foreground"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-accent hover:text-foreground"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -416,14 +412,14 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
 
         {/* Search status */}
         {isSearching && (
-          <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 border-b border-border px-3.5 py-2 text-xs text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />
             Searching...
           </div>
         )}
 
         {searchError && (
-          <div className="flex items-center gap-2 border-b border-border bg-yellow-50 px-4 py-2 text-xs text-yellow-600 dark:bg-yellow-900/20">
+          <div className="flex items-center gap-2 border-b border-border bg-yellow-50 px-3.5 py-2 text-xs text-yellow-600 dark:bg-yellow-900/20">
             <AlertTriangle className="h-3 w-3" />
             <span className="flex-1">{searchError}</span>
             <button
@@ -439,18 +435,18 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
         {/* Command list */}
         <div
           ref={listRef}
-          className="max-h-[300px] overflow-y-auto py-2"
+          className="max-h-[300px] overflow-y-auto p-1.5"
           role="listbox"
           aria-label="Commands"
         >
           {flattenedCommands.length === 0 && !isSearching ? (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            <div className="px-2 py-8 text-center text-sm text-muted-foreground">
               {query.trim() ? "No results found." : "Type to search files and commands..."}
             </div>
           ) : (
             Object.entries(groupedCommands).map(([category, items]) => (
               <div key={category} className="mb-2 last:mb-0">
-                <div className="px-4 py-1.5 text-xs font-semibold text-muted-foreground">
+                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
                   {CATEGORY_LABELS[category] || category}
                 </div>
                 {items.map((cmd) => {
@@ -463,11 +459,19 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
                       role="option"
                       aria-selected={isSelected}
                       className={cn(
-                        "flex w-full items-center gap-3 px-4 py-2 text-sm",
-                        "transition-colors duration-75",
+                        // One menu row: 28px tall on a 6px radius with the
+                        // 20ms background. It used to be a full-bleed 33.4px
+                        // square-cornered row, and 36px on the two rows that
+                        // carried a bordered ⌘ chip.
+                        MENU_ROW_CLASS,
+                        "gap-2",
+                        // `--sidebar-active` is #ffffff — an elevated pill against the sidebar's
+                        // tinted ground, but invisible on this panel, which is bg-popover (also
+                        // #ffffff). The keyboard-selected row painted nothing. Use the same
+                        // `accent` fill every other menu row in the app uses.
                         isSelected
-                          ? "bg-[var(--sidebar-active)] text-foreground"
-                          : "text-foreground hover:bg-[var(--sidebar-hover)]"
+                          ? "bg-accent text-accent-foreground"
+                          : "text-foreground hover:bg-accent"
                       )}
                       onClick={() => cmd.action()}
                       onMouseEnter={() => setSelectedIndex(currentIndex)}
@@ -487,17 +491,11 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
                         </span>
                       )}
                       {cmd.shortcut && (
-                        <span className="flex flex-shrink-0 items-center gap-1">
-                          {cmd.shortcut.map((key, i) => (
-                            <React.Fragment key={i}>
-                              <kbd className="text-ui-xs inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-border bg-muted px-1 font-medium text-muted-foreground">
-                                {formatKey(key)}
-                              </kbd>
-                              {i < cmd.shortcut!.length - 1 && (
-                                <span className="text-ui-xs text-muted-foreground">+</span>
-                              )}
-                            </React.Fragment>
-                          ))}
+                        // The same right-aligned plain hint the more-actions
+                        // menu uses. Bordered 20px chips were the only reason
+                        // two rows in this list measured 36px instead of 28.
+                        <span className="flex-shrink-0 text-xs text-muted-foreground">
+                          {formatShortcut(cmd.shortcut.join("+"))}
                         </span>
                       )}
                       {isSelected && (
@@ -512,7 +510,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Footer hint */}
-        <div className="flex items-center justify-between border-t border-border bg-muted/30 px-4 py-2">
+        <div className="flex items-center justify-between border-t border-border bg-muted/30 px-3.5 py-2">
           <span className="text-xs text-muted-foreground">
             <kbd className="text-ui-xs mr-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 font-medium">
               ↑↓

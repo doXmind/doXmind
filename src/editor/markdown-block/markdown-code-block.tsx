@@ -63,8 +63,15 @@ const CODE_LAYER_METRICS: CSSProperties = {
   // today. It is stated rather than left to default only so the two layers cannot drift if a parent
   // ever sets one.
   tabSize: 8,
-  whiteSpace: "pre-wrap",
-  overflowWrap: "break-word",
+  // Code does not wrap, and the Block scrolls sideways instead. The `<pre>` carried
+  // `overflow-x: auto` from editor.css together with `pre-wrap`, which is a contradiction the
+  // browser resolves by never scrolling: measured on the packaged app, `scrollWidth === clientWidth`
+  // on every code Block, so the declaration had no effect and a 100-character line came out as 33
+  // wrapped fragments with its indentation meaningless. Notion, Feishu and every code editor a
+  // reader has ever used scroll. The scroll box is the shared parent below, not this element, so
+  // both layers move together.
+  whiteSpace: "pre",
+  overflowWrap: "normal",
   wordBreak: "normal",
   margin: 0,
   border: 0,
@@ -323,86 +330,136 @@ export function MarkdownCodeBlock({
 
   return (
     <div className="relative" onPointerDown={pressCode} onClick={releaseCode}>
-      <pre
-        data-testid="fenced-code-block"
-        className="rounded-lg bg-muted"
+      {/*
+       * The scroll box, and the only element in the Block that scrolls.
+       *
+       * It has to be the *shared parent* of both layers rather than the `<pre>` itself: the textarea
+       * is positioned against the sizing wrapper inside, so a `<pre>` that scrolled on its own would
+       * carry the glyphs sideways and leave the caret behind. Scrolling their common ancestor moves
+       * them as one.
+       *
+       * The `<pre>` keeps painting the surface, because it is never narrower than this box; the
+       * radius is repeated here so the corners are clipped from the *visible* box. Without it the
+       * Block's rounded left corner is whatever happens to be at scroll offset 0 and the edge turns
+       * square as soon as the code is scrolled.
+       */}
+      <div
+        data-code-scroll
+        // `autohide-scrollbar` is the app's own idiom for a scroll surface inside content: a track
+        // whose thumb is transparent until the pointer or focus is on the Block. The document
+        // default is an always-drawn 8px bar, which inside a code Block reads as a piece of UI
+        // sitting on the code. The track only takes its height on a Block that actually overflows.
+        className="autohide-scrollbar rounded-lg"
         style={{
-          ...CODE_LAYER_METRICS,
-          // One line of code plus the padding above and below it, because the editing surface is
-          // sized to this element's box. An empty payload renders no line here but always shows one
-          // line of caret in the textarea, so a `<pre>` allowed to collapse to its padding would clip
-          // the line the caret is on.
-          minHeight: "calc(2rem + 1.45em)",
+          overflowX: "auto",
+          overflowY: "hidden",
+          // `autohide-scrollbar` also asks for a stable gutter, which is right for the panels it was
+          // written for and wrong here: a box that can only scroll sideways still had 11px reserved
+          // down its right edge for a vertical bar that can never appear, and every code Block —
+          // including the ones with nothing to scroll — lost that much of its content width.
+          scrollbarGutter: "auto",
         }}
       >
-        <HighlightedCode ref={codeRef} code={payload} language={language} />
-      </pre>
-      {/*
-       * The editing surface: same text, same metrics, no colour of its own.
-       *
-       * Absolutely positioned over the `<pre>`, so it cannot contribute a single pixel of height —
-       * activation leaves the Block exactly the size it was. It is mounted in both states and made
-       * inert rather than removed while the Block is inactive: read-only, out of the tab order, out
-       * of the accessibility tree and transparent to the pointer, so the press that activates the
-       * Block still reaches the code underneath it. A surface that appeared on activation is how
-       * every earlier version of this grew on focus.
-       */}
-      <textarea
-        ref={textareaRef}
-        aria-label="Markdown block"
-        aria-hidden={editable ? undefined : true}
-        data-native-block-editor={editable ? "" : undefined}
-        data-code-editing-surface
-        readOnly={!editable}
-        tabIndex={editable ? 0 : -1}
-        // Squiggles under code are noise, and the browser's dictionary does not know any language in
-        // the fence.
-        spellCheck={false}
-        wrap="soft"
-        className="absolute inset-0 h-full w-full font-mono"
-        style={{
-          ...CODE_LAYER_METRICS,
-          // The glyphs the user reads are the highlighted ones underneath; this layer contributes
-          // only a caret and a selection. Making the text transparent rather than hiding the field
-          // is what keeps the caret on the real character positions.
-          color: "transparent",
-          caretColor: "hsl(var(--foreground))",
-          background: "transparent",
-          resize: "none",
-          // The two layers wrap identically, so they are the same height; a scrollbar on one of them
-          // would offset its text against the other by the scrollbar's width.
-          overflow: "hidden",
-          outline: "none",
-          boxShadow: "none",
-          appearance: "none",
-          pointerEvents: editable ? undefined : "none",
-        }}
-        value={payload}
-        onChange={(event) => {
-          const value = event.target.value;
-          const caret = event.target.selectionStart;
-          if (composingRef.current) {
-            // Mid-composition text is not something to write to the file: sending it through the
-            // parent and back replaces the field's value under the IME and drops the candidate.
-            setComposingValue(value);
-            return;
-          }
-          commit(value, { start: caret, end: event.target.selectionEnd });
-        }}
-        onCompositionStart={(event) => {
-          composingRef.current = true;
-          setComposingValue(event.currentTarget.value);
-        }}
-        onCompositionUpdate={(event) => setComposingValue(event.currentTarget.value)}
-        onCompositionEnd={(event) => {
-          composingRef.current = false;
-          const settled = event.currentTarget.value;
-          const caret = event.currentTarget.selectionEnd;
-          setComposingValue(null);
-          commit(settled, { start: caret, end: caret });
-        }}
-        onKeyDown={handleKeyDown}
-      />
+        {/*
+         * Sized by the longest line, never narrower than the Block.
+         *
+         * `max-content` is what gives the scroll box something to scroll; `min-width: 100%` keeps a
+         * short Block full width, so the surface behind two words of code is still a code Block and
+         * not a chip. The textarea's `inset-0` resolves against this element, which is why both
+         * layers end up on exactly the same box at exactly the same width.
+         */}
+        <div className="relative" style={{ width: "max-content", minWidth: "100%" }}>
+          <pre
+            data-testid="fenced-code-block"
+            className="rounded-lg bg-muted"
+            style={{
+              ...CODE_LAYER_METRICS,
+              // One line of code plus the padding above and below it, because the editing surface is
+              // sized to this element's box. An empty payload renders no line here but always shows
+              // one line of caret in the textarea, so a `<pre>` allowed to collapse to its padding
+              // would clip the line the caret is on.
+              minHeight: "calc(2rem + 1.45em)",
+              // `.markdown-page pre` also declares `overflow-x: auto`, which would make this element
+              // a second, competing scroll container inside the one above — and the wrong one, since
+              // it is the layer the caret is *not* in.
+              overflow: "visible",
+            }}
+          >
+            <HighlightedCode ref={codeRef} code={payload} language={language} />
+          </pre>
+          {/*
+           * The editing surface: same text, same metrics, no colour of its own.
+           *
+           * Absolutely positioned over the `<pre>`, so it cannot contribute a single pixel of height
+           * — activation leaves the Block exactly the size it was. It is mounted in both states and
+           * made inert rather than removed while the Block is inactive: read-only, out of the tab
+           * order, out of the accessibility tree and transparent to the pointer, so the press that
+           * activates the Block still reaches the code underneath it. A surface that appeared on
+           * activation is how every earlier version of this grew on focus.
+           */}
+          <textarea
+            ref={textareaRef}
+            aria-label="Markdown block"
+            aria-hidden={editable ? undefined : true}
+            data-native-block-editor={editable ? "" : undefined}
+            data-code-editing-surface
+            readOnly={!editable}
+            tabIndex={editable ? 0 : -1}
+            // Squiggles under code are noise, and the browser's dictionary does not know any
+            // language in the fence.
+            spellCheck={false}
+            // `off`, so the field lays its text out on one line per line of source exactly as the
+            // `<pre>` under it now does. Left on `soft` it would keep wrapping while the rendered
+            // code did not, and the caret would be a line further down with every wrap above it.
+            wrap="off"
+            className="absolute inset-0 h-full w-full font-mono"
+            style={{
+              ...CODE_LAYER_METRICS,
+              // The glyphs the user reads are the highlighted ones underneath; this layer
+              // contributes only a caret and a selection. Making the text transparent rather than
+              // hiding the field is what keeps the caret on the real character positions.
+              color: "transparent",
+              caretColor: "hsl(var(--foreground))",
+              background: "transparent",
+              resize: "none",
+              // This layer is exactly as wide as the box it is stretched over, which is as wide as
+              // the longest line, so it has nothing of its own to scroll. Saying so keeps it that
+              // way: a field that scrolled itself would slide its caret off the glyph underneath.
+              overflow: "hidden",
+              outline: "none",
+              boxShadow: "none",
+              appearance: "none",
+              pointerEvents: editable ? undefined : "none",
+            }}
+            value={payload}
+            onChange={(event) => {
+              const value = event.target.value;
+              const caret = event.target.selectionStart;
+              if (composingRef.current) {
+                // Mid-composition text is not something to write to the file: sending it through
+                // the parent and back replaces the field's value under the IME and drops the
+                // candidate.
+                setComposingValue(value);
+                return;
+              }
+              commit(value, { start: caret, end: event.target.selectionEnd });
+            }}
+            onCompositionStart={(event) => {
+              composingRef.current = true;
+              setComposingValue(event.currentTarget.value);
+            }}
+            onCompositionUpdate={(event) => setComposingValue(event.currentTarget.value)}
+            onCompositionEnd={(event) => {
+              composingRef.current = false;
+              const settled = event.currentTarget.value;
+              const caret = event.currentTarget.selectionEnd;
+              setComposingValue(null);
+              commit(settled, { start: caret, end: caret });
+            }}
+            onKeyDown={handleKeyDown}
+          />
+        </div>
+      </div>
       {refusedDelimiter ? (
         // Out of flow, below the Block, so a refusal cannot move the code the user is looking at.
         // `role="status"` rather than an alert: nothing was written and nothing is at risk, the user
@@ -420,7 +477,7 @@ export function MarkdownCodeBlock({
       ) : language ? (
         <span
           data-code-language
-          className="pointer-events-none absolute right-2 top-1.5 z-10 select-none font-mono text-[11px] text-muted-foreground"
+          className={`pointer-events-none select-none bg-muted text-muted-foreground ${CODE_CHIP_CLASSES}`}
         >
           {language}
         </span>
@@ -505,12 +562,35 @@ const CODE_INNER_METRICS: CSSProperties = {
 };
 
 /**
+ * Where the language label sits, and how big it is allowed to be.
+ *
+ * It has to fit *entirely inside the `pre`'s 16px top padding*, above line 1's glyph band. Sized by
+ * its own text and dropped 6px down, it was 25px tall and overlapped the first line by its full
+ * height — a grey word composited straight onto the first line of code, with no plate behind it
+ * because the background only appeared under the pointer. `leading-[14px]` with no vertical padding
+ * makes the chip exactly 14px, and `top-0.5` leaves it 1.5px clear of the first glyph at any line
+ * length, so it cannot reach the code however long line 1 is.
+ *
+ * Every state carries an opaque background — `bg-muted`, the `pre`'s own surface, so it is seamless
+ * at rest — because a transparent label is what let it composite over glyphs. The padding above line
+ * 1 is the same 16px on the textarea, so the region the chip takes out of the editing surface holds
+ * no character to put a caret on. The field uses a ring rather than a border, which would add 2px to
+ * a box measured to fit the padding exactly.
+ */
+const CODE_CHIP_CLASSES =
+  "absolute right-2 top-0.5 z-10 rounded px-1.5 py-0 font-mono text-[11px] leading-[14px]";
+
+/**
  * The code Block's language, as an editable chip.
  *
  * Absolutely positioned and mounted in both states, so it can neither add height on activation nor
  * disappear from a Block that is being edited. A free-text field rather than a menu, because a fence
  * info string is arbitrary in Markdown and a closed list would silently drop whatever the file
  * already says.
+ *
+ * Shown at rest rather than on hover. At `opacity: 0` a Block's language was unreadable until the
+ * pointer was on the row, so the one thing that says what a code Block *is* could only be found by
+ * hunting for it — and both reference products label the Block permanently.
  *
  * A copy of the row's `CodeLanguageChip`, which is module-private there; it goes away with the row's
  * fenced-code arm.
@@ -544,7 +624,7 @@ function CodeLanguageChip({
         value={draft}
         placeholder="language"
         spellCheck={false}
-        className="absolute right-2 top-1.5 z-10 w-24 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className={`w-24 bg-background text-foreground outline-none ring-1 ring-ring ${CODE_CHIP_CLASSES}`}
         onChange={(event) => setDraft(event.target.value)}
         onClick={(event) => event.stopPropagation()}
         onBlur={commit}
@@ -570,7 +650,7 @@ function CodeLanguageChip({
       aria-label={language ? `Code language: ${language}` : "Set code language"}
       // `z-10` keeps the chip above the editing surface. The textarea covers the whole Block, so
       // without it the chip is unclickable for exactly as long as the Block is being edited.
-      className="absolute right-2 top-1.5 z-10 rounded px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground opacity-0 transition-opacity duration-[20ms] hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover/native-block:opacity-100"
+      className={`bg-muted text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${CODE_CHIP_CLASSES}`}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
         event.stopPropagation();

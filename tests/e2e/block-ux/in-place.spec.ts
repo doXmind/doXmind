@@ -405,7 +405,28 @@ for (const testCase of CASES) {
     });
   }
 
+  /*
+   * Two kinds are exempt, and the exemption is the finding rather than a concession.
+   *
+   * An equation and a Mermaid diagram are the only kinds whose editing surface is ADDITIONAL: every
+   * other kind swaps one surface for another of the same size, so a resize there is a bug. These two
+   * reveal a source field that did not exist while reading, and it has to go somewhere. Out of flow
+   * inside the row it was painted over — each row carries `contain: layout style`, so its z-index
+   * never applied outside the row and the following rows drew through it; measured, a one-line
+   * equation's panel hung 34.8px past its row with 87% of the next paragraph over it, and a
+   * twelve-line one hung 188.8px past, over five whole Blocks. Portalled to the body it paints
+   * correctly, but the editing surface then lives outside its own row, which the caret mapping, the
+   * focus restoration and six lookups in this harness all assume it does not.
+   *
+   * So it grows the row: 56.8px for a one-line equation, capped at eight rows. The figure itself
+   * does not move — only what follows it does.
+   */
+  // By label: `blockKind` is only set on the cases that need it for other assertions, and neither of
+  // these two carries one.
+  const revealsAnAdditionalSurface = testCase.label === "equation" || testCase.label === "mermaid";
+
   test(`${testCase.label}: activation does not change its height`, async ({ page }) => {
+    test.skip(revealsAnAdditionalSurface, "grows by its source panel; see the comment above");
     await openPage(page, "InPlace", `Lead paragraph.\n\n${testCase.source}\n`, testCase.assets);
     const row = rows(page).nth(1);
 
@@ -421,5 +442,30 @@ for (const testCase of CASES) {
       Math.abs(after - before),
       `activating a ${testCase.label} changed its height`
     ).toBeLessThanOrEqual(1);
+  });
+
+  test(`${testCase.label}: activation grows the Block only by its own source panel`, async ({
+    page,
+  }) => {
+    test.skip(!revealsAnAdditionalSurface, "only the source-projected kinds add a surface");
+    await openPage(page, "InPlace", `Lead paragraph.\n\n${testCase.source}\n`, testCase.assets);
+    const row = rows(page).nth(1);
+
+    await clickAway(page);
+    const before = await settledHeight(row);
+    await activate(row);
+    const after = (await row.boundingBox())?.height ?? 0;
+    const panel = row.locator("[data-figure-source-panel]");
+
+    // The growth is exactly the panel, nothing else moved or reflowed around it.
+    await expect(panel).toBeVisible();
+    const panelHeight = (await panel.boundingBox())?.height ?? 0;
+    expect(after - before, "the row grew by something other than its panel").toBeGreaterThan(0);
+    expect(Math.abs(after - before - panelHeight)).toBeLessThanOrEqual(8);
+
+    // And it stays inside the row, which is the whole point of being in flow.
+    const rowBox = (await row.boundingBox())!;
+    const panelBox = (await panel.boundingBox())!;
+    expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(rowBox.y + rowBox.height + 1);
   });
 }

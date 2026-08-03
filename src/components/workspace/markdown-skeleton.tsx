@@ -25,7 +25,7 @@ interface MarkdownSkeletonProps {
 export function MarkdownSkeleton({ file }: MarkdownSkeletonProps = {}) {
   return (
     <div
-      className="animate-in fade-in-0 flex h-full flex-col duration-200"
+      className="flex h-full flex-col duration-200 animate-in fade-in-0"
       data-testid="markdown-skeleton"
       aria-busy="true"
     >

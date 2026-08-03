@@ -25,6 +25,7 @@ vi.mock("katex", () => ({
 
 import { MarkdownBlockDocument } from "@/editor/markdown-block/markdown-block-document";
 import {
+  firstLineBox,
   MarkdownBlockRow,
   MarkdownWikiLinkContext,
 } from "@/editor/markdown-block/markdown-block-row";
@@ -1590,4 +1591,193 @@ describe("MarkdownBlockRow keys on a Block with no text", () => {
       expect(event.defaultPrevented).toBe(true);
     });
   }
+});
+
+/**
+ * One marker column for every list kind, in both states.
+ *
+ * jsdom has no layout, so the class list is the measurement here; the numbers below were taken in
+ * the packaged app and the classes are what produce them.
+ */
+describe("MarkdownBlockRow list marker column", () => {
+  function markerColumn(): HTMLElement {
+    const column = document.querySelector<HTMLElement>("[data-native-block-content] .w-5");
+    expect(column).not.toBeNull();
+    return column as HTMLElement;
+  }
+
+  for (const [label, markdown, ordinal] of [
+    ["a bulleted item", "- item\n", undefined],
+    ["the tenth ordinal", "10. item\n", 10],
+    ["a to-do", "- [ ] item\n", undefined],
+  ] as const) {
+    for (const active of [false, true]) {
+      it(`hangs ${label}'s marker in the shared column while ${active ? "active" : "at rest"}`, () => {
+        const [block] = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot().blocks;
+        render(
+          <MarkdownBlockRow
+            block={block}
+            index={0}
+            count={1}
+            active={active}
+            listOrdinal={ordinal}
+            {...slashHandlers()}
+          />
+        );
+
+        // 20px wide, contents aligned to its right edge, followed by the row's own 8px gap. The
+        // to-do used to drop its bare 16px checkbox straight into the row, which started its label
+        // 4.00px left of every other list kind's at depths 0, 1 and 2.
+        const column = markerColumn();
+        expect(column.className).toContain("flex");
+        expect(column.className).toContain("justify-end");
+        expect(column.className).toContain("shrink-0");
+        // `text-right` is what wrapped a two-digit ordinal; the flex column replaces it outright.
+        expect(column.className).not.toContain("text-right");
+      });
+    }
+  }
+
+  it("never lets a two-digit ordinal wrap out of the 20px column", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("10. item\n").getSnapshot().blocks;
+    render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active={false}
+        listOrdinal={10}
+        {...slashHandlers()}
+      />
+    );
+
+    // "10." is 20.66px of glyph in a 20.00px box. Right-aligned with `text-right` its period
+    // dropped to a second line and the row grew from 40.00px to 68.00px — 22 of the first 33
+    // ordinals did that. As a `nowrap` flex child aligned to the column's end it overflows
+    // leftward into the 10px grip gap instead, and the label's x never moves.
+    const ink = markerColumn().firstElementChild as HTMLElement;
+    expect(ink.textContent).toBe("10.");
+    expect(ink.className).toContain("whitespace-nowrap");
+    expect(ink.className).toContain("shrink-0");
+  });
+
+  it("puts the to-do checkbox inside that column rather than beside it", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("- [ ] item\n").getSnapshot().blocks;
+    render(
+      <MarkdownBlockRow block={block} index={0} count={1} active={false} {...slashHandlers()} />
+    );
+
+    const checkbox = screen.getByRole("checkbox", { name: "item" });
+    expect(markerColumn()).toContainElement(checkbox);
+    // The glyph itself stays 16px; only the column around it is 20px.
+    expect(checkbox.className).toContain("h-4 w-4");
+  });
+});
+
+describe("MarkdownBlockRow selection and gutter geometry", () => {
+  function row(markdown: string, props: Partial<ComponentProps<typeof MarkdownBlockRow>> = {}) {
+    const [block] = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot().blocks;
+    // Scoped to this render's own container: two rows in one test would otherwise both answer a
+    // document-wide query and the second assertion would read the first row.
+    const { container } = render(
+      <MarkdownBlockRow
+        block={block}
+        index={0}
+        count={1}
+        active={false}
+        {...slashHandlers()}
+        {...props}
+      />
+    );
+    return container.querySelector("[data-native-block-row]") as HTMLElement;
+  }
+
+  it("takes the UA's own focus outline off the row", () => {
+    // The row is focusable, so a keyboard user got Chromium's `auto 1px rgb(229,151,0)` around the
+    // *row* box: measured on the packaged app, left 312.00 against the selection fill's 377.00, and
+    // wrapped around the gutter controls at 347-371. Two boxes, 65.00px apart, for one state.
+    expect(row("Text\n").className).toContain("outline-none");
+  });
+
+  it("draws the keyboard-focus ring on the same box as the selection fill", () => {
+    const ring = row("Text\n").querySelector<HTMLElement>("[data-native-block-focus-ring]");
+    // Byte for byte the geometry `[data-native-block-row]::after` uses for the fill, so focus and
+    // selection are one rectangle that changes colour rather than two rectangles side by side.
+    expect(ring?.style.top).toBe("calc(var(--row-lead) - 1px)");
+    expect(ring?.style.left).toBe("var(--editor-content-rail, 4rem)");
+    expect(ring?.style.right).toBe("0px");
+    expect(ring?.style.bottom).toBe("-1px");
+    expect(ring?.className).toContain("ring-inset");
+    expect(ring?.className).toContain("rounded-[3px]");
+    expect(ring?.className).toContain("group-focus-visible/native-block:opacity-100");
+  });
+
+  it("draws no ring on a selected Block, so a run of them stays one band", () => {
+    // The fill already says where a selected Block is. A ring inside a continuous multi-Block band
+    // is the amber line this replaced.
+    expect(
+      row("Text\n", { blockSelected: true }).querySelector("[data-native-block-focus-ring]")
+    ).toBeNull();
+  });
+
+  it("puts a quote's bar on the same rail as every other kind's first glyph", () => {
+    // Every other kind puts its own `px-1` between the content rail and its ink. A quote's leftmost
+    // ink is a border, and a border sits outside padding, so its bar started at 377.00 against
+    // 381.00 everywhere else and the grip->ink gap read 6.00px instead of 10.00px. The padding is
+    // on the column so the rendering and the editing surface cannot disagree about it.
+    const quote = row("> Quoted\n").querySelector<HTMLElement>("[data-native-block-content]");
+    expect(quote?.className).toContain("pl-1");
+    const paragraph = row("Text\n").querySelector<HTMLElement>("[data-native-block-content]");
+    expect(paragraph?.className).not.toContain("pl-1");
+  });
+});
+
+describe("firstLineBox", () => {
+  /** jsdom lays nothing out, so the one thing under test — which box is picked — is stubbed. */
+  function withLineBoxes(rects: Map<string, DOMRect>) {
+    const original = Range.prototype.getClientRects;
+    Range.prototype.getClientRects = function getClientRects() {
+      const rect = rects.get(this.startContainer.nodeValue ?? "");
+      return (rect ? [rect] : []) as unknown as DOMRectList;
+    };
+    return () => {
+      Range.prototype.getClientRects = original;
+    };
+  }
+
+  it("measures the first line the reader can see, not the decoration around it", () => {
+    const content = document.createElement("div");
+    content.innerHTML =
+      '<span aria-hidden="true">Note</span> <span>Real title</span><span>later</span>';
+    const restore = withLineBoxes(
+      new Map([
+        ["Note", new DOMRect(0, 5, 40, 20)],
+        ["Real title", new DOMRect(0, 50, 80, 20)],
+        ["later", new DOMRect(0, 90, 40, 20)],
+      ])
+    );
+    try {
+      // The derived callout label and the whitespace between the spans are both rejected, so the
+      // first line is the user's own text and every offset-free kind agrees on what "first" means.
+      expect(firstLineBox(content)?.top).toBe(50);
+    } finally {
+      restore();
+    }
+  });
+
+  it("falls back to a divider's rule, which is its only line of ink", () => {
+    const content = document.createElement("div");
+    content.innerHTML = "<hr>";
+    const rule = content.querySelector("hr") as HTMLElement;
+    rule.getBoundingClientRect = () => new DOMRect(0, 30, 100, 1);
+    expect(firstLineBox(content)?.top).toBe(30);
+  });
+
+  it("gives back null for a Block that draws no line at all", () => {
+    // A picture or a rendered diagram has no first *line*, and the caller keeps the stylesheet's
+    // own lead rather than centring the gutter on the middle of a 300px image.
+    const content = document.createElement("div");
+    content.innerHTML = '<img alt="">';
+    expect(firstLineBox(content)).toBeNull();
+  });
 });

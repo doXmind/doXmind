@@ -305,6 +305,14 @@ function flattenToOneLine(value: string): string {
 /** Menu order, GitHub's own: the five alert types a portable callout can be. */
 const CALLOUT_TYPE_ORDER = ["note", "tip", "important", "warning", "caution"] as const;
 
+/**
+ * The two palettes are maintained separately and only the dark one had ever been checked against
+ * its own surface: on the 6%-tinted light container the `-600` accents measured 3.04:1 (warning),
+ * 3.57:1 (tip) and 3.87:1 (note), against 6.72–7.68:1 for their dark counterparts, so a warning
+ * triangle nearly dissolved into its own cream background by day and was twice as present at night.
+ * `-700` is the step that lands the light ratios beside the dark ones; the type of a callout should
+ * be seen, not read off the title.
+ */
 const CALLOUT_STYLES: Record<
   string,
   { icon: LucideIcon; label: string; container: string; accent: string }
@@ -313,31 +321,31 @@ const CALLOUT_STYLES: Record<
     icon: Info,
     label: "Note",
     container: "border-sky-500/25 bg-sky-500/[0.06]",
-    accent: "text-sky-600 dark:text-sky-400",
+    accent: "text-sky-700 dark:text-sky-400",
   },
   tip: {
     icon: Lightbulb,
     label: "Tip",
     container: "border-emerald-500/25 bg-emerald-500/[0.06]",
-    accent: "text-emerald-600 dark:text-emerald-400",
+    accent: "text-emerald-700 dark:text-emerald-400",
   },
   important: {
     icon: MessageSquareWarning,
     label: "Important",
     container: "border-violet-500/25 bg-violet-500/[0.06]",
-    accent: "text-violet-600 dark:text-violet-400",
+    accent: "text-violet-700 dark:text-violet-400",
   },
   warning: {
     icon: TriangleAlert,
     label: "Warning",
     container: "border-amber-500/25 bg-amber-500/[0.06]",
-    accent: "text-amber-600 dark:text-amber-500",
+    accent: "text-amber-700 dark:text-amber-500",
   },
   caution: {
     icon: OctagonAlert,
     label: "Caution",
     container: "border-red-500/25 bg-red-500/[0.06]",
-    accent: "text-red-600 dark:text-red-400",
+    accent: "text-red-700 dark:text-red-400",
   },
 };
 
@@ -818,7 +826,16 @@ export function MarkdownContainerBlock({
               // press on the affordance the callout documents as its control did nothing at all —
               // no menu, and not even an activation — so the user had to click the text first and
               // then press the icon they had already pressed once.
-              className={`mt-0.5 h-4 w-4 shrink-0 rounded transition-colors duration-[20ms] ease-in hover:bg-foreground/10 ${style.accent}`}
+              // `editor-control` is the editor's one table of interaction states (editor.css). The
+              // `hover:bg-foreground/10` it used to carry was 2.1x every other icon button's tint —
+              // -20.7/-21.7/-22.1 per channel against their -10/-10/-10 — because a 10% fill of the
+              // ink reads twice as strong as the neutral `bg-muted` those controls hover to.
+              className={`editor-control h-4 w-4 shrink-0 rounded ${style.accent}`}
+              // Centred on the title's first line box rather than nudged down by a fixed 2px, which
+              // left it 4px high against a 28px line. `1lh` is the leading the title actually has,
+              // so this stays 0.0 at any editor line-height setting; the toggle's chevron is centred
+              // by the same expression, so the two leading icons on the Page cannot disagree.
+              style={{ marginTop: "calc((1lh - 1rem) / 2)" }}
               onPointerDown={(event) => event.stopPropagation()}
             >
               <Icon className="h-4 w-4" aria-hidden="true" />
@@ -899,7 +916,10 @@ export function MarkdownContainerBlock({
       className="my-1 min-h-9 rounded-lg border border-border bg-muted/20"
     >
       <summary
-        className="flex list-none items-start gap-1.5 break-words px-3 py-2 font-medium [&::-webkit-details-marker]:hidden"
+        // `gap-2.5` is the callout's gap. Both kinds lead with a 16px control at the same x inside
+        // the same 12px card padding, so the two titles have to start at the same x as well; at
+        // `gap-1.5` a summary sat 4px left of every callout title on the Page.
+        className="flex list-none items-start gap-2.5 break-words px-3 py-2 font-medium [&::-webkit-details-marker]:hidden"
         // Cancel the native disclosure but let the press keep travelling, so the row can activate
         // the Block the way it does for every other kind. Without this, clicking the summary to put
         // a caret in it collapsed the toggle instead.
@@ -909,7 +929,10 @@ export function MarkdownContainerBlock({
           type="button"
           aria-expanded={open}
           aria-label={open ? "Collapse toggle" : "Expand toggle"}
-          className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-muted hover:text-foreground"
+          className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-muted hover:text-foreground"
+          // Centred on the summary's first line box; see the callout's icon for why this is a
+          // measured `1lh` expression rather than a fixed nudge.
+          style={{ marginTop: "calc((1lh - 1rem) / 2)" }}
           // The chevron owns its own press. Letting it reach the summary would move the caret into
           // the title in the same gesture that expanded the Block.
           onPointerDown={(event) => event.stopPropagation()}
@@ -950,7 +973,13 @@ export function MarkdownContainerBlock({
       <div
         data-native-toggle-content
         data-container-region="body"
-        className="space-y-0.5 border-t border-border/70 px-3 py-2"
+        // Indented to the summary's own text origin — the 12px card padding, the 16px chevron and
+        // the 10px gap — so the disclosure's contents start where its title starts. Full-bleed, the
+        // body sat 22px *left* of the summary and the hierarchy read backwards: the child looked
+        // like a sibling of the toggle. The divider goes with it rather than being inset to match:
+        // it ran the full width of the card, which reinforced the same misreading, and neither
+        // reference product draws one.
+        className="space-y-0.5 py-2 pl-[38px] pr-3"
         onPointerDown={(event) => pressRegion(event.nativeEvent, event.currentTarget, "body", body)}
         onClick={(event) => releaseRegion(event, event.currentTarget)}
       >

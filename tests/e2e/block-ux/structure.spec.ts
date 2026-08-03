@@ -504,6 +504,35 @@ test("ArrowUp from the first line enters the previous Block at the same column",
   await expectSourceUnchanged(opened, COLUMN_SOURCE);
 });
 
+test("keyboard navigation keeps the active Block clear of fixed editor chrome", async ({
+  page,
+}) => {
+  const source = Array.from({ length: 30 }, (_, index) => `Block ${index + 1}.`).join("\n\n");
+  const opened = await openPage(page, "Chrome clearance", source);
+  const target = rows(page).nth(20);
+  const current = rows(page).nth(21);
+
+  await page.locator("[data-native-markdown-scroll]").evaluate((scroll, targetIndex) => {
+    const targetRow = scroll.querySelectorAll<HTMLElement>("[data-native-block-row]")[targetIndex];
+    if (targetRow) scroll.scrollTop = targetRow.offsetTop - 60;
+  }, 20);
+  await activate(current);
+  await placeCaret(page, current, 0);
+  await page.keyboard.press("ArrowUp");
+
+  await expect(target).toHaveAttribute("data-active", "true");
+  await expect
+    .poll(() =>
+      target.evaluate((row) => {
+        const scroll = row.closest<HTMLElement>("[data-native-markdown-scroll]");
+        if (!scroll) return false;
+        return row.getBoundingClientRect().top >= scroll.getBoundingClientRect().top + 80;
+      })
+    )
+    .toBe(true);
+  await expectSourceUnchanged(opened, source);
+});
+
 test("ArrowDown walks a wrapped paragraph's own lines before leaving it", async ({ page }) => {
   // Long enough to wrap several times at the 1440px viewport the harness sets, so the caret has
   // visual lines of its own to walk. A Block that handed ArrowDown straight to the next Block would

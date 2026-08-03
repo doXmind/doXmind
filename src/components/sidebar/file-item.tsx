@@ -19,6 +19,7 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  MENU_PANEL_CLASS,
 } from "@/components/ui/dropdown-menu";
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -471,7 +472,20 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
             ? "bg-[var(--sidebar-active)] text-foreground"
             : "text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)]"
       )}
-      style={{ paddingLeft: getSidebarTreePaddingLeft(depth) }}
+      style={{
+        paddingLeft: getSidebarTreePaddingLeft(depth),
+        // The active row is #ffffff on the sidebar's #f6f6f7 glass — 1.08:1,
+        // i.e. invisible on its own. The lift the design already authored
+        // (--sidebar-active-border / --sidebar-active-shadow, both themed) was
+        // defined in globals.css and never referenced anywhere; it is what
+        // makes a white chip read on a near-white surface.
+        ...(isActive && !isSelected
+          ? {
+              boxShadow:
+                "inset 0 0 0 1px var(--sidebar-active-border), var(--sidebar-active-shadow)",
+            }
+          : null),
+      }}
     >
       {/* Checkbox for multi-select */}
       {(isSelectionMode || isSelected) && (
@@ -491,19 +505,21 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
         </button>
       )}
 
-      <div className="relative flex h-5 w-5 flex-shrink-0 items-center justify-center">
-        {isPdfFile(file) ? (
-          <PdfGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
-        ) : isExcelFile(file) ? (
-          <SpreadsheetGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
-        ) : /\.csv$/i.test(file.name) ? (
-          <CsvGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
-        ) : (
-          <MarkdownGlyph className="h-5 w-5 text-[var(--sidebar-icon)] md:h-[18px] md:w-[18px]" />
-        )}
-      </div>
+      {/* No 20x20 wrapper box: folder rows put their 18px glyph straight in the
+          row, so wrapping this one centred it 1px right and pushed the label
+          2px right of every folder label at the same depth. One glyph, one left
+          edge per depth. */}
+      {isPdfFile(file) ? (
+        <PdfGlyph className="h-[18px] w-[18px] shrink-0" />
+      ) : isExcelFile(file) ? (
+        <SpreadsheetGlyph className="h-[18px] w-[18px] shrink-0" />
+      ) : /\.csv$/i.test(file.name) ? (
+        <CsvGlyph className="h-[18px] w-[18px] shrink-0" />
+      ) : (
+        <MarkdownGlyph className="h-[18px] w-[18px] shrink-0 text-[var(--sidebar-icon)]" />
+      )}
 
-      <div className={cn("min-w-0 flex-1", !isRenaming && "pr-12")}>
+      <div className="min-w-0 flex-1">
         {isRenaming ? (
           <div className="flex items-center gap-1">
             <Input
@@ -538,22 +554,23 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
             </button>
           </div>
         ) : (
-          <p
-            className={cn(
-              "text-ui-base min-w-0 truncate leading-5",
-              isActive ? "font-semibold" : "font-medium"
-            )}
-          >
+          // Weight is constant across selection. Going 500 -> 600 on the active
+          // row re-measured the text (scrollWidth 294 -> 299 here), so a name
+          // that just fit re-truncated the moment you selected it. Notion tints
+          // the active row; it does not re-weight it.
+          <p className="text-ui-base min-w-0 truncate font-medium leading-5">
             {getNameWithoutExtension(file.name)}
           </p>
         )}
       </div>
 
+      {/* A flex sibling, not an absolutely positioned overlay. The stamp used to
+          float over the name's box with only 48px reserved for it, so any file
+          30+ days old ("Mar 12, 2024" is 71.8px) printed straight through its
+          own truncated name. In flow the name truncates first and the overlap
+          is zero for every label getRelativeTimeLabel can emit. */}
       {!isRenaming && (
-        <span
-          aria-hidden
-          className="text-ui-xs pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-semibold text-[var(--sidebar-muted)]"
-        >
+        <span aria-hidden className="text-ui-xs shrink-0 font-semibold text-[var(--sidebar-muted)]">
           {getRelativeTimeLabel(file.updatedAt)}
         </span>
       )}
@@ -625,7 +642,10 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
               top: contextMenu.y,
               left: contextMenu.x,
             }}
-            className="animate-in fade-in-0 zoom-in-95 z-50 min-w-[180px] overflow-hidden rounded-md border border-border bg-popover p-1 shadow-lg"
+            className={cn(
+              "z-50 min-w-[180px] overflow-hidden animate-in fade-in-0 zoom-in-95",
+              MENU_PANEL_CLASS
+            )}
           >
             <FileActionsMenuItems
               variant="context"
