@@ -36,6 +36,7 @@ export const MENU_PANEL_CLASS =
 // settings theme picker) still grow instead of clipping.
 export const MENU_ROW_CLASS =
   "relative flex min-h-7 w-full cursor-pointer select-none items-center rounded-md px-2 text-sm outline-none transition-colors duration-[20ms] ease-in";
+export const MENU_ICON_CLASS = "h-4 w-4";
 
 interface DropdownMenuProps {
   children: React.ReactNode;

@@ -52,6 +52,7 @@ import {
   orderedListDisplayOrdinals,
 } from "@/editor/markdown-block/markdown-block-source";
 import { hasDesktopBridge, invokeDesktop } from "@/lib/native-shell";
+import { MENU_PANEL_CLASS } from "@/components/ui/dropdown-menu";
 import { InlineImageChip } from "@/editor/markdown-block/inline-image-chip";
 import { isMarkdownSourceOnlyBlockKind } from "@/editor/markdown-block/markdown-block-document";
 import { InlineFormatToolbar } from "@/editor/markdown-block/inline-format-toolbar";
@@ -685,6 +686,27 @@ function MarkdownBlockRowView({
     }
     autosizeTextarea(textarea);
   }, [active, autoFocusEditor, restoredSelection, surfaceKind]);
+
+  useEffect(() => {
+    if (!active) return;
+    const row = rowRef.current;
+    const scroller = row?.closest<HTMLElement>("[data-native-markdown-scroll]");
+    if (!row || !scroller) return;
+
+    // The header and Page controls cover the first 80px of the scroll surface.
+    // Native focus only clears the raw viewport, so keyboard navigation otherwise
+    // leaves a newly active Block behind that fixed chrome.
+    const frame = requestAnimationFrame(() => {
+      const rowRect = row.getBoundingClientRect();
+      const scrollerRect = scroller.getBoundingClientRect();
+      const safeTop = scrollerRect.top + 80;
+      if (rowRect.top < safeTop) scroller.scrollBy({ top: rowRect.top - safeTop });
+      else if (rowRect.bottom > scrollerRect.bottom) {
+        scroller.scrollBy({ top: rowRect.bottom - scrollerRect.bottom });
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [active]);
 
   useEffect(() => {
     if (blockSelectionFocus) rowRef.current?.focus();
@@ -1622,7 +1644,7 @@ function MarkdownBlockRowView({
                     // Notion's measured slash panel: 314px wide, 10px radius, opaque, layered
                     // shadow with a hairline ring. No transition on `top`/`left` — the panel is
                     // caret-anchored, and animating it would read as the menu lagging the caret.
-                    className="z-50 w-[min(314px,calc(100vw-2rem))] overflow-y-auto overscroll-contain rounded-[10px] bg-popover p-1.5 text-popover-foreground shadow-[0_20px_24px_rgba(25,25,25,0.05),0_5px_8px_rgba(25,25,25,0.027),0_0_0_1px_hsl(var(--border))]"
+                    className={`z-50 w-[min(314px,calc(100vw-2rem))] overflow-y-auto overscroll-contain ${MENU_PANEL_CLASS}`}
                     onMouseDown={(event) => event.preventDefault()}
                   >
                     {slashCommands.length === 0 ? (

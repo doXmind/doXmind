@@ -43,6 +43,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  MENU_ICON_CLASS,
+  MENU_PANEL_CLASS,
+  MENU_ROW_CLASS,
   useDropdownMenuItemFocus,
 } from "@/components/ui/dropdown-menu";
 import type {
@@ -86,7 +89,7 @@ const HEADING_ICONS: Record<HeadingLevel, LucideIcon> = {
 
 export function BlockTypeOptionIcon({
   option,
-  className = "h-4 w-4",
+  className = MENU_ICON_CLASS,
 }: {
   option: Pick<TurnIntoOption, "kind" | "level">;
   className?: string;
@@ -131,7 +134,8 @@ function GutterMenuRow({
       role="menuitem"
       aria-label={label}
       className={cn(
-        "flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm outline-none transition-colors duration-[20ms] ease-in hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground",
+        MENU_ROW_CLASS,
+        "gap-2.5 hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground",
         className
       )}
       onClick={onSelect}
@@ -310,7 +314,7 @@ export function BlockGutterControls({
           // Notion's measured menu chrome: 265px wide, 10px radius, opaque surface, and a layered
           // shadow whose outermost layer is a hairline ring instead of a border. No backdrop blur —
           // blurring a menu that opens next to the caret costs a full-screen composite per frame.
-          className="max-h-[min(28rem,calc(100vh-2rem))] w-[265px] rounded-[10px] border-0 bg-popover p-1.5 shadow-[0_20px_24px_rgba(25,25,25,0.05),0_5px_8px_rgba(25,25,25,0.027),0_0_0_1px_hsl(var(--border))]"
+          className={`max-h-[min(28rem,calc(100vh-2rem))] w-[265px] ${MENU_PANEL_CLASS}`}
         >
           <div className="p-1">
             <div className="flex h-9 items-center gap-2 rounded-lg border border-border/80 bg-background/70 px-2.5 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring/25">
@@ -345,7 +349,7 @@ export function BlockGutterControls({
                 onSelect={() => setTurnIntoOpen(true)}
               >
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
-                  <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                  <RefreshCw className={MENU_ICON_CLASS} aria-hidden="true" />
                 </span>
                 <span className="min-w-0 flex-1 text-left">Turn into</span>
                 <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
@@ -377,7 +381,7 @@ export function BlockGutterControls({
                     aria-current={selected ? "true" : undefined}
                     disabled={!canTurnInto}
                     onClick={() => onTurnInto(option.kind, option.level)}
-                    className="h-7 gap-2.5 rounded-md px-2 transition-colors duration-[20ms] ease-in"
+                    className="gap-2.5"
                   >
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
                       <BlockTypeOptionIcon option={option} />
@@ -398,19 +402,18 @@ export function BlockGutterControls({
             <DropdownMenuItem
               aria-label="Copy Markdown"
               onClick={() => void onCopyMarkdown()}
-              className="h-7 gap-2.5 rounded-md px-2 transition-colors duration-[20ms] ease-in"
+              className="gap-2.5"
             >
-              <ClipboardCopy className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              <ClipboardCopy
+                className={`${MENU_ICON_CLASS} text-muted-foreground`}
+                aria-hidden="true"
+              />
               <span className="min-w-0 flex-1 text-left">Copy Markdown</span>
             </DropdownMenuItem>
           ) : null}
           {showActions && matchingActions.duplicate ? (
-            <DropdownMenuItem
-              aria-label="Duplicate"
-              onClick={onDuplicate}
-              className="h-7 gap-2.5 rounded-md px-2 transition-colors duration-[20ms] ease-in"
-            >
-              <Copy className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <DropdownMenuItem aria-label="Duplicate" onClick={onDuplicate} className="gap-2.5">
+              <Copy className={`${MENU_ICON_CLASS} text-muted-foreground`} aria-hidden="true" />
               <span className="min-w-0 flex-1 text-left">Duplicate</span>
               <kbd className="text-[10px] text-muted-foreground">⌘D</kbd>
             </DropdownMenuItem>
@@ -420,9 +423,9 @@ export function BlockGutterControls({
               aria-label="Move up"
               disabled={!canMoveUp}
               onClick={onMoveUp}
-              className="h-7 gap-2.5 rounded-md px-2 transition-colors duration-[20ms] ease-in"
+              className="gap-2.5"
             >
-              <ArrowUp className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              <ArrowUp className={`${MENU_ICON_CLASS} text-muted-foreground`} aria-hidden="true" />
               <span className="min-w-0 flex-1 text-left">Move up</span>
               <kbd className="text-[10px] text-muted-foreground">⌥↑</kbd>
             </DropdownMenuItem>
@@ -432,9 +435,12 @@ export function BlockGutterControls({
               aria-label="Move down"
               disabled={!canMoveDown}
               onClick={onMoveDown}
-              className="h-7 gap-2.5 rounded-md px-2 transition-colors duration-[20ms] ease-in"
+              className="gap-2.5"
             >
-              <ArrowDown className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              <ArrowDown
+                className={`${MENU_ICON_CLASS} text-muted-foreground`}
+                aria-hidden="true"
+              />
               <span className="min-w-0 flex-1 text-left">Move down</span>
               <kbd className="text-[10px] text-muted-foreground">⌥↓</kbd>
             </DropdownMenuItem>
@@ -445,9 +451,9 @@ export function BlockGutterControls({
               <DropdownMenuItem
                 aria-label="Delete"
                 onClick={onDelete}
-                className="h-7 gap-2.5 rounded-md px-2 text-destructive transition-colors duration-[20ms] ease-in focus-visible:ring-destructive"
+                className="gap-2.5 text-destructive focus-visible:ring-destructive"
               >
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                <Trash2 className={MENU_ICON_CLASS} aria-hidden="true" />
                 <span className="min-w-0 flex-1 text-left">Delete</span>
                 <kbd className="text-[10px] opacity-70">⌘⇧⌫</kbd>
               </DropdownMenuItem>

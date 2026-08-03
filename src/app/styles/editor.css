@@ -527,7 +527,7 @@
 }
 
 .markdown-page [data-native-block-row][data-block-kind="blockquote"] {
-  --controls-lead: 2px;
+  --controls-lead: 6px;
 }
 
 .markdown-page [data-native-block-row][data-block-kind="fenced_code"],
@@ -540,15 +540,15 @@
 }
 
 .markdown-page [data-native-block-row][data-block-kind="mermaid"] {
-  --controls-lead: 0px;
+  --controls-lead: 5.5px;
 }
 
 .markdown-page [data-native-block-row][data-block-kind="callout"] {
-  --controls-lead: 4.5px;
+  --controls-lead: 11px;
 }
 
 .markdown-page [data-native-block-row][data-block-kind="toggle"] {
-  --controls-lead: 0.5px;
+  --controls-lead: 11px;
 }
 
 .markdown-page [data-native-block-row][data-block-kind="image"] {
@@ -556,11 +556,11 @@
 }
 
 .markdown-page [data-native-block-row][data-block-kind="table"] {
-  --controls-lead: 11px;
+  --controls-lead: 21px;
 }
 
 .markdown-page [data-native-block-row][data-block-kind="thematic_break"] {
-  --controls-lead: 8px;
+  --controls-lead: 6px;
 }
 
 .markdown-page strong,

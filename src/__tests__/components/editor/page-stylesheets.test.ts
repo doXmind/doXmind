@@ -85,6 +85,26 @@ describe("editor.css multi-Block selection band", () => {
   });
 });
 
+describe("editor.css gutter control leads", () => {
+  const editorRules = rules(readStyles("editor.css"));
+
+  it.each([
+    ['[data-block-kind="blockquote"]', "6px"],
+    ['[data-block-kind="mermaid"]', "5.5px"],
+    ['[data-block-kind="callout"]', "11px"],
+    ['[data-block-kind="toggle"]', "11px"],
+    ['[data-block-kind="table"]', "21px"],
+    ['[data-block-kind="thematic_break"]', "6px"],
+  ])("records the measured %s lead", (kind, lead) => {
+    const rule = editorRules.find(
+      (candidate) =>
+        candidate.selectors.some((selector) => selector.includes(kind)) &&
+        candidate.body.includes("--controls-lead")
+    );
+    expect(rule?.body).toMatch(new RegExp(`--controls-lead:\\s*${lead.replace(".", "\\.")}`));
+  });
+});
+
 /**
  * One table of interaction states.
  *
