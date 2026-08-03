@@ -664,11 +664,22 @@ function TableAxisMenu({
             }`}
             // The blue is the one the Block selection fill uses, which is the reference product's
             // measured accent; `bg-primary` is near-black in this theme and read as a smudge.
-            style={
-              axis === "row"
-                ? { width: 9, height: 22, backgroundColor: "rgb(35, 131, 226)" }
-                : { width: 22, height: 9, backgroundColor: "rgb(35, 131, 226)" }
-            }
+            //
+            // The opacity on a disabled handle is inline because the class above does not win.
+            // `.editor-control:disabled { opacity: .5 }` in editor.css is the editor's one dimming
+            // rule for controls that are present but unusable, and at (0,2,0) it outranks
+            // `.opacity-0`: measured on the packaged app, all six handles of an *inactive* table
+            // computed `opacity: 0.5` with no pointer anywhere near it, so every table on a Page
+            // carried a permanent half-strength blue pill on each of its rows and columns. That is
+            // the shown-but-inert state this control's whole rule was written to avoid, arrived at
+            // through the cascade rather than through the class. Only the `!enabled` arm is forced,
+            // because that is the one where the handle can never be reached — `tabIndex` is -1 —
+            // so nothing above it, `focus-visible` included, has anything left to reveal.
+            style={{
+              ...(axis === "row" ? { width: 9, height: 22 } : { width: 22, height: 9 }),
+              backgroundColor: "rgb(35, 131, 226)",
+              ...(enabled ? null : { opacity: 0 }),
+            }}
             onPointerDown={(event) => event.stopPropagation()}
           >
             {/* No text inside: a visually hidden label here would be real text inside the cell, and

@@ -328,7 +328,11 @@ export function UnifiedHeader() {
               <div
                 className={cn(
                   "flex h-10 min-w-0 items-end gap-1 overflow-x-auto overflow-y-hidden pr-2",
-                  isMacElectron && "relative top-[5px]"
+                  // 4px, not 5: the tabs hang below the 44px header on purpose
+                  // so the active one merges into the page, but at 5px their
+                  // bottom edge landed at y=49 and covered the first pixel of
+                  // the Page-properties row, whose top is y=48.
+                  isMacElectron && "relative top-1"
                 )}
                 role="tablist"
                 data-no-drag
@@ -407,7 +411,8 @@ export function UnifiedHeader() {
               <div
                 className={cn(
                   "flex h-8 min-w-0 max-w-[min(420px,100%)] cursor-default items-center gap-1.5 rounded-md bg-background/70 pl-2.5 pr-1.5 backdrop-blur-md transition-colors hover:bg-[var(--sidebar-hover)]",
-                  isMacElectron && "relative top-[5px]"
+                  // Same 4px as the tab strip this slot alternates with.
+                  isMacElectron && "relative top-1"
                 )}
                 aria-label={title}
               >

@@ -233,10 +233,38 @@ describe("rendered grid", () => {
   it("hides the handles until the Block is active, rather than showing an inert one", () => {
     // Shown at `opacity: 1` while disabled, a pill appeared under the pointer and answered a press
     // with nothing at all — no menu, no selection, not even focus.
+    //
+    // The class alone is not the pixel. `.editor-control:disabled { opacity: .5 }` in editor.css is
+    // (0,2,0) and outranks `.opacity-0`, so with the class as the only declaration all six handles
+    // of an inactive table measured `opacity: 0.5` on the packaged app — a permanent half-strength
+    // blue pill on every row and every column, with no pointer near the table. The inline value is
+    // what the browser actually paints, so it is what this asserts.
     const { container } = renderGrid(ALIGNED);
-    for (const handle of container.querySelectorAll("[data-axis-handle]")) {
+    for (const handle of container.querySelectorAll<HTMLElement>("[data-axis-handle]")) {
       expect(handle).toBeDisabled();
       expect(handle.className).toContain("opacity-0");
+      expect(handle.style.opacity).toBe("0");
+    }
+  });
+
+  it("leaves an active Block's handles to the class, so focus can still reveal one", () => {
+    // The inline override belongs only to the state that can never be reached. On an active Block a
+    // handle is reachable by Tab, and `focus-visible:opacity-100` has to be able to win — an inline
+    // `opacity: 0` here would beat it and leave the keyboard driving an invisible control.
+    const geometry = parseMarkdownTableSource(ALIGNED)!;
+    const { container } = render(
+      createElement(MarkdownTableBlock, {
+        blockId: "block-1",
+        source: ALIGNED,
+        geometry,
+        editable: true,
+        renderCell: (text: string) => createElement("span", null, text),
+      })
+    );
+    for (const handle of container.querySelectorAll<HTMLElement>("[data-axis-handle]")) {
+      expect(handle).toBeEnabled();
+      expect(handle.style.opacity).toBe("");
+      expect(handle.className).toContain("focus-visible:opacity-100");
     }
   });
 

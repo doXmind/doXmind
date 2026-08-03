@@ -14,9 +14,23 @@ import { cn } from "@/lib/utils";
  * rendered; they live here now so the more-actions dropdown, the sidebar
  * context menus and the block menu are one system instead of four. Callers that
  * still pass the same classes are simply agreeing with the default.
+ *
+ * The elevation is `--popover-shadow`, not a literal. The literal it replaces —
+ * `0 20px 24px rgba(25,25,25,.05), 0 5px 8px rgba(25,25,25,.027), 0 0 0 1px
+ * hsl(var(--border))` — is Notion's light-mode measurement, and it was used in
+ * *both* themes: rgba(25,25,25,·) cannot darken a #212121 page, so a dark menu
+ * had no drop shadow at all and was left leaning on a 1.44:1 ring. The token
+ * pair in globals.css states an elevation per theme (black ink in dark) and
+ * keeps the hairline ring as its own `--popover-ring`, so the two edges are
+ * measured rather than inherited. See theme-contrast.test.ts.
+ *
+ * The `shadow:` type hint is load-bearing. Tailwind cannot tell what a bare
+ * `var()` inside a `shadow-[…]` arbitrary value is, and guesses colour: without
+ * the hint the class compiles to `--tw-shadow-color`, not `--tw-shadow`, and
+ * paints no shadow at all. The hint forces the box-shadow branch.
  */
 export const MENU_PANEL_CLASS =
-  "rounded-[10px] border-0 bg-popover p-1.5 text-popover-foreground shadow-[0_20px_24px_rgba(25,25,25,0.05),0_5px_8px_rgba(25,25,25,0.027),0_0_0_1px_hsl(var(--border))]";
+  "rounded-[10px] border-0 bg-popover p-1.5 text-popover-foreground shadow-[shadow:var(--popover-shadow)]";
 // `min-h-7`, not `h-7`: a single-line row measures exactly 28px, and the few
 // rows that carry two lines or a swatch (the workspace switcher's recents, the
 // settings theme picker) still grow instead of clipping.

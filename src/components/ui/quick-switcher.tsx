@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { FileText, Clock } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
+import { MENU_PANEL_CLASS, MENU_ROW_CLASS } from "@/components/ui/dropdown-menu";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -153,16 +154,20 @@ function QuickSwitcherContent() {
         aria-modal="true"
         aria-label={t("quickFileSwitcher")}
         className={cn(
-          "relative z-50 w-full max-w-md",
-          "rounded-xl border border-border bg-popover shadow-2xl",
+          // Same width and same surface as the command palette: two centred
+          // keyboard-opened file lists reading as two different objects (448px
+          // / 512px, 12px radius with a border) was the whole complaint.
+          "relative z-50 w-full max-w-lg",
+          MENU_PANEL_CLASS,
+          "p-0",
           "animate-in fade-in-0 zoom-in-95 slide-in-from-top-2",
           "overflow-hidden",
           "mx-4 md:mx-0"
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+        {/* Header — px-3.5 lands the glyph on a row icon's 14px. */}
+        <div className="flex items-center gap-2 border-b border-border px-3.5 py-3">
           <Clock className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">{t("recentFiles")}</span>
           <span className="ml-auto text-xs text-muted-foreground">
@@ -173,12 +178,12 @@ function QuickSwitcherContent() {
         {/* File list */}
         <div
           ref={listRef}
-          className="max-h-[320px] overflow-y-auto py-1"
+          className="max-h-[320px] overflow-y-auto p-1.5"
           role="listbox"
           aria-label={t("recentFilesLabel")}
         >
           {orderedFiles.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            <div className="px-2 py-8 text-center text-sm text-muted-foreground">
               {t("noRecentFiles")}
             </div>
           ) : (
@@ -192,8 +197,10 @@ function QuickSwitcherContent() {
                   role="option"
                   aria-selected={isSelected}
                   className={cn(
-                    "flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-sm",
-                    "transition-colors duration-[20ms] ease-in",
+                    // One menu row — 28px on a 6px radius. These were 38.4px
+                    // full-bleed square rows.
+                    MENU_ROW_CLASS,
+                    "gap-2",
                     isSelected
                       ? "bg-accent text-accent-foreground"
                       : "text-foreground hover:bg-accent"
@@ -218,7 +225,7 @@ function QuickSwitcherContent() {
         </div>
 
         {/* Footer hint */}
-        <div className="flex items-center justify-between border-t border-border bg-muted/30 px-4 py-2">
+        <div className="flex items-center justify-between border-t border-border bg-muted/30 px-3.5 py-2">
           <span className="text-xs text-muted-foreground">
             <kbd className="text-ui-xs mr-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 font-medium">
               Tab

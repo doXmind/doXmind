@@ -916,7 +916,10 @@ export function MarkdownContainerBlock({
       className="my-1 min-h-9 rounded-lg border border-border bg-muted/20"
     >
       <summary
-        className="flex list-none items-start gap-1.5 break-words px-3 py-2 font-medium [&::-webkit-details-marker]:hidden"
+        // `gap-2.5` is the callout's gap. Both kinds lead with a 16px control at the same x inside
+        // the same 12px card padding, so the two titles have to start at the same x as well; at
+        // `gap-1.5` a summary sat 4px left of every callout title on the Page.
+        className="flex list-none items-start gap-2.5 break-words px-3 py-2 font-medium [&::-webkit-details-marker]:hidden"
         // Cancel the native disclosure but let the press keep travelling, so the row can activate
         // the Block the way it does for every other kind. Without this, clicking the summary to put
         // a caret in it collapsed the toggle instead.
@@ -971,12 +974,12 @@ export function MarkdownContainerBlock({
         data-native-toggle-content
         data-container-region="body"
         // Indented to the summary's own text origin — the 12px card padding, the 16px chevron and
-        // the 6px gap — so the disclosure's contents start where its title starts. Full-bleed, the
+        // the 10px gap — so the disclosure's contents start where its title starts. Full-bleed, the
         // body sat 22px *left* of the summary and the hierarchy read backwards: the child looked
         // like a sibling of the toggle. The divider goes with it rather than being inset to match:
         // it ran the full width of the card, which reinforced the same misreading, and neither
         // reference product draws one.
-        className="space-y-0.5 py-2 pl-[34px] pr-3"
+        className="space-y-0.5 py-2 pl-[38px] pr-3"
         onPointerDown={(event) => pressRegion(event.nativeEvent, event.currentTarget, "body", body)}
         onClick={(event) => releaseRegion(event, event.currentTarget)}
       >

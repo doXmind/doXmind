@@ -91,6 +91,20 @@ describe("MarkdownFigureBlock", () => {
       );
     });
 
+    it("asks for one alignment, the one math-mermaid.css already enforces", async () => {
+      // The wrapper carried `text-center` while `.markdown-page .katex-display` and
+      // `.markdown-page .katex-display > .katex` both pin `text-align: left`. The stylesheet won
+      // every time, so the Block computed `center` on its own box and painted flush left — and the
+      // pre-KaTeX `<code>` fallback, which no rule pins, was drawn centred and then jumped 418.97px
+      // to the left margin the moment the render arrived.
+      renderFigure("block_math", "$$\nE = mc^2\n$$");
+
+      const wrapper = screen.getByTestId("block-math-block");
+      expect(wrapper.className).toContain("block-math-wrapper");
+      expect(wrapper.className).not.toContain("text-center");
+      await settle();
+    });
+
     it("shows the formula in the field without the delimiters that surround it", async () => {
       renderFigure("block_math", "$$\nE = mc^2\n$$");
 

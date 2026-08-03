@@ -26,6 +26,7 @@ import {
   type ReactNode,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -689,6 +690,57 @@ function MarkdownBlockRowView({
     if (blockSelectionFocus) rowRef.current?.focus();
   }, [blockSelectionFocus]);
 
+  /**
+   * Sit the gutter on the Block's first line, measured rather than declared.
+   *
+   * editor.css carries a `--controls-lead` per kind, arrived at as
+   * `contentPaddingTop + (firstLineBoxHeight - 24) / 2` and then hand-corrected against the running
+   * app. Arithmetic cannot reach the container kinds — their chrome is a card padding, a border, an
+   * icon and a summary control, each of which can move without the constant beside it moving — and
+   * five of them had drifted 4.00-10.50px off the line they point at while paragraphs, lists,
+   * headings, code and unsupported stayed exact. A constant per kind is a snapshot of a layout; this
+   * is the layout.
+   *
+   * A correction, not a replacement. The stylesheet still states the lead, and a measurement that
+   * would move the handle further than its own height is rejected as measuring some other line:
+   * `firstLineBox` skips text the Block derived rather than text the file holds, so a callout
+   * written as `[!NOTE]` with no title of its own — whose visible first line is the derived label —
+   * would otherwise have dropped the handle 28.00px onto its body.
+   *
+   * Only while the Block is at rest. The gutter points at the Block *as it is read*, and an editing
+   * surface is entitled to differ from the preview it replaces — a raw Block's own surface pads
+   * 16px against the preview's 8px, and an image grows an Edit control out of nothing. Re-measuring
+   * on activation let that chrome drag the handle, and (before the change below) resize the Block
+   * under the pointer: measured, an image went 38.50px -> 47.00px the moment it was pressed.
+   */
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    const content = row?.querySelector<HTMLElement>("[data-native-block-content]");
+    const controls = row?.querySelector<HTMLElement>("[data-native-block-controls]");
+    if (!row || !content || !controls || active) return;
+    const align = () => {
+      // Cleared first so the declaration below is the stylesheet's own answer rather than the last
+      // correction this made, which would otherwise be what every later one is measured against.
+      row.style.removeProperty("--controls-lead");
+      // A picture or a rendered diagram has no first line to sit on. The declared lead is the
+      // answer there, and it is a better one than the middle of a 300px image.
+      const line = firstLineBox(content);
+      if (!line) return;
+      const declared = Number.parseFloat(window.getComputedStyle(controls).paddingTop) || 0;
+      const lead =
+        line.top + line.height / 2 - content.getBoundingClientRect().top - GUTTER_CONTROL_SIZE / 2;
+      if (Math.abs(lead - declared) > GUTTER_CONTROL_SIZE) return;
+      row.style.setProperty("--controls-lead", `${Math.round(lead * 100) / 100}px`);
+    };
+    align();
+    // A Block whose first line arrives late still gets one: a Mermaid diagram renders
+    // asynchronously, an image resolves its bytes over IPC, and a container's body can be typed
+    // into. Each of those changes the content box, which is what this watches.
+    const observer = new ResizeObserver(align);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [active, block.kind, block.level]);
+
   useEffect(() => {
     if (!active || sourceOnly) setInlineSelection(null);
   }, [active, sourceOnly]);
@@ -1097,7 +1149,12 @@ function MarkdownBlockRowView({
       // The selection fill is drawn by `[data-native-block-row]::after` in editor.css so it starts
       // at the content rail and never bleeds across the control gutter. Hovering paints nothing —
       // see the note there for why the tint that used to live on that pseudo-element is gone.
-      className="group/native-block relative flex min-h-9 items-start gap-[6px] rounded-md py-0.5 pl-1 pr-1"
+      //
+      // `outline-none` because keyboard focus is drawn below on the fill's own box. The UA outline
+      // was on this element, which is the row: measured, `auto 1px rgb(229,151,0)` at left 312.00
+      // against the fill's 377.00, wrapping the gutter controls at 347-371 and, in a run of selected
+      // Blocks, cutting an amber line across the one continuous blue band.
+      className="group/native-block relative flex min-h-9 items-start gap-[6px] rounded-md py-0.5 pl-1 pr-1 outline-none"
       data-block-id={block.id}
       data-block-kind={block.kind}
       data-block-level={block.level}
@@ -1163,53 +1220,90 @@ function MarkdownBlockRowView({
       }}
       onDrop={handleDrop}
     >
-      <div
-        data-native-block-controls
-        // Reveal/hide timing and first-line alignment live in editor.css.
-        className="flex w-[54px] shrink-0 items-start justify-end"
-        onPointerDownCapture={(event) => {
-          const target = event.target as HTMLElement;
-          if (target.closest('button[aria-label="Block actions"]')) {
-            onSelectBlock?.(block.id);
-          }
-        }}
-      >
-        <BlockGutterControls
-          currentKind={block.kind}
-          currentLevel={
-            block.level === 1 ||
-            block.level === 2 ||
-            block.level === 3 ||
-            block.level === 4 ||
-            block.level === 5 ||
-            block.level === 6
-              ? block.level
-              : undefined
-          }
-          canMoveUp={index > 0}
-          canMoveDown={index < count - 1}
-          canTurnInto={block.editable && !sourceOnly}
-          draggable
-          buttonTabIndex={active || blockSelectionFocus ? 0 : -1}
-          describedBy={descriptionId}
-          onMenuOpenChange={setControlsMenuOpen}
-          onAdd={(placement) => onInsertAfter(block.id, placement)}
-          onTurnInto={(kind, level) => onSetKind(block.id, kind, level)}
-          onCopyMarkdown={() =>
-            onCopyMarkdown ? onCopyMarkdown(block.id) : navigator.clipboard?.writeText(block.raw)
-          }
-          onDuplicate={() => onDuplicate(block.id)}
-          onMoveUp={() => onMove(block.id, -1)}
-          onMoveDown={() => onMove(block.id, 1)}
-          onDelete={() => onDelete(block.id)}
-          onDragStart={(event) => onDragStart(block.id, event)}
-          onDragEnd={onDragEnd}
+      {blockSelected ? null : (
+        // Keyboard focus, on the box the selection fill uses. Same top, same left, same radius, so
+        // the two states are one rectangle that changes colour instead of two rectangles 65.00px
+        // apart. Not drawn on a selected Block at all: the fill already says where the Block is, and
+        // a ring inside a multi-Block band is a line across the middle of it.
+        <div
+          aria-hidden="true"
+          data-native-block-focus-ring
+          className="pointer-events-none absolute rounded-[3px] opacity-0 ring-1 ring-inset ring-[rgb(35,131,226)] group-focus-visible/native-block:opacity-100"
+          // The geometry is `[data-native-block-row]::after`'s, byte for byte, and inline for that
+          // reason: a pseudo-element and a class cannot be kept in step by reading one another.
+          style={{
+            top: "calc(var(--row-lead) - 1px)",
+            left: "var(--editor-content-rail, 4rem)",
+            right: 0,
+            bottom: -1,
+          }}
         />
+      )}
+      {/*
+       * Width in the flow, height out of it.
+       *
+       * The row is a flex container, so it is as tall as its tallest item — and one of its items is
+       * chrome that lives in the margin. That made the Block's height a function of the gutter: the
+       * gutter is 24px of buttons plus `--controls-lead`, and any kind whose lead grows past its own
+       * content grew the row with it. The 54px here is still in the flow, because the content rail
+       * is `pl-1 + 54px + gap-[6px] = 4rem` and that arithmetic is what every overlay hangs off.
+       * The controls themselves overflow it, which costs nothing: they are 24px tall inside a row
+       * with a 36px floor, and `contain: layout style` does not clip.
+       */}
+      <div className="h-0 w-[54px] shrink-0">
+        <div
+          data-native-block-controls
+          // Reveal/hide timing and first-line alignment live in editor.css.
+          className="flex items-start justify-end"
+          onPointerDownCapture={(event) => {
+            const target = event.target as HTMLElement;
+            if (target.closest('button[aria-label="Block actions"]')) {
+              onSelectBlock?.(block.id);
+            }
+          }}
+        >
+          <BlockGutterControls
+            currentKind={block.kind}
+            currentLevel={
+              block.level === 1 ||
+              block.level === 2 ||
+              block.level === 3 ||
+              block.level === 4 ||
+              block.level === 5 ||
+              block.level === 6
+                ? block.level
+                : undefined
+            }
+            canMoveUp={index > 0}
+            canMoveDown={index < count - 1}
+            canTurnInto={block.editable && !sourceOnly}
+            draggable
+            buttonTabIndex={active || blockSelectionFocus ? 0 : -1}
+            describedBy={descriptionId}
+            onMenuOpenChange={setControlsMenuOpen}
+            onAdd={(placement) => onInsertAfter(block.id, placement)}
+            onTurnInto={(kind, level) => onSetKind(block.id, kind, level)}
+            onCopyMarkdown={() =>
+              onCopyMarkdown ? onCopyMarkdown(block.id) : navigator.clipboard?.writeText(block.raw)
+            }
+            onDuplicate={() => onDuplicate(block.id)}
+            onMoveUp={() => onMove(block.id, -1)}
+            onMoveDown={() => onMove(block.id, 1)}
+            onDelete={() => onDelete(block.id)}
+            onDragStart={(event) => onDragStart(block.id, event)}
+            onDragEnd={onDragEnd}
+          />
+        </div>
       </div>
 
       <div
         data-native-block-content
-        className="min-w-0 flex-1"
+        // A quote's leftmost ink is a border, and a border sits outside padding: every other kind
+        // pays its own `px-1` between the content rail and its first glyph, so a quote's bar landed
+        // at 377.00 against 381.00 everywhere else and the grip->ink gap read 6.00px instead of
+        // 10.00px. The 4px is on the column rather than on either surface so the rendered quote and
+        // the one being edited cannot disagree about it.
+        className={block.kind === "blockquote" ? "min-w-0 flex-1 pl-1" : "min-w-0 flex-1"}
         onPointerDownCapture={(event) => {
           // Activating a Block must keep the caret where the user clicked. Without this the
           // rendered preview is replaced by an editing surface that focuses at end-of-Block, so
@@ -2112,6 +2206,41 @@ function shiftSourceIndent(
   const text = shifted.join("\n");
   if (text === source.slice(lineStart, lineEnd)) return null;
   return { from: lineStart, to: lineEnd, text };
+}
+
+/** The gutter's controls are 24px square, so half of one is what a lead has to centre. */
+const GUTTER_CONTROL_SIZE = 24;
+
+/**
+ * The box of the first line the reader can see inside a Block, or null if it draws none.
+ *
+ * Line boxes rather than element boxes, because a Block's first *element* is routinely not its
+ * first line: a callout leads with an icon, a toggle with a chevron, a table with a border and a
+ * row of handles. A `Range` over a text node reports the boxes that text actually occupies, which
+ * is the thing the gutter is supposed to point at.
+ *
+ * Two runs are rejected. Text inside `aria-hidden` is chrome the Block derived rather than text the
+ * file holds — a callout with no title of its own is labelled `Note`, and centring on that would
+ * mean the gutter sat on different ink depending on whether the user had typed a title. Text with
+ * no box is whitespace between elements, which has no line of its own to sit on.
+ *
+ * The `<hr>` fallback is the divider, whose single line of ink is not text at all.
+ */
+export function firstLineBox(content: HTMLElement): DOMRect | null {
+  const walker = content.ownerDocument.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!node.nodeValue?.trim()) continue;
+    if (node.parentElement?.closest('[aria-hidden="true"]')) continue;
+    const range = content.ownerDocument.createRange();
+    range.selectNodeContents(node);
+    // Guarded the way `caretLineBoundary` guards its own measurement: jsdom lays nothing out and
+    // does not implement this, so a component rendered in a unit test would otherwise throw out of
+    // a layout effect.
+    const box = typeof range.getClientRects === "function" ? range.getClientRects()[0] : undefined;
+    if (box) return box;
+  }
+  const rule = content.querySelector("hr");
+  return rule ? rule.getBoundingClientRect() : null;
 }
 
 /**
@@ -3214,7 +3343,9 @@ function TogglePreviewShell({
       className="my-1 min-h-9 rounded-lg border border-border bg-muted/20"
     >
       <summary
-        className="flex list-none items-start gap-1.5 break-words px-3 py-2 font-medium [&::-webkit-details-marker]:hidden"
+        // `gap-2.5` is the callout's, for the reason given in markdown-container-block.tsx: the two
+        // kinds lead with the same 16px control at the same x, so their titles start at the same x.
+        className="flex list-none items-start gap-2.5 break-words px-3 py-2 font-medium [&::-webkit-details-marker]:hidden"
         // Cancel the native disclosure but let the press keep travelling, so the row can activate
         // the Block the way it does for every other kind.
         onClick={(event) => event.preventDefault()}

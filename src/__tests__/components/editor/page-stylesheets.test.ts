@@ -486,6 +486,14 @@ describe("editor.css inter-Block rhythm", () => {
     expect(rule?.selectors).toContain(".markdown-page [data-native-block-content] > * > table");
   });
 
+  it("stops the table restating a margin the row already owns", () => {
+    // `.markdown-page table` carried its own `my-4` on top of the reset above, so two rules claimed
+    // the same 16px with one of them permanently losing — which is how that margin came back twice.
+    const table = editorRules.find((rule) => rule.selectors.includes(".markdown-page table"));
+    expect(table, "the table still needs its collapse and width rules").toBeDefined();
+    expect(/@apply[^;]*\bmy-4\b/.test(table?.body ?? "")).toBe(false);
+  });
+
   it("sizes a heading to its own line rather than to a 36px slot", () => {
     const heading = editorRules.find((rule) =>
       rule.selectors.includes('.markdown-page [data-editor-kind="heading"]')
@@ -596,6 +604,115 @@ describe("math-mermaid.css", () => {
     expect(rule?.body).toMatch(/font-size:\s*0\.75rem\s*!important/);
     // The only positive tracking in the content column; every other run is normal or negative.
     expect(rule?.body).toMatch(/letter-spacing:\s*normal/);
+  });
+});
+
+/**
+ * Two chips, one shape.
+ *
+ * A wiki link and an inline-code span are the same thing typographically — a tinted chip inside a
+ * run of prose — but the wiki link was a `<button>`, so it laid out as `inline-block` and its tint
+ * became the whole 28px line box against `<code>`'s 19px of ink plus 2px either side. The tint is
+ * what a reader sees, so the *visible* gap between two paragraphs moved with whatever happened to
+ * be inline in them: measured 20.00px plain to plain, 16.50px between two inline-code paragraphs
+ * and 11.00px between two wiki-link ones, all nominally 20px apart.
+ */
+describe("editor.css inline chips", () => {
+  const editorRules = rules(readStyles("editor.css"));
+  const chip = editorRules.find((rule) =>
+    rule.selectors.includes(".markdown-page [data-wiki-link]")
+  );
+  const inlineCode = editorRules.find((rule) => rule.selectors.includes(".markdown-page code"));
+
+  it("holds a wiki chip to the height of its own glyphs", () => {
+    expect(chip, "a wiki chip needs a box of its own to be measured against").toBeDefined();
+    // Not `display: inline`, which is what a chip in a line of prose ought to be: Blink pins a
+    // `<button>` to an atomic inline and keeps `inline-block` however the rule asks. An
+    // `inline-block` takes its height from its own line-height, so `normal` — the font's own line
+    // height, at any editor font size and under any Line spacing setting — is what does the work.
+    expect(chip?.body).toMatch(/line-height:\s*normal/);
+  });
+
+  it("gives it exactly the padding the inline-code chip has", () => {
+    // `px-1 py-0.5` is 4px and 2px. Written out here because the two chips have to agree in pixels,
+    // and one of them states its padding as a utility and the other as a declaration.
+    expect(inlineCode?.body).toMatch(/@apply[^;]*\bpx-1\b/);
+    expect(inlineCode?.body).toMatch(/@apply[^;]*\bpy-0\.5\b/);
+    expect(chip?.body).toMatch(/padding:\s*2px 4px/);
+    // The chip's own markup carries `px-0.5`, so this rule has to out-rank a bare padding utility.
+    // `.px-1` stands in for it: a Tailwind padding utility is one class whatever its value, and the
+    // escaped `.px-0\.5` reads as two to the specificity helper above.
+    expect(outranks(".markdown-page [data-wiki-link]", ".px-1")).toBe(true);
+  });
+});
+
+/**
+ * A colour that is measured is a colour that is named.
+ *
+ * globals.css carries a `--code-*` / `--placeholder-fg` / `--table-*` pair per theme, each one
+ * solved against the surface it is painted on and pinned by `theme-contrast.test.ts`. Every one of
+ * them was declared and then referenced by nothing: this stylesheet went on painting One-Light's
+ * published hexes, which measure 2.93:1 for a number and 2.94:1 for a string on a code Block's own
+ * tint, and a placeholder as an alpha off the ink, which gave 1.72:1 light against 2.65:1 dark for
+ * one declaration. Tokens that no element reads are the exact shape of a colour audit that passes
+ * while the pixels stay wrong, so these assert the wiring rather than the values.
+ */
+describe("editor.css colour tokens", () => {
+  const css = readStyles("editor.css");
+  const editorRules = rules(css);
+  const body = withoutComments(css);
+
+  const ruleFor = (selector: string) =>
+    editorRules.find((rule) => rule.selectors.includes(selector));
+
+  it.each([
+    ["--code-keyword", ".markdown-page pre .hljs-keyword"],
+    ["--code-string", ".markdown-page pre .hljs-string"],
+    ["--code-number", ".markdown-page pre .hljs-number"],
+    ["--code-title", ".markdown-page pre .hljs-title"],
+    ["--code-attr", ".markdown-page pre .hljs-attr"],
+    ["--code-name", ".markdown-page pre .hljs-name"],
+  ])("paints %s through its token", (token, selector) => {
+    const rule = ruleFor(selector);
+    expect(rule, `no rule for ${selector}`).toBeDefined();
+    expect(rule?.body).toMatch(new RegExp(`color:\\s*hsl\\(var\\(${token}\\)\\)`));
+  });
+
+  it("paints inline code, placeholders and the table grid through theirs", () => {
+    expect(ruleFor(".markdown-page code")?.body).toMatch(/color:\s*hsl\(var\(--code-inline\)\)/);
+    const placeholder = editorRules.find(
+      (rule) =>
+        rule.selectors.includes(".markdown-page .native-block-textarea::placeholder") &&
+        /--placeholder-fg/.test(rule.body)
+    );
+    expect(placeholder, "every placeholder surface takes one colour").toBeDefined();
+    expect(placeholder?.selectors).toContain(".markdown-page [data-block-placeholder]");
+    const cells = editorRules.find(
+      (rule) =>
+        rule.selectors.includes(".markdown-page th") && rule.selectors.includes(".markdown-page td")
+    );
+    expect(cells?.body).toMatch(/border:\s*1px solid hsl\(var\(--table-border\)\)/);
+    const header = editorRules.find(
+      (rule) => rule.selectors.length === 1 && rule.selectors[0] === ".markdown-page th"
+    );
+    expect(header?.body).toMatch(/background:\s*hsl\(var\(--table-row-alt\)\)/);
+  });
+
+  it("keeps one palette rather than a hand-maintained pair", () => {
+    // Each token is declared per theme, so a `.dark` twin of a scope rule can only be a second
+    // opinion — which is how the two palettes drifted apart in the first place.
+    expect(body).not.toMatch(/\.dark[^{]*\.hljs-/);
+    expect(body).not.toMatch(/\.dark[^{]*placeholder/);
+  });
+
+  it("leaves no unmeasured colour behind on a scope, a chip or a cell", () => {
+    // Only the one Notion accent may stay a literal: #2383E2 is a measured brand value with no
+    // token in globals.css to read, and it is the same blue as the `rgba(35,131,226,·)` selection
+    // and drop-indicator fills beside it.
+    const literals = [...body.matchAll(/#[0-9a-fA-F]{3,8}\b/g)].map((match) =>
+      match[0].toLowerCase()
+    );
+    expect([...new Set(literals)]).toEqual(["#2383e2"]);
   });
 });
 

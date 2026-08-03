@@ -90,6 +90,20 @@ describe("Header control alignment", () => {
     expect(classes.filter((name) => /^(md:)?right-/.test(name))).toEqual(["right-4"]);
   });
 
+  // The tab strip hangs below the 44px header on purpose so the active tab
+  // merges into the page behind it. At 5px its bottom edge measured y=49.0 on
+  // the packaged app while the Page-properties row's top measured y=48.0, so
+  // the strip — inside a z-30 floating header — painted over the first pixel of
+  // a row it has nothing to do with. 4px lands it flush at y=48.0.
+  it("hangs the tab strip 4px below the header, not 5px onto the row underneath", () => {
+    renderHeader();
+
+    const strip = screen.getByRole("tablist");
+    const classes = strip.className.split(/\s+/);
+    expect(classes).toContain("top-1");
+    expect(classes).not.toContain("top-[5px]");
+  });
+
   // 13px, 15px and 15px across three adjacent 28px buttons read as three
   // different stroke weights. Chrome action buttons carry one glyph size.
   it("gives every header action button a 16px glyph", () => {

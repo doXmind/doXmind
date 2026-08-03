@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { NextIntlClientProvider } from "next-intl";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -13,6 +16,23 @@ import {
 import { Popover, PopoverContent } from "@/components/ui/popover";
 import { FileActionsMenuItems } from "@/components/sidebar/file-actions-menu";
 import en from "@/messages/en.json";
+
+/** The `--popover-shadow` declared for one theme, comments stripped, whitespace collapsed. */
+function popoverShadow(selector: ":root" | ".dark"): string {
+  const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8").replace(
+    /\/\*[\s\S]*?\*\//g,
+    ""
+  );
+  // Anchored so `.dark` does not also match `.dark.high-contrast`.
+  const block = new RegExp(
+    `(^|[\\s{}])${selector.replace(".", "\\.")}\\s*\\{([^{}]*)\\}`,
+    "m"
+  ).exec(css);
+  expect(block, `globals.css has a ${selector} block`).not.toBeNull();
+  const shadow = /--popover-shadow:\s*([^;]+);/.exec(block![2]);
+  expect(shadow, `globals.css ${selector} declares --popover-shadow`).not.toBeNull();
+  return shadow![1].replace(/\s+/g, " ").trim();
+}
 
 /**
  * The chrome used to run four incompatible menu systems side by side: row
@@ -33,7 +53,16 @@ describe("Shared menu metrics", () => {
     expect(MENU_PANEL_CLASS).toContain("rounded-[10px]");
     expect(MENU_PANEL_CLASS).toContain("p-1.5");
     expect(MENU_PANEL_CLASS).toContain("border-0");
-    expect(MENU_PANEL_CLASS).toContain("0_0_0_1px_hsl(var(--border))");
+    expect(MENU_PANEL_CLASS).toContain("shadow-[shadow:var(--popover-shadow)]");
+    // The panel used to carry Notion's light-mode shadow as a literal, in both
+    // themes: rgba(25,25,25,·) over a #212121 page paints nothing, so a dark
+    // menu had no elevation. The elevation is a token pair now — assert the
+    // panel no longer states a colour of its own, and that each theme's token
+    // still ends in the hairline ring the panel replaced its border with.
+    expect(MENU_PANEL_CLASS).not.toMatch(/rgba\(/);
+    for (const selector of [":root", ".dark"] as const) {
+      expect(popoverShadow(selector)).toContain("0 0 0 1px hsl(var(--popover-ring))");
+    }
   });
 
   it("gives dropdown panels and rows the shared metrics", () => {
@@ -106,6 +135,10 @@ describe("Shared menu metrics", () => {
     const classes = screen.getByTestId("panel").className.split(/\s+/);
     expect(classes).toContain("rounded-[10px]");
     expect(classes).toContain("border-0");
+    // Including the elevation: a popover anchored to a chrome button is the
+    // same object to the eye as a menu, so it has to lift off the page by the
+    // same amount in the same theme.
+    expect(classes).toContain("shadow-[shadow:var(--popover-shadow)]");
     // A popover's content sets its own padding; the panel class must not force
     // the menus' 6px onto it.
     expect(classes).toContain("p-0");

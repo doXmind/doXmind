@@ -584,6 +584,19 @@
   font-style: normal;
 }
 
+/*
+ * 16px here is not this rule's to give up.
+ *
+ * It looks like the stylesheet silently beating the `px-3 py-2` the preview components ask for, and
+ * for the raw/unsupported preview it is exactly that. But the same 16px is declared twice more in
+ * places this file cannot reach: `markdown-block-row.tsx`'s active surface for `fenced_code` and
+ * `unsupported` carries its own `p-4`, and `markdown-code-block.tsx` sets `padding: "1rem"` as an
+ * inline style on both layers of the code Block — the `<pre>` and the transparent textarea laid
+ * exactly over it, which have to agree to the pixel or the caret leaves the glyphs. Dropping the
+ * padding here alone would take the preview to 8/12 while its own editing surface stayed at 16, so
+ * clicking a raw Block would move it 8px down and 4px across. The four values are one decision
+ * spread over three files; it has to move in all three at once.
+ */
 .markdown-page pre {
   @apply overflow-x-auto rounded-lg bg-muted p-4 font-mono text-sm;
 }
@@ -600,18 +613,55 @@
  */
 .markdown-page code {
   @apply rounded bg-muted px-1 py-0.5 font-mono;
-  color: #eb5757;
+  /* `#eb5757` measured 3.19:1 on this chip in light and 3.90:1 in dark — the one text colour in the
+   * editor with no dark variant at all, so both themes painted the same red on two different
+   * grounds and neither reached AA. `--code-inline` is that colour re-solved per theme against
+   * `--muted`, which is the surface this chip actually paints on. */
+  color: hsl(var(--code-inline));
   font-size: 1em !important;
   /* Mono glyphs run optically large at the same px, so hold the line box to the prose leading. */
   line-height: inherit !important;
 }
 
 /*
+ * A wiki link costs its line exactly what an inline-code chip costs it.
+ *
+ * Both are the same thing typographically — a tinted chip inside a run of prose — but one was a
+ * `<button>`, so it laid out as `inline-block` and its box became the whole 28px line box while
+ * `<code>` stayed `inline` and painted 19px of ink plus 2px of padding either side. The tint is the
+ * chip, so a paragraph containing a wiki link painted 4.5px further up and 4.5px further down than
+ * an identical-looking paragraph next to it, and the *visible* gap between two Blocks moved with
+ * whatever happened to be inline in them: measured plain->plain 20.00px, code->code 16.50px,
+ * wiki->wiki 11.00px — a 9px spread across six pairs of paragraphs that are all nominally 20px
+ * apart. That is the most visible spacing defect on a Page, because nothing in the text explains it.
+ *
+ * The height is taken back through `line-height`, not through `display`. A chip in a line of text
+ * should be `display: inline` like `<code>` is, but Blink pins a `<button>` to an atomic inline and
+ * silently keeps `inline-block`: measured on the packaged app, the computed value is `inline-block`
+ * with `display: inline` declared. An `inline-block` takes its height from its own line-height, so
+ * declaring `normal` — which is the font's own line height, at any editor font size and under any
+ * Line spacing setting — gives the box the 19px the glyphs occupy, and the padding then matches
+ * inline code's `px-1 py-0.5` exactly. Two chips, one shape, 23px each.
+ */
+.markdown-page [data-wiki-link] {
+  padding: 2px 4px;
+  line-height: normal;
+}
+
+/*
  * Syntax colours for `highlight.js` scopes.
  *
- * A small palette rather than a vendored theme: only the scopes our grammars actually emit, tuned
- * against the editor's own surfaces so a code Block reads as part of the Page in both themes. The
- * inline-code red is reused for strings so the two agree.
+ * A small palette rather than a vendored theme: only the scopes our grammars actually emit. The
+ * values are One-Light and One-Dark re-solved against the surface they are painted on — a code
+ * Block's `--muted` tint at 12px — and they live in globals.css as `--code-*`, one pair per scope,
+ * because a hex written into a rule has nowhere to record which ground it was measured against.
+ * That is why this palette was wrong for two releases while the tokens beside it were right:
+ * published One-Light on #F5F5F5 measures 2.93:1 for a number, 2.94:1 for a string, 3.71:1 for a
+ * title and 3.36:1 for a tag, none of which a reader can hold at code size. Every scope now reads
+ * its token, so there is one place to answer for a colour and one place to re-measure it.
+ *
+ * There is deliberately no `.dark` half any more: each token is declared per theme, so the two
+ * palettes cannot drift out of step the way they did when this file carried both by hand.
  */
 .markdown-page pre .hljs-comment,
 .markdown-page pre .hljs-quote {
@@ -624,7 +674,7 @@
 .markdown-page pre .hljs-literal,
 .markdown-page pre .hljs-doctag,
 .markdown-page pre .hljs-meta .hljs-keyword {
-  color: #a626a4;
+  color: hsl(var(--code-keyword));
 }
 
 .markdown-page pre .hljs-string,
@@ -632,7 +682,7 @@
 .markdown-page pre .hljs-addition,
 .markdown-page pre .hljs-attribute,
 .markdown-page pre .hljs-meta .hljs-string {
-  color: #50a14f;
+  color: hsl(var(--code-string));
 }
 
 .markdown-page pre .hljs-number,
@@ -642,14 +692,14 @@
 .markdown-page pre .hljs-selector-attr,
 .markdown-page pre .hljs-selector-pseudo,
 .markdown-page pre .hljs-built_in {
-  color: #c18401;
+  color: hsl(var(--code-number));
 }
 
 .markdown-page pre .hljs-title,
 .markdown-page pre .hljs-section,
 .markdown-page pre .hljs-title.class_,
 .markdown-page pre .hljs-title.function_ {
-  color: #4078f2;
+  color: hsl(var(--code-title));
 }
 
 .markdown-page pre .hljs-attr,
@@ -657,7 +707,7 @@
 .markdown-page pre .hljs-symbol,
 .markdown-page pre .hljs-bullet,
 .markdown-page pre .hljs-link {
-  color: #986801;
+  color: hsl(var(--code-attr));
 }
 
 .markdown-page pre .hljs-deletion,
@@ -665,7 +715,7 @@
 .markdown-page pre .hljs-selector-id,
 .markdown-page pre .hljs-selector-class,
 .markdown-page pre .hljs-tag {
-  color: #e45649;
+  color: hsl(var(--code-name));
 }
 
 .markdown-page pre .hljs-emphasis {
@@ -674,55 +724,6 @@
 
 .markdown-page pre .hljs-strong {
   font-weight: 600;
-}
-
-.dark .markdown-page pre .hljs-keyword,
-.dark .markdown-page pre .hljs-selector-tag,
-.dark .markdown-page pre .hljs-literal,
-.dark .markdown-page pre .hljs-doctag,
-.dark .markdown-page pre .hljs-meta .hljs-keyword {
-  color: #c678dd;
-}
-
-.dark .markdown-page pre .hljs-string,
-.dark .markdown-page pre .hljs-regexp,
-.dark .markdown-page pre .hljs-addition,
-.dark .markdown-page pre .hljs-attribute,
-.dark .markdown-page pre .hljs-meta .hljs-string {
-  color: #98c379;
-}
-
-.dark .markdown-page pre .hljs-number,
-.dark .markdown-page pre .hljs-variable,
-.dark .markdown-page pre .hljs-template-variable,
-.dark .markdown-page pre .hljs-type,
-.dark .markdown-page pre .hljs-selector-attr,
-.dark .markdown-page pre .hljs-selector-pseudo,
-.dark .markdown-page pre .hljs-built_in {
-  color: #e5c07b;
-}
-
-.dark .markdown-page pre .hljs-title,
-.dark .markdown-page pre .hljs-section,
-.dark .markdown-page pre .hljs-title.class_,
-.dark .markdown-page pre .hljs-title.function_ {
-  color: #61afef;
-}
-
-.dark .markdown-page pre .hljs-attr,
-.dark .markdown-page pre .hljs-property,
-.dark .markdown-page pre .hljs-symbol,
-.dark .markdown-page pre .hljs-bullet,
-.dark .markdown-page pre .hljs-link {
-  color: #d19a66;
-}
-
-.dark .markdown-page pre .hljs-deletion,
-.dark .markdown-page pre .hljs-name,
-.dark .markdown-page pre .hljs-selector-id,
-.dark .markdown-page pre .hljs-selector-class,
-.dark .markdown-page pre .hljs-tag {
-  color: #e06c75;
 }
 
 .markdown-page pre code {
@@ -855,35 +856,25 @@
  * Drawn with `attr()`/`::placeholder` so the text is never part of the source, never lands in a
  * clipboard copy, and never reaches a PDF export. No transition — a fading placeholder reads as a
  * rendering glitch on a caret-anchored element.
+ *
+ * One colour, not an alpha per theme. A placeholder is text, and text has a contrast to answer for:
+ * the three surfaces below used to fade `--foreground` by 0.26 in light and 0.32 in dark, which
+ * measured 1.72:1 and 2.65:1 — neither readable, and not even equal to each other, because an alpha
+ * states a fade rather than a ratio and the two inks it fades are different colours. `--placeholder-
+ * fg` is declared per theme in globals.css against `--background`, so the number the two themes
+ * share is the ratio.
  */
-.markdown-page .native-block-textarea::placeholder {
-  color: hsl(var(--foreground) / 0.26);
-}
-
-.dark .markdown-page .native-block-textarea::placeholder {
-  color: hsl(var(--foreground) / 0.32);
+.markdown-page .native-block-textarea::placeholder,
+.markdown-page [data-native-semantic-editor][data-placeholder]:empty::before,
+.markdown-page [data-native-semantic-editor][data-placeholder]:has(> :only-child:empty)::before,
+.markdown-page [data-block-placeholder] {
+  color: hsl(var(--placeholder-fg));
 }
 
 .markdown-page [data-native-semantic-editor][data-placeholder]:empty::before,
 .markdown-page [data-native-semantic-editor][data-placeholder]:has(> :only-child:empty)::before {
-  color: hsl(var(--foreground) / 0.26);
   content: attr(data-placeholder);
   pointer-events: none;
-}
-
-.dark .markdown-page [data-native-semantic-editor][data-placeholder]:empty::before,
-.dark
-  .markdown-page
-  [data-native-semantic-editor][data-placeholder]:has(> :only-child:empty)::before {
-  color: hsl(var(--foreground) / 0.32);
-}
-
-.markdown-page [data-block-placeholder] {
-  color: hsl(var(--foreground) / 0.26);
-}
-
-.dark .markdown-page [data-block-placeholder] {
-  color: hsl(var(--foreground) / 0.32);
 }
 
 /* An empty heading keeps its line box so activating it never shifts the Page. */
@@ -987,8 +978,12 @@
   top: 0;
 }
 
+/* No `my-4`: the row owns a table's outer spacing, and the reset above already zeroes this one —
+ * measured, a table's computed margin is 0px top and bottom with the declaration still here. A rule
+ * that states a value it is guaranteed to lose is worse than no rule: it reads as the place a
+ * table's spacing is decided, and it is the one place it is not. */
 .markdown-page table {
-  @apply my-4 border-collapse;
+  @apply border-collapse;
   width: 100%;
   max-width: 100%;
   table-layout: auto;
@@ -1004,7 +999,11 @@
   text-align: left;
   min-width: 60px;
   padding: 6px 9px;
-  border: 1px solid hsl(var(--foreground) / 0.094);
+  /* The grid line is the only thing that makes a table read as a table, and an alpha off the ink
+   * cannot state how strong it is: 0.094 of `--foreground` resolved to 1.13:1 against the Page in
+   * light and 1.30:1 in dark, so the same declaration drew a fainter grid in one theme than the
+   * other and neither was a line. `--table-border` is that edge stated as a measured pair. */
+  border: 1px solid hsl(var(--table-border));
   font-size: 1rem;
   /* A cell holds prose at prose size, so it holds it at prose leading too. 1.5 made table cells the
    * only 16px run in the document at 24px, 4px tighter per line than the paragraph beside them. */
@@ -1016,7 +1015,10 @@
 
 .markdown-page th {
   @apply font-medium text-foreground;
-  background: hsl(var(--foreground) / 0.035);
+  /* The header is the one row in a Markdown table that carries a fill, so it takes the table's own
+   * fill token rather than a third alpha off the ink — 0.035 of `--foreground` was 1.03:1 against
+   * the Page, which is a fill only in the sense that it is not nothing. */
+  background: hsl(var(--table-row-alt));
 }
 
 /*

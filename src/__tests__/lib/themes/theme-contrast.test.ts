@@ -312,6 +312,23 @@ describe("popover elevation", () => {
       expect(shadowFor(selector)).toContain("hsl(var(--popover-ring))");
     }
   });
+
+  /*
+   * Layer order is not cosmetic here. `box-shadow` paints its first layer on top, so a ring listed
+   * after the drop shadows is composited *under* them and never paints its own value. Measured on
+   * the packaged app with the ring last, the edge came out #C0C0C0 in light against a #CCCCCC token
+   * (1.82:1 to the page) and #303030 in dark against #454545 (1.22:1) — the same edge 1.49x apart
+   * between the themes, which is the drift the token pair exists to remove. With the ring first it
+   * paints its token exactly: 1.61:1 light / 1.68:1 dark. Notion orders its own ring first too.
+   */
+  it("paints the ring on top of the drop shadow, not under it", () => {
+    for (const selector of [":root", ".dark"] as const) {
+      const layers = shadowFor(selector).split(/,(?![^(]*\))/);
+      expect(layers[0], `globals.css ${selector} leads --popover-shadow with the ring`).toContain(
+        "hsl(var(--popover-ring))"
+      );
+    }
+  });
 });
 
 describe("contrast helper", () => {

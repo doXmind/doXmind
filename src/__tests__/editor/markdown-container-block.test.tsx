@@ -574,15 +574,17 @@ describe("MarkdownContainerBlock — leaving and collapsing a container", () => 
   });
 
   it("insets a toggle's body to the summary's own text origin, with no full-bleed divider", () => {
-    // 12px card padding + a 16px chevron + a 6px gap. Full-bleed, the body sat 22px *left* of the
-    // title it belongs to and the hierarchy read backwards; the edge-to-edge rule reinforced it.
+    // 12px card padding + a 16px chevron + the 10px gap the summary now uses. Full-bleed, the body
+    // sat 22px *left* of the title it belongs to and the hierarchy read backwards; the edge-to-edge
+    // rule reinforced it. The number tracks the gap: the two have to move together or the body
+    // stops starting where the title starts.
     const { container } = renderContainer(
       "toggle",
       "<details open>\n<summary>S</summary>\n\nBody\n\n</details>",
       { editable: false }
     );
     const body = container.querySelector("[data-native-toggle-content]")!;
-    expect(body.className).toContain("pl-[34px]");
+    expect(body.className).toContain("pl-[38px]");
     expect(body.className).not.toContain("border-t");
   });
 
@@ -700,5 +702,20 @@ describe("parseMarkdownContainer round trips", () => {
     expect(parseMarkdownContainer("callout", "> Just a quote")).toBeNull();
     expect(parseMarkdownContainer("toggle", "<details>not a toggle</details>")).toBeNull();
     expect(parseMarkdownContainer("toggle", "<div>\n<summary>No</summary>\n</div>")).toBeNull();
+  });
+});
+
+describe("MarkdownContainerBlock leading-control geometry", () => {
+  it("gives a toggle summary the callout's gap, so the two titles start at the same x", () => {
+    // Both kinds lead with a 16px control at the same x inside the same 12px card padding. At
+    // `gap-1.5` the summary's first glyph sat 4.00px left of every callout title on the Page —
+    // measured 412.00 against 416.00 — for a difference a reader cannot account for.
+    renderContainer("toggle", "<details>\n<summary>Summary</summary>\n\nBody\n\n</details>");
+    const summary = screen.getByTestId("toggle-block").querySelector("summary");
+    expect(summary?.className).toContain("gap-2.5");
+    expect(summary?.className).not.toContain("gap-1.5");
+
+    renderContainer("callout", "> [!NOTE] Title\n> Body");
+    expect(screen.getByTestId("callout-block").className).toContain("gap-2.5");
   });
 });

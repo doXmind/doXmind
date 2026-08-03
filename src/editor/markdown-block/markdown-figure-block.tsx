@@ -267,7 +267,20 @@ function BlockMathRender({ latex }: { latex: string }) {
     <div
       data-testid="block-math-block"
       data-latex={latex}
-      className="block-math-wrapper min-h-9 overflow-x-auto rounded-md bg-muted/35 px-3 py-2 text-center"
+      // Left, and only left. The wrapper used to ask for `text-center` while math-mermaid.css
+      // pinned `.katex-display` and `.katex-display > .katex` to `text-align: left`, so the Block
+      // held two opposite answers and the stylesheet won every time — an equation that computed
+      // `center` on its own box and painted flush left. Left is the intended one: the two rules
+      // were written deliberately to match Notion, whose equation Block is not centred, and they
+      // are what every equation on every Page has actually rendered as since.
+      //
+      // Removing the class is not cosmetic. The fallback below is a bare `<code>` shown until
+      // KaTeX has loaded, and nothing pins *it* left — so a fresh equation was drawn centred and
+      // then jumped to the left margin the moment the render arrived. Measured on the packaged app
+      // in a 947px content column, `E = mc^2` was laid out at x 807.97 centred and lands at x
+      // 389.0: 418.97px of sideways travel on first paint, on the one Block whose content is
+      // supposed to sit still while it loads.
+      className="block-math-wrapper min-h-9 overflow-x-auto rounded-md bg-muted/35 px-3 py-2"
     >
       {/*
        * Deliberately unclassed.

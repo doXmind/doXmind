@@ -141,11 +141,20 @@
      * string used in both themes, so dark menus got no shadow at all, and in
      * light the panel sat white-on-white behind a 1.25:1 ring — 1.00:1 of
      * surface delta and nothing to replace it. The ring is now its own token
-     * so the two themes can state the same edge strength. */
+     * so the two themes can state the same edge strength.
+     *
+     * The ring is listed *first*, which is the order Notion's own menu shadow
+     * uses and is load-bearing rather than cosmetic: box-shadow paints its
+     * first layer on top, so a ring listed last is composited *under* the drop
+     * shadows and never paints its own value. Measured on the packaged app
+     * with the ring last, the edge came out #C0C0C0 in light (token #CCCCCC,
+     * darkened to 1.82:1) and #303030 in dark (token #454545, lifted away to
+     * 1.22:1) — the same edge 1.49x apart between themes, which is the exact
+     * defect the token pair exists to remove. Ring first: 1.61:1 / 1.68:1. */
     --popover-ring: 0 0% 80%; /* #CCCCCC — 1.61:1 vs the page */
     --popover-shadow:
-      0 20px 24px rgba(25, 25, 25, 0.1), 0 5px 8px rgba(25, 25, 25, 0.06),
-      0 0 0 1px hsl(var(--popover-ring));
+      0 0 0 1px hsl(var(--popover-ring)), 0 5px 8px rgba(25, 25, 25, 0.06),
+      0 20px 24px rgba(25, 25, 25, 0.1);
 
     /* Animation durations */
     --duration-fast: 150ms;
@@ -254,8 +263,8 @@
      * two-layer geometry. */
     --popover-ring: 0 0% 27%; /* #454545 — 1.68:1 vs the page */
     --popover-shadow:
-      0 20px 24px rgba(0, 0, 0, 0.45), 0 5px 8px rgba(0, 0, 0, 0.3),
-      0 0 0 1px hsl(var(--popover-ring));
+      0 0 0 1px hsl(var(--popover-ring)), 0 5px 8px rgba(0, 0, 0, 0.3),
+      0 20px 24px rgba(0, 0, 0, 0.45);
 
     /* Diff Review — Notion-inspired palette (dark): gray deleted, blue inserted */
 
