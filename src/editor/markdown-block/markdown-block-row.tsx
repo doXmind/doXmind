@@ -692,8 +692,7 @@ function MarkdownBlockRowView({
     const row = rowRef.current;
     const scroller = row?.closest<HTMLElement>("[data-native-markdown-scroll]");
     if (!row || !scroller) return;
-    const scrollBy = scroller.scrollBy;
-    if (typeof scrollBy !== "function") return;
+    if (typeof scroller.scrollBy !== "function") return;
 
     // The header and Page controls cover the first 80px of the scroll surface.
     // Native focus only clears the raw viewport, so keyboard navigation otherwise
@@ -702,9 +701,9 @@ function MarkdownBlockRowView({
       const rowRect = row.getBoundingClientRect();
       const scrollerRect = scroller.getBoundingClientRect();
       const safeTop = scrollerRect.top + 80;
-      if (rowRect.top < safeTop) scrollBy.call(scroller, { top: rowRect.top - safeTop });
+      if (rowRect.top < safeTop) scroller.scrollBy({ top: rowRect.top - safeTop });
       else if (rowRect.bottom > scrollerRect.bottom) {
-        scrollBy.call(scroller, { top: rowRect.bottom - scrollerRect.bottom });
+        scroller.scrollBy({ top: rowRect.bottom - scrollerRect.bottom });
       }
     });
     return () => cancelAnimationFrame(frame);
