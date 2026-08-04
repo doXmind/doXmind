@@ -23,6 +23,13 @@
   <a href="docs/USER_GUIDE.md"><strong>Read the user guide</strong></a>
 </p>
 
+This repository is licensed under [Apache-2.0](LICENSE). The doXmind name and
+logo are not granted by that license; see [TRADEMARKS.md](TRADEMARKS.md).
+
+Contributions are welcome for bugs, documentation, tests, and local Markdown
+compatibility. See [CONTRIBUTING.md](CONTRIBUTING.md) for the product boundary
+and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+
 ---
 
 ## What is ready
