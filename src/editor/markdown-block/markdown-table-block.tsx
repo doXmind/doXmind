@@ -37,6 +37,13 @@ export interface MarkdownTableBlockProps {
   readonly geometry: MarkdownTableGeometry;
   /** True only for the Block that is being edited; a nested or printed table is read-only. */
   readonly editable: boolean;
+  /**
+   * Which way a vertical crossing entered the Block, when one is what activated it.
+   *
+   * A grid has no linear caret, so the offset the crossing also carries is meaningless here and the
+   * direction is all that can be acted on. See the activation effect.
+   */
+  readonly entry?: -1 | 1;
   readonly onChange?: (blockId: string, nextSource: string) => void;
   /**
    * Keys the grid does not own, handed back to the Block.
@@ -109,6 +116,7 @@ export function MarkdownTableBlock({
   source,
   geometry,
   editable,
+  entry,
   onChange,
   onCellKeyDown,
   renderCell,
@@ -145,8 +153,16 @@ export function MarkdownTableBlock({
     const caret = pendingCaretOffsetRef.current;
     pendingCellRef.current = null;
     pendingCaretOffsetRef.current = null;
+    // An ArrowUp out of the Block below enters at the bottom of the grid, the mirror of the first
+    // cell an ArrowDown from above lands on. Landing on the header whichever way the caret arrived
+    // is what made the whole grid unreachable from underneath: one press stepped over every body row
+    // into row 0, and no further ArrowUp could get back down to them.
+    if (!pending && entry === -1) {
+      setActive({ row: Math.max(geometry.rowCount - 1, 0), column: 0, caret: "end" });
+      return;
+    }
     setActive({ row: pending?.row ?? 0, column: pending?.column ?? 0, caret });
-  }, [editable, active]);
+  }, [editable, active, entry, geometry.rowCount]);
 
   // An address outside the drawn grid is indistinguishable from having no editing surface: the row
   // still reports itself active while nothing holds focus. The effect above cannot catch it, because

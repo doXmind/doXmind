@@ -198,6 +198,46 @@ describe("rendered grid", () => {
     expect(cell.closest("th")).toBeNull();
   });
 
+  describe("where a keyboard crossing lands", () => {
+    const GRID = "| head one | head two |\n| --- | --- |\n| body a | body b |\n| body c | body d |";
+
+    function renderEntered(entry: -1 | 1) {
+      const geometry = parseMarkdownTableSource(GRID)!;
+      return render(
+        createElement(MarkdownTableBlock, {
+          blockId: "block-1",
+          source: GRID,
+          geometry,
+          editable: true,
+          entry,
+          renderCell: (text: string) => createElement("span", null, text),
+        })
+      );
+    }
+
+    it("enters the last row from the Block below, at the end of its first cell", () => {
+      // The header is where every activation used to land, whichever way the caret arrived, so one
+      // ArrowUp from the paragraph underneath stepped over every body row into row 0 — and from
+      // there no arrow could get back down to them. The grid was unreachable from below.
+      renderEntered(-1);
+
+      const cell = screen.getByRole("textbox", { name: "Table cell" });
+      expect(cell).toHaveTextContent("body c");
+      expect(cell.closest("th")).toBeNull();
+      // At the end of that cell rather than in front of it: the caret is walking up the page, so it
+      // enters at the far end of what it lands in, the way it does entering any other Block.
+      expect(window.getSelection()?.focusOffset).toBe("body c".length);
+    });
+
+    it("still enters the header from the Block above", () => {
+      renderEntered(1);
+
+      const cell = screen.getByRole("textbox", { name: "Table cell" });
+      expect(cell).toHaveTextContent("head one");
+      expect(cell.closest("th")).not.toBeNull();
+    });
+  });
+
   /**
    * A handle has to be centred on the row or column it controls at any width, and jsdom cannot lay
    * a table out — so what is pinned here is the mechanism the measurement proved, not the pixels.

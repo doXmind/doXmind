@@ -368,6 +368,14 @@ interface ActiveRegion {
 export interface MarkdownContainerBlockProps extends InPlaceBlockProps {
   readonly kind: MarkdownContainerKind;
   /**
+   * Which way a vertical crossing entered the Block, when one is what activated it.
+   *
+   * A container picks a region rather than an offset, and the offset the crossing also carries is
+   * measured in the Block's source rather than in either region, so the direction is all that can be
+   * acted on. See `defaultRegion`.
+   */
+  readonly entry?: -1 | 1;
+  /**
    * Render the toggle's body as read-only nested Blocks.
    *
    * A toggle can hold headings, lists and tables, and only the caller knows how to draw those. When
@@ -422,6 +430,7 @@ export function MarkdownContainerBlock({
   kind,
   source,
   editable,
+  entry,
   onChange,
   onKeyDown,
   renderInline,
@@ -457,11 +466,23 @@ export function MarkdownContainerBlock({
   useEffect(() => setOpenOverride(null), [blockId, sourceOpen]);
   const open = openOverride ?? sourceOpen;
 
+  // Whether a body is actually drawn under the heading. A callout with no body draws no body line,
+  // and a collapsed toggle draws nothing at all under its summary, so in both of those the down
+  // arrow has nowhere inside the Block to land and belongs to the Block instead.
+  const bodyOnScreen = kind === "callout" ? (container?.body.length ?? 0) > 0 : open;
+
   // A callout normally has no inline title — `> [!NOTE]` on its own line above the prose is the
   // GitHub form — so landing in the heading would put the caret in an empty region above the text
   // the user is looking at. The body is where a paragraph's caret would go.
+  //
+  // A crossing from the Block below lands there too, whatever the kind: the caret is walking up the
+  // page, so the region it enters is the last one, not the first. Deciding this on kind alone left
+  // an expanded toggle's body unreachable from underneath — one ArrowUp stepped over every line of
+  // it into the summary — and no directionless rule could fix that without breaking entry from
+  // above, which has to keep landing on the summary. A collapsed toggle draws no body at all, so
+  // there its summary stays the only place a caret can be.
   const defaultRegion: ContainerRegion =
-    kind === "callout" && (container?.body.length ?? 0) > 0 ? "body" : "heading";
+    bodyOnScreen && (kind === "callout" || entry === -1) ? "body" : "heading";
 
   // A Block that is active must always own an editing surface: the runtime, the tests and the
   // caret-restore machinery all look for one.
@@ -475,8 +496,13 @@ export function MarkdownContainerBlock({
     const caret = pendingCaretRef.current;
     pendingRegionRef.current = null;
     pendingCaretRef.current = null;
-    setActive({ region: region ?? defaultRegion, caret });
-  }, [editable, active, defaultRegion]);
+    // A press carries its own caret and keeps it. A crossing from below carries none, and the end of
+    // the region is where it belongs: the caret is coming up the page, so it enters at the bottom.
+    setActive({
+      region: region ?? defaultRegion,
+      caret: caret ?? (entry === -1 ? "end" : null),
+    });
+  }, [editable, active, defaultRegion, entry]);
 
   // The caret directive is one-shot. It is a prop of the editor, so leaving it set re-applies it on
   // every render — and a render happens on every keystroke, which pins the caret to the position
@@ -496,10 +522,6 @@ export function MarkdownContainerBlock({
   // Resolving the region here rather than letting it stand keeps the promise that an active Block
   // has exactly one focused editing surface.
   const bodyReachable = kind === "callout" || open;
-  // Whether a body is actually drawn under the heading. A callout with no body draws no body line,
-  // and a collapsed toggle draws nothing at all under its summary, so in both of those the down
-  // arrow has nowhere inside the Block to land and belongs to the Block instead.
-  const bodyOnScreen = kind === "callout" ? body.length > 0 : open;
   const activeRegion: ContainerRegion | null = !editable
     ? null
     : active === null

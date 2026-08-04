@@ -62,7 +62,6 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 }
 
 function CommandPaletteContent({ onClose }: { onClose: () => void }) {
-  const [mounted, setMounted] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -290,12 +289,23 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
     setSelectedIndex(0);
   }, [query]);
 
-  // Mount state
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Focus input when opened, clear search state
+  // Focus input when opened, clear search state.
+  //
+  // The portal below used to be gated behind a `mounted` flag flipped in an
+  // effect — the usual client-only guard for `createPortal`. The palette does
+  // not need it: it is `import()`ed from an effect and can only ever mount in a
+  // browser. The gate cost a wasted render, and it made this focus a race. On
+  // the commit where `mounted` was still false the component rendered null, so
+  // `inputRef.current` was empty when this effect ran, and the
+  // `requestAnimationFrame` it used to schedule could fire before the `mounted`
+  // re-render had put the input in the DOM. Focus was then dropped silently and
+  // never retried: the dialog sat open with the caret still in the Page behind
+  // it, and everything the user typed went into their Markdown instead of the
+  // search box. The 300ms Suspense throttle on the old `next/dynamic` mount hid
+  // this, because a commit landing after 300ms of an idle main thread always won
+  // the race. Once the palette opened promptly the input took focus 3 times in
+  // 10 first-opens. Rendering the portal on the first commit means the ref is
+  // live by the time this effect runs: 10/10, with no frame to lose.
   React.useEffect(() => {
     setQuery("");
     setSelectedIndex(0);
@@ -303,9 +313,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
     setSearchError(null);
     // Only auto-focus on desktop to avoid keyboard popup on mobile
     if (window.innerWidth >= 768) {
-      requestAnimationFrame(() => {
-        inputRef.current?.focus();
-      });
+      inputRef.current?.focus();
     }
   }, []);
 
@@ -347,8 +355,6 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
       onClose();
     }
   };
-
-  if (!mounted) return null;
 
   let globalIndex = 0;
 

@@ -704,12 +704,22 @@ html {
   }
 }
 
-/* Auto-hide scrollbar: transparent by default, visible on hover */
+/*
+ * Auto-hide scrollbar: transparent by default, visible on hover.
+ *
+ * The reveal is a hover state, so it takes the editor's hover duration — 20ms, Notion's measured
+ * `background 0.02s ease-in` (docs/BLOCK_UX_REFERENCE.md, "Button hover feedback"), the same figure
+ * every control in editor.css's interaction-state table uses. It used to be 300ms, and this class is
+ * not only chrome: a code Block wears it, so the bar that says the code scrolls sideways was fading
+ * in *inside the content column* at 15x the rule. Measured on a code Block with the pointer arriving,
+ * the thumb was still under half its final alpha at 133ms and did not settle until 287ms — by which
+ * time a reader has already tried to drag a bar that is not there yet.
+ */
 .autohide-scrollbar {
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
-  transition: scrollbar-color 0.3s;
+  transition: scrollbar-color 20ms ease-in;
 }
 
 .autohide-scrollbar:hover,
@@ -722,9 +732,11 @@ html {
   height: 6px;
 }
 
+/* The same reveal again for engines that still take the WebKit pseudo-elements rather than the
+ * standard `scrollbar-color` above, and therefore the same 20ms. */
 .autohide-scrollbar::-webkit-scrollbar-thumb {
   @apply rounded-full bg-transparent;
-  transition: background-color 0.3s;
+  transition: background-color 20ms ease-in;
 }
 
 .autohide-scrollbar:hover::-webkit-scrollbar-thumb,

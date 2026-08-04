@@ -216,7 +216,27 @@ export function SemanticInlineEditor({
     // in-flight text, so the caret restore waits for the composition to settle.
     if (composingRef.current) return;
 
-    if (autoFocus && document.activeElement !== editor) editor.focus();
+    // Focus without the browser's own scroll, then ask for the smallest one that works.
+    //
+    // `focus()` scrolls with Blink's `ScrollAlignment::CenterIfNeeded`, which is bimodal: a surface
+    // still partly on screen is not moved at all, and one entirely off screen is recentred on the
+    // scroll port's midline — 434px on the 868px port a 1440x900 window gives. So a walk down a
+    // Page moves by one row a press right up to the moment the next surface falls below the fold,
+    // and that press moves half a screen instead. Measured arrowing down a 40-row table: 0 for the
+    // first seventeen presses, then 420, then 0 for nine more, then 410, with the cell landing at
+    // top 462 — the midline — and one cell left off screen entirely. With the pair below, 41px a
+    // press for all thirty and no cell off screen.
+    //
+    // The row asks for the same `nearest` when a Block activates (markdown-block-row.tsx), but that
+    // only fires on activation. Moving the caret *within* a Block that is already active — cell to
+    // cell in a table, a toggle's summary down into its body — remounts this editor without
+    // changing the row, so this is the only thing that can bring the new surface into view. Called
+    // optionally because jsdom implements no scrolling at all, and the surface still has to take
+    // focus under test.
+    if (autoFocus && document.activeElement !== editor) {
+      editor.focus({ preventScroll: true });
+      editor.scrollIntoView?.({ block: "nearest" });
+    }
 
     const nextSelection = pendingSelectionRef.current ?? selection;
     if (!nextSelection || (document.activeElement !== editor && !autoFocus)) {

@@ -102,14 +102,73 @@ async function pressAdd(row: Locator, placement: "below" | "above"): Promise<voi
   else await add.click();
 }
 
-/** Open a row's Block actions menu and step into its Turn into list. */
+/**
+ * Open a row's Block actions menu and step into its Turn into options, returning *that* panel.
+ *
+ * The options are a second `role="menu"` beside the actions rather than a swap of the actions'
+ * rows, so the locator every caller here works against is the submenu, not the panel it hangs off.
+ */
 async function openTurnInto(row: Locator): Promise<Locator> {
   const menu = await openBlockMenu(row);
   await menu.getByRole("menuitem", { name: "Turn into", exact: true }).click();
-  // The list replaces the actions, and the header becomes a way back — that swap is how you know the
-  // press landed rather than the menu having simply re-rendered.
-  await expect(menu.getByRole("menuitem", { name: "Back to block actions" })).toBeVisible();
-  return menu;
+  const options = row.page().getByRole("menu", { name: "Turn into" });
+  await expect(options).toBeVisible();
+  // The actions the press was aimed past are still on screen. A panel that had swapped its rows
+  // instead would have moved every one of them under a pointer that had not moved.
+  await expect(menu.getByRole("menuitem", { name: "Copy Markdown", exact: true })).toBeVisible();
+  return options;
+}
+
+type Box = { x: number; y: number; width: number; height: number };
+
+/**
+ * A box read after it has stopped changing on its own.
+ *
+ * The panel enters with `zoom-in-95` over 0.15s, so a box read the instant it becomes visible is a
+ * box mid-animation: the Turn into row measured 208.73px on the way in and 210.34px at rest, and
+ * comparing the two reads a 1.6px scale step as a relayout.
+ *
+ * One matching pair is not enough to call that finished. The panel's placement is corrected by a
+ * layout effect that deliberately runs on every commit of an open menu (see `dropdown-menu.tsx`), so
+ * a correction can land *after* two consecutive polls have already matched — the box looks settled
+ * for one 50ms window and then moves. That read the "Turn into" trigger 2.837px from where it
+ * finished on CI, against 0.000 across five headless trials on an idle machine. Two matching pairs
+ * close that window; the budget is 4s because under a full suite the frames this waits on compete
+ * with every other worker.
+ */
+async function settledBox(target: Locator): Promise<Box> {
+  let previous: Box | null = null;
+  let stable = 0;
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const box = await target.boundingBox();
+    if (
+      box &&
+      previous &&
+      Math.abs(box.x - previous.x) < 0.01 &&
+      Math.abs(box.y - previous.y) < 0.01 &&
+      Math.abs(box.width - previous.width) < 0.01 &&
+      Math.abs(box.height - previous.height) < 0.01
+    ) {
+      stable += 1;
+      if (stable >= 2) return box;
+    } else {
+      stable = 0;
+    }
+    previous = box;
+    await target.page().waitForTimeout(50);
+  }
+  throw new Error("box never settled");
+}
+
+/** The menu row a viewport point lands on, named the way the user reads it. */
+async function rowLabelAt(page: Page, x: number, y: number): Promise<string | null> {
+  return page.evaluate(
+    ([px, py]) => {
+      const row = document.elementFromPoint(px, py)?.closest('[role="menuitem"]');
+      return row ? (row.getAttribute("aria-label") ?? row.textContent?.trim() ?? null) : null;
+    },
+    [x, y] as const
+  );
 }
 
 async function turnInto(row: Locator, label: string): Promise<void> {
@@ -281,6 +340,62 @@ for (const option of TURN_INTO_OPTIONS) {
   });
 }
 
+/**
+ * The press that used to retype the Block.
+ *
+ * "Turn into" once swapped the panel's rows in place. Measured: the panel grew 270.5px -> 396.0px in
+ * a single unanimated frame (computed `transition: all 0s`) under a pointer that had not moved, and
+ * the pixel under that pointer changed from "Turn into" to "Text". A second press at the same
+ * coordinates then converted the Block — `## Heading two alpha` became `Heading two alpha` on disk,
+ * 4/4, at inter-press gaps of 80/120/200/350ms. Undoable, so a silent mis-type rather than data
+ * loss, but an edit nobody asked for, and inherent to moving rows under a stationary pointer.
+ *
+ * A side-opening submenu removes it structurally rather than by timing: the parent panel's box never
+ * changes, so the row under the pointer is still the row the pointer chose. That is what this
+ * asserts — the geometry, and then the bytes.
+ *
+ * The read is deliberately late. Autosave debounces, and a file read sooner than ~2.5s after the
+ * press reports the *old* contents and passes whether or not the Block was retyped.
+ */
+test("a second press on Turn into at the same point never retypes the Block", async ({ page }) => {
+  const source = `## Heading two alpha\n\n${TAIL}`;
+  const opened = await openPage(page, "TurnIntoStationary", source);
+  const row = rows(page).first();
+  const menu = await openBlockMenu(row);
+  const trigger = menu.getByRole("menuitem", { name: "Turn into", exact: true });
+
+  const panelBefore = await settledBox(menu);
+  const rowBefore = await settledBox(trigger);
+  const x = rowBefore.x + rowBefore.width / 2;
+  const y = rowBefore.y + rowBefore.height / 2;
+
+  await page.mouse.move(x, y);
+  await page.mouse.click(x, y);
+  await expect(page.getByRole("menu", { name: "Turn into" })).toBeVisible();
+
+  // Nothing under the pointer moved, and the panel is the height it was.
+  //
+  // The tolerance is 1px, not the 0.05px `toBeCloseTo(…, 1)` gives. The defect this pins moved the
+  // panel 125.5px and the row out from under the pointer entirely, so a pixel is a decisive
+  // threshold; anything tighter asserts on the tail of the `zoom-in-95` entry animation, which
+  // measures 208.73px against 210.34px at rest and settles at whatever rate the machine allows.
+  // The claim being made is "a human would see nothing move", and that is what 1px says.
+  const panelAfter = await settledBox(menu);
+  const rowAfter = await settledBox(trigger);
+  expect(Math.abs(rowAfter.y - rowBefore.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(panelAfter.height - panelBefore.height)).toBeLessThanOrEqual(1);
+  expect(await rowLabelAt(page, x, y)).toBe("Turn into");
+
+  await page.waitForTimeout(120);
+  await page.mouse.click(x, y);
+  await expect(page.getByRole("menu", { name: "Turn into" })).toBeVisible();
+  expect(await rowLabelAt(page, x, y)).toBe("Turn into");
+
+  await page.waitForTimeout(2500);
+  expect(await readSource(opened)).toBe(source);
+  await expect(row).toHaveAttribute("data-block-kind", "heading");
+});
+
 /*
  * Which kinds Turn into applies to.
  *
@@ -306,8 +421,10 @@ for (const fixture of KIND_FIXTURES) {
     await expect(menu.getByText(currentLabel, { exact: true })).toBeVisible();
 
     await menu.getByRole("menuitem", { name: "Turn into", exact: true }).click();
-    const text = menu.getByRole("menuitem", { name: "Text", exact: true });
-    const marked = menu.locator('[role="menuitem"][aria-current="true"]');
+    const options = page.getByRole("menu", { name: "Turn into" });
+    await expect(options).toBeVisible();
+    const text = options.getByRole("menuitem", { name: "Text", exact: true });
+    const marked = options.locator('[role="menuitem"][aria-current="true"]');
     if (fixture.sourceOnly) {
       // A source-only Block edits as raw Markdown and `setKind` refuses it outright, so offering the
       // conversion as available would be a lie that ends in a thrown command.
@@ -319,6 +436,11 @@ for (const fixture of KIND_FIXTURES) {
       await expect(marked).toHaveAttribute("aria-label", currentLabel);
     }
 
+    // One level per press: the options go first, and only then the menu they opened from. Escaping
+    // out of a submenu should never take the panel behind it with it.
+    await page.keyboard.press("Escape");
+    await expect(options).toBeHidden();
+    await expect(menu).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(menu).toBeHidden();
     // Opening and closing a menu is never an edit.

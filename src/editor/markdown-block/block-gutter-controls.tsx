@@ -4,8 +4,6 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
-  ChevronLeft,
-  ChevronRight,
   ClipboardCopy,
   Copy,
   GripVertical,
@@ -26,15 +24,7 @@ import {
   Trash2,
   type LucideIcon,
 } from "lucide-react";
-import {
-  type DragEventHandler,
-  type ReactNode,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type DragEventHandler, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   DropdownMenu,
@@ -42,11 +32,12 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   MENU_ICON_CLASS,
   MENU_PANEL_CLASS,
-  MENU_ROW_CLASS,
-  useDropdownMenuItemFocus,
 } from "@/components/ui/dropdown-menu";
 import type {
   MarkdownBlockKind,
@@ -109,43 +100,6 @@ export function BlockTypeOptionIcon({
   return <Icon className={className} aria-hidden="true" />;
 }
 
-/**
- * A menu row the gutter owns instead of delegating to `DropdownMenuItem`: picking one navigates
- * within the open menu rather than closing it. It still has to join the menu's roving focus ring,
- * or the arrow keys walk straight past it.
- */
-function GutterMenuRow({
-  itemId,
-  label,
-  className,
-  onSelect,
-  children,
-}: {
-  itemId: string;
-  label: string;
-  className?: string;
-  onSelect: () => void;
-  children: ReactNode;
-}) {
-  const itemFocus = useDropdownMenuItemFocus(itemId);
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      aria-label={label}
-      className={cn(
-        MENU_ROW_CLASS,
-        "gap-2.5 hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground",
-        className
-      )}
-      onClick={onSelect}
-      {...itemFocus}
-    >
-      {children}
-    </button>
-  );
-}
-
 export interface BlockGutterControlsProps {
   currentKind: MarkdownBlockKind;
   currentLevel?: HeadingLevel;
@@ -193,10 +147,8 @@ export function BlockGutterControls({
 }: BlockGutterControlsProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [turnIntoOpen, setTurnIntoOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const gripRef = useRef<HTMLButtonElement>(null);
-  const menuRowIdPrefix = useId();
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const turnIntoOptions = useMemo(
     () =>
@@ -215,13 +167,34 @@ export function BlockGutterControls({
     delete: matchesAction("Delete", "remove"),
   };
   const hasMatchingAction = Object.values(matchingActions).some(Boolean);
-  const showTurnIntoOptions = Boolean(normalizedQuery) || turnIntoOpen;
-  const showActions = Boolean(normalizedQuery) || !turnIntoOpen;
   const currentBlockLabel =
     TURN_INTO_OPTIONS.find(
       (option) =>
         option.kind === currentKind && (option.kind !== "heading" || option.level === currentLevel)
     )?.label ?? "Source block";
+
+  const renderTurnIntoOption = (option: TurnIntoOption) => {
+    const selected =
+      currentKind === option.kind && (option.kind !== "heading" || currentLevel === option.level);
+    return (
+      <DropdownMenuItem
+        key={`${option.kind}-${option.level ?? "base"}`}
+        aria-label={option.label}
+        aria-current={selected ? "true" : undefined}
+        disabled={!canTurnInto}
+        onClick={() => onTurnInto(option.kind, option.level)}
+        className="gap-2.5"
+      >
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
+          <BlockTypeOptionIcon option={option} />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-left">{option.label}</span>
+        {selected ? (
+          <Check className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+        ) : null}
+      </DropdownMenuItem>
+    );
+  };
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -234,7 +207,6 @@ export function BlockGutterControls({
     onMenuOpenChange?.(open);
     if (!open) {
       setQuery("");
-      setTurnIntoOpen(false);
       // Radix returns focus to the trigger for us in most paths, but not after an item that
       // re-renders the row (Move up, Turn into). Without this the next keystroke goes to <body>.
       window.setTimeout(() => gripRef.current?.focus({ preventScroll: true }), 0);
@@ -326,10 +298,7 @@ export function BlockGutterControls({
                 placeholder="Search actions…"
                 value={query}
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                  if (event.target.value.trim()) setTurnIntoOpen(false);
-                }}
+                onChange={(event) => setQuery(event.target.value)}
                 onMouseDown={(event) => event.stopPropagation()}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") handleOpenChange(false);
@@ -338,67 +307,49 @@ export function BlockGutterControls({
             </div>
           </div>
 
-          {!normalizedQuery && !turnIntoOpen ? (
+          {!normalizedQuery ? (
             <>
               <DropdownMenuLabel className="px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                 {currentBlockLabel}
               </DropdownMenuLabel>
-              <GutterMenuRow
-                itemId={`${menuRowIdPrefix}-turn-into`}
-                label="Turn into"
-                onSelect={() => setTurnIntoOpen(true)}
-              >
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
-                  <RefreshCw className={MENU_ICON_CLASS} aria-hidden="true" />
-                </span>
-                <span className="min-w-0 flex-1 text-left">Turn into</span>
-                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-              </GutterMenuRow>
+              {/* Notion's "Turn into ▸", and for the reason Notion draws the ▸ rather than a list.
+                  This row used to swap the panel's contents for the type list in place, deliberately
+                  — one panel, no second surface to aim at. Measured, that swap grew the panel from
+                  270.5px to 396.0px in a single unanimated frame under a pointer that had not moved,
+                  and the pixel under the pointer changed from "Turn into" to "Text": a second press
+                  at the same point, at gaps of 80/120/200/350ms, retyped `## Heading two alpha` into
+                  a paragraph 4/4. Undoable, but an edit nobody asked for. Opening beside the panel
+                  removes it structurally rather than by timing — the parent's box never changes, so
+                  the row under the pointer is still the row the pointer chose. It also ends the
+                  clipping the growth caused; see the flip/fit pass in dropdown-menu.tsx. */}
+              <DropdownMenuSub>
+                {/* The shared trigger draws its own ▸ at the 16px icon size. This panel's trailing
+                    marks — the Check on the current kind, the ⌘ hints — are 14px muted, so the
+                    chevron is brought down to them rather than shouting over the row it belongs to. */}
+                <DropdownMenuSubTrigger className="gap-2.5 [&>svg:last-child]:h-3.5 [&>svg:last-child]:w-3.5 [&>svg:last-child]:text-muted-foreground">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
+                    <RefreshCw className={MENU_ICON_CLASS} aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1 text-left">Turn into</span>
+                </DropdownMenuSubTrigger>
+                {/* Right, not the primitive's leftward default: the gutter sits at the left edge of
+                    the content column, so the only side with room is the one Notion uses anyway. */}
+                <DropdownMenuSubContent side="right" aria-label="Turn into" className="w-[265px]">
+                  {TURN_INTO_OPTIONS.map(renderTurnIntoOption)}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
               <DropdownMenuSeparator />
             </>
           ) : null}
-          {!normalizedQuery && turnIntoOpen ? (
-            <GutterMenuRow
-              itemId={`${menuRowIdPrefix}-back`}
-              label="Back to block actions"
-              className="mb-1"
-              onSelect={() => setTurnIntoOpen(false)}
-            >
-              <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-              <span className="min-w-0 flex-1 text-left">Turn into</span>
-            </GutterMenuRow>
+          {/* A query searches both halves at once, so the matching types stay flat in this panel
+              rather than hiding behind the submenu the search box would have to be left to reach. */}
+          {normalizedQuery && turnIntoOptions.length ? (
+            <>{turnIntoOptions.map(renderTurnIntoOption)}</>
           ) : null}
-          {showTurnIntoOptions && turnIntoOptions.length ? (
-            <>
-              {turnIntoOptions.map((option) => {
-                const selected =
-                  currentKind === option.kind &&
-                  (option.kind !== "heading" || currentLevel === option.level);
-                return (
-                  <DropdownMenuItem
-                    key={`${option.kind}-${option.level ?? "base"}`}
-                    aria-label={option.label}
-                    aria-current={selected ? "true" : undefined}
-                    disabled={!canTurnInto}
-                    onClick={() => onTurnInto(option.kind, option.level)}
-                    className="gap-2.5"
-                  >
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
-                      <BlockTypeOptionIcon option={option} />
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-left">{option.label}</span>
-                    {selected ? (
-                      <Check className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                    ) : null}
-                  </DropdownMenuItem>
-                );
-              })}
-            </>
-          ) : null}
-          {showTurnIntoOptions && showActions && turnIntoOptions.length && hasMatchingAction ? (
+          {normalizedQuery && turnIntoOptions.length && hasMatchingAction ? (
             <DropdownMenuSeparator />
           ) : null}
-          {showActions && matchingActions.copy ? (
+          {matchingActions.copy ? (
             <DropdownMenuItem
               aria-label="Copy Markdown"
               onClick={() => void onCopyMarkdown()}
@@ -411,14 +362,14 @@ export function BlockGutterControls({
               <span className="min-w-0 flex-1 text-left">Copy Markdown</span>
             </DropdownMenuItem>
           ) : null}
-          {showActions && matchingActions.duplicate ? (
+          {matchingActions.duplicate ? (
             <DropdownMenuItem aria-label="Duplicate" onClick={onDuplicate} className="gap-2.5">
               <Copy className={`${MENU_ICON_CLASS} text-muted-foreground`} aria-hidden="true" />
               <span className="min-w-0 flex-1 text-left">Duplicate</span>
               <kbd className="text-[10px] text-muted-foreground">⌘D</kbd>
             </DropdownMenuItem>
           ) : null}
-          {showActions && matchingActions.moveUp ? (
+          {matchingActions.moveUp ? (
             <DropdownMenuItem
               aria-label="Move up"
               disabled={!canMoveUp}
@@ -430,7 +381,7 @@ export function BlockGutterControls({
               <kbd className="text-[10px] text-muted-foreground">⌥↑</kbd>
             </DropdownMenuItem>
           ) : null}
-          {showActions && matchingActions.moveDown ? (
+          {matchingActions.moveDown ? (
             <DropdownMenuItem
               aria-label="Move down"
               disabled={!canMoveDown}
@@ -445,7 +396,7 @@ export function BlockGutterControls({
               <kbd className="text-[10px] text-muted-foreground">⌥↓</kbd>
             </DropdownMenuItem>
           ) : null}
-          {showActions && matchingActions.delete ? (
+          {matchingActions.delete ? (
             <>
               {!normalizedQuery ? <DropdownMenuSeparator /> : null}
               <DropdownMenuItem
@@ -459,11 +410,7 @@ export function BlockGutterControls({
               </DropdownMenuItem>
             </>
           ) : null}
-          {showTurnIntoOptions &&
-          showActions &&
-          !turnIntoOptions.length &&
-          !hasMatchingAction &&
-          normalizedQuery ? (
+          {normalizedQuery && !turnIntoOptions.length && !hasMatchingAction ? (
             <p className="px-3 py-5 text-center text-xs text-muted-foreground">
               No matching actions
             </p>

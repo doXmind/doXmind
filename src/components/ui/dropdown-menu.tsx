@@ -73,6 +73,15 @@ const DropdownMenuContext = React.createContext<{
   unregisterItem: (id: string) => void;
   hoverReady: boolean;
   hasOpenSub: boolean;
+  /**
+   * The same fact as `hasOpenSub`, readable during the commit that changed it.
+   *
+   * The state is a render behind: a sub-panel closed by Escape is out of the DOM one commit before
+   * `hasOpenSub` reaches this panel, and gating the document listeners on the state left a window
+   * where neither level answered the keyboard. Two Escapes 5ms apart — which is all a test, or a
+   * fast user, needs — closed the sub-panel and then dropped the second press entirely.
+   */
+  hasOpenSubRef: React.RefObject<boolean>;
   setHasOpenSub: (open: boolean) => void;
 }>({
   open: false,
@@ -86,6 +95,7 @@ const DropdownMenuContext = React.createContext<{
   unregisterItem: () => {},
   hoverReady: false,
   hasOpenSub: false,
+  hasOpenSubRef: { current: false },
   setHasOpenSub: () => {},
 });
 
@@ -108,8 +118,32 @@ export function DropdownMenu({
   const [focusedId, setFocusedId] = React.useState<string | null>(null);
   const [itemIds, setItemIds] = React.useState<string[]>([]);
   const [hoverReady, setHoverReady] = React.useState(false);
-  const [hasOpenSub, setHasOpenSub] = React.useState(false);
+  const [hasOpenSub, setHasOpenSubState] = React.useState(false);
+  const hasOpenSubRef = React.useRef(false);
+  const setHasOpenSub = React.useCallback((value: boolean) => {
+    hasOpenSubRef.current = value;
+    setHasOpenSubState(value);
+  }, []);
   const triggerRef = React.useRef<HTMLElement>(null);
+
+  // Hand focus back to whatever had it when the menu opened. Nothing did: the focused row simply
+  // unmounted and `document.activeElement` became BODY and stayed there — 5/5 trials on the block
+  // gutter's menu after Escape, with typing dead until the user pressed Shift+Tab or clicked
+  // something. (The gutter re-focuses its own grip on close, but that runs against a control the
+  // row may have already unhovered away, so it did not save the keyboard either.) Restored only
+  // when focus was actually orphaned, so a click that lands in another control keeps it;
+  // `preventScroll` because an unguarded `focus()` on a Block off-screen scrolls the editor to it.
+  const previouslyFocused = React.useRef<HTMLElement | null>(null);
+  React.useEffect(() => {
+    if (open) {
+      previouslyFocused.current = document.activeElement as HTMLElement | null;
+      return;
+    }
+    const previous = previouslyFocused.current;
+    previouslyFocused.current = null;
+    const orphaned = !document.activeElement || document.activeElement === document.body;
+    if (orphaned) previous?.focus({ preventScroll: true });
+  }, [open]);
 
   // Reset state when menu closes, enable hover after delay when opens
   React.useEffect(() => {
@@ -125,7 +159,7 @@ export function DropdownMenu({
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [open]);
+  }, [open, setHasOpenSub]);
 
   const registerItem = React.useCallback((id: string) => {
     setItemIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
@@ -149,12 +183,86 @@ export function DropdownMenu({
         unregisterItem,
         hoverReady,
         hasOpenSub,
+        hasOpenSubRef,
         setHasOpenSub,
       }}
     >
       <div className="relative inline-block">{children}</div>
     </DropdownMenuContext.Provider>
   );
+}
+
+/**
+ * The arrow/Home/End walk a `role="menu"` panel runs over its own rows.
+ *
+ * Shared by a panel and its sub-panels. A sub-panel is a second menu with its own rows and its own
+ * roving ring, and it had no walk at all: the block gutter's eleven "Turn into" options could be
+ * opened with ArrowRight and then not reached with anything.
+ *
+ * `itemIds` is a registration log, not a reading order: a menu that mounts extra rows while it is
+ * open (the block gutter's filtered "Turn into" group) appends them after the rows they render
+ * above, so arrow keys would walk the list in a different order than the eye. Read the live DOM
+ * instead — it is the order the user sees. It is also the only place rows that are not
+ * `DropdownMenuItem`s appear, since those never register.
+ *
+ * Disabled rows are left out of the walk: a disabled button cannot take DOM focus, so parking the
+ * roving ring on one dropped focus out of the menu and cost the user a keypress that did nothing
+ * visible — reaching Move down past a disabled Move up took two presses, not one.
+ */
+function useMenuArrowKeys({
+  active,
+  pausedRef,
+  contentRef,
+  focusedId,
+  setFocusedId,
+  itemIds,
+}: {
+  active: boolean;
+  /** Read inside the handler, not in the dependency list — see `hasOpenSubRef`. */
+  pausedRef?: React.RefObject<boolean>;
+  contentRef: React.RefObject<HTMLDivElement | null>;
+  focusedId: string | null;
+  setFocusedId: (id: string | null) => void;
+  itemIds: string[];
+}) {
+  React.useEffect(() => {
+    if (!active) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (pausedRef?.current) return;
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+
+      const domIds = Array.from(
+        contentRef.current?.querySelectorAll<HTMLElement>(
+          '[data-dropdown-item]:not([aria-disabled="true"])'
+        ) ?? [],
+        (node) => node.dataset.dropdownItem ?? ""
+      ).filter(Boolean);
+      const ids = domIds.length > 0 ? domIds : itemIds;
+      if (ids.length === 0) return;
+
+      const currentIndex = focusedId ? ids.indexOf(focusedId) : -1;
+
+      e.preventDefault();
+      switch (e.key) {
+        case "ArrowDown":
+          setFocusedId(currentIndex < ids.length - 1 ? ids[currentIndex + 1] : ids[0]);
+          break;
+        case "ArrowUp":
+          setFocusedId(currentIndex > 0 ? ids[currentIndex - 1] : ids[ids.length - 1]);
+          break;
+        case "Home":
+          setFocusedId(ids[0]);
+          break;
+        case "End":
+          setFocusedId(ids[ids.length - 1]);
+          break;
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [active, pausedRef, contentRef, focusedId, setFocusedId, itemIds]);
 }
 
 export function DropdownMenuTrigger({ children, asChild }: DropdownMenuTriggerProps) {
@@ -209,8 +317,17 @@ export function DropdownMenuContent({
   sideOffset = 4,
   ...props
 }: DropdownMenuContentProps) {
-  const { open, setOpen, triggerRef, anchorPoint, focusedId, setFocusedId, itemIds } =
-    React.useContext(DropdownMenuContext);
+  const {
+    open,
+    setOpen,
+    triggerRef,
+    anchorPoint,
+    focusedId,
+    setFocusedId,
+    itemIds,
+    hoverReady,
+    hasOpenSubRef,
+  } = React.useContext(DropdownMenuContext);
   const contentRef = React.useRef<HTMLDivElement>(null);
   const [pos, setPos] = React.useState<{
     top: number | "auto";
@@ -248,11 +365,20 @@ export function DropdownMenuContent({
     }
   }, [open, triggerRef, anchorPoint, align, side, sideOffset]);
 
-  // Auto-flip: after the dropdown renders, measure its actual height and
-  // flip to the opposite side if it would overflow the viewport. Runs as
-  // a layout effect so the corrected position is applied before paint —
-  // no visible flicker from the initial placement. Skipped for anchor-
-  // point (right-click) menus where the caller has already chosen y.
+  // Auto-flip and fit: measure the panel's actual height, flip to the opposite side if the
+  // requested one would overflow the viewport, and keep the box inside the viewport when neither
+  // side can hold it. Runs as a layout effect so the corrected position is applied before paint —
+  // no visible flicker from the initial placement. Skipped for anchor-point (right-click) menus
+  // where the caller has already chosen y.
+  //
+  // No dependency list: a menu can change height while it is open, and the height is only knowable
+  // after the commit that changed it. The block gutter's "Turn into" grows this panel from 270.5px
+  // to 396.0px in a single frame, and a placement measured once at open left 18 of 38 openings at
+  // 1440x520 (5 of 40 at 1440x900) with 1-5 rows past the viewport edge — unreachable by pointer,
+  // and unscrollable, because the panel's own max-height (448px) was never what clipped them. The
+  // pass costs one forced layout per commit of an open menu and derives the placement from the
+  // trigger each time rather than nudging the last one, so the panel returns to the trigger when
+  // the content shrinks back.
   React.useLayoutEffect(() => {
     if (!open || !pos || anchorPoint) return;
     if (!contentRef.current || !triggerRef.current) return;
@@ -262,33 +388,39 @@ export function DropdownMenuContent({
     const viewportH = window.innerHeight;
     const margin = 8; // breathing room from viewport edge
 
-    const isCurrentlyTop = pos.top === "auto";
-    const overflowsBelow =
-      !isCurrentlyTop && triggerRect.bottom + sideOffset + contentH + margin > viewportH;
-    const overflowsAbove = isCurrentlyTop && triggerRect.top - sideOffset - contentH - margin < 0;
+    const belowTop = triggerRect.bottom + sideOffset;
+    const aboveTop = triggerRect.top - sideOffset - contentH;
+    const fitsBelow = belowTop + contentH + margin <= viewportH;
+    const fitsAbove = aboveTop - margin >= 0;
 
-    if (overflowsBelow) {
-      const fitsAbove = triggerRect.top - sideOffset - contentH - margin >= 0;
-      // Only flip if the opposite side actually has more room — otherwise
-      // we'd just clip on the other end.
-      if (fitsAbove || triggerRect.top > viewportH - triggerRect.bottom) {
-        setPos({
-          top: "auto",
-          bottom: viewportH - triggerRect.top + sideOffset,
-          left: pos.left,
-        });
-      }
-    } else if (overflowsAbove) {
-      const fitsBelow = triggerRect.bottom + sideOffset + contentH + margin <= viewportH;
-      if (fitsBelow || viewportH - triggerRect.bottom > triggerRect.top) {
-        setPos({
-          top: triggerRect.bottom + sideOffset,
-          bottom: "auto",
-          left: pos.left,
-        });
-      }
+    // Only flip if the opposite side actually has more room — otherwise we'd just clip on the
+    // other end.
+    let top = side === "top" ? aboveTop : belowTop;
+    if (side !== "top" && !fitsBelow) {
+      if (fitsAbove || triggerRect.top > viewportH - triggerRect.bottom) top = aboveTop;
+    } else if (side === "top" && !fitsAbove) {
+      if (fitsBelow || viewportH - triggerRect.bottom > triggerRect.top) top = belowTop;
     }
-  }, [open, pos, anchorPoint, sideOffset, triggerRef]);
+    top = Math.min(Math.max(top, margin), Math.max(margin, viewportH - contentH - margin));
+
+    const currentTop =
+      typeof pos.top === "number" ? pos.top : viewportH - (pos.bottom as number) - contentH;
+    if (Math.abs(currentTop - top) < 0.5) return;
+    setPos({ top, bottom: "auto", left: pos.left });
+  });
+
+  // Answer the pointer that was already inside the panel when the 100ms hover gate lifted. The
+  // gate is deliberate (see `hoverReady`), but nothing armed the row underneath once it opened:
+  // `mouseenter` had already fired and is edge-triggered, so that row stayed unhighlighted for the
+  // life of the menu — a pointer that glided onto "Copy Markdown" inside the gate and stopped read
+  // rgba(0,0,0,0) 5/5 at +400ms, and 5/5 again after a 1px jiggle. `:hover` is the browser's own
+  // level-triggered state, so it answers under a pointer that has not moved and needs no
+  // coordinates to ask for.
+  React.useEffect(() => {
+    if (!open || !hoverReady) return;
+    const hovered = contentRef.current?.querySelector<HTMLElement>("[data-dropdown-item]:hover");
+    if (hovered?.dataset.dropdownItem) setFocusedId(hovered.dataset.dropdownItem);
+  }, [open, hoverReady, setFocusedId]);
 
   // Handle click outside
   React.useEffect(() => {
@@ -311,75 +443,32 @@ export function DropdownMenuContent({
     };
   }, [open, setOpen]);
 
-  // Handle keyboard navigation
+  // An open sub-panel owns the keyboard: it walks its own rows, and it answers Escape by closing
+  // only itself. Stepping into "Turn into" and changing your mind must cost one level, not the
+  // whole menu.
+  useMenuArrowKeys({
+    active: open,
+    pausedRef: hasOpenSubRef,
+    contentRef,
+    focusedId,
+    setFocusedId,
+    itemIds,
+  });
+
+  // Escape is answered without reading the rows at all, so a menu whose every row is unavailable
+  // can still be dismissed.
   React.useEffect(() => {
+    if (!open) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!open) return;
-
-      // Escape is answered before the rows are read, so a menu whose every row is unavailable can
-      // still be dismissed.
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setOpen(false);
-        return;
-      }
-
-      // `itemIds` is a registration log, not a reading order: a menu that mounts extra rows while
-      // it is open (the block gutter's filtered "Turn into" group) appends them after the rows
-      // they render above, so arrow keys would walk the list in a different order than the eye.
-      // Read the live DOM instead — it is the order the user sees. It is also the only place rows
-      // that are not `DropdownMenuItem`s appear, since those never register.
-      //
-      // Disabled rows are left out of the walk: a disabled button cannot take DOM focus, so parking
-      // the roving ring on one dropped focus out of the menu and cost the user a keypress that did
-      // nothing visible — reaching Move down past a disabled Move up took two presses, not one.
-      const domIds = Array.from(
-        contentRef.current?.querySelectorAll<HTMLElement>(
-          '[data-dropdown-item]:not([aria-disabled="true"])'
-        ) ?? [],
-        (node) => node.dataset.dropdownItem ?? ""
-      ).filter(Boolean);
-      const ids = domIds.length > 0 ? domIds : itemIds;
-      if (ids.length === 0) return;
-
-      const currentIndex = focusedId ? ids.indexOf(focusedId) : -1;
-
-      switch (e.key) {
-        case "ArrowDown":
-          e.preventDefault();
-          if (currentIndex < ids.length - 1) {
-            setFocusedId(ids[currentIndex + 1]);
-          } else {
-            setFocusedId(ids[0]);
-          }
-          break;
-        case "ArrowUp":
-          e.preventDefault();
-          if (currentIndex > 0) {
-            setFocusedId(ids[currentIndex - 1]);
-          } else {
-            setFocusedId(ids[ids.length - 1]);
-          }
-          break;
-        case "Home":
-          e.preventDefault();
-          setFocusedId(ids[0]);
-          break;
-        case "End":
-          e.preventDefault();
-          setFocusedId(ids[ids.length - 1]);
-          break;
-      }
+      if (hasOpenSubRef.current || e.key !== "Escape") return;
+      e.preventDefault();
+      setOpen(false);
     };
 
-    if (open) {
-      document.addEventListener("keydown", handleKeyDown);
-    }
-
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open, setOpen, setFocusedId, focusedId, itemIds]);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open, hasOpenSubRef, setOpen]);
 
   if (!open || !pos) return null;
 
@@ -459,7 +548,13 @@ export function DropdownMenuItem({
     }
   };
 
-  const handleMouseEnter = () => {
+  // `pointermove`, not `mouseenter`: `mouseenter` fires once on the way in, so a row the pointer
+  // was already resting on when the 100ms hover gate lifted never got a second chance and stayed
+  // dead for the life of the menu — 0/5 rows recovered on a 1px jiggle, and none on a 30px move
+  // inside the same row, while crossing into a different row always did. `pointermove` is
+  // level-triggered, so the first movement heals it. Re-setting the id the row already holds is a
+  // React bail-out, so the extra events cost no render.
+  const handlePointerMove = () => {
     if (hoverReady && !hasOpenSub) {
       setFocusedId(itemId);
     }
@@ -492,7 +587,7 @@ export function DropdownMenuItem({
       )}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
-      onMouseEnter={handleMouseEnter}
+      onPointerMove={handlePointerMove}
       onMouseLeave={handleMouseLeave}
       disabled={disabled}
       aria-disabled={disabled}
@@ -546,13 +641,20 @@ export function DropdownMenuLabel({
 // SubMenu context
 const DropdownMenuSubContext = React.createContext<{
   open: boolean;
-  setOpen: (open: boolean) => void;
+  /** The trigger row's roving-ring id, owned here so a close path can hand the ring back to it. */
+  triggerItemId: string;
+  openSub: () => void;
+  closeSub: () => void;
+  closeSubToTrigger: () => void;
   triggerRef: React.RefObject<HTMLElement | null>;
   cancelClose: () => void;
   startClose: () => void;
 }>({
   open: false,
-  setOpen: () => {},
+  triggerItemId: "",
+  openSub: () => {},
+  closeSub: () => {},
+  closeSubToTrigger: () => {},
   triggerRef: { current: null },
   cancelClose: () => {},
   startClose: () => {},
@@ -562,34 +664,17 @@ export function DropdownMenuSub({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
   const { setHasOpenSub, setFocusedId } = React.useContext(DropdownMenuContext);
   const triggerRef = React.useRef<HTMLElement>(null);
+  const triggerItemId = React.useId();
   const openTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const closeTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
-  const handleMouseEnter = () => {
-    // Clear any pending close timeout
-    if (closeTimeoutRef.current) {
-      clearTimeout(closeTimeoutRef.current);
-      closeTimeoutRef.current = null;
-    }
-    // Add 150ms delay before opening to prevent accidental triggers
-    openTimeoutRef.current = setTimeout(() => {
-      setOpen(true);
-    }, 150);
-  };
-
-  const handleMouseLeave = () => {
-    // Clear any pending open timeout
+  const cancelOpen = React.useCallback(() => {
     if (openTimeoutRef.current) {
       clearTimeout(openTimeoutRef.current);
       openTimeoutRef.current = null;
     }
-    // Add small delay before closing
-    closeTimeoutRef.current = setTimeout(() => {
-      setOpen(false);
-    }, 100);
-  };
+  }, []);
 
-  // Expose timeout controls for portalled sub-content
   const cancelClose = React.useCallback(() => {
     if (closeTimeoutRef.current) {
       clearTimeout(closeTimeoutRef.current);
@@ -597,20 +682,64 @@ export function DropdownMenuSub({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const startClose = React.useCallback(() => {
-    closeTimeoutRef.current = setTimeout(() => {
-      setOpen(false);
-    }, 100);
-  }, []);
+  const openSub = React.useCallback(() => {
+    cancelClose();
+    setOpen(true);
+  }, [cancelClose]);
 
-  // Notify parent context when sub-menu opens/closes
+  // Every close cancels the pending hover-open first. It is armed by `mouseenter` and the pointer
+  // that arms it is usually the same pointer that then *clicks* the row, so a press followed within
+  // 150ms by Escape left a timer in flight that reopened the panel behind the user: measured on the
+  // block gutter, Escape left it closed at +0ms and +60ms and open again at +260ms, and the next
+  // press went to a menu they had already dismissed.
+  //
+  // The two closes want different things from the parent's roving ring, though. A pointer that
+  // wandered off drops the ring entirely, so the row it wandered onto can take the highlight.
+  // Escape and ArrowLeft put the ring — and DOM focus — back on the trigger row instead: without
+  // that, focus is left on a row that is about to unmount, `document.activeElement` falls to BODY,
+  // and the next ArrowDown resumes at the top of the menu rather than below the row the user
+  // stepped in from.
+  const closeSub = React.useCallback(() => {
+    cancelOpen();
+    setOpen(false);
+    setFocusedId(null);
+  }, [cancelOpen, setFocusedId]);
+
+  const closeSubToTrigger = React.useCallback(() => {
+    cancelOpen();
+    setOpen(false);
+    setFocusedId(triggerItemId);
+    triggerRef.current?.focus({ preventScroll: true });
+  }, [cancelOpen, setFocusedId, triggerItemId]);
+
+  // Exposed to the portalled sub-content, which is not a DOM descendant of the wrapper below and so
+  // leaves it the moment the pointer travels into the panel it opened.
+  const startClose = React.useCallback(() => {
+    closeTimeoutRef.current = setTimeout(closeSub, 100);
+  }, [closeSub]);
+
+  const handleMouseEnter = () => {
+    cancelClose();
+    // 150ms before opening, so a pointer crossing this row on its way to another one does not drag
+    // a second panel across the menu behind it.
+    openTimeoutRef.current = setTimeout(openSub, 150);
+  };
+
+  const handleMouseLeave = () => {
+    cancelOpen();
+    startClose();
+  };
+
+  // Tell the parent panel to stand down while this one is open: it stops walking its own rows,
+  // stops answering Escape, and stops letting `pointermove` move its highlight. Cleared on unmount
+  // too, not just on close — the block gutter replaces its whole navigation half the moment a query
+  // is typed, so the row this panel hangs off can vanish while the panel is still open, and a parent
+  // left believing a level was still there answered nothing at all.
   React.useEffect(() => {
-    setHasOpenSub(open);
-    if (!open) {
-      // When sub closes, clear any locked focusedId so hover works again
-      setFocusedId(null);
-    }
-  }, [open, setHasOpenSub, setFocusedId]);
+    if (!open) return;
+    setHasOpenSub(true);
+    return () => setHasOpenSub(false);
+  }, [open, setHasOpenSub]);
 
   // Cleanup timeouts on unmount
   React.useEffect(() => {
@@ -620,8 +749,22 @@ export function DropdownMenuSub({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const value = React.useMemo(
+    () => ({
+      open,
+      triggerItemId,
+      openSub,
+      closeSub,
+      closeSubToTrigger,
+      triggerRef,
+      cancelClose,
+      startClose,
+    }),
+    [open, triggerItemId, openSub, closeSub, closeSubToTrigger, cancelClose, startClose]
+  );
+
   return (
-    <DropdownMenuSubContext.Provider value={{ open, setOpen, triggerRef, cancelClose, startClose }}>
+    <DropdownMenuSubContext.Provider value={value}>
       <div className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
         {children}
       </div>
@@ -638,35 +781,50 @@ export function DropdownMenuSubTrigger({
   className?: string;
   onClick?: (e: React.MouseEvent) => void;
 }) {
-  const { open, setOpen, triggerRef } = React.useContext(DropdownMenuSubContext);
+  const { open, openSub, triggerRef, triggerItemId } = React.useContext(DropdownMenuSubContext);
   const { hoverReady, focusedId, setFocusedId, registerItem, unregisterItem } =
     React.useContext(DropdownMenuContext);
-  const itemId = React.useId();
-  const isFocused = focusedId === itemId;
+  const isFocused = focusedId === triggerItemId;
 
   // Register item on mount
   React.useEffect(() => {
-    registerItem(itemId);
-    return () => unregisterItem(itemId);
-  }, [itemId, registerItem, unregisterItem]);
+    registerItem(triggerItemId);
+    return () => unregisterItem(triggerItemId);
+  }, [triggerItemId, registerItem, unregisterItem]);
 
   // Lock focus on this trigger when sub-menu opens
   React.useEffect(() => {
     if (open) {
-      setFocusedId(itemId);
+      setFocusedId(triggerItemId);
     }
-  }, [open, itemId, setFocusedId]);
+  }, [open, triggerItemId, setFocusedId]);
+
+  // Take DOM focus when the roving ring lands here, exactly as `DropdownMenuItem` does. Without it
+  // the row painted as focused while the keystroke still went wherever the browser had left focus —
+  // so ArrowRight, the one gesture that opens this panel from the keyboard, never reached the
+  // button that answers it.
+  React.useEffect(() => {
+    if (isFocused) triggerRef.current?.focus();
+  }, [isFocused, triggerRef]);
+
+  const handleClick = (e: React.MouseEvent) => {
+    onClick?.(e);
+    // Opens, never toggles. A second press at the same unmoved point is the gesture this whole
+    // side-opening arrangement exists to make harmless; closing on it would put a different row
+    // back under a stationary pointer for the third one.
+    openSub();
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowRight" || e.key === "Enter") {
       e.preventDefault();
-      setOpen(true);
+      openSub();
     }
   };
 
   const handleMouseEnter = () => {
     if (hoverReady) {
-      setFocusedId(itemId);
+      setFocusedId(triggerItemId);
     }
   };
 
@@ -680,16 +838,17 @@ export function DropdownMenuSubTrigger({
     <button
       ref={triggerRef as React.RefObject<HTMLButtonElement>}
       role="menuitem"
-      data-dropdown-item={itemId}
+      data-dropdown-item={triggerItemId}
       aria-haspopup="menu"
       aria-expanded={open}
+      tabIndex={isFocused ? 0 : -1}
       className={cn(
         MENU_ROW_CLASS,
         (isFocused || open) && "bg-accent text-accent-foreground",
         "focus-visible:ring-1 focus-visible:ring-ring",
         className
       )}
-      onClick={onClick}
+      onClick={handleClick}
       onKeyDown={handleKeyDown}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
@@ -712,12 +871,16 @@ export function DropdownMenuSubContent({
   children,
   className,
   side = "auto",
+  "aria-label": ariaLabel,
 }: {
   children: React.ReactNode;
   className?: string;
   side?: "auto" | "left" | "right";
+  /** Names the second `role="menu"` after the row it opened from, which is all that distinguishes
+   *  the two panels to assistive tech — and to a test looking for one of them. */
+  "aria-label"?: string;
 }) {
-  const { open, setOpen, triggerRef, cancelClose, startClose } =
+  const { open, closeSubToTrigger, triggerRef, cancelClose, startClose } =
     React.useContext(DropdownMenuSubContext);
   const parentCtx = React.useContext(DropdownMenuContext);
   const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
@@ -726,7 +889,12 @@ export function DropdownMenuSubContent({
   // Independent hover state for sub-menu items
   const [subFocusedId, setSubFocusedId] = React.useState<string | null>(null);
   const [subItemIds, setSubItemIds] = React.useState<string[]>([]);
-  const [subHasOpenSub, setSubHasOpenSub] = React.useState(false);
+  const [subHasOpenSub, setSubHasOpenSubState] = React.useState(false);
+  const subHasOpenSubRef = React.useRef(false);
+  const setSubHasOpenSub = React.useCallback((value: boolean) => {
+    subHasOpenSubRef.current = value;
+    setSubHasOpenSubState(value);
+  }, []);
 
   const registerItem = React.useCallback((id: string) => {
     setSubItemIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
@@ -760,6 +928,7 @@ export function DropdownMenuSubContent({
       unregisterItem,
       hoverReady: true,
       hasOpenSub: subHasOpenSub,
+      hasOpenSubRef: subHasOpenSubRef,
       setHasOpenSub: setSubHasOpenSub,
     }),
     [
@@ -771,6 +940,7 @@ export function DropdownMenuSubContent({
       registerItem,
       unregisterItem,
       subHasOpenSub,
+      setSubHasOpenSub,
     ]
   );
 
@@ -847,24 +1017,33 @@ export function DropdownMenuSubContent({
     setIsPositionReady(true);
   }, [pos, triggerRef, side]);
 
-  // Handle Escape key to close submenu
+  // This panel's own rows. The walk cannot come from `DropdownMenuContent`, which is not in the tree
+  // here — without it a sub-panel opened with ArrowRight could not be moved through at all.
+  useMenuArrowKeys({
+    active: open,
+    pausedRef: subHasOpenSubRef,
+    contentRef,
+    focusedId: subFocusedId,
+    setFocusedId: setSubFocusedId,
+    itemIds: subItemIds,
+  });
+
+  // Escape and ArrowLeft step back out to the row this panel belongs to, and stop there: the parent
+  // panel stands down while a sub-panel is open, so one press closes one level.
   React.useEffect(() => {
+    if (!open) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (open && (e.key === "Escape" || e.key === "ArrowLeft")) {
-        e.preventDefault();
-        e.stopPropagation();
-        setOpen(false);
-      }
+      if (subHasOpenSubRef.current) return;
+      if (e.key !== "Escape" && e.key !== "ArrowLeft") return;
+      e.preventDefault();
+      e.stopPropagation();
+      closeSubToTrigger();
     };
 
-    if (open) {
-      document.addEventListener("keydown", handleKeyDown);
-    }
-
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open, setOpen]);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open, closeSubToTrigger]);
 
   if (!open || !pos) return null;
 
@@ -875,6 +1054,7 @@ export function DropdownMenuSubContent({
         data-dropdown-sub-content
         data-dropdown-portal=""
         role="menu"
+        aria-label={ariaLabel}
         aria-orientation="vertical"
         onMouseDown={(e) => e.preventDefault()}
         onMouseEnter={cancelClose}

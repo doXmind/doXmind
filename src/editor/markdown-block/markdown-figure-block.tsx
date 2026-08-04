@@ -152,7 +152,16 @@ function FigureSourceField({
   useEffect(() => {
     const field = fieldRef.current;
     if (!field) return;
-    field.focus();
+    // Focus without the browser's scroll, then ask for the smallest one that works. A bare `focus()`
+    // recentres a surface that is entirely off screen on the scroll port's midline, and this panel is
+    // the surface most often in that state: it does not exist until the Block is active, so it mounts
+    // below whatever the equation already occupies. Measured on an 868px port, `focus()` scrolled the
+    // Page 492px and this pair scrolls 109. End to end that was an arrow walk stepping 39, 39, 39,
+    // 491 into the equation — far enough past it that the next eleven presses moved the Page not at
+    // all — against 171 with the pair. Why `CenterIfNeeded` is the wrong alignment here is written
+    // out in `semantic-inline-editor.tsx`.
+    field.focus({ preventScroll: true });
+    field.scrollIntoView?.({ block: "nearest" });
     field.setSelectionRange(field.value.length, field.value.length);
   }, []);
 

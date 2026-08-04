@@ -116,8 +116,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     const onActivate = vi.fn();
     const props: ComponentProps<typeof MarkdownBlockRow> = {
       block,
-      index: 0,
-      count: 2,
       active: false,
       onActivate,
       onChange: vi.fn(),
@@ -140,7 +138,7 @@ describe("MarkdownBlockRow semantic previews", () => {
 
     render(<MarkdownBlockRow {...props} />);
 
-    const row = screen.getByRole("group", { name: "Text, block 1 of 2" });
+    const row = document.querySelector<HTMLElement>("[data-native-block-row]")!;
     expect(row).toHaveAttribute("tabindex", "0");
     expect(row).toHaveAttribute("data-active", "false");
     expect(screen.getByRole("button", { name: "Add block" })).toHaveAttribute("tabindex", "-1");
@@ -158,8 +156,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={2}
         active
         onActivate={vi.fn()}
         onChange={vi.fn()}
@@ -181,7 +177,7 @@ describe("MarkdownBlockRow semantic previews", () => {
       />
     );
 
-    const row = screen.getByRole("group", { name: "Text, block 1 of 2" });
+    const row = document.querySelector<HTMLElement>("[data-native-block-row]")!;
     const add = screen.getByRole("button", { name: "Add block" });
     const handle = screen.getByRole("button", { name: "Block actions" });
     const textarea = screen.getByRole("textbox", { name: "Markdown block" });
@@ -221,8 +217,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     const { container } = render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active
         onActivate={vi.fn()}
         onChange={vi.fn()}
@@ -262,8 +256,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active={false}
         onActivate={vi.fn()}
         onChange={vi.fn()}
@@ -349,8 +341,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     const { unmount } = render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active={false}
         onActivate={vi.fn()}
         onChange={vi.fn()}
@@ -397,8 +387,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     const { rerender } = render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active={false}
         onActivate={vi.fn()}
         onChange={vi.fn()}
@@ -426,8 +414,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     rerender(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active
         onActivate={vi.fn()}
         onChange={vi.fn()}
@@ -463,8 +449,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active
         onActivate={vi.fn()}
         onChange={vi.fn()}
@@ -509,8 +493,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active
         {...slashHandlers()}
         onRunSlashCommand={onRunSlashCommand}
@@ -525,14 +507,7 @@ describe("MarkdownBlockRow semantic previews", () => {
   it("points the focused editor at the open slash menu and tracks the highlighted command", () => {
     const [block] = MarkdownBlockDocument.fromMarkdown("/\n").getSnapshot().blocks;
     render(
-      <MarkdownBlockRow
-        block={block}
-        index={0}
-        count={1}
-        active
-        {...slashHandlers()}
-        onRunSlashCommand={vi.fn()}
-      />
+      <MarkdownBlockRow block={block} active {...slashHandlers()} onRunSlashCommand={vi.fn()} />
     );
 
     // jsdom implements no scrolling, and moving the highlight scrolls it into view.
@@ -554,14 +529,7 @@ describe("MarkdownBlockRow semantic previews", () => {
     (source) => {
       const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
       render(
-        <MarkdownBlockRow
-          block={block}
-          index={0}
-          count={1}
-          active
-          {...slashHandlers()}
-          onRunSlashCommand={vi.fn()}
-        />
+        <MarkdownBlockRow block={block} active {...slashHandlers()} onRunSlashCommand={vi.fn()} />
       );
 
       expect(screen.queryByRole("listbox", { name: "Block commands" })).not.toBeInTheDocument();
@@ -575,8 +543,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active
         {...slashHandlers()}
         onSplit={onSplit}
@@ -600,8 +566,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active
         {...slashHandlers()}
         onSplit={onSplit}
@@ -618,26 +582,20 @@ describe("MarkdownBlockRow semantic previews", () => {
   it("shows a placeholder on an empty Block and labels an empty heading", () => {
     const snapshot = MarkdownBlockDocument.fromMarkdown("\n\n## \n").getSnapshot();
     const [paragraph, heading] = snapshot.blocks;
-    const { rerender } = render(
-      <MarkdownBlockRow block={paragraph} index={0} count={2} active {...slashHandlers()} />
-    );
+    const { rerender } = render(<MarkdownBlockRow block={paragraph} active {...slashHandlers()} />);
     expect(screen.getByRole("textbox", { name: "Markdown block" })).toHaveAttribute(
       "placeholder",
       "Write, or press '/' for commands"
     );
 
-    rerender(
-      <MarkdownBlockRow block={heading} index={1} count={2} active={false} {...slashHandlers()} />
-    );
+    rerender(<MarkdownBlockRow block={heading} active={false} {...slashHandlers()} />);
     expect(screen.getByText("Heading 2")).toHaveAttribute("data-block-placeholder");
   });
 
   it("keeps a source-only Block's container while it is being edited", () => {
     const [block] = MarkdownBlockDocument.fromMarkdown("```ts\nconst a = 1;\n```\n").getSnapshot()
       .blocks;
-    const { container } = render(
-      <MarkdownBlockRow block={block} index={0} count={1} active {...slashHandlers()} />
-    );
+    const { container } = render(<MarkdownBlockRow block={block} active {...slashHandlers()} />);
 
     // The code Block keeps its own rendered box while it is edited rather than being replaced by a
     // bare field: the highlighted `<pre>` is still mounted, and the caret is in a surface laid over
@@ -655,16 +613,7 @@ describe("MarkdownBlockRow semantic previews", () => {
   it("keeps Tab inside the editor and routes indentation to the list command", () => {
     const [block] = MarkdownBlockDocument.fromMarkdown("- item\n").getSnapshot().blocks;
     const onIndent = vi.fn();
-    render(
-      <MarkdownBlockRow
-        block={block}
-        index={0}
-        count={1}
-        active
-        {...slashHandlers()}
-        onIndent={onIndent}
-      />
-    );
+    render(<MarkdownBlockRow block={block} active {...slashHandlers()} onIndent={onIndent} />);
 
     const textarea = screen.getByRole("textbox", { name: "Markdown block" });
     const event = createEvent.keyDown(textarea, { key: "Tab" });
@@ -679,8 +628,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     render(
       <MarkdownBlockRow
         block={block}
-        index={1}
-        count={3}
         active
         selection={{ anchor: 0, head: 0 }}
         {...slashHandlers()}
@@ -704,27 +651,24 @@ describe("MarkdownBlockRow semantic previews", () => {
       .blocks;
     const onNavigate = vi.fn(() => true);
     const { container } = render(
-      <MarkdownBlockRow
-        block={block}
-        index={1}
-        count={3}
-        active
-        {...slashHandlers()}
-        onNavigate={onNavigate}
-      />
+      <MarkdownBlockRow block={block} active {...slashHandlers()} onNavigate={onNavigate} />
     );
 
     // The code Block only hands an arrow back once the caret is at the payload's own edge, so by
     // the time the Block sees one it already means "leave". Dropping it made the Block a keyboard
     // trap: neither the Block above nor the one below could be reached without the mouse.
+    //
+    // The third argument is the column a vertical crossing is leaving from. It is `undefined` in
+    // every one of these because jsdom lays nothing out to measure — that the browser passes a real
+    // one is asserted a few tests below, against a stubbed caret rect.
     const surface = container.querySelector<HTMLTextAreaElement>("[data-code-editing-surface]")!;
     surface.setSelectionRange(0, 0);
     fireEvent.keyDown(surface, { key: "ArrowUp" });
-    expect(onNavigate).toHaveBeenCalledWith(block.id, -1);
+    expect(onNavigate).toHaveBeenCalledWith(block.id, -1, undefined);
 
     surface.setSelectionRange("let a = 1;".length, "let a = 1;".length);
     fireEvent.keyDown(surface, { key: "ArrowDown" });
-    expect(onNavigate).toHaveBeenCalledWith(block.id, 1);
+    expect(onNavigate).toHaveBeenCalledWith(block.id, 1, undefined);
   });
 
   it("keeps an arrow inside a fenced Block when the caret is not at the payload edge", () => {
@@ -733,14 +677,7 @@ describe("MarkdownBlockRow semantic previews", () => {
     ).getSnapshot().blocks;
     const onNavigate = vi.fn(() => true);
     const { container } = render(
-      <MarkdownBlockRow
-        block={block}
-        index={1}
-        count={3}
-        active
-        {...slashHandlers()}
-        onNavigate={onNavigate}
-      />
+      <MarkdownBlockRow block={block} active {...slashHandlers()} onNavigate={onNavigate} />
     );
 
     const surface = container.querySelector<HTMLTextAreaElement>("[data-code-editing-surface]")!;
@@ -752,16 +689,7 @@ describe("MarkdownBlockRow semantic previews", () => {
   it("leaves a figure Block only when the caret is at the edge of its source", () => {
     const [block] = MarkdownBlockDocument.fromMarkdown("$$\nx^2\ny^2\n$$\n").getSnapshot().blocks;
     const onNavigate = vi.fn(() => true);
-    render(
-      <MarkdownBlockRow
-        block={block}
-        index={1}
-        count={3}
-        active
-        {...slashHandlers()}
-        onNavigate={onNavigate}
-      />
-    );
+    render(<MarkdownBlockRow block={block} active {...slashHandlers()} onNavigate={onNavigate} />);
 
     // The field hands every key but Enter back, so unlike a code Block it makes no edge decision of
     // its own. Without one made here the equation was a keyboard trap; with one made loosely the
@@ -772,11 +700,11 @@ describe("MarkdownBlockRow semantic previews", () => {
     expect(onNavigate).not.toHaveBeenCalled();
 
     fireEvent.keyDown(field, { key: "ArrowUp" });
-    expect(onNavigate).toHaveBeenCalledWith(block.id, -1);
+    expect(onNavigate).toHaveBeenCalledWith(block.id, -1, undefined);
 
     field.setSelectionRange(field.value.length, field.value.length);
     fireEvent.keyDown(field, { key: "ArrowDown" });
-    expect(onNavigate).toHaveBeenCalledWith(block.id, 1);
+    expect(onNavigate).toHaveBeenCalledWith(block.id, 1, undefined);
   });
 
   it("leaves a callout downward from the last line of its body but not from the first", () => {
@@ -784,16 +712,7 @@ describe("MarkdownBlockRow semantic previews", () => {
       "> [!WARNING] Careful\n> Line one.\n> Line two.\n"
     ).getSnapshot().blocks;
     const onNavigate = vi.fn(() => true);
-    render(
-      <MarkdownBlockRow
-        block={block}
-        index={1}
-        count={3}
-        active
-        {...slashHandlers()}
-        onNavigate={onNavigate}
-      />
-    );
+    render(<MarkdownBlockRow block={block} active {...slashHandlers()} onNavigate={onNavigate} />);
 
     const body = screen.getByRole("textbox", { name: "Callout body" });
     placeCaret(body, 0);
@@ -802,22 +721,13 @@ describe("MarkdownBlockRow semantic previews", () => {
 
     placeCaret(body, "Line one.\nLine two.".length);
     fireEvent.keyDown(body, { key: "ArrowDown" });
-    expect(onNavigate).toHaveBeenCalledWith(block.id, 1);
+    expect(onNavigate).toHaveBeenCalledWith(block.id, 1, undefined);
   });
 
   it("leaves a bodyless callout on the arrow its heading hands back", () => {
     const [block] = MarkdownBlockDocument.fromMarkdown("> [!NOTE] Careful\n").getSnapshot().blocks;
     const onNavigate = vi.fn(() => true);
-    render(
-      <MarkdownBlockRow
-        block={block}
-        index={1}
-        count={3}
-        active
-        {...slashHandlers()}
-        onNavigate={onNavigate}
-      />
-    );
+    render(<MarkdownBlockRow block={block} active {...slashHandlers()} onNavigate={onNavigate} />);
 
     // A heading is one line, so there is no line below the caret to move to and Down means "leave",
     // wherever in the title it was pressed. Left still means "leave" only at the very start.
@@ -827,25 +737,75 @@ describe("MarkdownBlockRow semantic previews", () => {
     expect(onNavigate).not.toHaveBeenCalled();
 
     fireEvent.keyDown(heading, { key: "ArrowDown" });
-    expect(onNavigate).toHaveBeenCalledWith(block.id, 1);
+    expect(onNavigate).toHaveBeenCalledWith(block.id, 1, undefined);
 
     placeCaret(heading, 0);
     fireEvent.keyDown(heading, { key: "ArrowLeft" });
-    expect(onNavigate).toHaveBeenCalledWith(block.id, -1);
+    expect(onNavigate).toHaveBeenCalledWith(block.id, -1, undefined);
+  });
+
+  it("carries the column out of an in-place surface, so a crossing keeps its place in the line", () => {
+    // The whole in-place family handed its arrows back with no column at all, so the runtime had
+    // nothing to aim at and fell back to the destination's source edge: every ArrowDown out of a
+    // code Block, a callout, a toggle or a table dropped the caret at offset 0 of the Block below,
+    // however far right it had been. The text surface has passed its column for as long as it has
+    // had one; this is the same measurement, taken off the surface the key came from.
+    const [block] = MarkdownBlockDocument.fromMarkdown(
+      "> [!WARNING] Careful\n> Line one.\n"
+    ).getSnapshot().blocks;
+    const onNavigate = vi.fn(() => true);
+    render(<MarkdownBlockRow block={block} active {...slashHandlers()} onNavigate={onNavigate} />);
+
+    const body = screen.getByRole("textbox", { name: "Callout body" });
+    placeCaret(body, "Line one.".length);
+    // jsdom lays nothing out, so both boxes the measurement reads are stubbed; what is under test
+    // is that the column reaches the runtime at all, not what a browser would measure it to be.
+    const originalRects = Range.prototype.getClientRects;
+    Range.prototype.getClientRects = function getClientRects() {
+      return [new DOMRect(212, 40, 0, 20)] as unknown as DOMRectList;
+    };
+    body.getBoundingClientRect = () => new DOMRect(80, 30, 400, 40);
+    try {
+      fireEvent.keyDown(body, { key: "ArrowDown" });
+    } finally {
+      Range.prototype.getClientRects = originalRects;
+    }
+
+    // Offset 0, not the caret's offset in the region: a region's offsets are not offsets in the
+    // Block's source, and the runtime uses this one only to tell a walk it is still steering from
+    // one it has to re-measure.
+    expect(onNavigate).toHaveBeenCalledWith(block.id, 1, { x: 212, offset: 0 });
+  });
+
+  it("leaves an in-place Block sideways on its source edge, with no column at all", () => {
+    // Left and Right mean "the edge of the next Block" by definition, so they must keep passing
+    // nothing even where a column could be measured — a Right that carried one would land the caret
+    // in the middle of the line below instead of in front of it.
+    const [block] = MarkdownBlockDocument.fromMarkdown("> [!NOTE] Careful\n").getSnapshot().blocks;
+    const onNavigate = vi.fn(() => true);
+    render(<MarkdownBlockRow block={block} active {...slashHandlers()} onNavigate={onNavigate} />);
+
+    const heading = screen.getByRole("textbox", { name: "Callout title" });
+    placeCaret(heading, 0);
+    const originalRects = Range.prototype.getClientRects;
+    Range.prototype.getClientRects = function getClientRects() {
+      return [new DOMRect(212, 40, 0, 20)] as unknown as DOMRectList;
+    };
+    heading.getBoundingClientRect = () => new DOMRect(80, 30, 400, 40);
+    try {
+      fireEvent.keyDown(heading, { key: "ArrowLeft" });
+    } finally {
+      Range.prototype.getClientRects = originalRects;
+    }
+
+    expect(onNavigate).toHaveBeenCalledWith(block.id, -1, undefined);
   });
 
   it("merges the next Block up on forward Delete at the end", () => {
     const [block] = MarkdownBlockDocument.fromMarkdown("word\n").getSnapshot().blocks;
     const onMergeForward = vi.fn();
     render(
-      <MarkdownBlockRow
-        block={block}
-        index={0}
-        count={2}
-        active
-        {...slashHandlers()}
-        onMergeForward={onMergeForward}
-      />
+      <MarkdownBlockRow block={block} active {...slashHandlers()} onMergeForward={onMergeForward} />
     );
 
     const textarea = screen.getByRole<HTMLTextAreaElement>("textbox", {
@@ -863,8 +823,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active={false}
         {...slashHandlers()}
         onSetCodeLanguage={onSetCodeLanguage}
@@ -885,8 +843,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active={false}
         {...slashHandlers()}
         onSetCodeLanguage={onSetCodeLanguage}
@@ -911,8 +867,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active
         {...slashHandlers()}
         onApplyInlineFormat={onApplyInlineFormat}
@@ -933,16 +887,7 @@ describe("MarkdownBlockRow semantic previews", () => {
     const user = userEvent.setup();
     const [block] = MarkdownBlockDocument.fromMarkdown("Read the docs\n").getSnapshot().blocks;
     const onEditLink = vi.fn();
-    render(
-      <MarkdownBlockRow
-        block={block}
-        index={0}
-        count={1}
-        active
-        {...slashHandlers()}
-        onEditLink={onEditLink}
-      />
-    );
+    render(<MarkdownBlockRow block={block} active {...slashHandlers()} onEditLink={onEditLink} />);
 
     const textarea = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Markdown block" });
     textarea.setSelectionRange(9, 13);
@@ -961,8 +906,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active
         selection={{ anchor: 6, head: 6 }}
         {...slashHandlers()}
@@ -986,7 +929,7 @@ describe("MarkdownBlockRow semantic previews", () => {
       `> [!${marker}]\n> Body line.\n`
     ).getSnapshot().blocks;
     const { container } = render(
-      <MarkdownBlockRow block={block} index={0} count={1} active={false} {...slashHandlers()} />
+      <MarkdownBlockRow block={block} active={false} {...slashHandlers()} />
     );
 
     const callout = screen.getByTestId("callout-block");
@@ -1002,11 +945,11 @@ describe("MarkdownBlockRow semantic previews", () => {
       "> [!WARNING] Careful\n> Body line.\n"
     ).getSnapshot().blocks;
     const { container, rerender } = render(
-      <MarkdownBlockRow block={block} index={0} count={1} active={false} {...slashHandlers()} />
+      <MarkdownBlockRow block={block} active={false} {...slashHandlers()} />
     );
     expect(screen.getByTestId("callout-block").className).toContain("amber");
 
-    rerender(<MarkdownBlockRow block={block} index={0} count={1} active {...slashHandlers()} />);
+    rerender(<MarkdownBlockRow block={block} active {...slashHandlers()} />);
     // The rendered callout is what stays on screen now, so the accent lives on it rather than on a
     // separate editing surface that replaced it.
     expect(screen.getByTestId("callout-block").className).toContain("amber");
@@ -1017,14 +960,7 @@ describe("MarkdownBlockRow semantic previews", () => {
     const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
     const onActivate = vi.fn();
     const { container } = render(
-      <MarkdownBlockRow
-        block={block}
-        index={0}
-        count={1}
-        active={false}
-        {...slashHandlers()}
-        onActivate={onActivate}
-      />
+      <MarkdownBlockRow block={block} active={false} {...slashHandlers()} onActivate={onActivate} />
     );
 
     const cells = container.querySelectorAll<HTMLElement>("[data-table-cell]");
@@ -1047,16 +983,7 @@ describe("MarkdownBlockRow semantic previews", () => {
     const source = "| abc | B |\n| --- | --- |\n| a1 | b1 |\n";
     const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
     const onChange = vi.fn();
-    render(
-      <MarkdownBlockRow
-        block={block}
-        index={0}
-        count={1}
-        active
-        {...slashHandlers()}
-        onChange={onChange}
-      />
-    );
+    render(<MarkdownBlockRow block={block} active {...slashHandlers()} onChange={onChange} />);
     const cell = screen.getByRole("textbox", { name: "Table cell" });
 
     // Caret at the very start of the cell, which is where the old handler ignored it and appended.
@@ -1093,14 +1020,7 @@ describe("MarkdownBlockRow semantic previews", () => {
     const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
     const onChange = vi.fn();
     const { container } = render(
-      <MarkdownBlockRow
-        block={block}
-        index={0}
-        count={1}
-        active
-        {...slashHandlers()}
-        onChange={onChange}
-      />
+      <MarkdownBlockRow block={block} active {...slashHandlers()} onChange={onChange} />
     );
 
     // The grid is the editing surface. Activation no longer replaces it with the raw pipe source, so
@@ -1122,16 +1042,7 @@ describe("MarkdownBlockRow semantic previews", () => {
     const source = "| A | B |\n| --- | --- |\n| a1 | b1 |\n";
     const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
     const onChange = vi.fn();
-    render(
-      <MarkdownBlockRow
-        block={block}
-        index={0}
-        count={1}
-        active
-        {...slashHandlers()}
-        onChange={onChange}
-      />
-    );
+    render(<MarkdownBlockRow block={block} active {...slashHandlers()} onChange={onChange} />);
 
     // Unescaped, this would end the cell and give one row a column the others do not have.
     typeInto(screen.getByRole("textbox", { name: "Table cell" }), "a|b");
@@ -1141,7 +1052,7 @@ describe("MarkdownBlockRow semantic previews", () => {
   it("renders a table cell's inline Markdown instead of its delimiters", () => {
     const source = "| **bold** | B |\n| --- | --- |\n| a1 | b1 |\n";
     const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
-    render(<MarkdownBlockRow block={block} index={0} count={1} active {...slashHandlers()} />);
+    render(<MarkdownBlockRow block={block} active {...slashHandlers()} />);
 
     // The cell being edited shows what the cell means, not the syntax that spells it — the same
     // promise every prose Block makes, which a raw payload field could not keep.
@@ -1157,8 +1068,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     const { container } = render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active
         onActivate={vi.fn()}
         onChange={vi.fn()}
@@ -1197,8 +1106,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active={false}
         onActivate={onActivate}
         onChange={vi.fn()}
@@ -1271,8 +1178,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     const { container } = render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active={false}
         onActivate={onActivate}
         onChange={vi.fn()}
@@ -1335,8 +1240,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     const { container } = render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active
         onActivate={vi.fn()}
         onChange={vi.fn()}
@@ -1384,12 +1287,10 @@ describe("MarkdownBlockRow semantic previews", () => {
 
     render(
       <>
-        {blocks.map((block, index) => (
+        {blocks.map((block) => (
           <MarkdownBlockRow
             key={block.id}
             block={block}
-            index={index}
-            count={blocks.length}
             active={false}
             onActivate={vi.fn()}
             onChange={vi.fn()}
@@ -1440,8 +1341,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active
         onActivate={vi.fn()}
         onChange={vi.fn()}
@@ -1485,8 +1384,6 @@ describe("MarkdownBlockRow semantic previews", () => {
     const { container } = render(
       <MarkdownBlockRow
         block={block}
-        index={0}
-        count={1}
         active={false}
         onActivate={vi.fn()}
         onChange={vi.fn()}
@@ -1535,7 +1432,7 @@ describe("MarkdownBlockRow wiki links", () => {
 
     render(
       <MarkdownWikiLinkContext.Provider value={{ open, resolves: (target) => target === "Real" }}>
-        <MarkdownBlockRow block={block} index={0} count={1} active={false} {...slashHandlers()} />
+        <MarkdownBlockRow block={block} active={false} {...slashHandlers()} />
       </MarkdownWikiLinkContext.Provider>
     );
 
@@ -1569,8 +1466,6 @@ describe("MarkdownBlockRow keys on a Block with no text", () => {
       render(
         <MarkdownBlockRow
           block={block}
-          index={0}
-          count={1}
           active
           {...slashHandlers()}
           onInsertAfter={onInsertAfter}
@@ -1617,8 +1512,6 @@ describe("MarkdownBlockRow list marker column", () => {
         render(
           <MarkdownBlockRow
             block={block}
-            index={0}
-            count={1}
             active={active}
             listOrdinal={ordinal}
             {...slashHandlers()}
@@ -1640,16 +1533,7 @@ describe("MarkdownBlockRow list marker column", () => {
 
   it("never lets a two-digit ordinal wrap out of the 20px column", () => {
     const [block] = MarkdownBlockDocument.fromMarkdown("10. item\n").getSnapshot().blocks;
-    render(
-      <MarkdownBlockRow
-        block={block}
-        index={0}
-        count={1}
-        active={false}
-        listOrdinal={10}
-        {...slashHandlers()}
-      />
-    );
+    render(<MarkdownBlockRow block={block} active={false} listOrdinal={10} {...slashHandlers()} />);
 
     // "10." is 20.66px of glyph in a 20.00px box. Right-aligned with `text-right` its period
     // dropped to a second line and the row grew from 40.00px to 68.00px — 22 of the first 33
@@ -1663,9 +1547,7 @@ describe("MarkdownBlockRow list marker column", () => {
 
   it("puts the to-do checkbox inside that column rather than beside it", () => {
     const [block] = MarkdownBlockDocument.fromMarkdown("- [ ] item\n").getSnapshot().blocks;
-    render(
-      <MarkdownBlockRow block={block} index={0} count={1} active={false} {...slashHandlers()} />
-    );
+    render(<MarkdownBlockRow block={block} active={false} {...slashHandlers()} />);
 
     const checkbox = screen.getByRole("checkbox", { name: "item" });
     expect(markerColumn()).toContainElement(checkbox);
@@ -1680,14 +1562,7 @@ describe("MarkdownBlockRow selection and gutter geometry", () => {
     // Scoped to this render's own container: two rows in one test would otherwise both answer a
     // document-wide query and the second assertion would read the first row.
     const { container } = render(
-      <MarkdownBlockRow
-        block={block}
-        index={0}
-        count={1}
-        active={false}
-        {...slashHandlers()}
-        {...props}
-      />
+      <MarkdownBlockRow block={block} active={false} {...slashHandlers()} {...props} />
     );
     return container.querySelector("[data-native-block-row]") as HTMLElement;
   }

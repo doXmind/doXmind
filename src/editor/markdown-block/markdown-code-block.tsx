@@ -163,7 +163,14 @@ export function MarkdownCodeBlock({
     // payload is where a code Block is nearly always continued from.
     const pending = pendingSelectionRef.current ?? { start: end, end };
     pendingSelectionRef.current = null;
-    textarea.focus();
+    // Focus without the browser's scroll, then ask for the smallest one that works. A bare `focus()`
+    // recentres a surface that is entirely off screen on the scroll port's midline, so reaching this
+    // Block from below the fold threw the Page half a screen: measured on a 171px field parked 40px
+    // under an 868px port, `focus()` scrolled 578px and this pair scrolls 211 — enough to show the
+    // field and no more. Why `CenterIfNeeded` is the wrong alignment here is written out in
+    // `semantic-inline-editor.tsx`.
+    textarea.focus({ preventScroll: true });
+    textarea.scrollIntoView?.({ block: "nearest" });
     textarea.setSelectionRange(pending.start, pending.end);
   }, [editable]);
 
