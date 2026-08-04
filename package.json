@@ -3,6 +3,7 @@
   "version": "1.10.0",
   "description": "A fully local, Markdown-native knowledge workspace.",
   "author": "doXmind",
+  "license": "Apache-2.0",
   "private": true,
   "main": "electron/main.js",
   "engines": {

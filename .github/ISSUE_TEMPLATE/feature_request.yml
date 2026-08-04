@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest an improvement that fits the local Markdown workspace.
+title: "feature: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        doXmind does not currently pursue cloud sync, accounts, AI runtimes, or
+        PDF/Excel editing. Explain how the request strengthens local Markdown Pages.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
