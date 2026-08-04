@@ -291,11 +291,40 @@
  * Revealing with a fade makes the handle feel like it is catching up with the pointer. Hiding
  * immediately makes a 1px overshoot blink. So: appear in the same frame, disappear after a short
  * grace period. `pointer-events` follows visibility so invisible controls are never clickable.
+ *
+ *
+ * The reveal costs one layout of the whole document, and `will-change` is what stops it.
+ *
+ * Taking an element from `opacity: 0` to `opacity: 1` makes Blink give it a compositing layer it did
+ * not have, and building that layer runs a layout pass. The row's `contain: layout style` above does
+ * not stop it: containment without `size` still lets the row's own box change, so the pass walks
+ * every sibling below it and its cost grows with the Page. Measured on a paragraph-only Page, one
+ * pointer sweep across 19 rows: 19 layouts, costing 1.8ms of layout at 20 Blocks, 2.6-3.1ms at 200
+ * and 7.9-8.9ms at 1000. One hovered-row change, one document-wide layout, every time.
+ *
+ * The path where that is felt is a notched wheel with the pointer resting on the column: each notch
+ * scrolls a new row under the pointer, so each notch pays for the layout as well as the scroll.
+ * Measured at 1000 Blocks, 100 notches at 60/s: 100 layouts and 50.6ms of layout, against 0 layouts
+ * and 0ms for the same gesture with the pointer parked off the rows.
+ *
+ * Declaring the layer up front removes the invalidation rather than making it cheaper: the same
+ * gesture drops to 0 layouts and 0ms, and the sweep to 0 layouts at every Page size. The layer is
+ * only ever built for rows the compositor is actually painting — 24 layers on the Page, 147 with
+ * this — so it is not one layer per Block, and a scroll with the pointer off the rows measures the
+ * same either way (median 17 vs 14 long frames of ~200, p50 8.4ms both, interleaved over 10 runs).
+ * The count and the duration of the layouts are what is claimed here: frame times under the dev
+ * server are dominated by its own per-frame cost and did not move reliably in either direction.
+ *
+ * The other route — `content-visibility: auto` on the rows, so a dirty row stops dirtying its
+ * siblings — was measured and is worse on both sides: it leaves all 19 layouts in place, at
+ * 5.7-12.4ms against 7.9-8.9ms, i.e. inside the run-to-run spread, while changing what is rendered
+ * offscreen and so what find-in-page, `scrollIntoView` and a row's own measured height can see.
  */
 .markdown-page [data-native-block-controls] {
   opacity: 0;
   transition: opacity 110ms ease-out 90ms;
   pointer-events: none;
+  will-change: opacity;
 }
 
 .markdown-page [data-native-block-row]:hover [data-native-block-controls],

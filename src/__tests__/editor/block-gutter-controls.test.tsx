@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -56,7 +56,7 @@ describe("BlockGutterControls", () => {
     expect(screen.queryByRole("menu", { name: "Block actions menu" })).not.toBeInTheDocument();
   });
 
-  it("keeps the default action menu compact until Turn into is requested", async () => {
+  it("opens the Turn into options beside the actions rather than over them", async () => {
     const user = userEvent.setup();
     renderControls();
 
@@ -65,8 +65,37 @@ describe("BlockGutterControls", () => {
     expect(screen.queryByRole("menuitem", { name: "Heading 3" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("menuitem", { name: "Turn into" }));
-    expect(screen.getByRole("menuitem", { name: "Back to block actions" })).toBeVisible();
-    expect(screen.getByRole("menuitem", { name: "Heading 3" })).toBeVisible();
+    const options = screen.getByRole("menu", { name: "Turn into" });
+    expect(within(options).getByRole("menuitem", { name: "Heading 3" })).toBeVisible();
+
+    // The whole point of the second panel: the rows that were already on screen are still on
+    // screen, so the panel's box — and the row under a stationary pointer — never changes.
+    const actions = screen.getByRole("menu", { name: "Block actions menu" });
+    expect(within(actions).getByRole("menuitem", { name: "Turn into" })).toBeVisible();
+    expect(within(actions).getByRole("menuitem", { name: "Copy Markdown" })).toBeVisible();
+    expect(within(actions).getByRole("menuitem", { name: "Delete" })).toBeVisible();
+  });
+
+  /**
+   * The gesture this submenu exists to make harmless.
+   *
+   * Picking "Turn into" used to swap the panel's rows in place, which put "Text" under a pointer
+   * that had not moved: a second press at the same point retyped the Block, 4/4, at gaps of
+   * 80/120/200/350ms. Here the same node is pressed twice, which is what a stationary pointer
+   * delivers; the pixel-level version, with the file read after autosave, is in
+   * tests/e2e/block-ux/menus.spec.ts.
+   */
+  it("never converts the Block when Turn into is pressed twice without moving", async () => {
+    const user = userEvent.setup();
+    const { props } = renderControls({ currentKind: "heading", currentLevel: 2 });
+
+    await user.click(screen.getByRole("button", { name: "Block actions" }));
+    const turnInto = screen.getByRole("menuitem", { name: "Turn into" });
+    await user.click(turnInto);
+    await user.click(turnInto);
+
+    expect(screen.getByRole("menu", { name: "Turn into" })).toBeInTheDocument();
+    expect(props.onTurnInto).not.toHaveBeenCalled();
   });
 
   it("copies the canonical Markdown through its callback", async () => {
@@ -172,7 +201,7 @@ describe("BlockGutterControls", () => {
     expect(screen.getByRole("menuitem", { name: "Turn into" })).toHaveFocus();
   });
 
-  it("arrows onto the back row at the top of the Turn into list", async () => {
+  it("walks the Turn into options, which are a second menu with a ring of their own", async () => {
     const user = userEvent.setup();
     renderControls();
 
@@ -180,13 +209,73 @@ describe("BlockGutterControls", () => {
     await user.click(await screen.findByRole("menuitem", { name: "Turn into" }));
 
     fireEvent.keyDown(document, { key: "ArrowDown" });
-    expect(screen.getByRole("menuitem", { name: "Back to block actions" })).toHaveFocus();
-
-    fireEvent.keyDown(document, { key: "ArrowDown" });
     expect(screen.getByRole("menuitem", { name: "Text" })).toHaveFocus();
 
+    fireEvent.keyDown(document, { key: "End" });
+    expect(screen.getByRole("menuitem", { name: "Quote" })).toHaveFocus();
+
     fireEvent.keyDown(document, { key: "Home" });
-    expect(screen.getByRole("menuitem", { name: "Back to block actions" })).toHaveFocus();
+    expect(screen.getByRole("menuitem", { name: "Text" })).toHaveFocus();
+  });
+
+  it("opens the options with ArrowRight and steps back out with ArrowLeft", async () => {
+    const user = userEvent.setup();
+    renderControls();
+
+    await user.click(screen.getByRole("button", { name: "Block actions" }));
+    await screen.findByRole("searchbox", { name: "Search block actions" });
+
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    const turnInto = screen.getByRole("menuitem", { name: "Turn into" });
+    expect(turnInto).toHaveFocus();
+
+    fireEvent.keyDown(turnInto, { key: "ArrowRight" });
+    expect(screen.getByRole("menu", { name: "Turn into" })).toBeInTheDocument();
+
+    // One level per press. ArrowLeft leaves the options, not the menu, and hands the row back the
+    // focus it was opened from — without that the ring is cleared and ArrowDown resumes at the top.
+    fireEvent.keyDown(document, { key: "ArrowLeft" });
+    expect(screen.queryByRole("menu", { name: "Turn into" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menu", { name: "Block actions menu" })).toBeInTheDocument();
+    expect(turnInto).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(screen.getByRole("menuitem", { name: "Copy Markdown" })).toHaveFocus();
+  });
+
+  it("keeps Escape working when a query unmounts the open Turn into row", async () => {
+    const user = userEvent.setup();
+    renderControls();
+
+    await user.click(screen.getByRole("button", { name: "Block actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Turn into" }));
+    expect(screen.getByRole("menu", { name: "Turn into" })).toBeInTheDocument();
+
+    // A query replaces the panel's whole navigation half, so the row the options hang off unmounts
+    // while they are still open. Nothing else tells the panel that the level went away.
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search block actions" }), {
+      target: { value: "heading" },
+    });
+    expect(screen.queryByRole("menu", { name: "Turn into" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Heading 3" })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Block actions menu" })).not.toBeInTheDocument();
+  });
+
+  it("keeps Escape stepping out one level at a time", async () => {
+    const user = userEvent.setup();
+    renderControls();
+
+    await user.click(screen.getByRole("button", { name: "Block actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Turn into" }));
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Turn into" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menu", { name: "Block actions menu" })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Block actions menu" })).not.toBeInTheDocument();
   });
 
   it("walks the filtered rows in visual order once a query hides the navigation rows", async () => {
@@ -246,7 +335,9 @@ describe("BlockGutterControls", () => {
 
     await user.click(screen.getByRole("button", { name: "Block actions" }));
     await user.click(screen.getByRole("menuitem", { name: "Turn into" }));
-    const text = screen.getByRole("menuitem", { name: "Text" });
+    const text = within(screen.getByRole("menu", { name: "Turn into" })).getByRole("menuitem", {
+      name: "Text",
+    });
 
     expect(text).toBeDisabled();
     await user.click(text);

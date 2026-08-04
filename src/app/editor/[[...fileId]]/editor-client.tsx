@@ -18,21 +18,58 @@ const DesktopEditor = dynamic(
   { ssr: false }
 );
 
-const KeyboardShortcutsModal = dynamic(
-  () =>
-    import("@/components/ui/keyboard-shortcuts-modal").then((m) => ({
-      default: m.KeyboardShortcutsModal,
-    })),
-  { ssr: false }
-);
-const CommandPalette = dynamic(
-  () => import("@/components/ui/command-palette").then((m) => ({ default: m.CommandPalette })),
-  { ssr: false }
-);
-const QuickSwitcher = dynamic(
-  () => import("@/components/ui/quick-switcher").then((m) => ({ default: m.QuickSwitcher })),
-  { ssr: false }
-);
+const loadKeyboardShortcutsModal = () =>
+  import("@/components/ui/keyboard-shortcuts-modal").then((m) => m.KeyboardShortcutsModal);
+const loadCommandPalette = () =>
+  import("@/components/ui/command-palette").then((m) => m.CommandPalette);
+const loadQuickSwitcher = () =>
+  import("@/components/ui/quick-switcher").then((m) => m.QuickSwitcher);
+
+/**
+ * Fetch an overlay's chunk the first time it opens, without going through
+ * `React.lazy`.
+ *
+ * These three used to be `next/dynamic`, which wraps its lazy component in
+ * `<Suspense fallback={null}>`. The first open therefore suspended, committed
+ * that invisible fallback, and React then held the real content back by
+ * `FALLBACK_THROTTLE_MS` — 300ms — so that a loading state could not flash past
+ * the user. Measured on the packaged app, first Cmd+K (n=6): the 17kB palette
+ * chunk finished downloading at +2.0ms and the dialog did not enter the DOM
+ * until +304.4ms, pixels at +313.2ms. Every open after that was 1.6-5.8ms to
+ * insert, 14.9-16.7ms to pixels — a 20x cliff on the first press, and 2x the
+ * whole sanctioned menu-entry animation (docs/BLOCK_UX_REFERENCE.md: "only
+ * around 150ms"). No long task fired in that window; nothing was busy.
+ *
+ * What proves it is a timer and not work: artificially delaying the chunk moves
+ * the total but not the sum. Chunk at +18ms gave the dialog at +314ms (296ms of
+ * waiting); chunk held to +446ms gave the dialog at +454ms — 8ms. The same
+ * module doing the same work commits in 8ms once the 300ms floor has already
+ * expired. React is smoothing over a flash that a `null` fallback cannot
+ * produce, and we paid a third of a second of blank for it.
+ *
+ * Importing here keeps the chunk out of the boot payload exactly as `dynamic`
+ * did — nothing is prefetched, the request still starts on the keystroke — but
+ * the arrival is a plain state update rather than a Suspense retry, so it
+ * commits as soon as it lands.
+ */
+function useOverlayComponent<P>(
+  load: () => Promise<React.ComponentType<P>>,
+  isOpen: boolean
+): React.ComponentType<P> | null {
+  const [Component, setComponent] = useState<React.ComponentType<P> | null>(null);
+  useEffect(() => {
+    if (!isOpen || Component) return;
+    let cancelled = false;
+    void load().then((loaded) => {
+      if (!cancelled) setComponent(() => loaded);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, Component, load]);
+  return Component;
+}
+
 const PerfOverlay = dynamic(
   () => import("@/components/dev/perf-overlay").then((m) => ({ default: m.PerfOverlay })),
   { ssr: false }
@@ -59,6 +96,13 @@ export function EditorClient() {
   const isCommandPaletteOpen = useLayoutStore((s) => s.isCommandPaletteOpen);
   const setCommandPaletteOpen = useLayoutStore((s) => s.setCommandPaletteOpen);
   const isQuickSwitcherOpen = useLayoutStore((s) => s.isQuickSwitcherOpen);
+
+  const KeyboardShortcutsModal = useOverlayComponent(
+    loadKeyboardShortcutsModal,
+    isKeyboardShortcutsOpen
+  );
+  const CommandPalette = useOverlayComponent(loadCommandPalette, isCommandPaletteOpen);
+  const QuickSwitcher = useOverlayComponent(loadQuickSwitcher, isQuickSwitcherOpen);
 
   // Boot: per-window state arrives via ?folder=... / ?file=... URL params,
   // set by Electron at window creation. If neither is present we land on the
@@ -182,16 +226,16 @@ export function EditorClient() {
     <>
       <DesktopEditor />
 
-      {isKeyboardShortcutsOpen && (
+      {isKeyboardShortcutsOpen && KeyboardShortcutsModal && (
         <KeyboardShortcutsModal
           open={isKeyboardShortcutsOpen}
           onClose={() => setKeyboardShortcutsOpen(false)}
         />
       )}
-      {isCommandPaletteOpen && (
+      {isCommandPaletteOpen && CommandPalette && (
         <CommandPalette open={isCommandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
       )}
-      {isQuickSwitcherOpen && <QuickSwitcher />}
+      {isQuickSwitcherOpen && QuickSwitcher && <QuickSwitcher />}
       {perfEnabled && (
         <PerfOverlay
           onClose={() => {

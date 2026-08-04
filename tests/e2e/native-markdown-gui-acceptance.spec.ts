@@ -214,9 +214,15 @@ test("operates source-backed Blocks through direct manipulation", async ({ page 
   await expect(actionsMenu.getByRole("menuitem", { name: "Turn into" })).toBeVisible();
   await expect(actionsMenu.getByRole("menuitem", { name: "Heading 3" })).toHaveCount(0);
 
+  // The options open in a panel beside the actions rather than replacing them, so nothing the
+  // pointer was already resting on moves. Escape then steps out one level at a time.
   await actionsMenu.getByRole("menuitem", { name: "Turn into" }).click();
-  await expect(actionsMenu.getByRole("menuitem", { name: "Back to block actions" })).toBeVisible();
-  await expect(actionsMenu.getByRole("menuitem", { name: "Heading 3" })).toBeVisible();
+  const turnIntoMenu = page.getByRole("menu", { name: "Turn into" });
+  await expect(turnIntoMenu.getByRole("menuitem", { name: "Heading 3" })).toBeVisible();
+  await expect(actionsMenu.getByRole("menuitem", { name: "Copy Markdown" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(turnIntoMenu).toBeHidden();
+  await expect(actionsMenu).toBeVisible();
 
   const actionSearch = actionsMenu.getByRole("searchbox", {
     name: "Search block actions",

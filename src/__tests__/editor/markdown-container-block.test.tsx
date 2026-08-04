@@ -19,7 +19,7 @@ const ANCHOR = "\u200b";
 function renderContainer(
   kind: MarkdownContainerKind,
   source: string,
-  options: { editable?: boolean } = {}
+  options: { editable?: boolean; entry?: -1 | 1 } = {}
 ) {
   const onChange = vi.fn();
   const onKeyDown = vi.fn();
@@ -29,6 +29,7 @@ function renderContainer(
       kind={kind}
       source={source}
       editable={options.editable ?? true}
+      entry={options.entry}
       onChange={onChange}
       onKeyDown={onKeyDown}
       renderInline={(markdown) => <>{markdown}</>}
@@ -344,6 +345,40 @@ describe("MarkdownContainerBlock — toggle", () => {
     expect(screen.getByTestId("toggle-block")).toHaveAttribute("open");
     expect(screen.getByRole("textbox", { name: "Toggle body" })).toBeInTheDocument();
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("drops into an expanded toggle's body, at its end, when it is entered from below", () => {
+    // ArrowUp out of the Block underneath. The summary is where every activation used to land,
+    // whichever way the caret arrived, so one press stepped over every line of the body into the
+    // title — and the next ArrowUp left the Block, which made the body unreachable from below.
+    renderContainer("toggle", "<details open>\n<summary>Sum</summary>\n\nbody one\n\n</details>", {
+      entry: -1,
+    });
+
+    expect(screen.getByRole("textbox", { name: "Toggle body" })).toBeInTheDocument();
+    expect(window.getSelection()?.focusOffset).toBe("body one".length);
+  });
+
+  it("keeps a collapsed toggle's summary when it is entered from below", () => {
+    // A shut disclosure lays no body out, so there is nothing under the summary for a caret to be
+    // in and the summary is the right answer whichever way the caret arrived. Opening the toggle to
+    // make room would be a view change nobody asked for — the down arrow already refuses to.
+    renderContainer("toggle", "<details>\n<summary>Sum</summary>\n\nbody one\n\n</details>", {
+      entry: -1,
+    });
+
+    expect(screen.getByTestId("toggle-block")).not.toHaveAttribute("open");
+    expect(screen.getByRole("textbox", { name: "Toggle summary" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Toggle body" })).not.toBeInTheDocument();
+  });
+
+  it("still lands on the summary when a toggle is entered from above", () => {
+    renderContainer("toggle", "<details open>\n<summary>Sum</summary>\n\nbody one\n\n</details>", {
+      entry: 1,
+    });
+
+    expect(screen.getByRole("textbox", { name: "Toggle summary" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Toggle body" })).not.toBeInTheDocument();
   });
 
   it("edits the summary without disturbing the body", () => {

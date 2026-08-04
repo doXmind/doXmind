@@ -8,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -48,6 +49,7 @@ import {
   MarkdownBlockRow,
   MarkdownWikiLinkContext,
   NATIVE_BLOCK_SHORTCUTS_ID,
+  blockTypeLabel,
   sourceOffsetAtPoint,
   type MarkdownCollectionContext,
   type MarkdownImageContext,
@@ -113,6 +115,17 @@ interface MarkdownBlockSelectionRange {
   blockId: string;
   anchor: number;
   head: number;
+  /**
+   * Which way a vertical crossing entered the Block, when a crossing is what put the caret here.
+   *
+   * An offset is not enough for a Block that addresses its caret by cell or by region. `anchor` is
+   * an offset into the destination's Markdown source, and a table and a container both draw a box
+   * whose glyphs have no linear mapping back to it — `caretOffsetOnBlockEdge` hit-testing a grid
+   * returns a number that means nothing in the pipe source. The direction is the one fact the
+   * crossing knows that the destination cannot recover, so it travels with the selection
+   * `navigateBlock` sets, and every other route that places a caret leaves it undefined.
+   */
+  entry?: -1 | 1;
 }
 
 const defaultTransclusionServices: MarkdownTransclusionServices = {
@@ -247,11 +260,22 @@ export function MarkdownBlockRuntime({
    * the nearest boundary — the same answer wherever the pointer is, including over the page margins.
    * Boundaries that would not move anything are filtered out at dragstart, so a no-op drop can never
    * paint a line.
+   *
+   * `y` is a *scroller content* coordinate — the row's viewport top plus the scroll offset it was
+   * read at — so autoscroll cannot invalidate the table. Held in viewport coordinates it had to be
+   * remeasured on every frame the Page scrolled, one `getBoundingClientRect` per row: 102 rects a
+   * frame on a 100-Block Page and 602 on a 600-Block one, against 1 now. That is layout work the
+   * drag never needed rather than the reason it stutters — the frame rate over an autoscrolling
+   * column measured 45.1fps before and 44.1fps after, against 119.3fps with the pointer held
+   * mid-column, and what costs those frames is repainting a scrolling Page. Content coordinates
+   * never move, so the table is built once and `nearestDropBoundary` shifts the pointer into its
+   * space instead — O(1) a frame, and exact at any scroll position.
    */
   const dragBoundariesRef = useRef<{ beforeId: string | null; y: number; depth: number }[]>([]);
   const dropTargetRef = useRef<{ beforeId: string | null } | null>(null);
-  const dragAutoScrollRef = useRef<{ frame: number | null; clientY: number }>({
+  const dragAutoScrollRef = useRef<{ frame: number | null; time: number; clientY: number }>({
     frame: null,
+    time: 0,
     clientY: 0,
   });
   const dragGhostRef = useRef<HTMLElement | null>(null);
@@ -288,6 +312,8 @@ export function MarkdownBlockRuntime({
   );
   const composingBlockIdRef = useRef<string | null>(null);
   const compositionHasHistoryRef = useRef(false);
+  /** The column a run of vertical Block crossings is aiming at. See `navigateBlock`. */
+  const verticalGoalRef = useRef<{ blockId: string; offset: number; x: number } | null>(null);
   const typingIdleTimerRef = useRef<number | null>(null);
   const fileIdRef = useRef(file.id);
   const lastSavedMarkdownRef = useRef(initialMarkdown);
@@ -584,6 +610,19 @@ export function MarkdownBlockRuntime({
       const element = Array.from(
         documentElementRef.current?.querySelectorAll<HTMLElement>("[data-block-id]") ?? []
       ).find((candidate) => candidate.dataset.blockId === heading.id);
+      // Stand the row's own activation scroll down for this one activation.
+      //
+      // A row that activates brings itself into view with `block: "nearest"`, because its focus()
+      // deliberately no longer does. That instant scroll reaches the container after this smooth one
+      // has been issued and before it has run a frame, and an instant scroll cancels a smooth one:
+      // measured on a 100-Block Page, clicking an outline entry 2458px down moved the Page in a
+      // single frame — no animation at all — and left the heading 810.3px below the top of the port
+      // instead of the 84px `block: "start"` plus the container's scroll padding asks for. Set only
+      // when the Block is not already active, so there is always exactly one activation to consume
+      // it and the marker can never outlive this navigation.
+      if (element && element.dataset.active !== "true") {
+        element.setAttribute("data-outline-scroll", "true");
+      }
       element?.scrollIntoView?.({ behavior: "smooth", block: "start" });
     },
     [file.id]
@@ -1071,7 +1110,7 @@ export function MarkdownBlockRuntime({
   );
 
   const navigateBlock = useCallback(
-    (blockId: string, direction: -1 | 1, caretX?: number): boolean => {
+    (blockId: string, direction: -1 | 1, caret?: { x: number; offset: number }): boolean => {
       const blocks = documentRef.current.getSnapshot().blocks;
       const index = blocks.findIndex((block) => block.id === blockId);
       if (index < 0) return false;
@@ -1085,14 +1124,31 @@ export function MarkdownBlockRuntime({
       // A vertical crossing keeps the caret's column. The destination Block is still rendered as a
       // preview at this point, so its glyph geometry can be hit-tested directly to find the offset
       // nearest the column the caret left from — which is how a crossing feels in one long field.
-      // Horizontal crossings pass no x and land on the Block's source edge.
-      const goalOffset =
-        caretX === undefined
+      // Horizontal crossings pass no caret and land on the Block's source edge.
+      //
+      // The column is the one the *walk* started from, not the one the caret happens to sit at now.
+      // Re-reading the caret's x at every crossing meant one short Block in the way shortened the
+      // rest of the walk permanently: measured on `long / Hi / long`, a caret at offset 42 arrived
+      // at offset 2 two presses later — 40 characters of drift that no further ArrowUp could undo.
+      // Native fields and both reference products keep the column until something moves the caret
+      // horizontally, so it survives exactly as long as the caret is still where the last crossing
+      // put it, and any other movement — a horizontal arrow, a keystroke, a press somewhere else —
+      // re-measures.
+      const carried = verticalGoalRef.current;
+      const goalX =
+        caret === undefined
           ? null
-          : caretOffsetOnBlockEdge(target.id, caretX, direction < 0 ? "last" : "first", source);
+          : carried && carried.blockId === blockId && carried.offset === caret.offset
+            ? carried.x
+            : caret.x;
+      const goalOffset =
+        goalX === null
+          ? null
+          : caretOffsetOnBlockEdge(target.id, goalX, direction < 0 ? "last" : "first", source);
       const offset = goalOffset ?? (direction < 0 ? source.length : 0);
+      verticalGoalRef.current = goalX === null ? null : { blockId: target.id, offset, x: goalX };
       setActiveBlockId(target.id);
-      setPendingSelection({ blockId: target.id, anchor: offset, head: offset });
+      setPendingSelection({ blockId: target.id, anchor: offset, head: offset, entry: direction });
       return true;
     },
     []
@@ -1319,6 +1375,36 @@ export function MarkdownBlockRuntime({
     left: number;
     count: number;
   } | null>(null);
+
+  // Every row's accessible name, written straight to the DOM.
+  //
+  // The name ends in the Block's ordinal ("Text, block 5 of 200"), which is how a screen reader
+  // reading the Page in browse mode knows where it is. That ordinal changes on *every* row the
+  // moment a Block is inserted or removed, so passing it as a prop invalidated `sameRowProps` for
+  // all N rows and made each one rebuild its editing projection and inline parse: one Enter on a
+  // 600-Block Page re-rendered 601 rows. Writing the attribute here costs N `setAttribute` calls
+  // and no React render at all — `aria-label` takes no part in style or layout, and Chrome only
+  // materialises the accessibility tree once an assistive technology attaches.
+  //
+  // This is the sole writer. `MarkdownBlockRow` deliberately renders no `aria-label`, so React
+  // never clobbers what this sets when a row re-renders for an unrelated reason.
+  // The effect runs on every commit, because `snapshot.blocks` is a fresh array per keystroke, so
+  // each name is compared before it is written: typing changes a Block's text but not its name, and
+  // an unchanged name must not cost a DOM write. `getAttribute` is a string lookup — no style, no
+  // layout — which leaves a keystroke writing nothing at all and a split writing only the names
+  // that actually moved.
+  useLayoutEffect(() => {
+    const host = documentElementRef.current;
+    if (!host) return;
+    const rows = host.querySelectorAll<HTMLElement>(":scope > [data-native-block-row]");
+    const count = snapshot.blocks.length;
+    snapshot.blocks.forEach((block, index) => {
+      const row = rows[index];
+      if (!row) return;
+      const name = `${blockTypeLabel(block)}, block ${index + 1} of ${count}`;
+      if (row.getAttribute("aria-label") !== name) row.setAttribute("aria-label", name);
+    });
+  }, [snapshot.blocks]);
 
   // Measured after commit rather than during render: the rows have to exist before their union can
   // be read, and reading layout from a render pass is how you get a frame of stale geometry.
@@ -1765,6 +1851,7 @@ export function MarkdownBlockRuntime({
   const rebuildDragBoundaries = useCallback(() => {
     const host = documentElementRef.current;
     if (!host) return;
+    const scrollTop = scrollElementRef.current?.scrollTop ?? 0;
     const rows = Array.from(host.querySelectorAll<HTMLElement>("[data-native-block-row]"));
     const table: { beforeId: string | null; y: number; depth: number }[] = [];
     for (const row of rows) {
@@ -1772,7 +1859,7 @@ export function MarkdownBlockRuntime({
       if (!id) continue;
       table.push({
         beforeId: id,
-        y: row.getBoundingClientRect().top,
+        y: row.getBoundingClientRect().top + scrollTop,
         depth: Number(row.dataset.blockDepth ?? 0),
       });
     }
@@ -1780,7 +1867,7 @@ export function MarkdownBlockRuntime({
     if (last) {
       table.push({
         beforeId: null,
-        y: last.getBoundingClientRect().bottom,
+        y: last.getBoundingClientRect().bottom + scrollTop,
         depth: Number(last.dataset.blockDepth ?? 0),
       });
     }
@@ -1823,33 +1910,42 @@ export function MarkdownBlockRuntime({
    * Scroll the Page while a Block is held near the top or bottom edge.
    *
    * HTML drag-and-drop suppresses wheel scrolling, so without this a Block can only be dropped
-   * somewhere already on screen. Speed ramps with proximity, from ~240px/s at the threshold to
-   * ~1440px/s at the very edge, which is what makes a long reorder feel controllable.
+   * somewhere already on screen. Speed ramps with proximity, from 240px/s at the threshold to
+   * 1440px/s at the very edge, which is what makes a long reorder feel controllable.
+   *
+   * Per *second*, multiplied by the frame's own duration. The ramp used to be added once per
+   * animation frame, which is 240-1440px/s only on a display refreshing at exactly 60Hz: driven
+   * through 500ms of frames with the pointer 60px inside the band, the same gesture travelled 210px
+   * at 60Hz and 504px at 144Hz, and it slowed in step with any frame the Page dropped. It now
+   * travels ~220px either way. A long frame is capped at 50ms, so a throttled or backgrounded
+   * window cannot resume by scrolling most of a screenful in one step.
    */
   const startDragAutoScroll = useCallback(() => {
     const state = dragAutoScrollRef.current;
     if (state.frame !== null) return;
-    const step = () => {
+    state.time = 0;
+    const step = (now: number) => {
       const scroller = scrollElementRef.current;
       if (!scroller || !dragSessionRef.current) {
         state.frame = null;
         return;
       }
+      const seconds = state.time === 0 ? 0 : Math.min(now - state.time, 50) / 1000;
+      state.time = now;
       const rect = scroller.getBoundingClientRect();
       const threshold = 72;
       const fromTop = state.clientY - rect.top;
       const fromBottom = rect.bottom - state.clientY;
-      let delta = 0;
-      if (fromTop < threshold) delta = -(4 + 20 * (1 - Math.max(fromTop, 0) / threshold));
-      else if (fromBottom < threshold) delta = 4 + 20 * (1 - Math.max(fromBottom, 0) / threshold);
-      if (delta !== 0) {
-        scroller.scrollTop += Math.round(delta);
-        rebuildDragBoundaries();
+      let speed = 0;
+      if (fromTop < threshold) speed = -(240 + 1200 * (1 - Math.max(fromTop, 0) / threshold));
+      else if (fromBottom < threshold) {
+        speed = 240 + 1200 * (1 - Math.max(fromBottom, 0) / threshold);
       }
+      if (speed !== 0) scroller.scrollTop += speed * seconds;
       state.frame = window.requestAnimationFrame(step);
     };
     state.frame = window.requestAnimationFrame(step);
-  }, [rebuildDragBoundaries]);
+  }, []);
 
   const startBlockDrag = useCallback(
     (blockId: string, event: DragEvent<HTMLButtonElement>) => {
@@ -1890,6 +1986,14 @@ export function MarkdownBlockRuntime({
           ?.setAttribute("data-block-dragging", "true");
       }
       rebuildDragBoundaries();
+      // Where the pointer actually is, before the first `dragover` says so. The autoscroll loop
+      // starts here and reads this field on its very first frame; left at its initial 0 it read the
+      // grip as being above the scroll port and ran the top ramp at full speed until a `dragover`
+      // arrived. Measured on a 100-Block Page at scrollTop 900: the first drag of a session jerked
+      // the Page 48-96px upward the moment it started, depending on how many frames went by before
+      // that `dragover`, while every later drag — inheriting the previous drag's pointer — moved it
+      // 0px, which is why this only ever showed up once.
+      dragAutoScrollRef.current.clientY = event.clientY;
       startDragAutoScroll();
     },
     [file.id, rebuildDragBoundaries, startDragAutoScroll]
@@ -1972,12 +2076,15 @@ export function MarkdownBlockRuntime({
   const nearestDropBoundary = useCallback((clientY: number) => {
     const table = dragBoundariesRef.current;
     if (table.length === 0 || !Number.isFinite(clientY)) return null;
+    // Into the same content space the table was measured in. Every boundary shifted by exactly the
+    // scroll delta, so moving the pointer by it instead is the same comparison for one addition.
+    const y = clientY + (scrollElementRef.current?.scrollTop ?? 0);
     let best = table[0];
     for (const boundary of table) {
-      if (Math.abs(clientY - boundary.y) < Math.abs(clientY - best.y)) best = boundary;
+      if (Math.abs(y - boundary.y) < Math.abs(y - best.y)) best = boundary;
     }
     // Far from every boundary the intent is ambiguous, so show nothing rather than guess.
-    return Math.abs(clientY - best.y) > 160 ? null : best;
+    return Math.abs(y - best.y) > 160 ? null : best;
   }, []);
 
   /**
@@ -2102,19 +2209,31 @@ export function MarkdownBlockRuntime({
       );
       if (!patch) return;
       const composing = composingBlockIdRef.current === blockId;
-      apply(
-        {
-          type: "replaceText",
-          blockId,
-          range: { from: patch.from, to: patch.to },
-          text: patch.text,
-          recordHistory: !composing || !compositionHasHistoryRef.current,
-        },
-        // A text edit leaves the caret to the surface that produced it. An edit that
-        // replaces the surface has no such surface left, so the document's selection has
-        // to be applied or the Block stays active with nothing focused.
-        options?.surfaceChanges === true
-      );
+      const result = documentRef.current.apply({
+        type: "replaceText",
+        blockId,
+        range: { from: patch.from, to: patch.to },
+        text: patch.text,
+        recordHistory: !composing || !compositionHasHistoryRef.current,
+      });
+      // A text edit leaves the caret to the surface that produced it — that is what makes ordinary
+      // typing cost no selection round-trip at all.
+      //
+      // Unless the edit moved the projection out from under it. A Markdown autoformat rewrites what
+      // the Block *is*: the space in `## ` turns the paragraph into a heading, and the heading edits
+      // as its payload alone, so the surface's `value` shrinks by the three characters that just
+      // became the marker. React writes the shorter string back and the browser parks the caret at
+      // the end of it — measured, typing `## ` at the start of `Heading text` left the caret at
+      // offset 12 of 12 and the next character landed as `## Heading textX`. The document already
+      // reports where the caret belongs in source offsets; when the projection has moved, that
+      // answer is the only correct one. Never mid-composition: assigning a selection there closes
+      // the IME's candidate window and drops the in-flight text.
+      const edited = result.snapshot.blocks.find((candidate) => candidate.id === blockId);
+      const projectionMoved =
+        !composing &&
+        (!edited ||
+          normalizeEditorLineEndings(createBlockEditingProjection(edited).editorText) !== source);
+      publish(result, options?.surfaceChanges === true || projectionMoved);
       if (typeof options?.caret === "number") {
         setPendingSelection({
           blockId,
@@ -2125,7 +2244,7 @@ export function MarkdownBlockRuntime({
       if (composing) compositionHasHistoryRef.current = true;
       else scheduleTypingCheckpoint();
     },
-    [apply, scheduleTypingCheckpoint]
+    [publish, scheduleTypingCheckpoint]
   );
 
   const handlePaste = useCallback(
@@ -2403,8 +2522,15 @@ export function MarkdownBlockRuntime({
         documentCaret: number,
         fallback: MarkdownBlockView | undefined
       ) => {
+        // The *last* Block that contains the caret, not the first. Block spans are contiguous —
+        // one ends exactly where the next begins — so a caret sitting on a boundary is inside both
+        // of them, and scanning forwards always answered with the Block before it. `/text` is where
+        // that shows: its template is the empty string, so running it on a Block of its own leaves
+        // that Block empty and the caret on its opening boundary. Measured on `Alpha` / `/text`, the
+        // caret landed at offset 5 of `Alpha` and the next two characters were written into it. The
+        // Block the command acted on is always the later one.
         const targetBlock =
-          result.snapshot.blocks.find(
+          result.snapshot.blocks.findLast(
             (candidate) => candidate.from <= documentCaret && documentCaret <= candidate.to
           ) ?? fallback;
         if (!targetBlock) return;
@@ -2627,6 +2753,25 @@ export function MarkdownBlockRuntime({
         ref={scrollElementRef}
         className="min-h-0 flex-1 overflow-y-auto"
         data-native-markdown-scroll
+        // The safe area the window chrome eats, declared once for every scroll into this container.
+        //
+        // The scroll port starts at y=0 and the chrome is painted opaque over the top of it — the
+        // title bar occupies 0-44 and the Page controls 44-80 — while the 44px spacer below scrolls
+        // away with the text. Every scroll the browser performed on our behalf aligned to the raw
+        // port, so a Block reached with the keyboard could land entirely underneath it: measured on
+        // a 200-Block Page at 1440x900, a 40-press ArrowUp walk put 4 rows completely behind the
+        // chrome and 9 more with their first line inside the opaque band, the worst at [-9.1, 29.9]
+        // with 0.0px of a 39.0px row visible. WCAG 2.2 SC 2.4.11 asks for the focused thing to be
+        // visible.
+        //
+        // Declared rather than corrected a frame later, because the browser honours it on the
+        // scrolls we never see: the focus() a row does when it activates, and the reflow when the
+        // editing surface replaces the preview and the row changes height under an already-settled
+        // scroll. A correction that ran in a rAF after the fact left the row behind the chrome for
+        // the frame in between — measured, 7 of the same 40 presses, at top 41 and top 2. With this
+        // declared, 0 of 40. 84 is the 80px of chrome plus a 4px hairline, so the row's first line
+        // is not flush against the controls.
+        style={{ scrollPaddingTop: "84px" }}
         onPointerDown={handleDocumentPointerDown}
         onDragOver={handleBlockDragOver}
         onDrop={handleBlockDrop}
@@ -2771,55 +2916,62 @@ export function MarkdownBlockRuntime({
               {blockSelectionAnnouncement}
             </span>
             <MarkdownWikiLinkContext.Provider value={wikiLinkServices}>
-              {snapshot.blocks.map((block, index) => (
-                <MarkdownBlockRow
-                  key={block.id}
-                  block={block}
-                  index={index}
-                  listOrdinal={listOrdinals.get(block.id)}
-                  count={snapshot.blocks.length}
-                  active={activeBlockId === block.id}
-                  autoFocusEditor={!isSearchBarOpen}
-                  highlightSelection={searchSelectionBlockId === block.id}
-                  keyboardEntry={!activeBlockId && !blockSelection && index === 0}
-                  blockSelected={selectedBlockIdSet.has(block.id)}
-                  blockSelectionFocus={blockSelection?.focusId === block.id}
-                  selection={pendingSelection?.blockId === block.id ? pendingSelection : undefined}
-                  onActivate={handleActivate}
-                  onSelectBlock={handleSelectBlock}
-                  onBlockSelectionKeyDown={handleBlockSelectionKeyDown}
-                  onExtendSelectionToBlock={extendSelectionToBlock}
-                  onChange={handleChange}
-                  onPaste={handlePaste}
-                  onApplyInlineFormat={handleApplyInlineFormat}
-                  onEditLink={handleEditLink}
-                  onSelectCellRange={handleSelectCellRange}
-                  onImportImages={importImages}
-                  onCompositionStart={handleCompositionStart}
-                  onCompositionEnd={handleCompositionEnd}
-                  onSplit={handleSplit}
-                  onMergeBackward={handleMergeBackward}
-                  onMergeForward={mergeForward}
-                  onSetCodeLanguage={setCodeLanguage}
-                  onInsertAfter={handleInsertAfter}
-                  onCopyMarkdown={handleCopyBlockMarkdown}
-                  onDuplicate={handleDuplicateBlock}
-                  onDelete={handleDeleteBlock}
-                  onSetTaskChecked={handleSetTaskChecked}
-                  onMove={handleMoveBlock}
-                  onIndent={handleIndent}
-                  onNavigate={navigateBlock}
-                  onSetKind={setBlockKind}
-                  onUndo={undo}
-                  onRedo={redo}
-                  onDragStart={startBlockDrag}
-                  onDragEnd={clearBlockDrag}
-                  onRunSlashCommand={handleRunSlashCommand}
-                  wikiEmbedContext={wikiEmbedContext}
-                  collectionContext={collectionContext}
-                  imageContext={imageContext}
-                />
-              ))}
+              {snapshot.blocks.map((block, index) => {
+                const active = activeBlockId === block.id;
+                const keyboardEntry = !activeBlockId && !blockSelection && index === 0;
+                const blockSelectionFocus = blockSelection?.focusId === block.id;
+                return (
+                  <MarkdownBlockRow
+                    key={block.id}
+                    block={block}
+                    listOrdinal={listOrdinals.get(block.id)}
+                    canMoveUp={index > 0}
+                    canMoveDown={index < snapshot.blocks.length - 1}
+                    active={active}
+                    autoFocusEditor={!isSearchBarOpen}
+                    highlightSelection={searchSelectionBlockId === block.id}
+                    keyboardEntry={keyboardEntry}
+                    blockSelected={selectedBlockIdSet.has(block.id)}
+                    blockSelectionFocus={blockSelectionFocus}
+                    selection={
+                      pendingSelection?.blockId === block.id ? pendingSelection : undefined
+                    }
+                    onActivate={handleActivate}
+                    onSelectBlock={handleSelectBlock}
+                    onBlockSelectionKeyDown={handleBlockSelectionKeyDown}
+                    onExtendSelectionToBlock={extendSelectionToBlock}
+                    onChange={handleChange}
+                    onPaste={handlePaste}
+                    onApplyInlineFormat={handleApplyInlineFormat}
+                    onEditLink={handleEditLink}
+                    onSelectCellRange={handleSelectCellRange}
+                    onImportImages={importImages}
+                    onCompositionStart={handleCompositionStart}
+                    onCompositionEnd={handleCompositionEnd}
+                    onSplit={handleSplit}
+                    onMergeBackward={handleMergeBackward}
+                    onMergeForward={mergeForward}
+                    onSetCodeLanguage={setCodeLanguage}
+                    onInsertAfter={handleInsertAfter}
+                    onCopyMarkdown={handleCopyBlockMarkdown}
+                    onDuplicate={handleDuplicateBlock}
+                    onDelete={handleDeleteBlock}
+                    onSetTaskChecked={handleSetTaskChecked}
+                    onMove={handleMoveBlock}
+                    onIndent={handleIndent}
+                    onNavigate={navigateBlock}
+                    onSetKind={setBlockKind}
+                    onUndo={undo}
+                    onRedo={redo}
+                    onDragStart={startBlockDrag}
+                    onDragEnd={clearBlockDrag}
+                    onRunSlashCommand={handleRunSlashCommand}
+                    wikiEmbedContext={wikiEmbedContext}
+                    collectionContext={collectionContext}
+                    imageContext={imageContext}
+                  />
+                );
+              })}
             </MarkdownWikiLinkContext.Provider>
             <div
               aria-hidden

@@ -140,8 +140,13 @@ const LIST_MARKER_INK = "shrink-0 whitespace-nowrap";
 
 interface MarkdownBlockRowProps {
   block: MarkdownBlockView;
-  index: number;
-  count: number;
+  /**
+   * Whether the Block has a sibling above/below to swap with. Computed by the runtime for the same
+   * reason `listOrdinal` is: it is the only place that can see the siblings. Both are stable for
+   * every row but the first and the last, so an insertion no longer moves them.
+   */
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
   /**
    * The ordinal to draw on an ordered list item, counted across its run rather than read from its
    * own source. Computed by the runtime, which is the only place that can see the siblings.
@@ -154,7 +159,12 @@ interface MarkdownBlockRowProps {
   blockSelected?: boolean;
   blockSelectionFocus?: boolean;
   dropBefore?: boolean;
-  selection?: { anchor: number; head: number };
+  /**
+   * Where the caret belongs when this Block takes it, and — when a vertical crossing is what put it
+   * here — which way that crossing came. The offset serves the text surface; the direction serves
+   * the two kinds that address their caret by cell or by region and cannot read one off an offset.
+   */
+  selection?: { anchor: number; head: number; entry?: -1 | 1 };
   onActivate: (blockId: string, selection?: { anchor: number; head: number }) => void;
   onSelectBlock?: (blockId: string, extend?: boolean) => void;
   onBlockSelectionKeyDown?: (blockId: string, event: KeyboardEvent<HTMLDivElement>) => void;
@@ -195,7 +205,18 @@ interface MarkdownBlockRowProps {
     direction: -1 | 1,
     selection: { anchor: number; head: number }
   ) => boolean | void;
-  onNavigate?: (blockId: string, direction: -1 | 1, caretX?: number) => boolean;
+  /**
+   * Cross into the Block above or below.
+   *
+   * `caret` is supplied only by a vertical crossing, and carries both the column to aim at and the
+   * offset it is leaving from — the runtime needs the offset to tell a walk it is still steering
+   * from one it has to re-measure. A horizontal crossing passes nothing and lands on the edge.
+   */
+  onNavigate?: (
+    blockId: string,
+    direction: -1 | 1,
+    caret?: { x: number; offset: number }
+  ) => boolean;
   onSetKind: (
     blockId: string,
     kind: MarkdownSettableBlockKind,
@@ -327,8 +348,8 @@ function caretAtSurfaceEdge(target: EventTarget | null, key: string): boolean {
 
 function MarkdownBlockRowView({
   block,
-  index,
-  count,
+  canMoveUp,
+  canMoveDown,
   active,
   autoFocusEditor = true,
   highlightSelection = false,
@@ -402,7 +423,12 @@ function MarkdownBlockRowView({
     to: number;
     url: string;
     position: { top: number; left: number };
+    selectionRects: readonly { top: number; left: number; width: number; height: number }[];
   } | null>(null);
+  /** Where a dismissed link editor has to hand the caret back to. See `cancelLinkEditor`. */
+  const linkEditorReturnRef = useRef<{ from: number; to: number; range: Range | null } | null>(
+    null
+  );
   const [inlineSelection, setInlineSelection] = useState<{
     from: number;
     to: number;
@@ -547,7 +573,27 @@ function MarkdownBlockRowView({
       (cellFree || arrowLeavesInPlaceBlock(block.kind, event))
     ) {
       const direction = event.key === "ArrowUp" || event.key === "ArrowLeft" ? -1 : 1;
-      if (onNavigate?.(block.id, direction)) event.preventDefault();
+      // A vertical crossing carries the column it is leaving from, exactly as the text surface's own
+      // handler below does. Measured on the element the key came from rather than on the row's
+      // textarea, because an in-place Block's caret lives in a code payload, an equation field, a
+      // table cell or a container region — the row has no textarea at all for most of these. Passing
+      // nothing left the runtime with no column to aim at, and it falls back to the destination's
+      // source edge: every ArrowDown out of a code Block, a callout, a toggle or a table dropped the
+      // caret at offset 0 of the Block below, however far right it had been. A horizontal crossing
+      // still passes nothing, because landing on that edge is what Left and Right mean.
+      const vertical = event.key === "ArrowUp" || event.key === "ArrowDown";
+      const surface = event.target instanceof HTMLElement ? event.target : null;
+      // Only a textarea needs the offset, to lay its value out and find the caret; a contenteditable
+      // is measured from the live selection. The offset the runtime is handed alongside the column is
+      // the identity of the caret it steered from, and a region's own offsets are not in the Block's
+      // source, so 0 stands for "not an offset in this Block" and makes the walk re-measure.
+      const offset = surface instanceof HTMLTextAreaElement ? (surface.selectionStart ?? 0) : 0;
+      const boundary = vertical && surface ? caretLineBoundary(surface, offset) : null;
+      if (
+        onNavigate?.(block.id, direction, boundary ? { x: boundary.caretX, offset } : undefined)
+      ) {
+        event.preventDefault();
+      }
       return;
     }
     if (event.altKey && !mod && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
@@ -610,7 +656,9 @@ function MarkdownBlockRowView({
     ) : block.kind === "block_math" || block.kind === "mermaid" ? (
       <MarkdownFigureBlock {...inPlaceCommon} kind={block.kind} />
     ) : block.kind === "callout" || block.kind === "toggle" ? (
-      <MarkdownContainerBlock {...inPlaceCommon} kind={block.kind} />
+      // `entry` for the same reason the table takes one: a container picks a region rather than an
+      // offset, and which region is right depends on which way the caret arrived.
+      <MarkdownContainerBlock {...inPlaceCommon} kind={block.kind} entry={selection?.entry} />
     ) : null;
 
   useEffect(() => {
@@ -676,7 +724,13 @@ function MarkdownBlockRowView({
     };
     const textarea = textareaRef.current;
     if (!textarea) return;
-    if (autoFocusEditor) textarea.focus();
+    // `preventScroll`, and the scroll done deliberately below instead. Blink scrolls a focused
+    // element with `CenterIfNeeded`, which is bimodal: a surface still partly on screen is nudged
+    // to the edge, one entirely off screen is recentred on the port's midline. Walking Enter down
+    // a Page therefore stepped 39, 39, 39 … and then 453 in a single frame, the new row landing at
+    // 415 — 868/2 minus half a row — because press 20 was the first that mounted its surface below
+    // the fold. Every other focus() in this editor already passes it.
+    if (autoFocusEditor) textarea.focus({ preventScroll: true });
     if (restoredSelection) {
       const anchor = Math.min(restoredSelection.anchor, textarea.value.length);
       const head = Math.min(restoredSelection.head, textarea.value.length);
@@ -690,23 +744,21 @@ function MarkdownBlockRowView({
   useEffect(() => {
     if (!active) return;
     const row = rowRef.current;
-    const scroller = row?.closest<HTMLElement>("[data-native-markdown-scroll]");
-    if (!row || !scroller) return;
-    if (typeof scroller.scrollBy !== "function") return;
-
-    // The header and Page controls cover the first 80px of the scroll surface.
-    // Native focus only clears the raw viewport, so keyboard navigation otherwise
-    // leaves a newly active Block behind that fixed chrome.
-    const frame = requestAnimationFrame(() => {
-      const rowRect = row.getBoundingClientRect();
-      const scrollerRect = scroller.getBoundingClientRect();
-      const safeTop = scrollerRect.top + 80;
-      if (rowRect.top < safeTop) scroller.scrollBy({ top: rowRect.top - safeTop });
-      else if (rowRect.bottom > scrollerRect.bottom) {
-        scroller.scrollBy({ top: rowRect.bottom - scrollerRect.bottom });
-      }
-    });
-    return () => cancelAnimationFrame(frame);
+    // Unless whoever activated the Block has already scrolled it where they want it. Outline
+    // navigation sets this immediately before its own smooth `block: "start"` scroll, and an instant
+    // scroll issued while that one is in flight cancels it — the Page then stops wherever `nearest`
+    // decided, which on a 100-Block Page was 810.3px down the port instead of at its top. Consumed
+    // here so it lasts exactly one activation.
+    if (row?.hasAttribute("data-outline-scroll")) {
+      row.removeAttribute("data-outline-scroll");
+      return;
+    }
+    // The Block brings itself into view, since its own focus() no longer does. `nearest` is the
+    // whole point: it moves by the smallest amount that clears the edge, so a walk down the Page
+    // steps by one row rather than recentring, and it obeys the `scroll-padding-top` the scroll
+    // container declares — which is what keeps a Block reached from below out from under the window
+    // chrome. Optional call because jsdom implements no scrolling at all.
+    row?.scrollIntoView?.({ block: "nearest" });
   }, [active]);
 
   useEffect(() => {
@@ -735,33 +787,54 @@ function MarkdownBlockRowView({
    * 16px against the preview's 8px, and an image grows an Edit control out of nothing. Re-measuring
    * on activation let that chrome drag the handle, and (before the change below) resize the Block
    * under the pointer: measured, an image went 38.50px -> 47.00px the moment it was pressed.
+   *
+   * Measured, then written — never measured, written, measured, written. See `scheduleGutterAlign`.
    */
   useLayoutEffect(() => {
     const row = rowRef.current;
     const content = row?.querySelector<HTMLElement>("[data-native-block-content]");
     const controls = row?.querySelector<HTMLElement>("[data-native-block-controls]");
     if (!row || !content || !controls || active) return;
-    const align = () => {
-      // Cleared first so the declaration below is the stylesheet's own answer rather than the last
-      // correction this made, which would otherwise be what every later one is measured against.
-      row.style.removeProperty("--controls-lead");
+    // Cleared here rather than inside the measurement, so the declaration read below is the
+    // stylesheet's own answer rather than the last correction this made — and so that clearing it
+    // is a write in React's commit phase beside every other row's, never one standing between two
+    // rows' measurements.
+    row.style.removeProperty("--controls-lead");
+    // The stylesheet's own lead, read once. It is a function of the kind and the level, both of
+    // which re-run this effect, so a resize never has to ask for it again — and asking again would
+    // mean clearing the correction first, which is the write this exists to avoid.
+    let declared: number | null = null;
+    // What the row's lead currently resolves to, so a measurement that changes nothing writes
+    // nothing. Measured on a 1000-Block Page, paragraphs, lists and quotes all measure the value
+    // the stylesheet already gives them, so most of a Page never writes at all.
+    let applied = 0;
+    const measure = () => {
+      if (declared === null) {
+        declared = Number.parseFloat(window.getComputedStyle(controls).paddingTop) || 0;
+        applied = declared;
+      }
       // A picture or a rendered diagram has no first line to sit on. The declared lead is the
       // answer there, and it is a better one than the middle of a 300px image.
       const line = firstLineBox(content);
-      if (!line) return;
-      const declared = Number.parseFloat(window.getComputedStyle(controls).paddingTop) || 0;
-      const lead =
-        line.top + line.height / 2 - content.getBoundingClientRect().top - GUTTER_CONTROL_SIZE / 2;
-      if (Math.abs(lead - declared) > GUTTER_CONTROL_SIZE) return;
-      row.style.setProperty("--controls-lead", `${Math.round(lead * 100) / 100}px`);
+      const lead = line
+        ? line.top + line.height / 2 - content.getBoundingClientRect().top - GUTTER_CONTROL_SIZE / 2
+        : declared;
+      const next =
+        Math.abs(lead - declared) > GUTTER_CONTROL_SIZE ? declared : Math.round(lead * 100) / 100;
+      if (next === applied) return null;
+      applied = next;
+      return () => row.style.setProperty("--controls-lead", `${next}px`);
     };
-    align();
+    scheduleGutterAlign(measure);
     // A Block whose first line arrives late still gets one: a Mermaid diagram renders
     // asynchronously, an image resolves its bytes over IPC, and a container's body can be typed
     // into. Each of those changes the content box, which is what this watches.
-    const observer = new ResizeObserver(align);
+    const observer = new ResizeObserver(() => scheduleGutterAlign(measure));
     observer.observe(content);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      pendingGutterAligns.delete(measure);
+    };
   }, [active, block.kind, block.level]);
 
   useEffect(() => {
@@ -993,7 +1066,12 @@ function MarkdownBlockRowView({
         : direction === -1
           ? atVisibleStart
           : atVisibleEnd;
-      if (leaving && onNavigate(block.id, direction, boundary?.caretX)) event.preventDefault();
+      if (
+        leaving &&
+        onNavigate(block.id, direction, boundary ? { x: boundary.caretX, offset: from } : undefined)
+      ) {
+        event.preventDefault();
+      }
       return;
     }
     if (
@@ -1157,9 +1235,74 @@ function MarkdownBlockRowView({
         ? textareaSelectionToolbarPosition(surface, from, to)
         : domSelectionToolbarPosition(surface)
       : { top: 0, left: 0 };
+    // Captured here, while the Block still owns the selection. A moment later the popover's input
+    // has focus and there is nothing left to read: a textarea keeps its own offsets across a blur,
+    // but the document selection a semantic Block edits through is simply gone.
+    const domSelection = window.getSelection();
+    const range =
+      surface && !(surface instanceof HTMLTextAreaElement) && domSelection?.rangeCount
+        ? domSelection.getRangeAt(0).cloneRange()
+        : null;
+    linkEditorReturnRef.current = { from, to, range };
     setInlineSelection(null);
-    setLinkEditor({ from, to, url: markdownLinkDestinationAt(source, from, to), position });
+    setLinkEditor({
+      from,
+      to,
+      url: markdownLinkDestinationAt(source, from, to),
+      position,
+      // What the link is about to apply to, drawn by this Block for as long as the popover holds
+      // focus. Measured on a five-character run, 743px² of tint went to 0 the instant Mod+K was
+      // pressed — neither surface paints an unfocused selection, and a semantic Block's document
+      // selection is gone outright — so the reader was being asked about a run they could no longer
+      // see. The boxes are read now and held: the popover's own position is a captured `fixed`
+      // coordinate too, so both go stale together or not at all.
+      selectionRects: surface ? selectionLineRects(surface, from, to, range) : [],
+    });
   };
+
+  /**
+   * Close the link editor without writing anything, and give the keyboard back.
+   *
+   * Escaping the popover used to leave `document.activeElement` on `<body>` and the editor dead from
+   * there: measured, 20 of 20 sampled frames on body, Escape/arrows/Enter/Backspace all leaving it
+   * there, only Shift+Tab or a mouse press recovering, and three characters typed into that state
+   * leaving the file byte-identical. The popover's `<input>` had taken focus, and when React
+   * unmounted it the browser had nothing to hand focus back to.
+   *
+   * A committed link clears the return instead: the runtime has just rewritten the Block and holds a
+   * selection of its own, around the link it wrote, and restoring the old one would fight it.
+   */
+  const cancelLinkEditor = () => {
+    setLinkEditor(null);
+  };
+
+  /**
+   * Hand focus and the caret back once the popover is actually gone.
+   *
+   * From an effect rather than from the handler, because the handler runs before the commit that
+   * removes the input, and that removal is what puts focus on `<body>`. Addressed by the Block's own
+   * offsets rather than by a reference to the element that had focus, because the row re-renders in
+   * between — the saved `Range` is only a fast path for the semantic surface, whose caret lives in
+   * text nodes this row does not own, and it is used only while its nodes are still in the document.
+   * `preventScroll` for the same reason activation uses it: a restore must not move the Page.
+   */
+  useEffect(() => {
+    if (linkEditor) return;
+    const target = linkEditorReturnRef.current;
+    if (!target) return;
+    linkEditorReturnRef.current = null;
+    const surface = rowRef.current?.querySelector<HTMLElement>("[data-native-block-editor]");
+    if (!surface) return;
+    surface.focus({ preventScroll: true });
+    if (surface instanceof HTMLTextAreaElement) {
+      surface.setSelectionRange(target.from, target.to);
+      return;
+    }
+    const domSelection = window.getSelection();
+    if (!target.range || !target.range.startContainer.isConnected || !domSelection) return;
+    domSelection.removeAllRanges();
+    domSelection.addRange(target.range);
+  }, [linkEditor]);
 
   const openBlockActionsMenu = () => {
     setInlineSelection(null);
@@ -1188,7 +1331,11 @@ function MarkdownBlockRowView({
       data-drop-before={dropBefore ? "true" : undefined}
       data-controls-open={controlsMenuOpen ? "true" : undefined}
       role="group"
-      aria-label={`${blockTypeLabel(block)}, block ${index + 1} of ${count}`}
+      // No `aria-label` here on purpose: the runtime writes it, for every row, in
+      // `labelRowsWithOrdinals`. The name carries the Block's ordinal, which changes on every row
+      // the moment one is inserted or removed — as a prop that invalidated `sameRowProps` for all N
+      // rows and made each rebuild its editing projection and inline parse. React must not render
+      // the attribute at all, or the two writers would fight over it every time a row re-renders.
       aria-describedby={descriptionId}
       aria-current={active ? "true" : undefined}
       tabIndex={blockSelectionFocus || (!active && block.editable && keyboardEntry) ? 0 : -1}
@@ -1297,8 +1444,8 @@ function MarkdownBlockRowView({
                 ? block.level
                 : undefined
             }
-            canMoveUp={index > 0}
-            canMoveDown={index < count - 1}
+            canMoveUp={canMoveUp}
+            canMoveDown={canMoveDown}
             canTurnInto={block.editable && !sourceOnly}
             draggable
             buttonTabIndex={active || blockSelectionFocus ? 0 : -1}
@@ -1402,6 +1549,9 @@ function MarkdownBlockRowView({
             source={source}
             geometry={tableGeometry}
             editable={active && block.editable}
+            // The prop, not `restoredSelection`: a carried selection is this Block's own caret being
+            // moved from one surface to another, which is not an entry at all.
+            entry={selection?.entry}
             onChange={onChange}
             onCellKeyDown={handleInPlaceKeyDown}
             renderCell={(text) => (
@@ -1561,17 +1711,51 @@ function MarkdownBlockRowView({
                 />
               )}
             </div>
-            {linkEditor ? (
-              <LinkEditPopover
-                url={linkEditor.url}
-                position={linkEditor.position}
-                onCancel={() => setLinkEditor(null)}
-                onCommit={(url) => {
-                  setLinkEditor(null);
-                  if (url.trim()) onEditLink?.(block.id, linkEditor.from, linkEditor.to, url);
-                }}
-              />
-            ) : null}
+            {linkEditor
+              ? // Portalled onto `document.body`, both of them. Their coordinates are viewport
+                // coordinates — a caret rect and a selection rect, measured against the window —
+                // but a `position: fixed` child of this row resolves against the *row*, which is a
+                // containing block twice over: it carries `contain: layout style` and the page
+                // frame above it a transform. Measured, the popover asked for top 101 / left 397.5
+                // and was drawn at 193 / 727, so the link editor opened a row and a half below the
+                // words it was about to wrap. `data-native-editor-overlay` for the same reason the
+                // slash panel carries it: outside the editor's DOM, the runtime would otherwise
+                // read a press in here as a press away from the Block.
+                createPortal(
+                  <div data-native-editor-overlay>
+                    {linkEditor.selectionRects.map((rect, rectIndex) => (
+                      <div
+                        key={rectIndex}
+                        aria-hidden
+                        data-native-link-selection
+                        className="pointer-events-none fixed"
+                        style={{
+                          top: rect.top,
+                          left: rect.left,
+                          width: rect.width,
+                          height: rect.height,
+                          // `.markdown-page ::selection`'s own colour, so the run reads as the same
+                          // selection rather than as a second kind of highlight. One value for both
+                          // themes: the dark rule differs only in alpha, 0.34 against 0.28, and an
+                          // inline style cannot ask which theme is on.
+                          backgroundColor: "rgba(35, 131, 226, 0.28)",
+                        }}
+                      />
+                    ))}
+                    <LinkEditPopover
+                      url={linkEditor.url}
+                      position={linkEditor.position}
+                      onCancel={cancelLinkEditor}
+                      onCommit={(url) => {
+                        linkEditorReturnRef.current = null;
+                        setLinkEditor(null);
+                        if (url.trim()) onEditLink?.(block.id, linkEditor.from, linkEditor.to, url);
+                      }}
+                    />
+                  </div>,
+                  document.body
+                )
+              : null}
             <InlineFormatToolbar
               visible={inlineSelection !== null}
               position={inlineSelection?.position}
@@ -2235,6 +2419,48 @@ function shiftSourceIndent(
 const GUTTER_CONTROL_SIZE = 24;
 
 /**
+ * Every Block's gutter lead measured in one pass, then written in one pass.
+ *
+ * The measurement reads three geometries and writes one custom property. Run row by row as the
+ * rows mount, that is write -> read -> write -> read down one shared flow container: each write
+ * dirties layout for the whole document and the next row's read forces it again, so the cost of
+ * opening a Page went with the square of its length. Measured in the packaged app on a 1000-Block
+ * Page: 304 forced layouts, 3.005s inside layout, and the window still showing the previous screen
+ * 3.9s after the click. Neutering only the write — every read left in place — took that to 7
+ * layouts and 0.055s. The reads are free; the interleaving is the whole cost.
+ *
+ * So the rows hand in a measurement and get back a write. Every measurement runs first, then every
+ * write, which costs one forced layout for the batch however many Blocks are in it. Measured
+ * against the dev build, where the same interleave cost 0.7 forced layouts per Block to open a Page
+ * and 0.2 per Block to resize the window: opening now costs 8 whether the Page is 250 Blocks or
+ * 1000, and a resize costs 2.
+ *
+ * A microtask rather than a frame: React's layout effects and a ResizeObserver delivery both run
+ * before the browser paints, and the microtask checkpoint that follows them does too. The gutter is
+ * still correct in the first painted frame, which is the reason it is measured in a layout effect
+ * at all.
+ */
+const pendingGutterAligns = new Set<() => (() => void) | null>();
+let gutterAlignScheduled = false;
+
+function scheduleGutterAlign(measure: () => (() => void) | null): void {
+  pendingGutterAligns.add(measure);
+  if (gutterAlignScheduled) return;
+  gutterAlignScheduled = true;
+  queueMicrotask(() => {
+    gutterAlignScheduled = false;
+    const measures = [...pendingGutterAligns];
+    pendingGutterAligns.clear();
+    const writes: (() => void)[] = [];
+    for (const pending of measures) {
+      const write = pending();
+      if (write) writes.push(write);
+    }
+    for (const write of writes) write();
+  });
+}
+
+/**
  * The box of the first line the reader can see inside a Block, or null if it draws none.
  *
  * Line boxes rather than element boxes, because a Block's first *element* is routinely not its
@@ -2307,6 +2533,11 @@ function domCaretRect(surface: HTMLElement): DOMRect | null {
   if (!selection || selection.rangeCount === 0) return null;
   const range = selection.getRangeAt(0);
   if (!surface.contains(range.startContainer)) return null;
+  // Guarded the way `firstLineBox` guards its own measurement: jsdom lays nothing out and does not
+  // implement this on a Range, and the caret in a cell or a container region is now measured from
+  // inside a key handler, so an unguarded call throws out of one under test rather than reporting
+  // "no geometry here" the way every other measurement in this file does.
+  if (typeof range.getClientRects !== "function") return null;
   const rects = range.getClientRects();
   const rect = rects.length > 0 ? rects[rects.length - 1] : range.getBoundingClientRect();
   if (!rect || (rect.height === 0 && rect.top === 0)) return null;
@@ -2314,12 +2545,15 @@ function domCaretRect(surface: HTMLElement): DOMRect | null {
 }
 
 /**
- * Measure a textarea caret by laying out the same text in an off-screen mirror. A textarea gives
- * no caret geometry of its own, and this is the same technique the selection toolbar already uses.
+ * An off-screen copy of a textarea's box and type, for measuring glyphs the DOM cannot show.
+ *
+ * A textarea's value lives outside the DOM: no text nodes, no `Range`, no client rects, no caret
+ * geometry. Laying the same string out in a div with the same box, font and wrapping is the only way
+ * to ask where a character sits. Callers append their own content, measure it, and remove the mirror
+ * — the three that do want three different answers out of the same layout.
  */
-function textareaCaretRect(textarea: HTMLTextAreaElement, caret: number): DOMRect | null {
+function textareaMirror(textarea: HTMLTextAreaElement): HTMLDivElement {
   const rect = textarea.getBoundingClientRect();
-  if (rect.height <= 0) return null;
   const computed = window.getComputedStyle(textarea);
   const mirror = document.createElement("div");
   Object.assign(mirror.style, {
@@ -2341,11 +2575,23 @@ function textareaCaretRect(textarea: HTMLTextAreaElement, caret: number): DOMRec
     fontStyle: computed.fontStyle,
     lineHeight: computed.lineHeight,
     letterSpacing: computed.letterSpacing,
+    textTransform: computed.textTransform,
+    textIndent: computed.textIndent,
     tabSize: computed.tabSize,
     whiteSpace: "pre-wrap",
     overflowWrap: "break-word",
     wordBreak: computed.wordBreak,
   });
+  return mirror;
+}
+
+/**
+ * Measure a textarea caret by laying out the same text in an off-screen mirror. A textarea gives
+ * no caret geometry of its own, and this is the same technique the selection toolbar already uses.
+ */
+function textareaCaretRect(textarea: HTMLTextAreaElement, caret: number): DOMRect | null {
+  if (textarea.getBoundingClientRect().height <= 0) return null;
+  const mirror = textareaMirror(textarea);
   const value = textarea.value;
   mirror.append(document.createTextNode(value.slice(0, caret)));
   const marker = document.createElement("span");
@@ -2365,34 +2611,7 @@ function textareaSelectionToolbarPosition(
 ): { top: number; left: number } {
   const textareaRect = textarea.getBoundingClientRect();
   const midpoint = Math.floor((from + to) / 2);
-  const computed = window.getComputedStyle(textarea);
-  const mirror = document.createElement("div");
-  Object.assign(mirror.style, {
-    position: "fixed",
-    visibility: "hidden",
-    pointerEvents: "none",
-    zIndex: "-1",
-    boxSizing: computed.boxSizing,
-    left: `${textareaRect.left}px`,
-    top: `${textareaRect.top - textarea.scrollTop}px`,
-    width: `${textareaRect.width}px`,
-    minHeight: `${textareaRect.height}px`,
-    padding: computed.padding,
-    border: computed.border,
-    font: computed.font,
-    fontFamily: computed.fontFamily,
-    fontSize: computed.fontSize,
-    fontWeight: computed.fontWeight,
-    fontStyle: computed.fontStyle,
-    lineHeight: computed.lineHeight,
-    letterSpacing: computed.letterSpacing,
-    textTransform: computed.textTransform,
-    textIndent: computed.textIndent,
-    tabSize: computed.tabSize,
-    whiteSpace: "pre-wrap",
-    overflowWrap: "break-word",
-    wordBreak: computed.wordBreak,
-  });
+  const mirror = textareaMirror(textarea);
   mirror.append(document.createTextNode(textarea.value.slice(0, midpoint)));
   const marker = document.createElement("span");
   marker.textContent = "\u200b";
@@ -2411,6 +2630,45 @@ function textareaSelectionToolbarPosition(
     top: markerRect.top || textareaRect.top,
     left,
   };
+}
+
+/**
+ * The boxes a selection paints, one per visual line, in viewport coordinates.
+ *
+ * Read while the Block still owns the selection, because a moment later it does not: an overlay that
+ * takes focus wipes the document selection outright, and a blurred textarea keeps its offsets but
+ * paints nothing. `range` is the semantic surface's own selection, already cloned by the caller.
+ */
+function selectionLineRects(
+  surface: HTMLElement,
+  from: number,
+  to: number,
+  range: Range | null
+): readonly { top: number; left: number; width: number; height: number }[] {
+  if (from >= to) return [];
+  const boxes =
+    surface instanceof HTMLTextAreaElement
+      ? textareaSelectionRects(surface, from, to)
+      : (range?.getClientRects() ?? []);
+  return Array.from(boxes)
+    .filter((box) => box.width > 0 && box.height > 0)
+    .map((box) => ({ top: box.top, left: box.left, width: box.width, height: box.height }));
+}
+
+function textareaSelectionRects(
+  textarea: HTMLTextAreaElement,
+  from: number,
+  to: number
+): readonly DOMRect[] {
+  const mirror = textareaMirror(textarea);
+  mirror.append(document.createTextNode(textarea.value.slice(0, from)));
+  const span = document.createElement("span");
+  span.textContent = textarea.value.slice(from, to);
+  mirror.append(span, document.createTextNode(textarea.value.slice(to)));
+  document.body.append(mirror);
+  const rects = Array.from(span.getClientRects());
+  mirror.remove();
+  return rects;
 }
 
 function domSelectionToolbarPosition(editor: HTMLElement): { top: number; left: number } {
@@ -2438,7 +2696,7 @@ function domSelectionToolbarPosition(editor: HTMLElement): { top: number; left: 
   };
 }
 
-function blockTypeLabel(block: MarkdownBlockView): string {
+export function blockTypeLabel(block: MarkdownBlockView): string {
   if (block.kind === "heading") return `Heading ${block.level ?? 1}`;
   if (block.kind === "bullet_list_item") return "Bulleted list";
   if (block.kind === "ordered_list_item") return "Numbered list";
