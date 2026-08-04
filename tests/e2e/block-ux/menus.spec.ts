@@ -119,27 +119,40 @@ async function openTurnInto(row: Locator): Promise<Locator> {
   return options;
 }
 
+type Box = { x: number; y: number; width: number; height: number };
+
 /**
  * A box read after it has stopped changing on its own.
  *
  * The panel enters with `zoom-in-95` over 0.15s, so a box read the instant it becomes visible is a
  * box mid-animation: the Turn into row measured 208.73px on the way in and 210.34px at rest, and
  * comparing the two reads a 1.6px scale step as a relayout.
+ *
+ * One matching pair is not enough to call that finished. The panel's placement is corrected by a
+ * layout effect that deliberately runs on every commit of an open menu (see `dropdown-menu.tsx`), so
+ * a correction can land *after* two consecutive polls have already matched — the box looks settled
+ * for one 50ms window and then moves. That read the "Turn into" trigger 2.837px from where it
+ * finished on CI, against 0.000 across five headless trials on an idle machine. Two matching pairs
+ * close that window; the budget is 4s because under a full suite the frames this waits on compete
+ * with every other worker.
  */
-async function settledBox(target: Locator): Promise<{ y: number; height: number }> {
-  let previous: { y: number; height: number } | null = null;
-  // 4s, not 1s. The panel settles in ~150ms when the machine is idle, but this helper waits on an
-  // entry animation, and under a full suite the frames it needs are competing with every other
-  // worker. Timing out here reports "box never settled" for a panel that was only ever slow.
+async function settledBox(target: Locator): Promise<Box> {
+  let previous: Box | null = null;
+  let stable = 0;
   for (let attempt = 0; attempt < 80; attempt += 1) {
     const box = await target.boundingBox();
     if (
       box &&
       previous &&
+      Math.abs(box.x - previous.x) < 0.01 &&
       Math.abs(box.y - previous.y) < 0.01 &&
+      Math.abs(box.width - previous.width) < 0.01 &&
       Math.abs(box.height - previous.height) < 0.01
     ) {
-      return box;
+      stable += 1;
+      if (stable >= 2) return box;
+    } else {
+      stable = 0;
     }
     previous = box;
     await target.page().waitForTimeout(50);
@@ -352,7 +365,7 @@ test("a second press on Turn into at the same point never retypes the Block", as
   const trigger = menu.getByRole("menuitem", { name: "Turn into", exact: true });
 
   const panelBefore = await settledBox(menu);
-  const rowBefore = (await trigger.boundingBox())!;
+  const rowBefore = await settledBox(trigger);
   const x = rowBefore.x + rowBefore.width / 2;
   const y = rowBefore.y + rowBefore.height / 2;
 
@@ -368,7 +381,7 @@ test("a second press on Turn into at the same point never retypes the Block", as
   // measures 208.73px against 210.34px at rest and settles at whatever rate the machine allows.
   // The claim being made is "a human would see nothing move", and that is what 1px says.
   const panelAfter = await settledBox(menu);
-  const rowAfter = (await trigger.boundingBox())!;
+  const rowAfter = await settledBox(trigger);
   expect(Math.abs(rowAfter.y - rowBefore.y)).toBeLessThanOrEqual(1);
   expect(Math.abs(panelAfter.height - panelBefore.height)).toBeLessThanOrEqual(1);
   expect(await rowLabelAt(page, x, y)).toBe("Turn into");
