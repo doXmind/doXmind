@@ -37,25 +37,41 @@ across its own content column. Only the paint was wrong.
 
 ## Menus
 
-|                     | Notion                                                                                                                                            | Feishu Doc                                      |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| Block menu          | 265px wide, `border-radius: 10px`, opaque white, **no** backdrop blur                                                                             | —                                               |
-| Shadow              | `0 20px 24px rgba(25,25,25,.05)`, `0 5px 8px rgba(25,25,25,.027)`, `0 0 0 1px rgba(42,28,0,.07)` — a hairline ring, not a border                  | `0 8px 16px rgba(0,0,0,.28)`                    |
-| Menu item           | 28px tall, `border-radius: 6px`, 1px gap, `background .02s ease-in`, right-aligned ⌘ hint                                                         | 32px tall, `border-radius: 4px`                 |
-| Block menu contents | search · Turn into ▸ · Color ▸ · Copy link to block · Duplicate ⌘D · Move to ⌘⇧P · Delete · Comment · Suggest edits · Ask AI · last-edited footer | Turn into · Copy · Duplicate · Comment · Delete |
+This table had no "Ours" column until 2026-08-05, unlike the two either side of it. That absence was
+load-bearing and easy to misread: the Notion figures were a _target_, and nothing had ever recorded
+whether we hit them. `rgba(42,28,0,.07)` in particular has never appeared in `src/` in any commit
+(`git log --all -S`). The "Ours" column below is measured, not aspirational.
+
+|                     | Notion                                                                                                                                            | Feishu Doc                                      | Ours (measured 2026-08-05)                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Block menu          | 265px wide, `border-radius: 10px`, opaque white, **no** backdrop blur                                                                             | —                                               | 265px, `10px`, `rgb(255,255,255)`, `backdrop-filter: none` — all four match              |
+| Shadow              | `0 20px 24px rgba(25,25,25,.05)`, `0 5px 8px rgba(25,25,25,.027)`, `0 0 0 1px rgba(42,28,0,.07)` — a hairline ring, not a border                  | `0 8px 16px rgba(0,0,0,.28)`                    | **diverges** — both blur layers 2x Notion's alpha, ring opaque `#CCCCCC`; see below      |
+| Menu item           | 28px tall, `border-radius: 6px`, 1px gap, `background .02s ease-in`, right-aligned ⌘ hint                                                         | 32px tall, `border-radius: 4px`                 | 28px, `6px`, 1px gap, `0.02s` — the gap was 0px until `MENU_PANEL_CLASS` gained `gap-px` |
+| Block menu contents | search · Turn into ▸ · Color ▸ · Copy link to block · Duplicate ⌘D · Move to ⌘⇧P · Delete · Comment · Suggest edits · Ask AI · last-edited footer | Turn into · Copy · Duplicate · Comment · Delete | no Color / Copy link / Comment / Suggest edits / Ask AI — excluded by ADR-0011/0012      |
+
+**The shadow is a live decision, not a bug.** Ours is
+`0 0 0 1px hsl(var(--popover-ring)), 0 5px 8px rgba(25,25,25,.06), 0 20px 24px rgba(25,25,25,.1)`
+with `--popover-ring: #CCCCCC`. Against Notion that is twice the alpha on both blur layers and an
+opaque ring at 1.61:1 where Notion's is a translucent warm black at roughly 1.08:1 — our menu edge is
+markedly more present, which is most of what reads as "heavier than Notion". But the ring token and
+its first-in-the-list position are deliberate and measured (`globals.css`, 15 lines of rationale):
+they exist so the light and dark themes state the _same_ edge strength, and Notion's 7%-alpha warm
+black is invisible on a dark panel. Adopting Notion's values would restore light-mode parity and
+reintroduce exactly the cross-theme asymmetry the token pair was introduced to remove. Decide the
+ring and the two blur alphas together — they are one visual system — and record the outcome here.
 
 ## Slash / insert menu
 
-|             | Notion                                                                                        | Feishu Doc                                                                          | Ours                                                             |
-| ----------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Trigger     | `/`                                                                                           | `/` **and** the fullwidth `、`                                                      | both                                                             |
-| Anchor      | the caret, 8px below the caret's line                                                         | the line's left edge                                                                | the caret (Notion's — it tracks where you are typing)            |
-| Panel       | 314px, ≤434px tall, `border-radius: 10px`                                                     | 247px, `border-radius: 6px`                                                         | 314px                                                            |
-| Item        | 31px tall, `border-radius: 6px`; selected `rgba(42,28,0,0.07)` — a **warm neutral**, not blue | 32px; selected `rgba(235,235,235,0.08)`                                             | 31px, theme accent                                               |
-| Row content | icon + label + right-aligned Markdown shortcut (`#`, `##`, `###`)                             | icon + label                                                                        | Notion's, including the shortcut hint                            |
-| Grouping    | "Suggested" / "Basic blocks" section headers                                                  | "Basics" / "Common"                                                                 | flat + ranking (see below)                                       |
-| CJK search  | —                                                                                             | **matches full pinyin**: `/biaoti` filters to Heading 1-6 in an _English_ workspace | Feishu's, plus pinyin initials (`bt`) and acronyms (`bl`, `tbl`) |
-| Inline hint | block placeholder becomes "Type to search"                                                    | "Type in keywords to find a command"                                                | —                                                                |
+|             | Notion                                                                                        | Feishu Doc                                                                          | Ours                                                                  |
+| ----------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Trigger     | `/`                                                                                           | `/` **and** the fullwidth `、`                                                      | both                                                                  |
+| Anchor      | the caret, 8px below the caret's line                                                         | the line's left edge                                                                | the caret (Notion's — it tracks where you are typing)                 |
+| Panel       | 314px, ≤434px tall, `border-radius: 10px`                                                     | 247px, `border-radius: 6px`                                                         | 314px, ≤434px, `10px` — the ceiling was a hard 320px until 2026-08-05 |
+| Item        | 31px tall, `border-radius: 6px`; selected `rgba(42,28,0,0.07)` — a **warm neutral**, not blue | 32px; selected `rgba(235,235,235,0.08)`                                             | 31px, theme accent                                                    |
+| Row content | icon + label + right-aligned Markdown shortcut (`#`, `##`, `###`)                             | icon + label                                                                        | Notion's, including the shortcut hint                                 |
+| Grouping    | "Suggested" / "Basic blocks" section headers                                                  | "Basics" / "Common"                                                                 | flat + ranking (see below)                                            |
+| CJK search  | —                                                                                             | **matches full pinyin**: `/biaoti` filters to Heading 1-6 in an _English_ workspace | Feishu's, plus pinyin initials (`bt`) and acronyms (`bl`, `tbl`)      |
+| Inline hint | block placeholder becomes "Type to search"                                                    | "Type in keywords to find a command"                                                | —                                                                     |
 
 The pinyin behaviour was verified live, not assumed: typing `/biaoti` into an English-labelled Feishu
 workspace narrowed the panel to exactly the six Heading rows.
@@ -75,7 +91,15 @@ workspace narrowed the panel to exactly the six Heading rows.
   class that repaints the range from CSS variables. Worth copying when our inline toolbar grows a
   field that takes focus.
 - Ours: the same `rgba(35,131,226,0.14)` for a Block selection, drawn on a row `::after` that bridges
-  the inter-row gap so consecutive selected Blocks read as one band.
+  the inter-row gap so consecutive selected Blocks read as one band. Verified still exact on
+  2026-08-05.
+- **Text** selection is a different story, and the line above quietly concealed it: the 0.14 claim
+  covers a _Block_ selection only. Dragging across text paints
+  `.markdown-page ::selection { rgba(35,131,226,0.28) }` — twice Notion's alpha — and outside the Page
+  the app chrome painted `rgba(46,170,220,·)`, a colder cyan that is not Notion's hue at all, under a
+  comment already claiming it was. The hue is unified as of 2026-08-05; **the alpha is not settled.**
+  Notion's 0.14 is a light-theme reading and no dark-theme counterpart was ever taken, so matching
+  light alone would leave our two themes 2.4x apart. Measure Notion in dark, then set both.
 
 ## Motion
 
@@ -105,15 +129,21 @@ what keeps `--editor-content-rail` a round 4rem.
 kind, after correcting `--controls-lead` against these numbers rather than trusting the arithmetic
 (the arithmetic alone was 3-24px out because container kinds add their own chrome):
 
-| kind                      | before             | after             |
-| ------------------------- | ------------------ | ----------------- |
-| paragraph, all list kinds | −4.0               | 0.0               |
-| heading 1 / 2 / 3         | −3.3 / −3.5 / −2.8 | +0.3 / 0.0 / +0.3 |
-| blockquote                | +0.5               | +0.5              |
-| fenced code               | +2.5               | 0.0               |
-| table                     | −5.0               | 0.0               |
-| block math                | −13.7              | +0.3              |
-| callout                   | +5.5               | 0.0               |
+| kind                      | before             | after             | re-measured 2026-08-05 |
+| ------------------------- | ------------------ | ----------------- | ---------------------- |
+| paragraph, all list kinds | −4.0               | 0.0               | 0.00                   |
+| heading 1 / 2 / 3         | −3.3 / −3.5 / −2.8 | +0.3 / 0.0 / +0.3 | 0.00 / 0.00 / 0.00     |
+| blockquote                | +0.5               | +0.5              | 0.00                   |
+| fenced code               | +2.5               | 0.0               | 0.00                   |
+| table                     | −5.0               | 0.0               | 0.00                   |
+| block math                | −13.7              | +0.3              | −0.01                  |
+| callout                   | +5.5               | 0.0               | 0.00                   |
+
+The fourth column is not drift — it is an improvement nobody had recorded. `fdc325a` rewrote the
+gutter-alignment effect to measure every row before writing to any of them (it was doing O(N²)
+forced layout). Batching the reads also removed the sub-pixel residue the third column still
+carried: every kind now lands on 0.00, headings and block math included. Re-take this column with
+`tests/e2e/block-ux/parity-measure.spec.ts` rather than by hand.
 
 **Hover band** — zero vertical gap between all 19 consecutive row boxes, so no pointer dead band
 exists anywhere in the column. Controls at rest: `opacity: 0`, `pointer-events: none`,
