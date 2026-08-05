@@ -138,7 +138,10 @@ export function EmojiPicker({
                   onClick={() => onSelect(emoji)}
                   className={cn(
                     "flex h-8 w-8 items-center justify-center rounded text-lg",
-                    "transition-colors hover:bg-accent"
+                    // 20ms, the figure measured off Notion and the one `MENU_ROW_CLASS` already
+                    // uses. A bare `transition-colors` inherits Tailwind's 150ms default, which is
+                    // slow enough to read as the swatch lagging the pointer across a 7-wide grid.
+                    "transition-colors duration-[20ms] ease-in hover:bg-accent"
                   )}
                 >
                   {emoji}
@@ -157,7 +160,7 @@ export function EmojiPicker({
         <div className="border-t border-border p-2">
           <button
             onClick={() => onSelect(null)}
-            className="w-full rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="w-full rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-accent hover:text-foreground"
           >
             {removeLabel}
           </button>

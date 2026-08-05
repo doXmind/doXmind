@@ -107,6 +107,30 @@ Neither product animates anything anchored to the caret — a menu or toolbar th
 reads as lag. Hover states are effectively instant (Notion: 20ms). Only menus get an entry
 animation, and only around 150ms.
 
+Audited against the code on 2026-08-05. Three corrections, all to this paragraph rather than to the
+product:
+
+- **"Nothing anchored to the caret animates" was not true of the gutter.** The controls answer
+  `:focus-within`, and the rule that cancels their 90ms + 110ms fade for rows the user has left was
+  gated on `.markdown-page:hover` — it only ever saw the pointer. ArrowDown with the mouse away from
+  the Page left the previous row's cluster ramping down behind the caret. Fixed by extending the
+  cancel to `:focus-within`, on the condition the original comment already stated: the forgiving fade
+  is for when _nothing else is lighting up to take over_, and while the Page holds focus something
+  always is. Pinned by `tests/e2e/block-ux/caret-gutter-continuity.spec.ts`, which fails with
+  `0.11s` against the rule removed.
+- **"Hover states are 20ms" held everywhere it was a hover state**, but two emoji-picker buttons
+  carried a bare `transition-colors` and so Tailwind's 150ms default; both now carry `20ms`. The
+  three other 150ms/200ms sites an audit flagged — `switch.tsx`, `input.tsx`, `.skip-to-content` —
+  are not hover states: the first two transition a focus ring and a checked state, and the third is
+  the skip link sliding into view, where the animation is the feature. The sentence means hover, not
+  every transition in the product.
+- **"Only menus get an entry animation" is a claim about menus, not about the keyframe.**
+  `animate-in fade-in-0 zoom-in-95` is also used by the tooltip, the popover primitive, the command
+  palette and the quick switcher — all overlays, none caret-anchored, so none of them contradict the
+  rule this sentence exists to state. The real gap is the other way: two menus (the sidebar folder
+  and empty-area context menus) hard-cut instead of animating in. The slash panel's omission is
+  deliberate and correct — it _is_ caret-anchored.
+
 ## Local trap worth knowing
 
 `globals.css` overrides Tailwind's `.text-*` utilities with the 13px chrome type scale using
@@ -119,6 +143,15 @@ inside `BlockPreview`.
 ## Verified in the running app (2026-07-24)
 
 Measured with a seeded 19-Block fixture covering every kind, in Chrome at 1440×1000.
+
+"Every kind" was not true of `KIND_FIXTURES`, and one of the gaps was hiding a dead test. The list
+covers 13 of the 16 members of `MarkdownBlockKind`; `image`, `collection` and `mermaid` had no entry.
+`mermaid` was the costly one: `in-place.spec.ts` gates its activation-growth test on
+`label === "equation" || label === "mermaid"`, and since no case anywhere carried that label, the
+branch had never run — the file read as though it covered the kind. A `mermaid` case is now in
+`CASES`, which activates four tests that were previously unreachable. `image` and `collection` are
+select-only shells with no caret; `image` already has its own case there, `collection` still has
+none.
 
 **Gutter geometry** — `+` 24×24, grip 24×24 (Notion: 24×24 and 18×24; the grip is kept square so
 the drag target is not the smallest thing on the row). Grip right edge to first glyph: **10px
@@ -156,6 +189,22 @@ editable kinds: **17 report zero change on every axis.** The one exception is `b
 (16px→12px), which is intentional: the content itself changes from rendered KaTeX to LaTeX source,
 and both Notion and Feishu also switch to a small mono input there.
 
+Three amendments from the 2026-08-05 audit. The behaviour is intentional and tested in every case;
+it is the paragraph above that had gone stale.
+
+- **There are two exceptions now, not one.** `mermaid` joins `block_math`: both route to
+  `MarkdownFigureBlock`, and `in-place.spec.ts` names them together —
+  `testCase.label === "equation" || testCase.label === "mermaid"` — to skip the height-parity test
+  and run a growth test instead.
+- **The exception is a height change, not just a font-size one.** `MarkdownFigureBlock` mounts its
+  source panel _below_ the figure while active, so the row grows — 56.8px for a one-line equation,
+  capped at eight rows. The figure itself does not move; everything after it does. "Clicking into a
+  Block must move nothing" is still the rule, and these two kinds are the priced exception to it.
+- **The 16px→12px description no longer describes what happens.** The KaTeX render stays mounted at
+  its own 16px; the 12px is the source field _added beneath it_, sized by
+  `--ui-code-font-size-base`, which the user can move from 10 to 22px with the code-font slider. So
+  it is not a substitution and not a fixed 12px.
+
 ### Code Blocks and inline code
 
 Measured, then closed:
@@ -167,9 +216,16 @@ Measured, then closed:
 - The info string moved into a language chip on the Block, since projecting the fence away would
   otherwise make it unreachable. A free-text field rather than a menu, because a Markdown info
   string is arbitrary and a closed list would silently drop whatever a file already says.
-- `block_math` keeps its `$$` visible on purpose. A fence tolerates an empty payload
-  (` ```ts\n\n``` ` is still one code Block) but `$$\n\n$$` is a blank line between two
-  paragraphs, so projecting it would let deleting an equation's contents disintegrate the Block.
+- `block_math` no longer keeps its `$$` visible — this line used to say it did, and that the
+  visibility was what stopped an emptied equation from disintegrating. The hazard is real and
+  unchanged: a fence tolerates an empty payload (` ```ts\n\n``` ` is still one code Block) but
+  `$$\n\n$$` is a blank line between two `$$` paragraphs. The defence moved rather than
+  disappeared. `assembleMath` refuses to write that shape at all: an emptied equation collapses to
+  the one-line `$$ $$`, which holds nothing safely and leaves something to type back into, and the
+  first newline typed into a one-line equation promotes it back to the fenced shape rather than
+  producing `$$a` / `b$$`. Verified end to end against the file's bytes in
+  `tests/e2e/block-ux/figure-integrity.spec.ts` — emptying an equation leaves one `block_math` row,
+  two `$$`, and its neighbours untouched.
 - Inline code renders at **ratio 1.0** against its paragraph. Measured in Feishu Doc: inline code is
   the same size as body text, with the mono family and the tint carrying the distinction. Ours had
   been 12px inside 16px prose because `globals.css` routes `.markdown-page code` to the chrome

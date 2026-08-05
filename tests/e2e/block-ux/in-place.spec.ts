@@ -83,6 +83,15 @@ const CASES: readonly InPlaceCase[] = [
     hidden: ["$$"],
   },
   {
+    // `revealsAnAdditionalSurface` below has named "mermaid" since it was written, but no case
+    // carried that label — here or in `KIND_FIXTURES` — so the branch was dead and the one kind
+    // besides `equation` that grows on activation was never exercised by this file.
+    label: "mermaid",
+    source: "```mermaid\ngraph TD;\n  A-->B;\n```",
+    rendered: "[data-testid='mermaid-block'], .mermaid, svg",
+    hidden: ["```"],
+  },
+  {
     label: "callout",
     source: "> [!NOTE]\n> Callout body text.",
     rendered: "aside, [data-testid='callout-block']",
