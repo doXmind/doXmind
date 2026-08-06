@@ -42,21 +42,26 @@ load-bearing and easy to misread: the Notion figures were a _target_, and nothin
 whether we hit them. `rgba(42,28,0,.07)` in particular has never appeared in `src/` in any commit
 (`git log --all -S`). The "Ours" column below is measured, not aspirational.
 
-|                     | Notion                                                                                                                                            | Feishu Doc                                      | Ours (measured 2026-08-05)                                                          |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Block menu          | 265px wide, `border-radius: 10px`, opaque white, **no** backdrop blur                                                                             | —                                               | 265px, `10px`, `rgb(255,255,255)`, `backdrop-filter: none` — all four match         |
-| Shadow              | `0 20px 24px rgba(25,25,25,.05)`, `0 5px 8px rgba(25,25,25,.027)`, `0 0 0 1px rgba(42,28,0,.07)` — a hairline ring, not a border                  | `0 8px 16px rgba(0,0,0,.28)`                    | **diverges** — both blur layers 2x Notion's alpha, ring opaque `#CCCCCC`; see below |
-| Menu item           | 28px tall, `border-radius: 6px`, 1px gap, `background .02s ease-in`, right-aligned ⌘ hint                                                         | 32px tall, `border-radius: 4px`                 | 28px, `6px`, `0.02s` — **the 1px gap is still 0px**; see below                      |
-| Block menu contents | search · Turn into ▸ · Color ▸ · Copy link to block · Duplicate ⌘D · Move to ⌘⇧P · Delete · Comment · Suggest edits · Ask AI · last-edited footer | Turn into · Copy · Duplicate · Comment · Delete | no Color / Copy link / Comment / Suggest edits / Ask AI — excluded by ADR-0011/0012 |
+|                     | Notion                                                                                                                                            | Feishu Doc                                      | Ours (measured 2026-08-05)                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Block menu          | 265px wide, `border-radius: 10px`, opaque white, **no** backdrop blur                                                                             | —                                               | 265px, `10px`, `rgb(255,255,255)`, `backdrop-filter: none` — all four match              |
+| Shadow              | `0 20px 24px rgba(25,25,25,.05)`, `0 5px 8px rgba(25,25,25,.027)`, `0 0 0 1px rgba(42,28,0,.07)` — a hairline ring, not a border                  | `0 8px 16px rgba(0,0,0,.28)`                    | **diverges** — both blur layers 2x Notion's alpha, ring opaque `#CCCCCC`; see below      |
+| Menu item           | 28px tall, `border-radius: 6px`, 1px gap, `background .02s ease-in`, right-aligned ⌘ hint                                                         | 32px tall, `border-radius: 4px`                 | 28px, `6px`, 1px gap, `0.02s` — the gap was 0px until `MENU_PANEL_CLASS` gained `gap-px` |
+| Block menu contents | search · Turn into ▸ · Color ▸ · Copy link to block · Duplicate ⌘D · Move to ⌘⇧P · Delete · Comment · Suggest edits · Ask AI · last-edited footer | Turn into · Copy · Duplicate · Comment · Delete | no Color / Copy link / Comment / Suggest edits / Ask AI — excluded by ADR-0011/0012      |
 
-**The 1px row gap is still open, and the obvious fix is the one that failed.** Adding
-`flex flex-col gap-px` to `MENU_PANEL_CLASS` closes it, but that switches the panel's layout model
-from block to flex for every menu in the app, and `menus.spec.ts`'s "a second press on Turn into"
-then measured the parent panel 13.97px taller after the submenu opened — roughly fourteen rows'
-worth of new gap. It passed one CI run and failed the next on identical code, and passed ten times
-in a row locally, so it is intermittent and platform-sensitive rather than reproducible. Backed out:
-a cosmetic pixel is not worth an intermittent layout invariant. Close it with a margin on adjacent
-rows instead, which keeps block layout and cannot change the panel's own height.
+**Something moves the block menu's panel on Linux, and it is not the row gap.** `menus.spec.ts`'s
+"a second press on Turn into" asserts the parent panel's height does not change when the submenu
+opens, and on CI it changed by 13.97px and then 13.53px on two of three runs. The row gap was the
+obvious suspect — `gap-px` across fourteen rows is about 14px — so it was backed out, and the
+assertion failed at 13.53px anyway with the gap gone. The magnitude agreeing was a coincidence; the
+gap is restored and the panel movement is unexplained.
+
+What is known: it does not reproduce on macOS across ten consecutive local runs, it is intermittent
+on Linux CI, and ~13.5px is close to the thickness of a classic scrollbar — which macOS does not
+have, because its scrollbars are overlays that take no layout space. That is a direction to check,
+not a conclusion. The same test was failing before this work at 2.837px for a different reason (an
+unsettled read, since fixed), so it has a history of being the place where platform differences in
+menu layout surface first.
 
 **The shadow is a live decision, not a bug.** Ours is
 `0 0 0 1px hsl(var(--popover-ring)), 0 5px 8px rgba(25,25,25,.06), 0 20px 24px rgba(25,25,25,.1)`

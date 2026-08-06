@@ -29,18 +29,19 @@ import { cn } from "@/lib/utils";
  * the hint the class compiles to `--tw-shadow-color`, not `--tw-shadow`, and
  * paints no shadow at all. The hint forces the box-shadow branch.
  */
-// Notion puts a 1px gap between menu rows and this panel has none, so two
-// consecutive 6px-radius rows meet edge to edge and their hover fills read as
-// one pill. `flex flex-col gap-px` was tried and backed out: it closes the gap
-// but changes this panel's layout model from block to flex for every menu in
-// the app, and `menus.spec.ts`'s "a second press on Turn into" then measured the
-// parent panel 13.97px taller after the submenu opened — about fourteen rows'
-// worth of new gap — on one CI run and not the next, while passing ten times
-// locally. A cosmetic pixel is not worth an intermittent layout invariant.
-// Whoever closes this should do it without switching the display mode: a margin
-// on adjacent rows keeps block layout and cannot move the panel's own height.
+// `flex flex-col gap-px` is the 1px inter-row gap Notion measures
+// (docs/BLOCK_UX_REFERENCE.md). Rows were plain siblings in a block container,
+// so consecutive 6px-radius rows sat edge to edge and their hover fills touched
+// — the pair read as one 57px pill rather than two rows.
+//
+// This was briefly backed out on the theory that it caused `menus.spec.ts`'s
+// "a second press on Turn into" to measure the parent panel ~14px taller after
+// the submenu opened, since fourteen rows of new gap is about that. The theory
+// was wrong: the same assertion failed at 13.53px on a CI run with the gap
+// removed. Whatever moves that panel on Linux is not this, and the magnitude
+// agreeing was a coincidence. Restored.
 export const MENU_PANEL_CLASS =
-  "rounded-[10px] border-0 bg-popover p-1.5 text-popover-foreground shadow-[shadow:var(--popover-shadow)]";
+  "flex flex-col gap-px rounded-[10px] border-0 bg-popover p-1.5 text-popover-foreground shadow-[shadow:var(--popover-shadow)]";
 // `min-h-7`, not `h-7`: a single-line row measures exactly 28px, and the few
 // rows that carry two lines or a swatch (the workspace switcher's recents, the
 // settings theme picker) still grow instead of clipping.
