@@ -100,20 +100,29 @@ workspace narrowed the panel to exactly the six Heading rows.
 
 ## Selection
 
-- Notion text selection: `rgba(35, 131, 226, 0.14)`.
+- Notion text selection: `rgba(35, 131, 226, 0.28)`. This line read `0.14` until 2026-08-06, and
+  that number was measured off the wrong element. Read out of Notion's stylesheet, its global rule is
+  `::selection { background: rgba(35, 131, 226, 0.28) }` — no media query, and no dark-theme override
+  anywhere in the sheet, so Notion selects text at 0.28 in both themes. The 0.14 is real but scoped
+  to `.notion-page-mention-token`, `.notion-external-object-token`, `.notion-team-mention-token` and
+  `.notion-collection-mention-token`: the inline chips, which carry a tint already and so take a
+  lighter wash over it.
 - Notion keeps the highlight visible when focus moves into a menu by swapping in a `.pseudoSelection`
   class that repaints the range from CSS variables. Worth copying when our inline toolbar grows a
   field that takes focus.
 - Ours: the same `rgba(35,131,226,0.14)` for a Block selection, drawn on a row `::after` that bridges
   the inter-row gap so consecutive selected Blocks read as one band. Verified still exact on
   2026-08-05.
-- **Text** selection is a different story, and the line above quietly concealed it: the 0.14 claim
-  covers a _Block_ selection only. Dragging across text paints
-  `.markdown-page ::selection { rgba(35,131,226,0.28) }` — twice Notion's alpha — and outside the Page
-  the app chrome painted `rgba(46,170,220,·)`, a colder cyan that is not Notion's hue at all, under a
-  comment already claiming it was. The hue is unified as of 2026-08-05; **the alpha is not settled.**
-  Notion's 0.14 is a light-theme reading and no dark-theme counterpart was ever taken, so matching
-  light alone would leave our two themes 2.4x apart. Measure Notion in dark, then set both.
+- **Text** selection is a separate value from Block selection, and conflating them cost two wrong
+  conclusions in a row. Ours paints `.markdown-page ::selection { rgba(35,131,226,0.28) }`. Against
+  the mis-scoped 0.14 that looked like twice Notion's alpha and got written up as a divergence; against
+  Notion's actual `::selection` it is exact, and always was. Two things were genuinely wrong and are
+  now fixed: the app chrome outside the Page painted `rgba(46,170,220,·)`, a colder cyan that is not
+  Notion's hue at all, under a comment already claiming it was; and our dark theme used `0.34` where
+  Notion uses the same `0.28` it uses in light. One alpha, both themes, chrome and Page alike.
+- The lesson worth keeping: a colour read off a rendered element is only as good as the element. Both
+  errors here came from measuring something adjacent to the thing being described — a mention chip
+  instead of body text — and neither would have survived reading the rule that actually applies.
 
 ## Motion
 

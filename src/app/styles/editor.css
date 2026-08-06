@@ -1100,12 +1100,28 @@
   text-align: right;
 }
 
+/*
+ * Text selection, at Notion's own alpha in both themes.
+ *
+ * Read out of Notion's stylesheet rather than off a rendered pixel: its global rule is
+ * `::selection { background: rgba(35, 131, 226, 0.28) }`, carrying no media query and no
+ * dark-theme override anywhere in the sheet. Notion selects text at 0.28 in the dark as well.
+ *
+ * The 0.14 that `docs/BLOCK_UX_REFERENCE.md` recorded as "Notion text selection" is real but
+ * belongs to something else: it is scoped to `.notion-page-mention-token`,
+ * `.notion-external-object-token`, `.notion-team-mention-token` and
+ * `.notion-collection-mention-token` — the inline chips, which are tinted already and so take a
+ * lighter wash. Measuring one of those and calling it body text is what made our 0.28 look like
+ * twice Notion's value when it was exactly Notion's value.
+ *
+ * So light was already right and dark was the divergence: 0.34 against Notion's 0.28.
+ */
 .markdown-page ::selection {
   background-color: rgba(35, 131, 226, 0.28);
 }
 
 .dark .markdown-page ::selection {
-  background-color: rgba(35, 131, 226, 0.34);
+  background-color: rgba(35, 131, 226, 0.28);
 }
 
 .markdown-page ::-moz-selection {
@@ -1113,5 +1129,5 @@
 }
 
 .dark .markdown-page ::-moz-selection {
-  background-color: rgba(35, 131, 226, 0.34);
+  background-color: rgba(35, 131, 226, 0.28);
 }
