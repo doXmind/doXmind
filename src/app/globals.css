@@ -464,24 +464,34 @@ samp,
     --content-surface-bg: hsl(var(--background));
   }
 
-  /* Global text selection - Notion-style blue highlight */
+  /* Global text selection.
+   *
+   * The hue is Notion's `rgb(35, 131, 226)`, the same one the Page surface uses
+   * (`editor.css`) and the same one a Block selection is painted with. It used
+   * to be `rgb(46, 170, 220)` here while the editor used Notion's — one product
+   * with two different selection blues, the chrome one a visibly colder cyan,
+   * under a comment that already claimed it was Notion's. Only the hue is
+   * unified here; the alphas are left as they were, because Notion's measured
+   * 0.14 is a *light-theme* reading and no dark-theme counterpart was ever
+   * taken (docs/BLOCK_UX_REFERENCE.md). Matching light alone would put the two
+   * themes 2.4x apart, which is the asymmetry `--popover-ring` exists to avoid. */
   ::selection {
-    background-color: rgba(46, 170, 220, 0.25); /* Light blue background */
+    background-color: rgba(35, 131, 226, 0.25);
   }
 
   /* Firefox compatibility */
   ::-moz-selection {
-    background-color: rgba(46, 170, 220, 0.25);
+    background-color: rgba(35, 131, 226, 0.25);
     color: hsl(var(--foreground));
   }
 
   /* Dark mode selection */
   .dark ::selection {
-    background-color: rgba(46, 170, 220, 0.3);
+    background-color: rgba(35, 131, 226, 0.3);
   }
 
   .dark ::-moz-selection {
-    background-color: rgba(46, 170, 220, 0.3);
+    background-color: rgba(35, 131, 226, 0.3);
     color: hsl(var(--foreground));
   }
 }

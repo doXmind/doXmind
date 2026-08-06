@@ -37,25 +37,55 @@ across its own content column. Only the paint was wrong.
 
 ## Menus
 
-|                     | Notion                                                                                                                                            | Feishu Doc                                      |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| Block menu          | 265px wide, `border-radius: 10px`, opaque white, **no** backdrop blur                                                                             | —                                               |
-| Shadow              | `0 20px 24px rgba(25,25,25,.05)`, `0 5px 8px rgba(25,25,25,.027)`, `0 0 0 1px rgba(42,28,0,.07)` — a hairline ring, not a border                  | `0 8px 16px rgba(0,0,0,.28)`                    |
-| Menu item           | 28px tall, `border-radius: 6px`, 1px gap, `background .02s ease-in`, right-aligned ⌘ hint                                                         | 32px tall, `border-radius: 4px`                 |
-| Block menu contents | search · Turn into ▸ · Color ▸ · Copy link to block · Duplicate ⌘D · Move to ⌘⇧P · Delete · Comment · Suggest edits · Ask AI · last-edited footer | Turn into · Copy · Duplicate · Comment · Delete |
+This table had no "Ours" column until 2026-08-05, unlike the two either side of it. That absence was
+load-bearing and easy to misread: the Notion figures were a _target_, and nothing had ever recorded
+whether we hit them. `rgba(42,28,0,.07)` in particular has never appeared in `src/` in any commit
+(`git log --all -S`). The "Ours" column below is measured, not aspirational.
+
+|                     | Notion                                                                                                                                            | Feishu Doc                                      | Ours (measured 2026-08-05)                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Block menu          | 265px wide, `border-radius: 10px`, opaque white, **no** backdrop blur                                                                             | —                                               | 265px, `10px`, `rgb(255,255,255)`, `backdrop-filter: none` — all four match              |
+| Shadow              | `0 20px 24px rgba(25,25,25,.05)`, `0 5px 8px rgba(25,25,25,.027)`, `0 0 0 1px rgba(42,28,0,.07)` — a hairline ring, not a border                  | `0 8px 16px rgba(0,0,0,.28)`                    | **diverges** — both blur layers 2x Notion's alpha, ring opaque `#CCCCCC`; see below      |
+| Menu item           | 28px tall, `border-radius: 6px`, 1px gap, `background .02s ease-in`, right-aligned ⌘ hint                                                         | 32px tall, `border-radius: 4px`                 | 28px, `6px`, 1px gap, `0.02s` — the gap was 0px until `MENU_PANEL_CLASS` gained `gap-px` |
+| Block menu contents | search · Turn into ▸ · Color ▸ · Copy link to block · Duplicate ⌘D · Move to ⌘⇧P · Delete · Comment · Suggest edits · Ask AI · last-edited footer | Turn into · Copy · Duplicate · Comment · Delete | no Color / Copy link / Comment / Suggest edits / Ask AI — excluded by ADR-0011/0012      |
+
+**Something moves the block menu's panel on Linux, and it is not the row gap.** `menus.spec.ts`'s
+"a second press on Turn into" asserts the parent panel's height does not change when the submenu
+opens, and on CI it changed by 13.97px and then 13.53px on two of three runs. The row gap was the
+obvious suspect — `gap-px` across fourteen rows is about 14px — so it was backed out, and the
+assertion failed at 13.53px anyway with the gap gone. The magnitude agreeing was a coincidence; the
+gap is restored and the panel movement is unexplained.
+
+What is known: it does not reproduce on macOS across ten consecutive local runs, it is intermittent
+on Linux CI, and ~13.5px is close to the thickness of a classic scrollbar — which macOS does not
+have, because its scrollbars are overlays that take no layout space. That is a direction to check,
+not a conclusion. The same test was failing before this work at 2.837px for a different reason (an
+unsettled read, since fixed), so it has a history of being the place where platform differences in
+menu layout surface first.
+
+**The shadow is a live decision, not a bug.** Ours is
+`0 0 0 1px hsl(var(--popover-ring)), 0 5px 8px rgba(25,25,25,.06), 0 20px 24px rgba(25,25,25,.1)`
+with `--popover-ring: #CCCCCC`. Against Notion that is twice the alpha on both blur layers and an
+opaque ring at 1.61:1 where Notion's is a translucent warm black at roughly 1.08:1 — our menu edge is
+markedly more present, which is most of what reads as "heavier than Notion". But the ring token and
+its first-in-the-list position are deliberate and measured (`globals.css`, 15 lines of rationale):
+they exist so the light and dark themes state the _same_ edge strength, and Notion's 7%-alpha warm
+black is invisible on a dark panel. Adopting Notion's values would restore light-mode parity and
+reintroduce exactly the cross-theme asymmetry the token pair was introduced to remove. Decide the
+ring and the two blur alphas together — they are one visual system — and record the outcome here.
 
 ## Slash / insert menu
 
-|             | Notion                                                                                        | Feishu Doc                                                                          | Ours                                                             |
-| ----------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Trigger     | `/`                                                                                           | `/` **and** the fullwidth `、`                                                      | both                                                             |
-| Anchor      | the caret, 8px below the caret's line                                                         | the line's left edge                                                                | the caret (Notion's — it tracks where you are typing)            |
-| Panel       | 314px, ≤434px tall, `border-radius: 10px`                                                     | 247px, `border-radius: 6px`                                                         | 314px                                                            |
-| Item        | 31px tall, `border-radius: 6px`; selected `rgba(42,28,0,0.07)` — a **warm neutral**, not blue | 32px; selected `rgba(235,235,235,0.08)`                                             | 31px, theme accent                                               |
-| Row content | icon + label + right-aligned Markdown shortcut (`#`, `##`, `###`)                             | icon + label                                                                        | Notion's, including the shortcut hint                            |
-| Grouping    | "Suggested" / "Basic blocks" section headers                                                  | "Basics" / "Common"                                                                 | flat + ranking (see below)                                       |
-| CJK search  | —                                                                                             | **matches full pinyin**: `/biaoti` filters to Heading 1-6 in an _English_ workspace | Feishu's, plus pinyin initials (`bt`) and acronyms (`bl`, `tbl`) |
-| Inline hint | block placeholder becomes "Type to search"                                                    | "Type in keywords to find a command"                                                | —                                                                |
+|             | Notion                                                                                        | Feishu Doc                                                                          | Ours                                                                  |
+| ----------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Trigger     | `/`                                                                                           | `/` **and** the fullwidth `、`                                                      | both                                                                  |
+| Anchor      | the caret, 8px below the caret's line                                                         | the line's left edge                                                                | the caret (Notion's — it tracks where you are typing)                 |
+| Panel       | 314px, ≤434px tall, `border-radius: 10px`                                                     | 247px, `border-radius: 6px`                                                         | 314px, ≤434px, `10px` — the ceiling was a hard 320px until 2026-08-05 |
+| Item        | 31px tall, `border-radius: 6px`; selected `rgba(42,28,0,0.07)` — a **warm neutral**, not blue | 32px; selected `rgba(235,235,235,0.08)`                                             | 31px, theme accent                                                    |
+| Row content | icon + label + right-aligned Markdown shortcut (`#`, `##`, `###`)                             | icon + label                                                                        | Notion's, including the shortcut hint                                 |
+| Grouping    | "Suggested" / "Basic blocks" section headers                                                  | "Basics" / "Common"                                                                 | flat + ranking (see below)                                            |
+| CJK search  | —                                                                                             | **matches full pinyin**: `/biaoti` filters to Heading 1-6 in an _English_ workspace | Feishu's, plus pinyin initials (`bt`) and acronyms (`bl`, `tbl`)      |
+| Inline hint | block placeholder becomes "Type to search"                                                    | "Type in keywords to find a command"                                                | —                                                                     |
 
 The pinyin behaviour was verified live, not assumed: typing `/biaoti` into an English-labelled Feishu
 workspace narrowed the panel to exactly the six Heading rows.
@@ -75,13 +105,45 @@ workspace narrowed the panel to exactly the six Heading rows.
   class that repaints the range from CSS variables. Worth copying when our inline toolbar grows a
   field that takes focus.
 - Ours: the same `rgba(35,131,226,0.14)` for a Block selection, drawn on a row `::after` that bridges
-  the inter-row gap so consecutive selected Blocks read as one band.
+  the inter-row gap so consecutive selected Blocks read as one band. Verified still exact on
+  2026-08-05.
+- **Text** selection is a different story, and the line above quietly concealed it: the 0.14 claim
+  covers a _Block_ selection only. Dragging across text paints
+  `.markdown-page ::selection { rgba(35,131,226,0.28) }` — twice Notion's alpha — and outside the Page
+  the app chrome painted `rgba(46,170,220,·)`, a colder cyan that is not Notion's hue at all, under a
+  comment already claiming it was. The hue is unified as of 2026-08-05; **the alpha is not settled.**
+  Notion's 0.14 is a light-theme reading and no dark-theme counterpart was ever taken, so matching
+  light alone would leave our two themes 2.4x apart. Measure Notion in dark, then set both.
 
 ## Motion
 
 Neither product animates anything anchored to the caret — a menu or toolbar that eases into position
 reads as lag. Hover states are effectively instant (Notion: 20ms). Only menus get an entry
 animation, and only around 150ms.
+
+Audited against the code on 2026-08-05. Three corrections, all to this paragraph rather than to the
+product:
+
+- **"Nothing anchored to the caret animates" was not true of the gutter.** The controls answer
+  `:focus-within`, and the rule that cancels their 90ms + 110ms fade for rows the user has left was
+  gated on `.markdown-page:hover` — it only ever saw the pointer. ArrowDown with the mouse away from
+  the Page left the previous row's cluster ramping down behind the caret. Fixed by extending the
+  cancel to `:focus-within`, on the condition the original comment already stated: the forgiving fade
+  is for when _nothing else is lighting up to take over_, and while the Page holds focus something
+  always is. Pinned by `tests/e2e/block-ux/caret-gutter-continuity.spec.ts`, which fails with
+  `0.11s` against the rule removed.
+- **"Hover states are 20ms" held everywhere it was a hover state**, but two emoji-picker buttons
+  carried a bare `transition-colors` and so Tailwind's 150ms default; both now carry `20ms`. The
+  three other 150ms/200ms sites an audit flagged — `switch.tsx`, `input.tsx`, `.skip-to-content` —
+  are not hover states: the first two transition a focus ring and a checked state, and the third is
+  the skip link sliding into view, where the animation is the feature. The sentence means hover, not
+  every transition in the product.
+- **"Only menus get an entry animation" is a claim about menus, not about the keyframe.**
+  `animate-in fade-in-0 zoom-in-95` is also used by the tooltip, the popover primitive, the command
+  palette and the quick switcher — all overlays, none caret-anchored, so none of them contradict the
+  rule this sentence exists to state. The real gap is the other way: two menus (the sidebar folder
+  and empty-area context menus) hard-cut instead of animating in. The slash panel's omission is
+  deliberate and correct — it _is_ caret-anchored.
 
 ## Local trap worth knowing
 
@@ -96,6 +158,15 @@ inside `BlockPreview`.
 
 Measured with a seeded 19-Block fixture covering every kind, in Chrome at 1440×1000.
 
+"Every kind" was not true of `KIND_FIXTURES`, and one of the gaps was hiding a dead test. The list
+covers 13 of the 16 members of `MarkdownBlockKind`; `image`, `collection` and `mermaid` had no entry.
+`mermaid` was the costly one: `in-place.spec.ts` gates its activation-growth test on
+`label === "equation" || label === "mermaid"`, and since no case anywhere carried that label, the
+branch had never run — the file read as though it covered the kind. A `mermaid` case is now in
+`CASES`, which activates four tests that were previously unreachable. `image` and `collection` are
+select-only shells with no caret; `image` already has its own case there, `collection` still has
+none.
+
 **Gutter geometry** — `+` 24×24, grip 24×24 (Notion: 24×24 and 18×24; the grip is kept square so
 the drag target is not the smallest thing on the row). Grip right edge to first glyph: **10px
 exactly**, matching Notion. Cluster is right-aligned in a 54px gutter with a 6px row gap, which is
@@ -105,15 +176,21 @@ what keeps `--editor-content-rail` a round 4rem.
 kind, after correcting `--controls-lead` against these numbers rather than trusting the arithmetic
 (the arithmetic alone was 3-24px out because container kinds add their own chrome):
 
-| kind                      | before             | after             |
-| ------------------------- | ------------------ | ----------------- |
-| paragraph, all list kinds | −4.0               | 0.0               |
-| heading 1 / 2 / 3         | −3.3 / −3.5 / −2.8 | +0.3 / 0.0 / +0.3 |
-| blockquote                | +0.5               | +0.5              |
-| fenced code               | +2.5               | 0.0               |
-| table                     | −5.0               | 0.0               |
-| block math                | −13.7              | +0.3              |
-| callout                   | +5.5               | 0.0               |
+| kind                      | before             | after             | re-measured 2026-08-05 |
+| ------------------------- | ------------------ | ----------------- | ---------------------- |
+| paragraph, all list kinds | −4.0               | 0.0               | 0.00                   |
+| heading 1 / 2 / 3         | −3.3 / −3.5 / −2.8 | +0.3 / 0.0 / +0.3 | 0.00 / 0.00 / 0.00     |
+| blockquote                | +0.5               | +0.5              | 0.00                   |
+| fenced code               | +2.5               | 0.0               | 0.00                   |
+| table                     | −5.0               | 0.0               | 0.00                   |
+| block math                | −13.7              | +0.3              | −0.01                  |
+| callout                   | +5.5               | 0.0               | 0.00                   |
+
+The fourth column is not drift — it is an improvement nobody had recorded. `fdc325a` rewrote the
+gutter-alignment effect to measure every row before writing to any of them (it was doing O(N²)
+forced layout). Batching the reads also removed the sub-pixel residue the third column still
+carried: every kind now lands on 0.00, headings and block math included. Re-take this column with
+`tests/e2e/block-ux/parity-measure.spec.ts` rather than by hand.
 
 **Hover band** — zero vertical gap between all 19 consecutive row boxes, so no pointer dead band
 exists anywhere in the column. Controls at rest: `opacity: 0`, `pointer-events: none`,
@@ -126,6 +203,22 @@ editable kinds: **17 report zero change on every axis.** The one exception is `b
 (16px→12px), which is intentional: the content itself changes from rendered KaTeX to LaTeX source,
 and both Notion and Feishu also switch to a small mono input there.
 
+Three amendments from the 2026-08-05 audit. The behaviour is intentional and tested in every case;
+it is the paragraph above that had gone stale.
+
+- **There are two exceptions now, not one.** `mermaid` joins `block_math`: both route to
+  `MarkdownFigureBlock`, and `in-place.spec.ts` names them together —
+  `testCase.label === "equation" || testCase.label === "mermaid"` — to skip the height-parity test
+  and run a growth test instead.
+- **The exception is a height change, not just a font-size one.** `MarkdownFigureBlock` mounts its
+  source panel _below_ the figure while active, so the row grows — 56.8px for a one-line equation,
+  capped at eight rows. The figure itself does not move; everything after it does. "Clicking into a
+  Block must move nothing" is still the rule, and these two kinds are the priced exception to it.
+- **The 16px→12px description no longer describes what happens.** The KaTeX render stays mounted at
+  its own 16px; the 12px is the source field _added beneath it_, sized by
+  `--ui-code-font-size-base`, which the user can move from 10 to 22px with the code-font slider. So
+  it is not a substitution and not a fixed 12px.
+
 ### Code Blocks and inline code
 
 Measured, then closed:
@@ -137,9 +230,16 @@ Measured, then closed:
 - The info string moved into a language chip on the Block, since projecting the fence away would
   otherwise make it unreachable. A free-text field rather than a menu, because a Markdown info
   string is arbitrary and a closed list would silently drop whatever a file already says.
-- `block_math` keeps its `$$` visible on purpose. A fence tolerates an empty payload
-  (` ```ts\n\n``` ` is still one code Block) but `$$\n\n$$` is a blank line between two
-  paragraphs, so projecting it would let deleting an equation's contents disintegrate the Block.
+- `block_math` no longer keeps its `$$` visible — this line used to say it did, and that the
+  visibility was what stopped an emptied equation from disintegrating. The hazard is real and
+  unchanged: a fence tolerates an empty payload (` ```ts\n\n``` ` is still one code Block) but
+  `$$\n\n$$` is a blank line between two `$$` paragraphs. The defence moved rather than
+  disappeared. `assembleMath` refuses to write that shape at all: an emptied equation collapses to
+  the one-line `$$ $$`, which holds nothing safely and leaves something to type back into, and the
+  first newline typed into a one-line equation promotes it back to the fenced shape rather than
+  producing `$$a` / `b$$`. Verified end to end against the file's bytes in
+  `tests/e2e/block-ux/figure-integrity.spec.ts` — emptying an equation leaves one `block_math` row,
+  two `$$`, and its neighbours untouched.
 - Inline code renders at **ratio 1.0** against its paragraph. Measured in Feishu Doc: inline code is
   the same size as body text, with the mono family and the tint carrying the distinction. Ours had
   been 12px inside 16px prose because `globals.css` routes `.markdown-page code` to the chrome

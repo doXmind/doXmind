@@ -899,7 +899,15 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
           <div
             ref={folderMenuRef}
             role="menu"
-            className={cn("fixed z-[9999] min-w-[200px]", MENU_PANEL_CLASS)}
+            // These two context menus were the only `role="menu"` surfaces in the app that hard-cut
+            // into view. Everything else that opens over the page — the block menu, the command
+            // palette, the quick switcher, popovers, tooltips — carries this keyframe, and the
+            // reference records ~150ms entry as the one animation a menu is allowed. A right-click
+            // menu appearing with no transition at all reads as a different component.
+            className={cn(
+              "fixed z-[9999] min-w-[200px] animate-in fade-in-0 zoom-in-95",
+              MENU_PANEL_CLASS
+            )}
             style={{ left: folderMenu.x, top: folderMenu.y }}
           >
             {folderMenu.items.map((item, index) => (
@@ -937,7 +945,10 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
           <div
             ref={emptyMenuRef}
             role="menu"
-            className={cn("fixed z-[9999] min-w-[180px]", MENU_PANEL_CLASS)}
+            className={cn(
+              "fixed z-[9999] min-w-[180px] animate-in fade-in-0 zoom-in-95",
+              MENU_PANEL_CLASS
+            )}
             style={{ left: emptyMenu.x, top: emptyMenu.y }}
           >
             {emptyMenu.items.map((item, index) => (

@@ -83,6 +83,15 @@ const CASES: readonly InPlaceCase[] = [
     hidden: ["$$"],
   },
   {
+    // `revealsAnAdditionalSurface` below has named "mermaid" since it was written, but no case
+    // carried that label — here or in `KIND_FIXTURES` — so the branch was dead and the one kind
+    // besides `equation` that grows on activation was never exercised by this file.
+    label: "mermaid",
+    source: "```mermaid\ngraph TD;\n  A-->B;\n```",
+    rendered: "[data-testid='mermaid-block'], .mermaid, svg",
+    hidden: ["```"],
+  },
+  {
     label: "callout",
     source: "> [!NOTE]\n> Callout body text.",
     rendered: "aside, [data-testid='callout-block']",
@@ -452,15 +461,36 @@ for (const testCase of CASES) {
     const row = rows(page).nth(1);
 
     await clickAway(page);
+    // Wait for the figure itself, not just for the row to look still. A Mermaid diagram renders
+    // asynchronously and sizes itself from font metrics, so a row that has settled is not
+    // necessarily a row that has drawn: on CI this read `before` against an undrawn row and then
+    // charged the diagram's own 111px to the source panel.
+    // `rendered` is optional on the text cases; both kinds that reach here carry one.
+    if (testCase.rendered) await expect(row.locator(testCase.rendered).first()).toBeVisible();
     const before = await settledHeight(row);
+
     await activate(row);
-    const after = (await row.boundingBox())?.height ?? 0;
     const panel = row.locator("[data-figure-source-panel]");
+    await expect(panel).toBeVisible();
+    // Settled on both sides for the same reason: a raw read here races the panel's own layout.
+    const after = await settledHeight(row);
 
     // The growth is exactly the panel, nothing else moved or reflowed around it.
-    await expect(panel).toBeVisible();
     const panelHeight = (await panel.boundingBox())?.height ?? 0;
     expect(after - before, "the row grew by something other than its panel").toBeGreaterThan(0);
+
+    // Asserted for `equation` only, and that is a gap, not a preference.
+    //
+    // On Linux CI a Mermaid row grows by its panel *plus* 111.21875px — the same figure to five
+    // decimal places on two separate runs, so it is deterministic behaviour and not a settling race
+    // (waiting for the rendered figure and settling both reads changed nothing). It reproduces
+    // nowhere on macOS across repeated runs. 111px is about the height of the diagram this fixture
+    // draws, which points at the diagram re-laying out when the panel mounts — plausibly because
+    // Mermaid sizes itself from font metrics and the two platforms resolve the font differently.
+    // Unverified: closing it needs a Linux session, not another guess. The other three Mermaid
+    // assertions here — that it renders, that it never shows its Markdown, and that activation adds
+    // a surface at all — do hold on both platforms and are left running.
+    if (testCase.label === "mermaid") return;
     expect(Math.abs(after - before - panelHeight)).toBeLessThanOrEqual(8);
 
     // And it stays inside the row, which is the whole point of being in flow.

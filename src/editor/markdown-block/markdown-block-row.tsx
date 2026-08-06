@@ -2042,7 +2042,12 @@ function slashMenuPosition(surface: HTMLElement, triggerOffset: number): SlashMe
   return {
     top: flipped ? anchorTop - gap : anchorBottom + gap,
     left: Math.min(Math.max(anchorLeft, 8), Math.max(viewportWidth - width - 8, 8)),
-    maxHeight: Math.max(Math.min(flipped ? above : below, 320), 120),
+    // 434, not 320. Notion's own command panel measures at most 434px tall
+    // (docs/BLOCK_UX_REFERENCE.md), and the panel offers 21 commands at 31px
+    // each — a 320px ceiling showed ten of them and put the rest behind a
+    // scroll the caret cannot see. The clamp still yields to the viewport, so a
+    // short window shrinks the panel exactly as before; only the ceiling moved.
+    maxHeight: Math.max(Math.min(flipped ? above : below, 434), 120),
     flipped,
   };
 }

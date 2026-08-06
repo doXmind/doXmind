@@ -29,8 +29,19 @@ import { cn } from "@/lib/utils";
  * the hint the class compiles to `--tw-shadow-color`, not `--tw-shadow`, and
  * paints no shadow at all. The hint forces the box-shadow branch.
  */
+// `flex flex-col gap-px` is the 1px inter-row gap Notion measures
+// (docs/BLOCK_UX_REFERENCE.md). Rows were plain siblings in a block container,
+// so consecutive 6px-radius rows sat edge to edge and their hover fills touched
+// — the pair read as one 57px pill rather than two rows.
+//
+// This was briefly backed out on the theory that it caused `menus.spec.ts`'s
+// "a second press on Turn into" to measure the parent panel ~14px taller after
+// the submenu opened, since fourteen rows of new gap is about that. The theory
+// was wrong: the same assertion failed at 13.53px on a CI run with the gap
+// removed. Whatever moves that panel on Linux is not this, and the magnitude
+// agreeing was a coincidence. Restored.
 export const MENU_PANEL_CLASS =
-  "rounded-[10px] border-0 bg-popover p-1.5 text-popover-foreground shadow-[shadow:var(--popover-shadow)]";
+  "flex flex-col gap-px rounded-[10px] border-0 bg-popover p-1.5 text-popover-foreground shadow-[shadow:var(--popover-shadow)]";
 // `min-h-7`, not `h-7`: a single-line row measures exactly 28px, and the few
 // rows that carry two lines or a swatch (the workspace switcher's recents, the
 // settings theme picker) still grow instead of clipping.

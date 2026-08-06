@@ -359,6 +359,29 @@
 }
 
 /*
+ * The same grace, withheld for the same reason, when the caret is what moved.
+ *
+ * The rule above is gated on `.markdown-page:hover`, so it only ever saw pointer moves. The controls
+ * answer `:focus-within` too, and a caret has no pointer: pressing ArrowDown with the mouse parked
+ * off the Page lit the new row instantly and left the old row's cluster ramping down for 90ms + 110ms
+ * behind it — two gutters on screen, the stale one trailing the caret. That is the same defect the
+ * rule above fixes, arriving by the other input.
+ *
+ * The condition is the one that comment already states: the forgiving fade is for "the pointer
+ * leaving the Page entirely, where nothing else is lighting up to take over". While the Page holds
+ * focus, something always is — the row the caret is in — so every other row drops in the same frame.
+ * The fade survives only when the Page holds neither pointer nor caret, which is the case it was
+ * written for. Timing only, like the rule above: `opacity` is untouched, so which rows are lit is
+ * still decided entirely by the `:hover` / `:focus-within` / `[data-controls-open]` rule.
+ */
+.markdown-page:focus-within
+  [data-native-block-row]:not(:focus-within)
+  [data-native-block-controls] {
+  transition-delay: 0ms;
+  transition-duration: 0ms;
+}
+
+/*
  * ONE TABLE OF INTERACTION STATES
  *
  * Every pressable thing in the editor answers a pointer the same way, because the answer is written
