@@ -754,3 +754,58 @@ describe("print.css collapsed toggles", () => {
     expect(rule?.body).toMatch(/display:\s*block\s*!important/);
   });
 });
+
+/**
+ * Text selection is one value everywhere, and it is Notion's.
+ *
+ * Read out of Notion's own stylesheet on 2026-08-06: its global rule is
+ * `::selection { background: rgba(35, 131, 226, 0.28) }`, carrying no media query and no dark-theme
+ * override anywhere in the sheet — Notion selects text at 0.28 in both themes. The `0.14` the
+ * reference recorded for years is real but scoped to the inline mention chips
+ * (`.notion-page-mention-token` and three siblings), which carry a tint already.
+ *
+ * Nothing pinned these four constants before, which is how the dark theme sat at 0.34 and the chrome
+ * at 0.25/0.3 without anyone noticing they disagreed with the Page beside them. A colour that four
+ * rules have to keep saying identically is exactly the kind that drifts one rule at a time.
+ */
+describe("text selection alpha", () => {
+  const SELECTION = "rgba(35, 131, 226, 0.28)";
+  const readAppCss = (name: string) => readFileSync(join(process.cwd(), "src/app", name), "utf8");
+
+  const selectionRules = (css: string) =>
+    rules(css).filter((rule) =>
+      rule.selectors.some((selector) => /::(-moz-)?selection\s*$/.test(selector))
+    );
+
+  it("paints every text selection rule in editor.css at Notion's alpha", () => {
+    const found = selectionRules(readStyles("editor.css"));
+    // light + dark, each with its `-moz-` twin
+    expect(found).toHaveLength(4);
+    for (const rule of found) expect(rule.body).toContain(SELECTION);
+  });
+
+  it("paints the app chrome at the same alpha, so the Page and the shell agree", () => {
+    const found = selectionRules(readAppCss("globals.css"));
+    expect(found).toHaveLength(4);
+    for (const rule of found) expect(rule.body).toContain(SELECTION);
+  });
+
+  it("keeps the light and dark rules identical, because Notion has no dark override", () => {
+    for (const css of [readStyles("editor.css"), readAppCss("globals.css")]) {
+      const dark = selectionRules(css).filter((rule) =>
+        rule.selectors.some((selector) => selector.includes(".dark"))
+      );
+      expect(dark.length).toBeGreaterThan(0);
+      for (const rule of dark) expect(rule.body).toContain(SELECTION);
+    }
+  });
+
+  it("leaves a Block selection on its own, lighter value", () => {
+    // `0.14` over a whole row reads as a band; `0.28` over one would read as a slab. This is the
+    // value the reference verified as exactly Notion's, and it is not the text-selection value.
+    const blockSelection = rules(readStyles("editor.css")).find((rule) =>
+      rule.selectors.some((selector) => selector.includes('[data-block-selected="true"]::after'))
+    );
+    expect(blockSelection?.body).toContain("rgba(35, 131, 226, 0.14)");
+  });
+});
