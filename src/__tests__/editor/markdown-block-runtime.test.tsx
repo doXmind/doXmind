@@ -264,6 +264,47 @@ describe("MarkdownBlockRuntime", () => {
     );
   });
 
+  it("inserts a `[[` autocomplete pick through canonical source history", async () => {
+    useFileStore.setState({
+      updateFile,
+      files: [
+        { ...file, id: "page-1", name: "Notes.md", preview: "Notes" },
+        {
+          ...file,
+          id: "page-alpha",
+          name: "Project Alpha.md",
+          content: "Alpha page.\n",
+          preview: "Project Alpha",
+        },
+      ],
+    });
+
+    render(
+      <MarkdownBlockRuntime
+        file={{ ...file, name: "Notes.md", preview: "Notes", content: "[[proj\n" }}
+      />
+    );
+
+    // jsdom implements no scrolling, and the popover opening scrolls its highlight into view.
+    Element.prototype.scrollIntoView = vi.fn();
+    fireEvent.click(screen.getByText("[[proj"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Enter" });
+
+    // A closed wiki link is opaque inline syntax, so the row switches to its semantic editing
+    // surface once one lands — the brackets fold away and only the Page title shows.
+    expect(screen.getByLabelText("Markdown block")).toHaveTextContent("Project Alpha");
+
+    const undoFrom = () => document.activeElement ?? document.body;
+    fireEvent.keyDown(undoFrom(), { key: "z", metaKey: true });
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("[[proj");
+    fireEvent.keyDown(undoFrom(), { key: "z", metaKey: true, shiftKey: true });
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenCalledWith("page-1", { content: "[[Project Alpha]]\n" });
+  });
+
   it("rebuilds recursive transclusion through a read-only derived-index service", async () => {
     const embeddedFile = {
       ...file,

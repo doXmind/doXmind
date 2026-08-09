@@ -74,6 +74,17 @@ black is invisible on a dark panel. Adopting Notion's values would restore light
 reintroduce exactly the cross-theme asymmetry the token pair was introduced to remove. Decide the
 ring and the two blur alphas together — they are one visual system — and record the outcome here.
 
+**Turn Into's own submenu was short a row nobody had checked (closed 2026-08-08).** Notion's Turn
+Into list, read out live: Text, Heading 1–4, Page, Bulleted list, Numbered list, To-do list,
+**Toggle list**, **Code**, Quote, **Callout**, plus Page-scoped and Columns entries that do not
+apply here. Ours had Text/heading/list/quote kinds only — Toggle, Code and Callout existed as Block
+kinds and as slash commands, but Turn Into could not reach any of the three, because the existing
+`setKind` command only ever rewrites a prefix on the same text and none of the three are expressible
+that way. A second command, `turnIntoContainer`, now covers them: the converted Block's plain text
+becomes the toggle's summary (collapsed to one line, since `<summary>` is single-line grammar), the
+callout's body (one `> ` per line), or the code Block's body verbatim. `Table` and `Divider` are
+correctly still absent — checked live, neither is in Notion's own Turn Into list either.
+
 ## Slash / insert menu
 
 |             | Notion                                                                                        | Feishu Doc                                                                          | Ours                                                                  |
@@ -239,6 +250,16 @@ Measured, then closed:
 - The info string moved into a language chip on the Block, since projecting the fence away would
   otherwise make it unreachable. A free-text field rather than a menu, because a Markdown info
   string is arbitrary and a closed list would silently drop whatever a file already says.
+- **Open discrepancy, not yet acted on (2026-08-08).** `CodeLanguageChip`'s own comment says it is
+  "shown at rest rather than on hover... both reference products label the Block permanently" — that
+  was true of Notion at the 2026-07-24 measurement. Re-measured live today: Notion's language
+  selector, copy button and "···" menu are all mounted at `opacity: 0` and only reveal on hovering
+  the Block, the same reveal the gutter uses elsewhere. Feishu was not re-checked. This is not
+  restated as a bug, because the original reasoning — a permanently-hidden label makes "what kind of
+  Block is this" something you have to hunt for — is a real cost independent of what either product
+  does, and Notion's own position on it has apparently moved at least once already. Left for a
+  decision rather than flipped: whether to follow Notion's current behaviour, keep the deliberate
+  divergence, or re-measure Feishu before choosing.
 - `block_math` no longer keeps its `$$` visible — this line used to say it did, and that the
   visibility was what stopped an emptied equation from disintegrating. The hazard is real and
   unchanged: a fence tolerates an empty payload (` ```ts\n\n``` ` is still one code Block) but
@@ -335,14 +356,147 @@ indicator or ghost node afterwards.
 - Table cells carry their own source offsets, so clicking a cell puts the caret in that cell; Tab
   walks cells and appends a row at the end; column alignment from the delimiter row is honoured.
 
+### Image captions and the lightbox (closed 2026-08-08)
+
+- `ImageSourceControls`' popover gained a third field, Caption, writing the CommonMark title —
+  `![alt](path "caption")` — that `parseMarkdownImageBlock` already decoded but nothing could set.
+  `BlockPreview` was already rendering it as a `<figcaption>`; only the write side was missing.
+  `buildImageBlockSource` picked up a fourth parameter, keeps the same byte-preservation discipline
+  as alt and path (an unchanged title is spliced back as its own original bytes, not rebuilt), and an
+  emptied field writes a bare `![alt](path)` rather than an empty-quoted title.
+- An "Expand image" button (visible once the Blob has actually decoded, not before) opens the image
+  at its own size over the Page — Notion's and Feishu's click-to-zoom. A plain portalled overlay, not
+  `<dialog>`: `showModal` is unimplemented in the jsdom this Block is tested under and the component
+  would throw on mount in every test that reached it. Escape and a press on the backdrop are wired up
+  by hand, the same way `EmojiPicker` already does both.
+- Not carried over from Notion's own image hover toolbar, and not treated as gaps: **width/alignment
+  toggle** (Notion persists this on the block; CommonMark image syntax has no width, and reusing the
+  title attribute for it would collide with the caption that now owns it) and **add-link-to-image**
+  (lower value than the caption, and the codebase already has a general inline-link editor reachable
+  from the same Block's text). Both are candidates for a later pass, not silently dropped — recorded
+  so the next audit does not re-measure them from zero.
+
+### Live-measured, not yet built
+
+Checked directly against Notion on 2026-08-08, alongside the passes above. Recorded here as
+findings, not implemented — each needs either a Markdown-grammar decision (see
+`docs/adr/0012-markdown-source-block-editor.md`'s "vertical slice" discipline) or enough new UI
+surface that folding it into this pass would have meant shipping it unreviewed.
+
+- **Heading fold does not exist in Notion at all — only on a `Toggle heading`, a distinct Block
+  kind.** Measured live: hovering a plain `# `/`## ` heading with content under it shows no
+  chevron and nothing collapses. Only after Turn Into → "Toggle heading N" does a chevron appear
+  and the content below fold. This corrects an assumption this pass started with — ad-hoc
+  collapse-any-heading is not something to add, because it is not what Notion does. A genuine
+  `Toggle heading` (a toggle whose summary carries heading styling) would need its own Markdown
+  representation — nesting a heading marker inside `<summary>` is untested territory for the
+  scanner and not attempted here.
+- **List items do not collapse in Notion either.** Hovering a bulleted item that has children — with
+  or without the pointer directly over its bullet — never showed a chevron in place of the bullet,
+  and nothing about a list item's own children is foldable short of turning the whole item into a
+  Toggle list. No gap here; a plain nested list and a Toggle list are and should stay separate
+  kinds.
+- ~~A callout's icon is a full, searchable emoji picker in Notion, decoupled from its color.~~ —
+  closed 2026-08-08. Clicking the icon opens `Emoji`/`Icons`/`Upload` tabs with a "Callout"
+  suggested row in Notion, and picking one changes only the glyph — the border/background tint (our
+  `[!TYPE]`) is untouched. Ours now does the same: the block's own `EmojiPicker` (previously written,
+  tested, and unused) opens from a "Custom icon…" row in the icon's menu, and a `MarkdownContainer`
+  gained `icon`/`withIcon()` alongside `type`/`withType()` rather than folded into `heading` — the
+  representation is an emoji directly after the `[!TYPE]` marker and before any title,
+  `[!NOTE]🎉 Title`, so `heading`'s own caret-offset machinery never had to change. All three parsers
+  that read a callout's header line — the classification regex in `markdown-block-document.ts`
+  (`calloutSource`), the structural parser in `markdown-container-block.tsx`
+  (`CALLOUT_HEADER`/`parseCalloutSource`), and the printed-preview parser in
+  `markdown-block-row.tsx` (`calloutPreview`) — now share one `CALLOUT_ICON_SOURCE` pattern rather
+  than three independent guesses at where the icon is allowed to sit.
+
+  One implementation trap worth recording: this codebase's `DropdownMenuTrigger` (hand-rolled, not
+  Radix) implements `asChild` with `React.cloneElement(children, { ref: triggerRef, ... })`, which
+  _replaces_ whatever `ref` the child already carried rather than composing the two. A `ref` placed
+  directly on an `asChild` trigger element is silently dropped — no error, no warning, the ref object
+  just never populates. Worked around here by moving the ref to a tight wrapping `<span>` around the
+  whole `<DropdownMenu>` instead of the trigger button itself; the underlying component still wants a
+  real fix (compose the refs), tracked separately.
+
+- ~~A table's header row and header column are optional, off by default, in Notion.~~ — the two
+  switches closed 2026-08-08 (`Fit to width` still open, see below). The block's own `···` menu
+  carries `Header row` / `Header column` switches in Notion, both unchecked on a freshly inserted
+  table; ours always styled the first row as a header with no way to turn it off, and had no
+  header-column concept at all. `TableSettingsMenu`, anchored to the last header cell's own top-right
+  corner the way `TableAxisMenu`'s handles anchor to the cell they belong to, now carries both —
+  view state (`useState`, not persisted), since a GFM table's first row is structurally a header
+  either way and this only changes which cells this component chooses to tint and bold. The row
+  default stayed **on** rather than following Notion's own **off**, deliberately: every table this
+  component has ever drawn already looked that way, and flipping the default would have redrawn
+  every existing table in every open Page the moment this shipped. Only the column default (off)
+  matches Notion's, because there was no prior default to disturb. `Fit to width` is still open —
+  Notion's table can shrink to its content instead of always stretching to the content rail, and
+  nothing here changes that yet.
+
 ### Known gaps, measured not guessed
 
-- The active code editing surface is a plain textarea — highlighting applies to the rendered Block
-  only. Highlighting while editing needs a token-aware editing surface, which is a much larger
-  change than a preview.
-- Table row/column _insertion_ has no hover control; Tab-at-the-end is the only way to add a row, and
-  there is no way to add a column.
-- `isMarkdownLinkOpaqueBlockSource` judges a span by its raw text alone, so a genuine nested list
+- ~~The active code editing surface is a plain textarea — highlighting applies to the rendered Block
+  only.~~ — stale as of 2026-08-08; re-checked while sweeping this list and found already built.
+  `markdown-code-block.tsx` (landed 2026-08-04, `MarkdownCodeBlock`) lays a transparent, caret-only
+  textarea over a `<pre>` that stays mounted and highlighted through edits — verified live in the
+  running app: typing into a ` ```typescript ` fence shows `hljs-keyword`/`hljs-string`/etc.
+  classes on the rendered layer while the focused textarea underneath holds the same text. This item
+  was never actually open; this note only existed because nobody updated the list when it shipped.
+- ~~Table row/column _insertion_ has no hover control~~ — closed 2026-08-08. A hover-revealed `+`
+  strip now sits below the last row and right of the last column, each appending in place (matching
+  Notion's own two strips, measured live the same day: a full-width bar under the table and a
+  full-height bar beside it, both edge-triggered rather than lit by hovering the table generally).
+  Tab-at-the-end still works and is unchanged. The strips are anchored to the table's own rendered
+  box in pixels — measured via `ResizeObserver`, not derived from a percentage width — because a
+  wrapper sized the ordinary way stops at the content column's width while a wide, scrolling table
+  keeps growing past it.
+- ~~`isMarkdownLinkOpaqueBlockSource` judges a span by its raw text alone, so a genuine nested list
   item indented 4+ columns is treated as indented code and its wiki links are masked out of the
-  knowledge index. Pre-existing; the fix belongs at the two call sites, which should skip the check
-  when the span has a `listDepth`.
+  knowledge index.~~ — closed 2026-08-08. Both call sites (`src/lib/knowledge-index.ts`,
+  `src/lib/page-link-relocation.ts`) now skip the check when `span.listDepth !== undefined`, since a
+  list-nested span's indentation is never the indented-code grammar this function exists to catch.
+  Regression-tested by reverting the fix and confirming the new case fails without it.
+- ~~Typing `[[` has no page-search popover — the closing `]]` and the target Page's exact name both
+  have to be typed by hand.~~ — closed 2026-08-08. Notion opens a search list the moment `[[` is
+  typed, narrows it on every further keystroke, and Enter/Tab/click on a row replaces only the query
+  with the chosen Page's title, closed by `]]`. Ours now does the same, built on the slash menu's own
+  scaffolding (trigger detection, arrow-key highlight, Escape-sticky dismissal, a portal-rendered
+  `listbox`) rather than a second implementation of the same interaction shape.
+
+  One sourcing trap worth recording: the first version wired the popover's candidates to
+  `wikiEmbedContext.index.pages` — the transclusion catalog already threaded through for resolving
+  `![[Embed]]`s. That catalog only builds when the Page _already contains_ an embed
+  (`needsWorkspaceCatalog` gates the rebuild on `hasWikiEmbeds || hasCollections`), so on an ordinary
+  Page — no embed on it yet — `wikiEmbedContext` stayed `undefined` and `[[` would type as plain text
+  forever, popover included. Fixed by sourcing from the same list `[[target]]` _resolution_ already
+  used and is always available: `resolveWikiLinkTarget` reads `useFileStore`'s file list directly,
+  no workspace scan required. The shared shaping logic moved into a new `workspaceWikiPages()` export
+  in `wiki-link.ts`, used by both the resolver and a `wikiLinkPages` prop threaded from
+  `MarkdownBlockRuntime` down to the row, recomputed on the same `storageGeneration` invalidation
+  `wikiLinkServices` already keyed its own cache on.
+
+- **Image width/alignment has no safe Markdown representation, and stays deferred rather than forced
+  in.** Assessed 2026-08-08, not implemented. Notion's width handle drags a proprietary block
+  property with no Markdown form at all — a doXmind equivalent would have to invent one, and
+  `![alt](destination "title")` has exactly one optional slot, already spent: `buildImageTitleRaw` in
+  `markdown-static-block.tsx` writes the caption feature straight into CommonMark's `title`
+  (`"CommonMark's title is the figure caption"`), so a width value cannot share it without the two
+  features corrupting each other's data on every edit. The two conventions other tools use to smuggle
+  a size into a Markdown image both cost more than this feature is worth: an `<img width>` HTML tag
+  would need a second parser and serializer for the same Block kind, permanently forking a path that
+  is one function today; a `?width=400` query destination collides with `validateDestination`'s
+  existing, deliberate `query-or-fragment` rejection — a rule that exists for path-resolution safety,
+  not styling, and loosening it for a display hint would widen what the whole app treats as a valid
+  local image reference. No representation was found that adds width without either forking the
+  parser or weakening that boundary, so this stays a documented gap, not a partial feature.
+- **Columns have no safe, portable Markdown representation either, for the same underlying reason.**
+  Assessed 2026-08-08, not implemented. Notion's side-by-side layout is a container property in its
+  own block tree, with nothing in CommonMark, GFM or any Markdown dialect this codebase already
+  borrows from (the way callouts borrow `> [!TYPE]`) that expresses "these Blocks sit beside each
+  other" in a form a plain-Markdown reader would still render sensibly. Every representation
+  considered — an HTML `<div>`/table wrapper, a custom fenced block, adjacent list items — either
+  needs a second, parallel block-tree shape alongside the single flat sequence `MarkdownBlockDocument`
+  assumes throughout, or renders as broken/misleading structure in any other Markdown tool a `.md`
+  file from this workspace gets opened in. Given ADR-0012's own discipline — a Markdown-grammar
+  decision has to come before deepening a feature, not after — the right call is to leave this
+  undecided rather than pick a representation nobody has actually committed to.

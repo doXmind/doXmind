@@ -503,7 +503,11 @@ function maskIgnoredMarkdown(source: string): string {
   const mask = (from: number, to: number) => masked.fill(" ", from, to);
 
   for (const span of scanMarkdownSource(source)) {
-    if (isMarkdownLinkOpaqueBlockSource(span.raw)) {
+    // A span inside a list carries its own `listDepth`, and a deeply nested item's continuation
+    // lines are legitimately indented 4+ columns as part of that nesting — not the indented-code
+    // grammar this check exists to catch. Judging it anyway masked wiki links out of the knowledge
+    // index for any list item past the third level.
+    if (span.listDepth === undefined && isMarkdownLinkOpaqueBlockSource(span.raw)) {
       mask(span.from, span.to);
     }
   }

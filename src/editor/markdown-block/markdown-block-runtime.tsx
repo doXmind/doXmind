@@ -20,6 +20,7 @@ import {
   type MarkdownBlockApplyResult,
   type MarkdownBlockCommand,
   type MarkdownBlockView,
+  type MarkdownContainerTurnIntoKind,
   type MarkdownSettableBlockKind,
 } from "@/editor/markdown-block/markdown-block-document";
 import {
@@ -29,6 +30,7 @@ import {
 import {
   BlockTypeOptionIcon,
   TURN_INTO_OPTIONS,
+  type TurnIntoOption,
 } from "@/editor/markdown-block/block-gutter-controls";
 import {
   DropdownMenu,
@@ -55,6 +57,7 @@ import {
   type MarkdownImageContext,
   type MarkdownSlashRun,
   type MarkdownWikiEmbedContext,
+  type MarkdownWikiLinkRun,
   type MarkdownWikiLinkServices,
 } from "@/editor/markdown-block/markdown-block-row";
 import { projectMarkdownInline } from "@/editor/markdown-block/markdown-inline-projection";
@@ -64,7 +67,7 @@ import {
   markdownSlashCommandSource,
   type MarkdownSlashCommandId,
 } from "@/editor/markdown-block/slash-commands";
-import { resolveWikiLinkTarget } from "@/editor/markdown-block/wiki-link";
+import { resolveWikiLinkTarget, workspaceWikiPages } from "@/editor/markdown-block/wiki-link";
 import { markdownImageDestinationForPage } from "@/editor/markdown-block/markdown-image";
 import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
 import { navigateToEditorFile, navigateToWorkspacePage } from "@/lib/editor-navigation";
@@ -505,6 +508,15 @@ export function MarkdownBlockRuntime({
     // re-render on the new context value, so a link stops reading as unresolved once its Page exists.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- storageGeneration invalidates the cache
   }, [file.id, storageGeneration]);
+
+  // The `[[` autocomplete's candidates: the same always-available file-store list `wikiLinkServices`
+  // resolves against, not the transclusion catalog — that one only builds once the Page already has
+  // an `![[Embed]]`, so a Page without one could type `[[` and never see a candidate.
+  const wikiLinkPages = useMemo(
+    () => workspaceWikiPages(useFileStore.getState().files),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- storageGeneration invalidates the cache
+    [storageGeneration]
+  );
 
   const outlineHeadings = useMemo<PageOutlineItem[]>(() => {
     const headings = snapshot.blocks.flatMap((block) => {
@@ -1722,6 +1734,27 @@ export function MarkdownBlockRuntime({
   );
 
   /**
+   * Turn into Toggle, Callout or Code — the three Turn Into targets whose Markdown is a template
+   * rather than a prefix on the same text, so they cannot go through `setBlockKind`'s `setKind`
+   * command. Single-Block only: unlike `setBlockKind`, this has no multi-selection branch, because
+   * wrapping several Blocks' text into several independent containers at once is not something
+   * either reference product's Turn Into offers from a range selection either.
+   */
+  const turnBlockIntoContainer = useCallback(
+    (blockId: string, kind: MarkdownContainerTurnIntoKind) => {
+      const result = documentRef.current.apply({ type: "turnIntoContainer", blockId, kind });
+      publish(result, false);
+      const converted = result.snapshot.blocks.find((candidate) => candidate.id === blockId);
+      setBlockSelection(null);
+      if (!converted?.editable) return;
+      const source = normalizeEditorLineEndings(createBlockEditingProjection(converted).editorText);
+      setActiveBlockId(blockId);
+      setPendingSelection({ blockId, anchor: source.length, head: source.length });
+    },
+    [publish]
+  );
+
+  /**
    * Grow a text selection into a Block selection.
    *
    * Shift+Down at the end of a Block's text should keep extending, into the next Block. Without this
@@ -2585,6 +2618,31 @@ export function MarkdownBlockRuntime({
     [publish]
   );
 
+  const handleInsertWikiLink = useCallback(
+    (blockId: string, run: MarkdownWikiLinkRun, pageTitle: string) => {
+      const latest = documentRef.current.getSnapshot();
+      const current = latest.blocks.find((candidate) => candidate.id === blockId);
+      if (!current) return;
+      const from = blockSourceOffsetForEditorOffset(current, run.start);
+      const to = blockSourceOffsetForEditorOffset(current, run.end);
+      const text = `${pageTitle}]]`;
+      const result = documentRef.current.apply({
+        type: "replaceText",
+        blockId,
+        range: { from, to },
+        text,
+      });
+      publish(result, false);
+      const edited = result.snapshot.blocks.find((candidate) => candidate.id === blockId);
+      if (!edited) return;
+      const offset = editorOffsetForBlockSourceOffset(edited, from + text.length);
+      setActiveBlockId(edited.id);
+      setBlockSelection(null);
+      setPendingSelection({ blockId: edited.id, anchor: offset, head: offset });
+    },
+    [publish]
+  );
+
   const pageFrameStyle = {
     "--editor-outline-gutter": `${reservedRightInset}px`,
   } as CSSProperties;
@@ -2961,11 +3019,14 @@ export function MarkdownBlockRuntime({
                     onIndent={handleIndent}
                     onNavigate={navigateBlock}
                     onSetKind={setBlockKind}
+                    onTurnIntoContainer={turnBlockIntoContainer}
                     onUndo={undo}
                     onRedo={redo}
                     onDragStart={startBlockDrag}
                     onDragEnd={clearBlockDrag}
                     onRunSlashCommand={handleRunSlashCommand}
+                    onInsertWikiLink={handleInsertWikiLink}
+                    wikiLinkPages={wikiLinkPages}
                     wikiEmbedContext={wikiEmbedContext}
                     collectionContext={collectionContext}
                     imageContext={imageContext}
@@ -3256,6 +3317,14 @@ function buildBlockDragGhost(
   return ghost;
 }
 
+/** `TURN_INTO_OPTIONS`, without the three container kinds `BlockSelectionToolbar` cannot offer. */
+const SETTABLE_TURN_INTO_OPTIONS: readonly (TurnIntoOption & {
+  kind: MarkdownSettableBlockKind;
+})[] = TURN_INTO_OPTIONS.filter(
+  (option): option is TurnIntoOption & { kind: MarkdownSettableBlockKind } =>
+    option.kind !== "toggle" && option.kind !== "callout" && option.kind !== "fenced_code"
+);
+
 /**
  * Floating actions for a multi-Block selection.
  *
@@ -3311,7 +3380,11 @@ function BlockSelectionToolbar({
           aria-label="Turn selected blocks into"
           className="max-h-[min(24rem,calc(100vh-2rem))] w-52 rounded-[10px] border-0 bg-popover p-1.5 shadow-[0_20px_24px_rgba(25,25,25,0.05),0_5px_8px_rgba(25,25,25,0.027),0_0_0_1px_hsl(var(--border))]"
         >
-          {TURN_INTO_OPTIONS.map((option) => (
+          {/* Toggle, Code and Callout are left out here: they wrap one Block's text into a template
+              rather than rewriting it in place, and doing that for a whole range at once — several
+              independent containers from one command — is not something either reference product's
+              Turn Into offers from a multi-Block selection either. */}
+          {SETTABLE_TURN_INTO_OPTIONS.map((option) => (
             <DropdownMenuItem
               key={`${option.kind}-${option.level ?? "base"}`}
               aria-label={option.label}

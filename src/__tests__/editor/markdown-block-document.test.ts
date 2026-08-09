@@ -1675,6 +1675,118 @@ describe("MarkdownBlockDocument", () => {
   });
 });
 
+describe("turnIntoContainer command", () => {
+  it("wraps a paragraph's text as a toggle's summary, with an empty body", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("Alpha\n\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+
+    const result = document.apply({ type: "turnIntoContainer", blockId, kind: "toggle" });
+
+    expect(result.snapshot.markdown).toBe("<details>\n<summary>Alpha</summary>\n\n</details>\n\n");
+    expect(result.snapshot.blocks[0]).toMatchObject({ id: blockId, kind: "toggle" });
+    const reopened = MarkdownBlockDocument.fromMarkdown(result.snapshot.markdown).getSnapshot();
+    expect(reopened.blocks[0].kind).toBe("toggle");
+  });
+
+  it("wraps a paragraph's text as a callout's body, under a default Note marker", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("Alpha\n\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+
+    const result = document.apply({ type: "turnIntoContainer", blockId, kind: "callout" });
+
+    expect(result.snapshot.markdown).toBe("> [!NOTE] Note\n> Alpha\n\n");
+    expect(result.snapshot.blocks[0]).toMatchObject({ id: blockId, kind: "callout" });
+    const reopened = MarkdownBlockDocument.fromMarkdown(result.snapshot.markdown).getSnapshot();
+    expect(reopened.blocks[0].kind).toBe("callout");
+  });
+
+  it("wraps a paragraph's text as a fenced code Block's body, with no language guessed", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("Alpha\n\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+
+    const result = document.apply({ type: "turnIntoContainer", blockId, kind: "fenced_code" });
+
+    expect(result.snapshot.markdown).toBe("```\nAlpha\n```\n\n");
+    expect(result.snapshot.blocks[0]).toMatchObject({ id: blockId, kind: "fenced_code" });
+    const reopened = MarkdownBlockDocument.fromMarkdown(result.snapshot.markdown).getSnapshot();
+    expect(reopened.blocks[0].kind).toBe("fenced_code");
+  });
+
+  it("collapses a multi-line paragraph to one summary line for a toggle, not several", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("Alpha\nBeta\n\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+
+    const result = document.apply({ type: "turnIntoContainer", blockId, kind: "toggle" });
+
+    expect(result.snapshot.markdown).toBe(
+      "<details>\n<summary>Alpha Beta</summary>\n\n</details>\n\n"
+    );
+    const reopened = MarkdownBlockDocument.fromMarkdown(result.snapshot.markdown).getSnapshot();
+    expect(reopened.blocks[0].kind).toBe("toggle");
+  });
+
+  it("prefixes every line of a multi-line paragraph for a callout, not just the first", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("Alpha\nBeta\n\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+
+    const result = document.apply({ type: "turnIntoContainer", blockId, kind: "callout" });
+
+    expect(result.snapshot.markdown).toBe("> [!NOTE] Note\n> Alpha\n> Beta\n\n");
+    const reopened = MarkdownBlockDocument.fromMarkdown(result.snapshot.markdown).getSnapshot();
+    expect(reopened.blocks[0].kind).toBe("callout");
+  });
+
+  it("falls back to a placeholder summary for an empty paragraph turned into a toggle", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("\n\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+
+    const result = document.apply({ type: "turnIntoContainer", blockId, kind: "toggle" });
+
+    expect(result.snapshot.markdown).toBe("<details>\n<summary>Toggle</summary>\n\n</details>\n\n");
+  });
+
+  it("opens a blank-line boundary on both sides, so the container cannot be read as a lazy continuation", () => {
+    // No blank line between the heading and the paragraph — legal Markdown, since an ATX heading
+    // is a single line and needs no blank line to end. A `<details>` line right after it with the
+    // same spacing would risk being read as a continuation of *something*, so the command must add
+    // the separation itself rather than reusing whatever the paragraph already had.
+    const document = MarkdownBlockDocument.fromMarkdown("## Title\nAlpha\n\nAfter\n");
+    const blockId = document.getSnapshot().blocks[1].id;
+
+    const result = document.apply({ type: "turnIntoContainer", blockId, kind: "toggle" });
+
+    expect(result.snapshot.markdown).toBe(
+      "## Title\n\n<details>\n<summary>Alpha</summary>\n\n</details>\n\nAfter\n"
+    );
+    const reopened = MarkdownBlockDocument.fromMarkdown(result.snapshot.markdown).getSnapshot();
+    expect(reopened.blocks.map((block) => block.kind)).toEqual(["heading", "toggle", "paragraph"]);
+  });
+
+  it("refuses a list item, which cannot become a container Block directly", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("- Alpha\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+
+    expect(() => document.apply({ type: "turnIntoContainer", blockId, kind: "toggle" })).toThrow();
+  });
+
+  it("refuses a Block that is already a container kind", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("```\ncode\n```\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+
+    expect(() => document.apply({ type: "turnIntoContainer", blockId, kind: "callout" })).toThrow();
+  });
+
+  it("undoes back to the exact paragraph bytes", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("Alpha\n\n");
+    const before = document.getSnapshot();
+
+    document.apply({ type: "turnIntoContainer", blockId: before.blocks[0].id, kind: "callout" });
+    const undone = document.undo();
+
+    expect(undone).toEqual({ ...before, revision: 2 });
+  });
+});
+
 describe("typing-run history granularity", () => {
   const typeInto = (document: MarkdownBlockDocument, blockId: string, text: string) => {
     for (const char of text) {

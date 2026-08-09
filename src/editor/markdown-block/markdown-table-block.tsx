@@ -1,7 +1,14 @@
 "use client";
 
-import { GripHorizontal, GripVertical } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { GripHorizontal, GripVertical, Plus, Settings2 } from "lucide-react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 import { projectMarkdownInline } from "@/editor/markdown-block/markdown-inline-projection";
 import { SemanticInlineEditor } from "@/editor/markdown-block/semantic-inline-editor";
@@ -137,8 +144,18 @@ export function MarkdownTableBlock({
    */
   const [hovered, setHovered] = useState<{ row: number; column: number } | null>(null);
   const [openAxis, setOpenAxis] = useState<{ axis: "row" | "column"; index: number } | null>(null);
+  // Whether the first row and first column draw as headers — Notion's own `Header row`/`Header
+  // column` switches, both off on a freshly inserted table there. Ours keeps the header row on by
+  // default, matching every table this component already drew before the switches existed; only
+  // the column default (off) matches Notion's own. View state, not document state: a GFM table's
+  // first row is structurally the delimiter row's header either way, so nothing here is anything
+  // other than which cells this component chooses to tint and bold.
+  const [headerRowStyled, setHeaderRowStyled] = useState(true);
+  const [headerColumnStyled, setHeaderColumnStyled] = useState(false);
   const pendingCellRef = useRef<TableCellAddress | null>(null);
   const pendingCaretOffsetRef = useRef<ActiveCell["caret"]>(null);
+  const tableElementRef = useRef<HTMLTableElement>(null);
+  const tableWrapRef = useRef<HTMLDivElement>(null);
 
   // A Block that is active must always own an editing surface: the runtime, the tests and the
   // caret-restore machinery all look for one. Landing on the first cell is the equivalent of a
@@ -190,6 +207,32 @@ export function MarkdownTableBlock({
   // as a selection rather than set imperatively afterwards, so there is no frame where the cell is
   // focused with the caret still at the wrong end.
 
+  // Sizes the wrapper to the table's own rendered box in pixels, not a percentage, so the
+  // insert-row/insert-column strips anchored to the wrapper's bottom and right edges track the table
+  // exactly — including once it is wider than the content column and scrolling, where a plain
+  // `w-full` wrapper would stop at the column's width while the table itself kept growing past it.
+  // Written with `element.style`, not state: it is a layout measurement, not something a render
+  // should ever answer differently for, and a `ResizeObserver` already re-fires it on every change
+  // that could move the edges — a column added from the menu, a cell wrapping onto another line.
+  useLayoutEffect(() => {
+    const table = tableElementRef.current;
+    const wrap = tableWrapRef.current;
+    if (!table || !wrap) return;
+    let width = -1;
+    let height = -1;
+    const measure = () => {
+      if (table.offsetWidth === width && table.offsetHeight === height) return;
+      width = table.offsetWidth;
+      height = table.offsetHeight;
+      wrap.style.width = `${width}px`;
+      wrap.style.height = `${height}px`;
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(table);
+    return () => observer.disconnect();
+  }, [geometry, source]);
+
   const cellAt = (row: number, column: number): MarkdownTableCell | undefined =>
     geometry.cells.find((candidate) => candidate.row === row && candidate.column === column);
 
@@ -203,6 +246,23 @@ export function MarkdownTableBlock({
    */
   const commitCell = (cell: MarkdownTableCell, text: string) => {
     commit(source.slice(0, cell.from) + text + source.slice(cell.to));
+  };
+
+  /** Append a row after the last one and land the caret in its first cell, Notion's own behaviour. */
+  const insertTrailingRow = () => {
+    const next = markdownTableInsertRow(source, geometry, geometry.rowCount - 1, "below");
+    if (!next) return;
+    setActive({ row: geometry.rowCount, column: 0, caret: "end" });
+    commit(next);
+  };
+
+  /** Append a column after the last one and land the caret in its header cell. */
+  const insertTrailingColumn = () => {
+    const lastColumn = geometry.alignments.length - 1;
+    const next = markdownTableInsertColumn(source, geometry, lastColumn, "right");
+    if (!next) return;
+    setActive({ row: 0, column: lastColumn + 1, caret: "end" });
+    commit(next);
   };
 
   /**
@@ -359,6 +419,13 @@ export function MarkdownTableBlock({
     return "text-left";
   };
 
+  /** The header-row and header-column tint, whichever of the two switches say this cell gets. */
+  const headerCellClass = (row: number, column: number) => {
+    const isHeaderRow = row === 0 && headerRowStyled;
+    const isHeaderColumn = column === 0 && headerColumnStyled;
+    return isHeaderRow || isHeaderColumn ? "bg-muted/50 font-medium" : "";
+  };
+
   const renderBody = (cell: MarkdownTableCell | undefined, address: TableCellAddress) => {
     if (!cell) return null;
     const isActive = editable && active?.row === address.row && active?.column === address.column;
@@ -438,91 +505,133 @@ export function MarkdownTableBlock({
     // on the Page, which is the one step in an otherwise dead-straight left edge. `pt-3` is left
     // alone: `--controls-lead` for a table in editor.css is measured against it.
     <div className="-ml-1.5 min-h-9 overflow-x-auto py-1 pl-1.5 pt-3">
-      <table
-        aria-label="Markdown table"
-        // No type size of its own: `.markdown-page th, td` sizes every cell at 1rem through an
-        // element selector, so a `text-sm` here applied to nothing today and would have silently
-        // shrunk anything added to the table that is not a cell.
-        className="w-full border-collapse text-left"
-        onPointerLeave={() => setHovered(null)}
-      >
-        <thead>
-          <tr>
-            {geometry.alignments.map((_, column) => {
-              const cell = cellAt(0, column);
-              return (
-                <th
-                  key={`header-${column}`}
-                  // Without it a screen reader has a header row it cannot attach to anything: the
-                  // cells below announce as an unlabelled grid of text. It costs no text in the
-                  // cell, which is the one thing this component cannot add — the caret mapping
-                  // counts every character inside a cell.
-                  scope="col"
-                  data-table-cell={cell ? `${cell.from}` : undefined}
-                  data-align={alignment(column)}
-                  className={`relative border border-border bg-muted/50 px-2 py-1.5 font-medium ${alignmentClass(column)} ${axisOutline(0, column)}`}
-                  onPointerEnter={() => setHovered({ row: 0, column })}
-                  onPointerDown={(event) =>
-                    pressCell(event.nativeEvent, event.currentTarget, { row: 0, column }, cell)
-                  }
-                >
-                  <TableAxisMenu
-                    enabled={editable}
-                    axis="column"
-                    label={`Column ${column + 1} actions`}
-                    visible={handleVisible("column", column)}
-                    onOpenChange={(open) =>
-                      setOpenAxis(open ? { axis: "column", index: column } : null)
-                    }
-                    canDelete={geometry.columnCount > 1}
-                    alignment={geometry.alignments[column] ?? null}
-                    onSetAlignment={(next) =>
-                      commit(markdownTableSetColumnAlignment(source, geometry, column, next))
-                    }
-                    onInsertBefore={() =>
-                      commit(markdownTableInsertColumn(source, geometry, column, "left"))
-                    }
-                    onInsertAfter={() =>
-                      commit(markdownTableInsertColumn(source, geometry, column, "right"))
-                    }
-                    onDuplicate={() =>
-                      commit(markdownTableDuplicateColumn(source, geometry, column))
-                    }
-                    onClear={() => commit(markdownTableClearColumn(source, geometry, column))}
-                    onDelete={() => commit(markdownTableDeleteColumn(source, geometry, column))}
-                  />
-                  {column === 0 ? rowHandle(0) : null}
-                  <span className="block">{renderBody(cell, { row: 0, column })}</span>
-                </th>
-              );
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {bodyRows.map((row) => (
-            <tr key={`row-${row}`}>
+      <div ref={tableWrapRef} className="relative">
+        <table
+          ref={tableElementRef}
+          aria-label="Markdown table"
+          // No type size of its own: `.markdown-page th, td` sizes every cell at 1rem through an
+          // element selector, so a `text-sm` here applied to nothing today and would have silently
+          // shrunk anything added to the table that is not a cell.
+          className="w-full border-collapse text-left"
+          onPointerLeave={() => setHovered(null)}
+        >
+          <thead>
+            <tr>
               {geometry.alignments.map((_, column) => {
-                const cell = cellAt(row, column);
+                const cell = cellAt(0, column);
                 return (
-                  <td
-                    key={`cell-${row}-${column}`}
+                  <th
+                    key={`header-${column}`}
+                    // Without it a screen reader has a header row it cannot attach to anything: the
+                    // cells below announce as an unlabelled grid of text. It costs no text in the
+                    // cell, which is the one thing this component cannot add — the caret mapping
+                    // counts every character inside a cell.
+                    scope="col"
                     data-table-cell={cell ? `${cell.from}` : undefined}
                     data-align={alignment(column)}
-                    className={`relative border border-border px-2 py-1.5 ${alignmentClass(column)} ${axisOutline(row, column)}`}
-                    onPointerEnter={() => setHovered({ row, column })}
+                    className={`relative border border-border px-2 py-1.5 ${headerCellClass(0, column)} ${alignmentClass(column)} ${axisOutline(0, column)}`}
+                    onPointerEnter={() => setHovered({ row: 0, column })}
                     onPointerDown={(event) =>
-                      pressCell(event.nativeEvent, event.currentTarget, { row, column }, cell)
+                      pressCell(event.nativeEvent, event.currentTarget, { row: 0, column }, cell)
                     }
                   >
-                    {column === 0 ? rowHandle(row) : null}
-                    <span className="block">{renderBody(cell, { row, column })}</span>
-                  </td>
+                    <TableAxisMenu
+                      enabled={editable}
+                      axis="column"
+                      label={`Column ${column + 1} actions`}
+                      visible={handleVisible("column", column)}
+                      onOpenChange={(open) =>
+                        setOpenAxis(open ? { axis: "column", index: column } : null)
+                      }
+                      canDelete={geometry.columnCount > 1}
+                      alignment={geometry.alignments[column] ?? null}
+                      onSetAlignment={(next) =>
+                        commit(markdownTableSetColumnAlignment(source, geometry, column, next))
+                      }
+                      onInsertBefore={() =>
+                        commit(markdownTableInsertColumn(source, geometry, column, "left"))
+                      }
+                      onInsertAfter={() =>
+                        commit(markdownTableInsertColumn(source, geometry, column, "right"))
+                      }
+                      onDuplicate={() =>
+                        commit(markdownTableDuplicateColumn(source, geometry, column))
+                      }
+                      onClear={() => commit(markdownTableClearColumn(source, geometry, column))}
+                      onDelete={() => commit(markdownTableDeleteColumn(source, geometry, column))}
+                    />
+                    {column === 0 ? rowHandle(0) : null}
+                    {column === geometry.alignments.length - 1 ? (
+                      <TableSettingsMenu
+                        enabled={editable}
+                        headerRow={headerRowStyled}
+                        headerColumn={headerColumnStyled}
+                        onToggleHeaderRow={() => setHeaderRowStyled((value) => !value)}
+                        onToggleHeaderColumn={() => setHeaderColumnStyled((value) => !value)}
+                      />
+                    ) : null}
+                    <span className="block">{renderBody(cell, { row: 0, column })}</span>
+                  </th>
                 );
               })}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {bodyRows.map((row) => (
+              <tr key={`row-${row}`}>
+                {geometry.alignments.map((_, column) => {
+                  const cell = cellAt(row, column);
+                  return (
+                    <td
+                      key={`cell-${row}-${column}`}
+                      data-table-cell={cell ? `${cell.from}` : undefined}
+                      data-align={alignment(column)}
+                      className={`relative border border-border px-2 py-1.5 ${headerCellClass(row, column)} ${alignmentClass(column)} ${axisOutline(row, column)}`}
+                      onPointerEnter={() => setHovered({ row, column })}
+                      onPointerDown={(event) =>
+                        pressCell(event.nativeEvent, event.currentTarget, { row, column }, cell)
+                      }
+                    >
+                      {column === 0 ? rowHandle(row) : null}
+                      <span className="block">{renderBody(cell, { row, column })}</span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <button
+          type="button"
+          aria-label="Insert row"
+          title="Insert row"
+          disabled={!editable}
+          tabIndex={editable ? 0 : -1}
+          // Always mounted, for the same reason `TableAxisMenu`'s handles are: rendering it only while
+          // the Block is active would give the row below the table one more sibling on activation, and
+          // "clicking into a Block must move nothing" is the whole point of that component's own tests.
+          // The inline `opacity: 0` on a disabled press mirrors `TableAxisMenu`'s own fix below: this
+          // class also matches `.editor-control:disabled { opacity: .5 }`, which would otherwise leave
+          // a half-strength strip under every inactive table on the Page.
+          className="editor-control absolute inset-x-0 top-full z-10 flex h-3.5 items-center justify-center rounded-b-[3px] text-muted-foreground opacity-0 hover:opacity-100 focus-visible:opacity-100"
+          style={editable ? undefined : { opacity: 0 }}
+          onClick={insertTrailingRow}
+        >
+          <Plus className="h-3 w-3" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          aria-label="Insert column"
+          title="Insert column"
+          disabled={!editable}
+          tabIndex={editable ? 0 : -1}
+          className="editor-control absolute inset-y-0 left-full z-10 flex w-3.5 items-center justify-center rounded-r-[3px] text-muted-foreground opacity-0 hover:opacity-100 focus-visible:opacity-100"
+          style={editable ? undefined : { opacity: 0 }}
+          onClick={insertTrailingColumn}
+        >
+          <Plus className="h-3 w-3" aria-hidden="true" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -770,6 +879,81 @@ function TableAxisMenu({
           >
             {tick(false)}
             Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </span>
+  );
+}
+
+/**
+ * Whether the first row and first column draw as headers — Notion's own table `···` menu.
+ *
+ * A GFM table's first row is structurally a header regardless of this switch; what it changes is
+ * only whether this component tints and bolds it, the same way `TableAxisMenu`'s row and column
+ * handles change nothing about the source either. Anchored to the last header cell's own corner
+ * rather than floating in a reserved gutter, for the same reason the row and column handles are:
+ * the grid scrolls horizontally, and anything positioned outside a cell would be clipped or drift
+ * from the column it names once the table is wider than the content rail.
+ */
+function TableSettingsMenu({
+  enabled,
+  headerRow,
+  headerColumn,
+  onToggleHeaderRow,
+  onToggleHeaderColumn,
+}: {
+  enabled: boolean;
+  headerRow: boolean;
+  headerColumn: boolean;
+  onToggleHeaderRow: () => void;
+  onToggleHeaderColumn: () => void;
+}) {
+  const tick = (checked: boolean) => (
+    <span className="w-3 shrink-0 text-muted-foreground" aria-hidden="true">
+      {checked ? "✓" : ""}
+    </span>
+  );
+
+  return (
+    <span
+      className="pointer-events-none absolute flex"
+      style={{
+        top: -CELL_BORDER_HALF,
+        right: -CELL_BORDER_HALF,
+        transform: "translate(50%, -50%)",
+      }}
+    >
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label="Table settings"
+            disabled={!enabled}
+            tabIndex={enabled ? 0 : -1}
+            className="editor-control flex items-center justify-center rounded-[3px] text-muted-foreground hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100"
+            // Shown at rest rather than only on hover, unlike the insert-row/insert-column strips:
+            // this is a menu of settings that apply to the whole table, not an action anchored to
+            // one edge, and Notion's own `···` trigger is likewise part of the table's permanent
+            // chrome rather than something you have to find by sweeping the pointer over a corner.
+            style={{ width: 14, height: 14, opacity: 0.6, ...(enabled ? null : { opacity: 0 }) }}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <Settings2 className="h-2.5 w-2.5" aria-hidden="true" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          aria-label="Table settings"
+          className="w-48 rounded-xl border-border/80 bg-popover/95 p-1.5 shadow-xl backdrop-blur-xl"
+        >
+          <DropdownMenuItem className="h-8 rounded-lg px-2.5" onClick={onToggleHeaderRow}>
+            {tick(headerRow)}
+            Header row
+          </DropdownMenuItem>
+          <DropdownMenuItem className="h-8 rounded-lg px-2.5" onClick={onToggleHeaderColumn}>
+            {tick(headerColumn)}
+            Header column
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

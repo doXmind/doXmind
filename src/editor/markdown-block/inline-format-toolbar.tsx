@@ -20,7 +20,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BlockTypeOptionIcon } from "@/editor/markdown-block/block-gutter-controls";
-import type { MarkdownSettableBlockKind } from "@/editor/markdown-block/markdown-block-document";
+import type {
+  MarkdownContainerTurnIntoKind,
+  MarkdownSettableBlockKind,
+} from "@/editor/markdown-block/markdown-block-document";
 import { cn } from "@/lib/utils";
 
 export interface InlineFormatState {
@@ -38,7 +41,7 @@ export interface InlineFormatToolbarPosition {
 
 export interface InlineBlockTypeOption {
   label: string;
-  kind: MarkdownSettableBlockKind;
+  kind: MarkdownSettableBlockKind | MarkdownContainerTurnIntoKind;
   level?: 1 | 2 | 3 | 4 | 5 | 6;
 }
 

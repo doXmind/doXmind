@@ -60,6 +60,13 @@ export type MarkdownSettableBlockKind =
   | "blockquote";
 
 /**
+ * Turn Into targets whose Markdown is more than a prefix on the same text — a toggle, a callout and
+ * a fenced code Block all wrap the converted Block's plain text into a multi-line template, which
+ * `setKind` has no way to express. Notion offers exactly these three beyond the settable kinds.
+ */
+export type MarkdownContainerTurnIntoKind = "toggle" | "callout" | "fenced_code";
+
+/**
  * Blocks whose source stays directly editable but whose internal structure is
  * not yet exposed to generic split, merge, or kind-conversion commands.
  */
@@ -141,6 +148,11 @@ export type MarkdownBlockCommand =
       blockId: string;
       kind: MarkdownSettableBlockKind;
       level?: 1 | 2 | 3 | 4 | 5 | 6;
+    }
+  | {
+      type: "turnIntoContainer";
+      blockId: string;
+      kind: MarkdownContainerTurnIntoKind;
     }
   | {
       type: "insertAfter";
@@ -1076,6 +1088,36 @@ export class MarkdownBlockDocument {
       return { snapshot: this.getSnapshot() };
     }
 
+    if (command.type === "turnIntoContainer") {
+      if (!block.editable) throw new Error("unsupported blocks cannot change kind");
+      if (block.kind === "unsupported") {
+        throw new Error("raw blocks cannot change kind structurally");
+      }
+      if (isMarkdownSourceOnlyBlockKind(block.kind)) {
+        throw new Error(`${block.kind} blocks cannot change kind structurally`);
+      }
+      if (listItemSyntax(block.raw, true)) {
+        throw new Error("a list item cannot become a Container Block directly");
+      }
+      const { content, separator } = splitBlockSource(block.raw);
+      const plain = plainBlockContent(block, content);
+      const lineEnding = plain.includes("\r\n") ? "\r\n" : "\n";
+      const next: MarkdownBlockSource = {
+        ...block,
+        kind: command.kind,
+        raw: containerTurnIntoSource(command.kind, plain, lineEnding) + separator,
+      };
+      this.recordHistory();
+      sourceBlocks[index] = next;
+      // Unlike a settable kind's own boundary, these three always need a blank line on both sides:
+      // an HTML block (`<details>`) and a fence can each be swallowed as a lazy continuation of an
+      // adjacent paragraph if one sits right above with no blank line between them.
+      normalizeNeighborBoundaries(sourceBlocks, index, this.markdown);
+      this.commitSources(sourceBlocks);
+      this.revision += 1;
+      return { snapshot: this.getSnapshot() };
+    }
+
     if (command.type === "insertAfter") {
       this.recordHistory();
       const newline = preferredLineEnding(
@@ -1561,6 +1603,30 @@ function prefixSourceLines(source: string, prefix: string): string {
 }
 
 /**
+ * Markdown for one of the three container Turn Into targets, seeded with the converted Block's own
+ * plain text: it becomes the toggle's summary, the callout's body, or the code Block's body
+ * verbatim. Matches `markdownSlashCommandSource`'s empty-template shapes for the same three kinds —
+ * this is the same grammar with the Block's text folded in rather than left blank.
+ */
+function containerTurnIntoSource(
+  kind: MarkdownContainerTurnIntoKind,
+  plain: string,
+  lineEnding: "\r\n" | "\n" | "\r"
+): string {
+  if (kind === "fenced_code") {
+    return ["```", plain, "```"].join(lineEnding);
+  }
+  if (kind === "callout") {
+    return `> [!NOTE] Note${lineEnding}${plain ? prefixSourceLines(plain, "> ") : "> "}`;
+  }
+  // A toggle's summary is one line of its own source (`parseMarkdownToggle` matches it with an
+  // anchored, non-`s`-flagged regex), so a multi-line paragraph's breaks collapse to spaces here
+  // rather than splitting the tag across lines and failing to parse back as a toggle at all.
+  const summary = plain.replace(/\r\n|\n|\r/g, " ").trim() || "Toggle";
+  return ["<details>", `<summary>${summary}</summary>`, "", "</details>"].join(lineEnding);
+}
+
+/**
  * Re-indent a moved list range so its indentation still means something where it landed.
  *
  * Without this, dragging a depth-2 item to the top of the Page left `    - c` — four leading spaces,
@@ -1977,8 +2043,29 @@ function calloutSource(raw: string): boolean {
   const { content } = splitBlockSource(raw);
   const firstLine = content.split(/\r\n|\n|\r/, 1)[0];
   const payload = firstLine.replace(/^ {0,3}>[ \t]?/, "");
-  return /^\[![A-Za-z][A-Za-z0-9_-]*\][+-]?(?:[ \t]+.*)?$/.test(payload);
+  return CALLOUT_HEADER_SOURCE_TEST.test(payload);
 }
+
+/**
+ * One emoji "icon" — a single pictograph, its own variation selector or skin-tone modifier, a
+ * ZWJ-joined sequence, or a two-letter flag — matched as a unit so a callout's custom icon can be
+ * told apart from the plain-text title that follows it. Regional-indicator flags and Extended
+ * Pictographic base characters are two different Unicode categories, which is why both are named
+ * rather than one pattern covering both.
+ */
+export const CALLOUT_ICON_SOURCE =
+  "(?:\\p{Regional_Indicator}\\p{Regional_Indicator}|\\p{Extended_Pictographic}(?:\\uFE0F|\\p{Emoji_Modifier}|\\u200D\\p{Extended_Pictographic})*)";
+
+/** The same icon pattern, anchored to the start of a string, for `parseCalloutSource` to extract. */
+export const CALLOUT_ICON_PATTERN = new RegExp(`^${CALLOUT_ICON_SOURCE}`, "u");
+
+// `[!TYPE]`, an optional fold marker, an optional icon, then optional whitespace and a title.
+// Kept as one compiled pattern rather than three separate `.test()` calls so classification here and
+// extraction in `parseCalloutSource` can never disagree about where the icon is allowed to sit.
+const CALLOUT_HEADER_SOURCE_TEST = new RegExp(
+  `^\\[![A-Za-z][A-Za-z0-9_-]*\\][+-]?${CALLOUT_ICON_SOURCE}?(?:[ \\t]+.*)?$`,
+  "u"
+);
 
 function blockMathSource(raw: string): boolean {
   const { content } = splitBlockSource(raw);

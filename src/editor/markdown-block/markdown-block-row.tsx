@@ -7,6 +7,7 @@ import {
   Lightbulb,
   Link as LinkIcon,
   Loader2,
+  Maximize2,
   MessageSquareWarning,
   OctagonAlert,
   TriangleAlert,
@@ -35,8 +36,10 @@ import {
 import { Marked } from "marked";
 
 import {
+  CALLOUT_ICON_SOURCE,
   MarkdownBlockDocument,
   type MarkdownBlockView,
+  type MarkdownContainerTurnIntoKind,
   type MarkdownSettableBlockKind,
 } from "@/editor/markdown-block/markdown-block-document";
 import {
@@ -97,7 +100,11 @@ import {
   searchMarkdownSlashCommands,
   type MarkdownSlashCommandId,
 } from "@/editor/markdown-block/slash-commands";
-import { resolveKnowledgeWikiPage, type KnowledgeSourceCatalog } from "@/lib/knowledge-index";
+import {
+  resolveKnowledgeWikiPage,
+  type KnowledgePage,
+  type KnowledgeSourceCatalog,
+} from "@/lib/knowledge-index";
 import {
   PageCollectionPreview,
   type PageCollectionPreviewContext,
@@ -222,6 +229,8 @@ interface MarkdownBlockRowProps {
     kind: MarkdownSettableBlockKind,
     level?: 1 | 2 | 3 | 4 | 5 | 6
   ) => void;
+  /** Turn into Toggle, Callout or Code — the three targets `onSetKind` cannot express. */
+  onTurnIntoContainer: (blockId: string, kind: MarkdownContainerTurnIntoKind) => void;
   onUndo: () => void;
   onRedo: () => void;
   onDragStart: (blockId: string, event: DragEvent<HTMLButtonElement>) => void;
@@ -235,6 +244,16 @@ interface MarkdownBlockRowProps {
     commandId: MarkdownSlashCommandId,
     run: MarkdownSlashRun
   ) => void;
+  onInsertWikiLink?: (blockId: string, run: MarkdownWikiLinkRun, pageTitle: string) => void;
+  /**
+   * Candidates for the `[[` autocomplete popover.
+   *
+   * Deliberately not `wikiEmbedContext.index.pages` — that catalog only builds once the Page
+   * already has an `![[Embed]]` on it, so a Page without one could type `[[` and never see a
+   * candidate. This is the same always-available file-store list `onOpenWikiLink` resolves
+   * against, so the popover works everywhere a wiki link would.
+   */
+  wikiLinkPages?: readonly KnowledgePage[];
 }
 
 export interface MarkdownWikiEmbedContext {
@@ -383,6 +402,7 @@ function MarkdownBlockRowView({
   onIndent,
   onNavigate,
   onSetKind,
+  onTurnIntoContainer,
   onUndo,
   onRedo,
   onDragStart,
@@ -392,12 +412,15 @@ function MarkdownBlockRowView({
   collectionContext,
   imageContext,
   onRunSlashCommand,
+  onInsertWikiLink,
+  wikiLinkPages,
   listOrdinal,
 }: MarkdownBlockRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editorId = `native-block-editor-${block.id}`;
   const slashListboxId = `${editorId}-slash`;
+  const wikiLinkListboxId = `${editorId}-wiki-link`;
   const descriptionId = NATIVE_BLOCK_SHORTCUTS_ID;
   const rawSource = editableMarkdownBlockSource(block.raw);
   const editingProjection = useMemo(() => createBlockEditingProjection(block), [block]);
@@ -418,6 +441,10 @@ function MarkdownBlockRowView({
   const [dismissedSlashStart, setDismissedSlashStart] = useState<number | null>(null);
   const [slashPosition, setSlashPosition] = useState<SlashMenuPosition | null>(null);
   const slashListRef = useRef<HTMLDivElement>(null);
+  const [wikiLinkIndex, setWikiLinkIndex] = useState(0);
+  const [dismissedWikiLinkStart, setDismissedWikiLinkStart] = useState<number | null>(null);
+  const [wikiLinkPosition, setWikiLinkPosition] = useState<SlashMenuPosition | null>(null);
+  const wikiLinkListRef = useRef<HTMLDivElement>(null);
   const [linkEditor, setLinkEditor] = useState<{
     from: number;
     to: number;
@@ -491,6 +518,27 @@ function MarkdownBlockRowView({
   );
   // Stays open with zero matches so Enter cannot silently split the Block behind an open menu.
   const slashMenuOpen = slashStart !== null && dismissedSlashStart !== slashStart;
+  // `[[` opens a page search the same way Notion's own does. `wikiLinkPages` is the same
+  // always-available file-store list `onOpenWikiLink` resolves against — unlike the transclusion
+  // catalog, it needs no workspace scan and is not gated on the Page already having an embed.
+  const wikiPages = wikiLinkPages ?? null;
+  const wikiLinkRun =
+    active && block.editable && !sourceOnly && onInsertWikiLink && wikiPages
+      ? wikiLinkRunAt(
+          liveSource,
+          composingValue === null
+            ? (caretOffset ?? editorSelectionRef.current.head)
+            : liveSource.length
+        )
+      : null;
+  const wikiLinkQuery = wikiLinkRun?.query ?? null;
+  const wikiLinkStart = wikiLinkRun?.start ?? null;
+  const matchedWikiPages = useMemo(
+    () =>
+      wikiLinkQuery === null || !wikiPages ? [] : searchKnowledgePages(wikiPages, wikiLinkQuery),
+    [wikiPages, wikiLinkQuery]
+  );
+  const wikiLinkMenuOpen = wikiLinkStart !== null && dismissedWikiLinkStart !== wikiLinkStart;
   const activeListItem = listItemPreview(rawSource, block.kind, listOrdinal);
   // Parsed once per render and addressed by row and column, never held as state: a cell's offsets
   // shift as soon as an earlier cell grows by a character.
@@ -698,6 +746,41 @@ function MarkdownBlockRowView({
       ?.scrollIntoView({ block: "nearest" });
   }, [slashIndex, slashMenuOpen]);
 
+  useEffect(() => {
+    setWikiLinkIndex(0);
+  }, [wikiLinkQuery]);
+
+  useEffect(() => {
+    if (dismissedWikiLinkStart !== null && wikiLinkStart !== dismissedWikiLinkStart) {
+      setDismissedWikiLinkStart(null);
+    }
+  }, [dismissedWikiLinkStart, wikiLinkStart]);
+
+  useEffect(() => {
+    if (!wikiLinkMenuOpen) {
+      setWikiLinkPosition(null);
+      return;
+    }
+    const surface = rowRef.current?.querySelector<HTMLElement>("[data-native-block-editor]");
+    if (!surface || wikiLinkStart === null) return;
+    const measure = () => setWikiLinkPosition(slashMenuPosition(surface, wikiLinkStart));
+    measure();
+    const scroller = surface.closest("[data-native-markdown-scroll]");
+    scroller?.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    return () => {
+      scroller?.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+    };
+  }, [wikiLinkMenuOpen, wikiLinkStart, matchedWikiPages.length]);
+
+  useEffect(() => {
+    if (!wikiLinkMenuOpen) return;
+    wikiLinkListRef.current
+      ?.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest" });
+  }, [wikiLinkIndex, wikiLinkMenuOpen]);
+
   // Which surface rendered last. Typing `**bold**` flips the Block from the raw textarea to the
   // semantic surface (and undo flips it back). React unmounts one and mounts the other, so unless
   // the caret is carried across explicitly it lands at offset 0 and the next keystroke goes to the
@@ -901,6 +984,29 @@ function MarkdownBlockRowView({
         event.preventDefault();
         // Leaves the literal `/` the user typed in place — dismissing is never an edit.
         setDismissedSlashStart(slashRun?.start ?? null);
+        return;
+      }
+    }
+    if (wikiLinkMenuOpen) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        if (matchedWikiPages.length === 0) return;
+        const direction = event.key === "ArrowDown" ? 1 : -1;
+        setWikiLinkIndex(
+          (current) => (current + direction + matchedWikiPages.length) % matchedWikiPages.length
+        );
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        const page = matchedWikiPages[wikiLinkIndex] ?? matchedWikiPages[0];
+        if (page && wikiLinkRun) onInsertWikiLink?.(block.id, wikiLinkRun, page.title);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        // Leaves the literal `[[` the user typed in place — dismissing is never an edit.
+        setDismissedWikiLinkStart(wikiLinkRun?.start ?? null);
         return;
       }
     }
@@ -1452,7 +1558,11 @@ function MarkdownBlockRowView({
             describedBy={descriptionId}
             onMenuOpenChange={setControlsMenuOpen}
             onAdd={(placement) => onInsertAfter(block.id, placement)}
-            onTurnInto={(kind, level) => onSetKind(block.id, kind, level)}
+            onTurnInto={(kind, level) =>
+              kind === "toggle" || kind === "callout" || kind === "fenced_code"
+                ? onTurnIntoContainer(block.id, kind)
+                : onSetKind(block.id, kind, level)
+            }
             onCopyMarkdown={() =>
               onCopyMarkdown ? onCopyMarkdown(block.id) : navigator.clipboard?.writeText(block.raw)
             }
@@ -1768,7 +1878,15 @@ function MarkdownBlockRowView({
               }
               onTurnInto={(option) => {
                 setInlineSelection(null);
-                onSetKind(block.id, option.kind, option.level);
+                if (
+                  option.kind === "toggle" ||
+                  option.kind === "callout" ||
+                  option.kind === "fenced_code"
+                ) {
+                  onTurnIntoContainer(block.id, option.kind);
+                } else {
+                  onSetKind(block.id, option.kind, option.level);
+                }
               }}
               onBold={() => {
                 if (inlineSelection) {
@@ -1870,6 +1988,63 @@ function MarkdownBlockRowView({
                               {command.shortcut}
                             </span>
                           ) : null}
+                        </button>
+                      ))
+                    )}
+                  </div>,
+                  document.body
+                )
+              : null}
+            {wikiLinkMenuOpen && wikiLinkPosition
+              ? createPortal(
+                  <div
+                    ref={wikiLinkListRef}
+                    id={wikiLinkListboxId}
+                    role="listbox"
+                    aria-label="Link to page"
+                    data-native-editor-overlay
+                    style={{
+                      position: "fixed",
+                      top: wikiLinkPosition.top,
+                      left: wikiLinkPosition.left,
+                      maxHeight: wikiLinkPosition.maxHeight,
+                      transform: wikiLinkPosition.flipped ? "translateY(-100%)" : undefined,
+                    }}
+                    className={`z-50 w-[min(314px,calc(100vw-2rem))] overflow-y-auto overscroll-contain ${MENU_PANEL_CLASS}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                  >
+                    {matchedWikiPages.length === 0 ? (
+                      <p
+                        role="option"
+                        aria-selected={false}
+                        aria-disabled="true"
+                        className="px-3 py-5 text-center text-xs text-muted-foreground"
+                      >
+                        No matching Pages
+                      </p>
+                    ) : (
+                      matchedWikiPages.map((page, pageIndex) => (
+                        <button
+                          key={page.id}
+                          id={`${wikiLinkListboxId}-${page.id}`}
+                          type="button"
+                          role="option"
+                          tabIndex={-1}
+                          aria-selected={pageIndex === wikiLinkIndex}
+                          className={`flex h-[31px] w-full items-center gap-2.5 rounded-md px-2 text-left transition-colors duration-[20ms] ease-in ${
+                            pageIndex === wikiLinkIndex ? "bg-accent text-accent-foreground" : ""
+                          }`}
+                          onMouseMove={() => setWikiLinkIndex(pageIndex)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (wikiLinkRun) onInsertWikiLink?.(block.id, wikiLinkRun, page.title);
+                          }}
+                        >
+                          <FileText
+                            className="h-4 w-4 shrink-0 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                          <span className="min-w-0 flex-1 truncate text-sm">{page.title}</span>
                         </button>
                       ))
                     )}
@@ -2010,6 +2185,61 @@ function slashRunAt(source: string, caret: number): MarkdownSlashRun | null {
     return { start: index, end, query: source.slice(index + 1, end) };
   }
   return null;
+}
+
+export interface MarkdownWikiLinkRun {
+  /** Offset just past the `[[` that opened this run — where the page name starts. */
+  readonly start: number;
+  /** Offset just past the caret — the end of the text the picked Page's title will replace. */
+  readonly end: number;
+  readonly query: string;
+}
+
+/**
+ * The `[[query` run the caret currently sits in, or null.
+ *
+ * A page title can hold spaces and punctuation a slash query cannot, so this does not stop at
+ * whitespace the way `slashRunAt` does — only at whatever would mean the run is not "still being
+ * typed": a line break, a closing `]]` already written, or a fresher `[[` between the outer one and
+ * the caret.
+ */
+function wikiLinkRunAt(source: string, caret: number): MarkdownWikiLinkRun | null {
+  const end = Math.min(Math.max(caret, 0), source.length);
+  const open = source.slice(0, end).lastIndexOf("[[");
+  if (open < 0) return null;
+  const query = source.slice(open + 2, end);
+  if (/[\n\r]/.test(query) || query.includes("]]") || query.includes("[[")) return null;
+  return { start: open + 2, end, query };
+}
+
+/**
+ * Pages ranked by how well they match a `[[` query — title prefix first, then a title that
+ * contains it, then an alias either way. Capped, the way the slash menu never was: a workspace of a
+ * few thousand Pages otherwise renders a few thousand rows into a 434px scroller for nothing an
+ * open text field couldn't already narrow.
+ */
+function searchKnowledgePages(
+  pages: readonly KnowledgePage[],
+  query: string
+): readonly KnowledgePage[] {
+  const normalized = query.trim().toLocaleLowerCase();
+  if (!normalized) return pages.slice(0, 20);
+  const scored = pages
+    .map((page) => {
+      const title = page.title.toLocaleLowerCase();
+      const aliasHit = page.aliases.some((alias) => alias.toLocaleLowerCase().includes(normalized));
+      const score = title.startsWith(normalized)
+        ? 3
+        : title.includes(normalized)
+          ? 2
+          : aliasHit
+            ? 1
+            : 0;
+      return { page, score };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.page.title.localeCompare(b.page.title));
+  return scored.slice(0, 20).map((entry) => entry.page);
 }
 
 interface SlashMenuPosition {
@@ -2876,7 +3106,15 @@ function BlockPreview({
           aria-label={`${callout.type} callout`}
           className={`flex min-h-9 gap-2.5 rounded-md border px-3 py-2 ${style.container}`}
         >
-          <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${style.accent}`} aria-hidden="true" />
+          {/* A custom icon, same as the editing surface: it draws over the type's fixed glyph
+              rather than replacing the accent the border and background still carry. */}
+          {callout.icon ? (
+            <span className="mt-0.5 text-sm leading-none" aria-hidden="true">
+              {callout.icon}
+            </span>
+          ) : (
+            <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${style.accent}`} aria-hidden="true" />
+          )}
           <div className="min-w-0 flex-1">
             {callout.title ? (
               <div className="font-semibold" data-source-offset={callout.titleFrom}>
@@ -3084,6 +3322,7 @@ function LocalImagePreview({
     url: string | null;
     error: string | null;
   }>({ status: "loading", url: null, error: null });
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -3152,7 +3391,7 @@ function LocalImagePreview({
     <figure
       data-testid="local-image-block"
       data-native-print-ready={state.status === "ready" ? "true" : "false"}
-      className="my-1 overflow-hidden rounded-lg border border-border bg-muted/10 p-2"
+      className="relative my-1 overflow-hidden rounded-lg border border-border bg-muted/10 p-2"
     >
       {/* Workspace bytes are exposed only through a revocable session Blob URL. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -3171,7 +3410,65 @@ function LocalImagePreview({
           {parsed.image.title}
         </figcaption>
       ) : null}
+      {state.status === "ready" ? (
+        <button
+          type="button"
+          aria-label="Expand image"
+          title="Expand image"
+          className="absolute left-2 top-2 z-20 flex items-center rounded-md bg-background/90 p-1 text-muted-foreground shadow-sm ring-1 ring-border backdrop-blur transition-colors duration-[20ms] ease-in hover:text-foreground"
+          // A view action, not an edit one — kept off the Block-activation path the same way the
+          // "Edit" button is, so pressing it never fights the shell for the caret.
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() => setLightboxOpen(true)}
+        >
+          <Maximize2 aria-hidden="true" className="h-3 w-3" />
+        </button>
+      ) : null}
+      {lightboxOpen ? (
+        <ImageLightbox
+          src={state.url}
+          alt={parsed.image.alt}
+          onClose={() => setLightboxOpen(false)}
+        />
+      ) : null}
     </figure>
+  );
+}
+
+/**
+ * The image at its own size, over the Page — Notion's and Feishu's shared "click to zoom".
+ *
+ * A plain overlay rather than `<dialog>`: `showModal` is what a `<dialog>` needs to become visible
+ * and to Chromium's own light-dismiss, and it is unimplemented in the jsdom this Block is tested
+ * under, so a real one would throw the moment this mounted in a test. Escape and a press on the
+ * backdrop are wired up by hand instead, the same way `EmojiPicker` already does both.
+ */
+function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  useEffect(() => {
+    const handleEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-label={alt || "Image preview"}
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-8"
+      onClick={onClose}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        className="max-h-full max-w-full rounded object-contain shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      />
+    </div>,
+    document.body
   );
 }
 
@@ -3676,9 +3973,22 @@ interface CalloutPreviewLine {
  * short by everything the preview added and by every prefix it removed, which is why pressing a
  * word in a callout used to put the caret several characters before it.
  */
-function calloutPreview(
-  source: string
-): { type: string; title: string; titleFrom: number; body: CalloutPreviewLine[] } | null {
+// Mirrors `CALLOUT_HEADER` in `markdown-container-block.tsx`: `[!TYPE]`, an optional fold marker,
+// an optional custom icon, then optional whitespace and a title. One shared icon pattern
+// (`CALLOUT_ICON_SOURCE`) so this preview and the editing surface can never disagree about where
+// the icon sits.
+const CALLOUT_PREVIEW_HEADER = new RegExp(
+  `^\\[!([A-Za-z][A-Za-z0-9_-]*)\\][+-]?(${CALLOUT_ICON_SOURCE})?(?:[ \\t]+(.*))?$`,
+  "u"
+);
+
+function calloutPreview(source: string): {
+  type: string;
+  icon: string | null;
+  title: string;
+  titleFrom: number;
+  body: CalloutPreviewLine[];
+} | null {
   const lines: CalloutPreviewLine[] = [];
   let offset = 0;
   for (const raw of source.split(/\r\n|\n|\r/)) {
@@ -3688,11 +3998,12 @@ function calloutPreview(
     // rather than assuming `\n` and drifting by one character per line in a CRLF file.
     offset += raw.length + (source.startsWith("\r\n", offset + raw.length) ? 2 : 1);
   }
-  const header = lines[0]?.text.match(/^\[!([A-Za-z][A-Za-z0-9_-]*)\][+-]?(?:[ \t]+(.*))?$/);
+  const header = lines[0]?.text.match(CALLOUT_PREVIEW_HEADER);
   if (!header) return null;
-  const title = header[2] ?? "";
+  const title = header[3] ?? "";
   return {
     type: header[1].toUpperCase(),
+    icon: header[2] ?? null,
     title,
     titleFrom: lines[0].from + (title ? lines[0].text.length - title.length : 0),
     body: lines.slice(1),
@@ -3717,7 +4028,8 @@ function InlineMarkdownPreview({
   let tokens: InlinePreviewToken[] = [];
   try {
     const block = inlinePreviewLexer.lexer(source)[0] as
-      (InlinePreviewToken & { tokens?: InlinePreviewToken[] }) | undefined;
+      | (InlinePreviewToken & { tokens?: InlinePreviewToken[] })
+      | undefined;
     tokens = block?.tokens ?? [{ type: "text", raw: source, text: source }];
   } catch {
     tokens = [{ type: "text", raw: source, text: source }];

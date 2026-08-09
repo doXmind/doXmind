@@ -577,7 +577,7 @@ describe("MarkdownContainerBlock — leaving and collapsing a container", () => 
     // answer it must not give.
     renderContainer("callout", "> [!NOTE] Title\n> Body", { editable: false });
 
-    expect(screen.getByRole("button", { name: "Note callout, change type" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Note callout, change type or icon" })).toBeEnabled();
   });
 
   /**
@@ -590,7 +590,7 @@ describe("MarkdownContainerBlock — leaving and collapsing a container", () => 
    */
   it("centres a callout's icon and a toggle's chevron on their own first line", () => {
     renderContainer("callout", "> [!NOTE] Title\n> Body", { editable: false });
-    const icon = screen.getByRole("button", { name: "Note callout, change type" });
+    const icon = screen.getByRole("button", { name: "Note callout, change type or icon" });
     // Half the leading the text actually has, not a fixed nudge, so it holds at any line-height.
     expect(icon.style.marginTop).toMatch(/1lh/);
     expect(icon.style.marginTop).toMatch(/1rem/);
@@ -731,6 +731,76 @@ describe("parseMarkdownContainer round trips", () => {
 
     const bare = parseMarkdownContainer("callout", "> [!NOTE]\n> body");
     expect(bare?.withType?.("tip")).toBe("> [!TIP]\n> body");
+  });
+
+  it("reads a callout's custom icon, sitting between the marker and the title with no space", () => {
+    const withIcon = parseMarkdownContainer("callout", "> [!NOTE]🎉 Party time\n> body");
+    expect(withIcon?.icon).toBe("🎉");
+    expect(withIcon?.heading).toBe("Party time");
+
+    const withoutIcon = parseMarkdownContainer("callout", "> [!NOTE] Plain title\n> body");
+    expect(withoutIcon?.icon).toBeNull();
+
+    // Absent on a toggle: the disclosure triangle is not a per-Block choice the way a callout's
+    // icon is.
+    const toggle = parseMarkdownContainer(
+      "toggle",
+      "<details>\n<summary>S</summary>\n\nBody\n\n</details>"
+    );
+    expect(toggle?.icon).toBeNull();
+    expect(toggle?.withIcon).toBeUndefined();
+  });
+
+  it("sets a callout's icon independently of its title and type", () => {
+    const plain = parseMarkdownContainer("callout", "> [!NOTE] Title\n> body");
+    expect(plain?.withIcon?.("🎉")).toBe("> [!NOTE]🎉 Title\n> body");
+
+    // No title yet: the icon lands right after the marker, with none of the gap a title would need.
+    const untitled = parseMarkdownContainer("callout", "> [!NOTE]\n> body");
+    expect(untitled?.withIcon?.("🎉")).toBe("> [!NOTE]🎉\n> body");
+
+    // `null` removes it outright rather than writing an empty placeholder.
+    const withIcon = parseMarkdownContainer("callout", "> [!NOTE]🎉 Title\n> body");
+    expect(withIcon?.withIcon?.(null)).toBe("> [!NOTE] Title\n> body");
+  });
+
+  it("keeps a callout's icon when its type or its title changes", () => {
+    const container = parseMarkdownContainer("callout", "> [!NOTE]🎉 Title\n> body");
+    expect(container?.withType?.("warning")).toBe("> [!WARNING]🎉 Title\n> body");
+    expect(container?.withHeading("New title")).toBe("> [!NOTE]🎉 New title\n> body");
+  });
+
+  it("draws a custom icon as the emoji itself, not the type's fixed glyph", () => {
+    renderContainer("callout", "> [!NOTE]🎉 Title\n> Body", { editable: false });
+
+    const icon = screen.getByRole("button", { name: "🎉 callout icon, change type or icon" });
+    expect(icon).toHaveTextContent("🎉");
+  });
+
+  it("opens an emoji picker from the icon menu and writes the picked icon into the header", async () => {
+    const { onChange } = renderContainer("callout", "> [!NOTE] Title\n> Body");
+
+    fireEvent.click(screen.getByRole("button", { name: "Note callout, change type or icon" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Custom icon/ }));
+    const emoji = (await screen.findAllByRole("button")).find(
+      (button) => button.textContent === "💡"
+    );
+    expect(emoji).toBeDefined();
+    fireEvent.click(emoji!);
+
+    expect(onChange).toHaveBeenCalledWith("block-1", "> [!NOTE]💡 Title\n> Body");
+  });
+
+  it("offers Remove custom icon only once a callout actually has one", async () => {
+    renderContainer("callout", "> [!NOTE] Title\n> Body");
+    fireEvent.click(screen.getByRole("button", { name: "Note callout, change type or icon" }));
+    expect(screen.queryByRole("menuitem", { name: "Remove custom icon" })).not.toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    const { onChange } = renderContainer("callout", "> [!NOTE]🎉 Title\n> Body");
+    fireEvent.click(screen.getByRole("button", { name: "🎉 callout icon, change type or icon" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Remove custom icon" }));
+    expect(onChange).toHaveBeenCalledWith("block-1", "> [!NOTE] Title\n> Body");
   });
 
   it("refuses a source that is not a container, so the caller can keep its fallback", () => {

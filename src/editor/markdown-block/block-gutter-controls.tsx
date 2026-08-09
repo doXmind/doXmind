@@ -4,7 +4,9 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
+  ChevronRight,
   ClipboardCopy,
+  Code,
   Copy,
   GripVertical,
   Heading1,
@@ -13,6 +15,7 @@ import {
   Heading4,
   Heading5,
   Heading6,
+  Info,
   List,
   ListChecks,
   ListOrdered,
@@ -41,6 +44,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type {
   MarkdownBlockKind,
+  MarkdownContainerTurnIntoKind,
   MarkdownSettableBlockKind,
 } from "@/editor/markdown-block/markdown-block-document";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -50,11 +54,15 @@ type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface TurnIntoOption {
   label: string;
-  kind: MarkdownSettableBlockKind;
+  kind: MarkdownSettableBlockKind | MarkdownContainerTurnIntoKind;
   level?: HeadingLevel;
   keywords: string;
 }
 
+// Notion's own Turn Into list, measured live: …Bulleted list, Numbered list, To-do list, Toggle
+// list, Code, Quote, Callout… — Toggle and Code sit between To-do and Quote, Callout after it.
+// Table and Divider are in Notion's slash menu but not reachable from Turn Into, so neither is
+// added here despite both existing as Block kinds.
 export const TURN_INTO_OPTIONS: readonly TurnIntoOption[] = [
   { label: "Text", kind: "paragraph", keywords: "paragraph plain" },
   { label: "Heading 1", kind: "heading", level: 1, keywords: "h1 title" },
@@ -66,7 +74,10 @@ export const TURN_INTO_OPTIONS: readonly TurnIntoOption[] = [
   { label: "Bulleted list", kind: "bullet_list_item", keywords: "unordered bullet" },
   { label: "Numbered list", kind: "ordered_list_item", keywords: "ordered number" },
   { label: "To-do", kind: "task_list_item", keywords: "todo task checkbox" },
+  { label: "Toggle", kind: "toggle", keywords: "details collapse expand" },
+  { label: "Code", kind: "fenced_code", keywords: "fence code block" },
   { label: "Quote", kind: "blockquote", keywords: "blockquote citation" },
+  { label: "Callout", kind: "callout", keywords: "note callout" },
 ];
 
 const HEADING_ICONS: Record<HeadingLevel, LucideIcon> = {
@@ -96,7 +107,13 @@ export function BlockTypeOptionIcon({
             ? ListChecks
             : option.kind === "blockquote"
               ? TextQuote
-              : Pilcrow;
+              : option.kind === "toggle"
+                ? ChevronRight
+                : option.kind === "fenced_code"
+                  ? Code
+                  : option.kind === "callout"
+                    ? Info
+                    : Pilcrow;
   return <Icon className={className} aria-hidden="true" />;
 }
 
@@ -114,7 +131,10 @@ export interface BlockGutterControlsProps {
   onMenuOpenChange?: (open: boolean) => void;
   /** `above` when the user Option/Alt-clicked, matching Notion's "⌥-click to add above". */
   onAdd: (placement: "below" | "above") => void;
-  onTurnInto: (kind: MarkdownSettableBlockKind, level?: HeadingLevel) => void;
+  onTurnInto: (
+    kind: MarkdownSettableBlockKind | MarkdownContainerTurnIntoKind,
+    level?: HeadingLevel
+  ) => void;
   onCopyMarkdown: () => void | Promise<void>;
   onDuplicate: () => void;
   onMoveUp: () => void;

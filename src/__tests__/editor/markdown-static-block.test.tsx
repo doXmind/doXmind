@@ -38,7 +38,9 @@ function renderImage(
 }
 
 async function openImageEditor() {
-  await userEvent.click(screen.getByRole("button", { name: "Edit image alt text and path" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Edit image alt text, path and caption" })
+  );
 }
 
 describe("MarkdownStaticBlock", () => {
@@ -148,7 +150,9 @@ describe("MarkdownStaticBlock", () => {
   it("exposes no editing control on a Block that is not editable", () => {
     renderImage("![Alt](assets/diagram.png)", { editable: false });
 
-    expect(screen.queryByRole("button", { name: "Edit image alt text and path" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Edit image alt text, path and caption" })
+    ).toBeNull();
     expect(screen.getByRole("group", { name: "Image: Alt" })).not.toHaveAttribute(
       "data-native-block-editor"
     );
@@ -177,6 +181,52 @@ describe("MarkdownStaticBlock", () => {
     await user.type(pathField, "assets/new.jpg{Enter}");
 
     expect(onChange).toHaveBeenCalledWith("block-1", '![Alt](assets/new.jpg "Figure 1")');
+  });
+
+  it("writes a new caption as a quoted CommonMark title", async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderImage("![Alt](assets/diagram.png)");
+
+    await openImageEditor();
+    const captionField = screen.getByRole("textbox", { name: /caption/i });
+    await user.type(captionField, "Figure 1{Enter}");
+
+    expect(onChange).toHaveBeenCalledWith("block-1", '![Alt](assets/diagram.png "Figure 1")');
+  });
+
+  it("shows an existing title as the caption field's starting value", async () => {
+    renderImage('![Alt](assets/diagram.png "Figure 1")');
+
+    await openImageEditor();
+    expect(screen.getByRole("textbox", { name: /caption/i })).toHaveValue("Figure 1");
+  });
+
+  it("clears a caption back to a bare image rather than an empty-quoted title", async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderImage('![Alt](assets/diagram.png "Figure 1")');
+
+    await openImageEditor();
+    const captionField = screen.getByRole("textbox", { name: /caption/i });
+    await user.clear(captionField);
+    await user.keyboard("{Enter}");
+
+    expect(onChange).toHaveBeenCalledWith("block-1", "![Alt](assets/diagram.png)");
+  });
+
+  it("escapes a quote typed into the caption so the title stays one CommonMark string", async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderImage("![Alt](assets/diagram.png)");
+
+    await openImageEditor();
+    const captionField = screen.getByRole("textbox", { name: /caption/i });
+    await user.click(captionField);
+    await user.paste('Figure "one"');
+    await user.keyboard("{Enter}");
+
+    expect(onChange).toHaveBeenCalledWith(
+      "block-1",
+      '![Alt](assets/diagram.png "Figure \\"one\\"")'
+    );
   });
 
   it("angle-brackets a path that contains a space rather than writing a broken image", async () => {
