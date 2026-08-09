@@ -256,12 +256,19 @@ function destinationRunLength(body: string): number {
 export function buildImageBlockSource(
   parts: ImageSourceParts,
   alt: string,
-  destination: string
+  destination: string,
+  title: string
 ): string | null {
   const target = destination.trim();
   const flattenedAlt = flattenImageAlt(alt);
   const destinationRaw =
     target === parts.destination ? parts.destinationRaw : escapeImageDestination(target);
+  // CommonMark's title is the figure caption: rendered below the image (`<figcaption>` in
+  // `BlockPreview`), read from no state but the file. An empty field means no title at all rather
+  // than an empty-string one, since `"" !== null` on the way back out and every commit would be
+  // "rejected" by the round-trip check below without ever having changed anything.
+  const wantTitle = flattenImageAlt(title).trim() || null;
+  const titleRaw = wantTitle === parts.title ? parts.titleRaw : buildImageTitleRaw(wantTitle);
   // Written plainly first and escaped only if that failed, because most alt text needs no escaping
   // at all and a file full of `Q3 \(final\)` is worse to read than the one the user typed. The
   // fallback is what lets an asterisk or a backtick be typed into alt text: written plainly those
@@ -272,17 +279,29 @@ export function buildImageBlockSource(
       ? [parts.altRaw]
       : [escapeImageAlt(flattenedAlt), escapeImageAltFully(flattenedAlt)];
   for (const altRaw of altCandidates) {
-    const next = `${parts.prefix}![${altRaw}](${destinationRaw}${parts.titleRaw})${parts.suffix}`;
+    const next = `${parts.prefix}![${altRaw}](${destinationRaw}${titleRaw})${parts.suffix}`;
     const parsed = parseMarkdownImageBlock(next);
     if (!parsed.ok) continue;
     // A parsed alt is single-line by construction, so the flattened value is what an untouched alt
     // decodes to as well and the same comparison covers both branches.
     if (parsed.image.alt !== flattenedAlt) continue;
     if (parsed.image.destination !== target) continue;
-    if (parsed.image.title !== parts.title) continue;
+    if (parsed.image.title !== wantTitle) continue;
     return next;
   }
   return null;
+}
+
+/** The padding-and-title run for a changed title: nothing at all, or a space then a quoted title. */
+function buildImageTitleRaw(title: string | null): string {
+  if (title === null) return "";
+  return ` "${escapeImageTitle(title)}"`;
+}
+
+function escapeImageTitle(title: string): string {
+  // The backslash and the delimiting quote are the two characters that would end the title early
+  // or invent a literal backslash the file never had.
+  return title.replace(/[\\"]/g, "\\$&");
 }
 
 function flattenImageAlt(alt: string): string {
@@ -329,7 +348,9 @@ function ImageSourceControls({
   /** Called after the panel closes, so the shell can take the focus the panel is giving up. */
   onDismissed: () => void;
 }) {
-  const [draft, setDraft] = useState<{ alt: string; destination: string } | null>(null);
+  const [draft, setDraft] = useState<{ alt: string; destination: string; title: string } | null>(
+    null
+  );
   const [rejected, setRejected] = useState(false);
   const altRef = useRef<HTMLInputElement>(null);
   // Whether the panel has already given up its draft. State cannot answer this in time: closing
@@ -355,7 +376,7 @@ function ImageSourceControls({
 
   const commit = () => {
     if (!draft || closingRef.current) return;
-    const next = buildImageBlockSource(image, draft.alt, draft.destination);
+    const next = buildImageBlockSource(image, draft.alt, draft.destination, draft.title);
     if (next === null) {
       // Kept open with the draft intact. Closing here would throw away what the user typed and
       // leave the old path in the file with no sign that anything was rejected.
@@ -370,7 +391,7 @@ function ImageSourceControls({
     return (
       <button
         type="button"
-        aria-label="Edit image alt text and path"
+        aria-label="Edit image alt text, path and caption"
         title="Edit image"
         className="absolute z-20 flex items-center gap-1 rounded-md bg-background/90 px-2 py-1 text-xs text-muted-foreground shadow-sm ring-1 ring-border backdrop-blur transition-colors duration-[20ms] ease-in hover:text-foreground"
         // Inline rather than utility classes, because the button has to sit inside the image's own
@@ -384,7 +405,7 @@ function ImageSourceControls({
         onPointerDown={(event) => event.stopPropagation()}
         onClick={() => {
           closingRef.current = false;
-          setDraft({ alt: image.alt, destination: image.destination });
+          setDraft({ alt: image.alt, destination: image.destination, title: image.title ?? "" });
         }}
       >
         <Pencil aria-hidden="true" className="h-3 w-3" />
@@ -442,6 +463,19 @@ function ImageSourceControls({
           onChange={(event) => {
             setRejected(false);
             setDraft({ ...draft, destination: event.target.value });
+          }}
+        />
+      </label>
+      <label className="block text-[11px] font-medium text-muted-foreground">
+        Caption
+        <input
+          value={draft.title}
+          spellCheck={false}
+          placeholder="Shown below the image"
+          className="mt-1 h-7 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
+          onChange={(event) => {
+            setRejected(false);
+            setDraft({ ...draft, title: event.target.value });
           }}
         />
       </label>

@@ -212,7 +212,7 @@ describe("BlockGutterControls", () => {
     expect(screen.getByRole("menuitem", { name: "Text" })).toHaveFocus();
 
     fireEvent.keyDown(document, { key: "End" });
-    expect(screen.getByRole("menuitem", { name: "Quote" })).toHaveFocus();
+    expect(screen.getByRole("menuitem", { name: "Callout" })).toHaveFocus();
 
     fireEvent.keyDown(document, { key: "Home" });
     expect(screen.getByRole("menuitem", { name: "Text" })).toHaveFocus();

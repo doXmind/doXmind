@@ -6,6 +6,7 @@ import {
   Lightbulb,
   MessageSquareWarning,
   OctagonAlert,
+  Smile,
   TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
@@ -23,11 +24,14 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { InPlaceBlockProps } from "@/editor/markdown-block/in-place-block";
+import { CALLOUT_ICON_SOURCE } from "@/editor/markdown-block/markdown-block-document";
 import { projectMarkdownInline } from "@/editor/markdown-block/markdown-inline-projection";
 import { SemanticInlineEditor } from "@/editor/markdown-block/semantic-inline-editor";
+import { EmojiPicker } from "@/components/ui/emoji-picker";
 
 export type MarkdownContainerKind = "callout" | "toggle";
 
@@ -52,6 +56,11 @@ export interface MarkdownContainer {
   readonly kind: MarkdownContainerKind;
   /** `NOTE`, `TIP`, … for a callout. Empty for a toggle, which has no type. */
   readonly type: string;
+  /**
+   * A callout's own emoji, independent of its type. `null` for a toggle, which has no icon of its
+   * own, and `null` for a callout that has never had one set — those draw `type`'s fixed glyph.
+   */
+  readonly icon: string | null;
   /** The callout's inline title or the toggle's summary. Always exactly one line. */
   readonly heading: string;
   /** Every body line, stripped of its `>` prefix or of the `<details>` scaffolding around it. */
@@ -67,6 +76,11 @@ export interface MarkdownContainer {
    * said and there was no way to change one.
    */
   withType?(next: string): string;
+  /**
+   * The same source with a different icon, or with none at `null`. Absent on a toggle, the same way
+   * `withType` is: a toggle's disclosure triangle is not a per-Block choice.
+   */
+  withIcon?(next: string | null): string;
   /**
    * The container's text with the container taken off — no `>` prefix, no `[!TYPE]`, no `<details>`
    * scaffolding. What Backspace at the very start produces, in both reference products: the first
@@ -98,7 +112,13 @@ export function parseMarkdownContainer(
 const CALLOUT_PREFIX = /^ {0,3}>[ \t]?/;
 // The `[+-]` fold marker is captured on its own as well as inside the whole marker, because a
 // rewritten header is assembled from the parts around the type and would otherwise leave it out.
-const CALLOUT_HEADER = /^(\[!([A-Za-z][A-Za-z0-9_-]*)\]([+-]?))(?:([ \t]+)(.*))?$/;
+// The icon sits between the fold marker and the gap-plus-title, with no space of its own on either
+// side — `[!NOTE]🎉 Title`, never `[!NOTE] 🎉 Title` — so a plain callout with a title starting in
+// an emoji a user actually typed is never misread as one with a custom icon.
+const CALLOUT_HEADER = new RegExp(
+  `^(\\[!([A-Za-z][A-Za-z0-9_-]*)\\]([+-]?))(${CALLOUT_ICON_SOURCE})?(?:([ \\t]+)(.*))?$`,
+  "u"
+);
 const TOGGLE_OPENING = /^ {0,3}<details(?:[ \t]+open)?[ \t]*>$/i;
 const TOGGLE_CLOSING = /^ {0,3}<\/details[ \t]*>$/i;
 const TOGGLE_SUMMARY = /^( {0,3}<summary>)(.*)(<\/summary>[ \t]*)$/i;
@@ -111,8 +131,9 @@ function parseCalloutSource(source: string): MarkdownContainer | null {
 
   const marker = header[1];
   const fold = header[3];
-  const gap = header[4] ?? "";
-  const title = header[5] ?? "";
+  const icon = header[4] ?? null;
+  const gap = header[5] ?? "";
+  const title = header[6] ?? "";
   const fallbackEnding = firstLineEnding(source);
   const bodyOf = (line: SourceLine) =>
     line.raw.slice(CALLOUT_PREFIX.exec(line.raw)?.[0].length ?? 0);
@@ -129,6 +150,7 @@ function parseCalloutSource(source: string): MarkdownContainer | null {
   return {
     kind: "callout",
     type: header[2].toUpperCase(),
+    icon,
     heading: title,
     body: lines.slice(1).map(bodyOf).join("\n"),
     open: false,
@@ -136,14 +158,24 @@ function parseCalloutSource(source: string): MarkdownContainer | null {
       const flat = flattenToOneLine(next);
       // Dropping the gap along with the title is what keeps `> [!NOTE] ` from being left behind with
       // a trailing space nobody typed once the title is deleted.
-      const rewritten = flat ? `${prefix}${marker}${gap || " "}${flat}` : `${prefix}${marker}`;
+      const rewritten = flat
+        ? `${prefix}${marker}${icon ?? ""}${gap || " "}${flat}`
+        : `${prefix}${marker}${icon ?? ""}`;
       return rewritten + source.slice(lines[0].raw.length);
     },
     withType(next) {
-      // The fold marker comes back with the new type. It is the only part of the header this app
-      // does not itself honour, so losing it changed nothing on screen and silently rewrote a byte
-      // the user's other editor reads as "start collapsed".
-      const rewritten = `${prefix}[!${next.toUpperCase()}]${fold}${gap}${title}`;
+      // The fold marker and the icon both come back with the new type. Neither is this app's own —
+      // the fold is what the user's other editor reads as "start collapsed", and the icon is the
+      // whole point of `withIcon` existing beside this rather than instead of it.
+      const rewritten = `${prefix}[!${next.toUpperCase()}]${fold}${icon ?? ""}${gap}${title}`;
+      return rewritten + source.slice(lines[0].raw.length);
+    },
+    withIcon(next) {
+      // The same "drop the gap along with an empty value" rule `withHeading` uses, so clearing the
+      // icon on a callout with no title does not leave `[!NOTE]` followed by invisible padding.
+      const rewritten = title
+        ? `${prefix}${marker}${next ?? ""}${gap || " "}${title}`
+        : `${prefix}${marker}${next ?? ""}`;
       return rewritten + source.slice(lines[0].raw.length);
     },
     withoutContainer() {
@@ -204,6 +236,7 @@ function parseToggleSource(source: string): MarkdownContainer | null {
   return {
     kind: "toggle",
     type: "",
+    icon: null,
     heading: summary[2],
     body: bodyLines.map((line) => line.raw).join("\n"),
     open: /[ \t]open[ \t]*>$/i.test(lines[0].raw),
@@ -362,7 +395,11 @@ interface ActiveRegion {
    * already editing selected nothing at all — the same defect the prose kinds had.
    */
   readonly caret:
-    "start" | "end" | number | { readonly anchor: number; readonly head: number } | null;
+    | "start"
+    | "end"
+    | number
+    | { readonly anchor: number; readonly head: number }
+    | null;
 }
 
 export interface MarkdownContainerBlockProps extends InPlaceBlockProps {
@@ -452,6 +489,8 @@ export function MarkdownContainerBlock({
     y: number;
   } | null>(null);
   const pendingCaretRef = useRef<ActiveRegion["caret"]>(null);
+  const iconButtonRef = useRef<HTMLButtonElement>(null);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
 
   const container = parseMarkdownContainer(kind, source);
 
@@ -839,57 +878,115 @@ export function MarkdownContainerBlock({
             change height or width when it takes the caret, and it holds no text — a label inside the
             callout would be counted by the walker that maps a press to an offset, and every press in
             the title would then land several characters off. */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={`${style.label} callout, change type`}
-              // Pressable whether or not the Block is active. Disabled while inactive, the first
-              // press on the affordance the callout documents as its control did nothing at all —
-              // no menu, and not even an activation — so the user had to click the text first and
-              // then press the icon they had already pressed once.
-              // `editor-control` is the editor's one table of interaction states (editor.css). The
-              // `hover:bg-foreground/10` it used to carry was 2.1x every other icon button's tint —
-              // -20.7/-21.7/-22.1 per channel against their -10/-10/-10 — because a 10% fill of the
-              // ink reads twice as strong as the neutral `bg-muted` those controls hover to.
-              className={`editor-control h-4 w-4 shrink-0 rounded ${style.accent}`}
-              // Centred on the title's first line box rather than nudged down by a fixed 2px, which
-              // left it 4px high against a 28px line. `1lh` is the leading the title actually has,
-              // so this stays 0.0 at any editor line-height setting; the toggle's chevron is centred
-              // by the same expression, so the two leading icons on the Page cannot disagree.
-              style={{ marginTop: "calc((1lh - 1rem) / 2)" }}
-              onPointerDown={(event) => event.stopPropagation()}
+        {/* The ref lives on this wrapper rather than the trigger button: `DropdownMenuTrigger`'s
+            `asChild` clones its child with `cloneElement`, which replaces a ref passed to that
+            child outright rather than composing it with its own. A tight inline-flex wrapper's
+            box is the button's own box, so the emoji picker still anchors to the right place. */}
+        <span ref={iconButtonRef} className="inline-flex">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label={
+                  container.icon
+                    ? `${container.icon} callout icon, change type or icon`
+                    : `${style.label} callout, change type or icon`
+                }
+                // Pressable whether or not the Block is active. Disabled while inactive, the first
+                // press on the affordance the callout documents as its control did nothing at all —
+                // no menu, and not even an activation — so the user had to click the text first and
+                // then press the icon they had already pressed once.
+                // `editor-control` is the editor's one table of interaction states (editor.css). The
+                // `hover:bg-foreground/10` it used to carry was 2.1x every other icon button's tint —
+                // -20.7/-21.7/-22.1 per channel against their -10/-10/-10 — because a 10% fill of the
+                // ink reads twice as strong as the neutral `bg-muted` those controls hover to.
+                className={`editor-control flex h-4 w-4 shrink-0 items-center justify-center rounded leading-none ${container.icon ? "" : style.accent}`}
+                // Centred on the title's first line box rather than nudged down by a fixed 2px, which
+                // left it 4px high against a 28px line. `1lh` is the leading the title actually has,
+                // so this stays 0.0 at any editor line-height setting; the toggle's chevron is centred
+                // by the same expression, so the two leading icons on the Page cannot disagree.
+                style={{ marginTop: "calc((1lh - 1rem) / 2)" }}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                {/* A custom icon is Notion's own decoupling: the emoji is a property of the callout,
+                  the tinted border and background are `type`'s, and picking one never touches the
+                  other. Falling back to `Icon` — `type`'s fixed glyph — is what every callout drew
+                  before this existed, so a Page with none of these set looks exactly as it did. */}
+                {container.icon ? (
+                  <span className="text-sm" aria-hidden="true">
+                    {container.icon}
+                  </span>
+                ) : (
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              aria-label="Callout type"
+              className="w-44 rounded-xl border-border/80 bg-popover/95 p-1.5 shadow-xl backdrop-blur-xl"
             >
-              <Icon className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            aria-label="Callout type"
-            className="w-44 rounded-xl border-border/80 bg-popover/95 p-1.5 shadow-xl backdrop-blur-xl"
-          >
-            {CALLOUT_TYPE_ORDER.map((name) => {
-              const option = CALLOUT_STYLES[name];
-              const OptionIcon = option.icon;
-              return (
+              {CALLOUT_TYPE_ORDER.map((name) => {
+                const option = CALLOUT_STYLES[name];
+                const OptionIcon = option.icon;
+                return (
+                  <DropdownMenuItem
+                    key={name}
+                    className="h-8 gap-2 rounded-lg px-2.5"
+                    onClick={() => {
+                      const next = container.withType?.(name);
+                      if (next) commit(next);
+                    }}
+                  >
+                    <span className="w-3 shrink-0 text-muted-foreground" aria-hidden="true">
+                      {container.type.toLowerCase() === name ? "✓" : ""}
+                    </span>
+                    <OptionIcon
+                      className={`h-4 w-4 shrink-0 ${option.accent}`}
+                      aria-hidden="true"
+                    />
+                    {option.label}
+                  </DropdownMenuItem>
+                );
+              })}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="h-8 gap-2 rounded-lg px-2.5"
+                onClick={() => setEmojiPickerOpen(true)}
+              >
+                <span className="w-3 shrink-0" aria-hidden="true" />
+                <Smile className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                Custom icon…
+              </DropdownMenuItem>
+              {container.icon ? (
                 <DropdownMenuItem
-                  key={name}
                   className="h-8 gap-2 rounded-lg px-2.5"
                   onClick={() => {
-                    const next = container.withType?.(name);
+                    const next = container.withIcon?.(null);
                     if (next) commit(next);
                   }}
                 >
-                  <span className="w-3 shrink-0 text-muted-foreground" aria-hidden="true">
-                    {container.type.toLowerCase() === name ? "✓" : ""}
-                  </span>
-                  <OptionIcon className={`h-4 w-4 shrink-0 ${option.accent}`} aria-hidden="true" />
-                  {option.label}
+                  <span className="w-3 shrink-0" aria-hidden="true" />
+                  Remove custom icon
                 </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </span>
+        {emojiPickerOpen && iconButtonRef.current ? (
+          <EmojiPicker
+            anchorRect={iconButtonRef.current.getBoundingClientRect()}
+            searchPlaceholder="Search icon…"
+            removeLabel="Remove custom icon"
+            hideRemove={!container.icon}
+            onSelect={(emoji) => {
+              setEmojiPickerOpen(false);
+              const next = container.withIcon?.(emoji);
+              if (next) commit(next);
+            }}
+            onClose={() => setEmojiPickerOpen(false)}
+          />
+        ) : null}
         <div className="min-w-0 flex-1">
           <div
             className="font-semibold"

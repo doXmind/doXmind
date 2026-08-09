@@ -1,4 +1,4 @@
-import { createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -48,6 +48,7 @@ function slashHandlers() {
     onSetTaskChecked: vi.fn(),
     onMove: vi.fn(),
     onSetKind: vi.fn(),
+    onTurnIntoContainer: vi.fn(),
     onUndo: vi.fn(),
     onRedo: vi.fn(),
     onDragStart: vi.fn(),
@@ -130,6 +131,7 @@ describe("MarkdownBlockRow semantic previews", () => {
       onSetTaskChecked: vi.fn(),
       onMove: vi.fn(),
       onSetKind: vi.fn(),
+      onTurnIntoContainer: vi.fn(),
       onUndo: vi.fn(),
       onRedo: vi.fn(),
       onDragStart: vi.fn(),
@@ -170,6 +172,7 @@ describe("MarkdownBlockRow semantic previews", () => {
         onSetTaskChecked={vi.fn()}
         onMove={vi.fn()}
         onSetKind={vi.fn()}
+        onTurnIntoContainer={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
@@ -231,6 +234,7 @@ describe("MarkdownBlockRow semantic previews", () => {
         onSetTaskChecked={vi.fn()}
         onMove={vi.fn()}
         onSetKind={vi.fn()}
+        onTurnIntoContainer={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
@@ -270,6 +274,7 @@ describe("MarkdownBlockRow semantic previews", () => {
         onSetTaskChecked={vi.fn()}
         onMove={vi.fn()}
         onSetKind={vi.fn()}
+        onTurnIntoContainer={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
@@ -355,6 +360,7 @@ describe("MarkdownBlockRow semantic previews", () => {
         onSetTaskChecked={vi.fn()}
         onMove={vi.fn()}
         onSetKind={vi.fn()}
+        onTurnIntoContainer={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
@@ -380,6 +386,67 @@ describe("MarkdownBlockRow semantic previews", () => {
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:doxmind-image");
   });
 
+  it("opens a full-size lightbox on the image's expand button, and closes it on Escape or a backdrop press", async () => {
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:doxmind-image"),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
+    const source = "![Pixel](../assets/pixel.png)\n";
+    const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
+    const readAsset = vi.fn(async () => ({
+      path: "assets/pixel.png",
+      mime: "image/png",
+      base64: "iVBORw0KGgoAAAAA",
+    }));
+
+    render(
+      <MarkdownBlockRow
+        block={block}
+        active={false}
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onTurnIntoContainer={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        imageContext={{ pagePath: "Notes/Page.md", readAsset }}
+      />
+    );
+
+    const image = await screen.findByRole("img", { name: "Pixel" });
+    // No expand affordance until the picture has actually decoded — the button opens a lightbox
+    // holding the same Blob URL, and offering that before `onLoad` would be offering a broken image.
+    expect(screen.queryByRole("button", { name: "Expand image" })).not.toBeInTheDocument();
+    fireEvent.load(image);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Expand image" }));
+    const lightbox = screen.getByRole("dialog", { name: "Pixel" });
+    expect(within(lightbox).getByRole("img", { name: "Pixel" })).toHaveAttribute(
+      "src",
+      "blob:doxmind-image"
+    );
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Pixel" })).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Expand image" }));
+    fireEvent.click(screen.getByRole("dialog", { name: "Pixel" }));
+    expect(screen.queryByRole("dialog", { name: "Pixel" })).not.toBeInTheDocument();
+  });
+
   it("previews a portable toggle and keeps its canonical source editable", () => {
     const source =
       "<details open>\n<summary>Project details</summary>\n\nNested **Markdown**.\n\n</details>\n";
@@ -401,6 +468,7 @@ describe("MarkdownBlockRow semantic previews", () => {
         onSetTaskChecked={vi.fn()}
         onMove={vi.fn()}
         onSetKind={vi.fn()}
+        onTurnIntoContainer={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
@@ -428,6 +496,7 @@ describe("MarkdownBlockRow semantic previews", () => {
         onSetTaskChecked={vi.fn()}
         onMove={vi.fn()}
         onSetKind={vi.fn()}
+        onTurnIntoContainer={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
@@ -463,6 +532,7 @@ describe("MarkdownBlockRow semantic previews", () => {
         onSetTaskChecked={vi.fn()}
         onMove={vi.fn()}
         onSetKind={vi.fn()}
+        onTurnIntoContainer={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
@@ -955,6 +1025,20 @@ describe("MarkdownBlockRow semantic previews", () => {
     expect(screen.getByTestId("callout-block").className).toContain("amber");
   });
 
+  it("draws a callout's custom icon instead of its type's glyph in the printed preview", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown(
+      "> [!NOTE]🎉 Party\n> Body line.\n"
+    ).getSnapshot().blocks;
+    render(<MarkdownBlockRow block={block} active={false} {...slashHandlers()} />);
+
+    const callout = screen.getByTestId("callout-block");
+    expect(callout).toHaveTextContent("🎉");
+    expect(callout).toHaveTextContent("Party");
+    // The Lucide glyph a type-only callout draws is gone: the emoji replaces it rather than
+    // sitting beside it.
+    expect(callout.querySelector("svg")).not.toBeInTheDocument();
+  });
+
   it("honours column alignment and puts the caret in the cell that was clicked", () => {
     const source = "| A | B |\n| :-- | --: |\n| a1 | b1 |\n";
     const [block] = MarkdownBlockDocument.fromMarkdown(source).getSnapshot().blocks;
@@ -1082,6 +1166,7 @@ describe("MarkdownBlockRow semantic previews", () => {
         onSetTaskChecked={vi.fn()}
         onMove={vi.fn()}
         onSetKind={vi.fn()}
+        onTurnIntoContainer={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
@@ -1120,6 +1205,7 @@ describe("MarkdownBlockRow semantic previews", () => {
         onSetTaskChecked={vi.fn()}
         onMove={vi.fn()}
         onSetKind={vi.fn()}
+        onTurnIntoContainer={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
@@ -1192,6 +1278,7 @@ describe("MarkdownBlockRow semantic previews", () => {
         onSetTaskChecked={vi.fn()}
         onMove={vi.fn()}
         onSetKind={vi.fn()}
+        onTurnIntoContainer={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
@@ -1254,6 +1341,7 @@ describe("MarkdownBlockRow semantic previews", () => {
         onSetTaskChecked={vi.fn()}
         onMove={vi.fn()}
         onSetKind={vi.fn()}
+        onTurnIntoContainer={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
@@ -1305,6 +1393,7 @@ describe("MarkdownBlockRow semantic previews", () => {
             onSetTaskChecked={vi.fn()}
             onMove={vi.fn()}
             onSetKind={vi.fn()}
+            onTurnIntoContainer={vi.fn()}
             onUndo={vi.fn()}
             onRedo={vi.fn()}
             onDragStart={vi.fn()}
@@ -1355,6 +1444,7 @@ describe("MarkdownBlockRow semantic previews", () => {
         onSetTaskChecked={vi.fn()}
         onMove={vi.fn()}
         onSetKind={vi.fn()}
+        onTurnIntoContainer={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
@@ -1398,6 +1488,7 @@ describe("MarkdownBlockRow semantic previews", () => {
         onSetTaskChecked={vi.fn()}
         onMove={vi.fn()}
         onSetKind={vi.fn()}
+        onTurnIntoContainer={vi.fn()}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
         onDragStart={vi.fn()}
@@ -1444,6 +1535,150 @@ describe("MarkdownBlockRow wiki links", () => {
 
     fireEvent.click(unresolved);
     expect(open).toHaveBeenCalledWith("Ghost");
+  });
+});
+
+describe("MarkdownBlockRow wiki-link autocomplete", () => {
+  const pages = [
+    { id: "p1", path: "Projects/Alpha.md", title: "Project Alpha", aliases: [] },
+    { id: "p2", path: "Projects/Beta.md", title: "Project Beta", aliases: ["Beta Notes"] },
+    { id: "p3", path: "Roadmap.md", title: "Roadmap", aliases: [] },
+  ];
+
+  it("opens on a `[[` run and ranks title-prefix matches first", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("[[proj").getSnapshot().blocks;
+    render(
+      <MarkdownBlockRow
+        block={block}
+        active
+        {...slashHandlers()}
+        onInsertWikiLink={vi.fn()}
+        wikiLinkPages={pages}
+      />
+    );
+
+    const listbox = screen.getByRole("listbox", { name: "Link to page" });
+    const options = within(listbox).getAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual(["Project Alpha", "Project Beta"]);
+  });
+
+  it("inserts the highlighted Page's title on Enter, replacing only the query", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("[[proj").getSnapshot().blocks;
+    const onInsertWikiLink = vi.fn();
+    render(
+      <MarkdownBlockRow
+        block={block}
+        active
+        {...slashHandlers()}
+        onInsertWikiLink={onInsertWikiLink}
+        wikiLinkPages={pages}
+      />
+    );
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Markdown block" }), { key: "Enter" });
+    expect(onInsertWikiLink).toHaveBeenCalledWith(
+      block.id,
+      { start: 2, end: 6, query: "proj" },
+      "Project Alpha"
+    );
+  });
+
+  it("moves the highlight with ArrowDown before inserting", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("[[proj").getSnapshot().blocks;
+    const onInsertWikiLink = vi.fn();
+    render(
+      <MarkdownBlockRow
+        block={block}
+        active
+        {...slashHandlers()}
+        onInsertWikiLink={onInsertWikiLink}
+        wikiLinkPages={pages}
+      />
+    );
+
+    // jsdom implements no scrolling, and moving the highlight scrolls it into view.
+    Element.prototype.scrollIntoView = vi.fn();
+    const editor = screen.getByRole("textbox", { name: "Markdown block" });
+    fireEvent.keyDown(editor, { key: "ArrowDown" });
+    fireEvent.keyDown(editor, { key: "Enter" });
+    expect(onInsertWikiLink).toHaveBeenCalledWith(
+      block.id,
+      { start: 2, end: 6, query: "proj" },
+      "Project Beta"
+    );
+  });
+
+  it("inserts on a direct click without moving the keyboard highlight", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("[[proj").getSnapshot().blocks;
+    const onInsertWikiLink = vi.fn();
+    render(
+      <MarkdownBlockRow
+        block={block}
+        active
+        {...slashHandlers()}
+        onInsertWikiLink={onInsertWikiLink}
+        wikiLinkPages={pages}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("option", { name: "Project Beta" }));
+    expect(onInsertWikiLink).toHaveBeenCalledWith(
+      block.id,
+      { start: 2, end: 6, query: "proj" },
+      "Project Beta"
+    );
+  });
+
+  it("shows a no-results row and still swallows Enter", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("[[zzzz").getSnapshot().blocks;
+    const onInsertWikiLink = vi.fn();
+    const onSplit = vi.fn();
+    render(
+      <MarkdownBlockRow
+        block={block}
+        active
+        {...slashHandlers()}
+        onSplit={onSplit}
+        onInsertWikiLink={onInsertWikiLink}
+        wikiLinkPages={pages}
+      />
+    );
+
+    expect(screen.getByText("No matching Pages")).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Markdown block" }), { key: "Enter" });
+    expect(onInsertWikiLink).not.toHaveBeenCalled();
+    expect(onSplit).not.toHaveBeenCalled();
+  });
+
+  it("keeps Escape sticky for the rest of the `[[` run", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("[[proj").getSnapshot().blocks;
+    const onInsertWikiLink = vi.fn();
+    const onSplit = vi.fn();
+    render(
+      <MarkdownBlockRow
+        block={block}
+        active
+        {...slashHandlers()}
+        onSplit={onSplit}
+        onInsertWikiLink={onInsertWikiLink}
+        wikiLinkPages={pages}
+      />
+    );
+
+    const textarea = screen.getByRole("textbox", { name: "Markdown block" });
+    fireEvent.keyDown(textarea, { key: "Escape" });
+    expect(screen.queryByRole("listbox", { name: "Link to page" })).not.toBeInTheDocument();
+    // Enter now belongs to the Block again rather than re-running the dismissed insert.
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    expect(onInsertWikiLink).not.toHaveBeenCalled();
+    expect(onSplit).toHaveBeenCalled();
+  });
+
+  it("stays closed without a Page catalog or an insert handler", () => {
+    const [block] = MarkdownBlockDocument.fromMarkdown("[[proj").getSnapshot().blocks;
+    render(<MarkdownBlockRow block={block} active {...slashHandlers()} />);
+
+    expect(screen.queryByRole("listbox", { name: "Link to page" })).not.toBeInTheDocument();
   });
 });
 

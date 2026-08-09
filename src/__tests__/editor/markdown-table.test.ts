@@ -332,6 +332,60 @@ describe("rendered grid", () => {
     expect(screen.getByRole("menuitem", { name: "Clear contents" })).toBeEnabled();
   });
 
+  it("draws the header row bold and tinted by default, and the header column not at all", () => {
+    // Notion's own table has both switches off on a freshly inserted table; ours keeps the header
+    // row on to match every table this component drew before the switches existed, and only the
+    // column default (off) follows Notion's.
+    const { container } = renderGrid(ALIGNED);
+    const headerCell = container.querySelector("th");
+    const firstBodyCellInColumnZero = container.querySelectorAll("td")[0];
+    expect(headerCell?.className).toContain("bg-muted/50");
+    expect(headerCell?.className).toContain("font-medium");
+    expect(firstBodyCellInColumnZero.className).not.toContain("bg-muted/50");
+  });
+
+  it("toggles the header row and header column tint from the table settings menu", () => {
+    const geometry = parseMarkdownTableSource(ALIGNED)!;
+    const { container } = render(
+      createElement(MarkdownTableBlock, {
+        blockId: "block-1",
+        source: ALIGNED,
+        geometry,
+        editable: true,
+        renderCell: (text: string) => createElement("span", null, text),
+      })
+    );
+    const settingsButton = screen.getByRole("button", { name: "Table settings" });
+    // Anchored to the last header cell's own corner, the way `TableAxisMenu`'s handles anchor to
+    // the cell they belong to, rather than floating in a reserved gutter the grid does not have.
+    expect(settingsButton.closest("th")).toBe(container.querySelectorAll("th")[1]);
+
+    fireEvent.click(settingsButton);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Header row" }));
+    expect(container.querySelector("th")?.className).not.toContain("bg-muted/50");
+
+    fireEvent.click(settingsButton);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Header column" }));
+    const firstColumnCells = [
+      container.querySelectorAll("th")[0],
+      container.querySelectorAll("td")[0],
+    ];
+    for (const cell of firstColumnCells) {
+      expect(cell.className).toContain("bg-muted/50");
+      expect(cell.className).toContain("font-medium");
+    }
+    // The second column never asked for the tint.
+    expect(container.querySelectorAll("td")[1].className).not.toContain("bg-muted/50");
+  });
+
+  it("disables the table settings trigger the same way the axis handles are, while inactive", () => {
+    const { container } = renderGrid(ALIGNED);
+    const settingsButton = screen.getByRole("button", { name: "Table settings" });
+    expect(settingsButton).toBeDisabled();
+    expect(settingsButton.style.opacity).toBe("0");
+    expect(container.querySelector("th")?.className).toContain("bg-muted/50");
+  });
+
   it("reserves the tick column on every item of a menu that has one", () => {
     const geometry = parseMarkdownTableSource(ALIGNED)!;
     const { container } = render(
@@ -373,7 +427,9 @@ describe("rendered grid", () => {
     // The handle straddles the table's left border, so it reaches 4.5px outside the table. Paying
     // for that with plain left padding put the table 12px right of every other Block on the Page.
     const { container } = renderGrid(ALIGNED);
-    const wrapper = container.querySelector("table")?.parentElement;
+    // One level up from the table's own sizing wrapper (which anchors the insert-row/insert-column
+    // strips to its measured box) is the scroll box that carries the content-rail offset.
+    const wrapper = container.querySelector("table")?.parentElement?.parentElement;
     expect(wrapper?.className).toContain("-ml-1.5");
     expect(wrapper?.className).toContain("pl-1.5");
   });

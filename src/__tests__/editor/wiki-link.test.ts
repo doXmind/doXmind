@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveWikiLinkTarget } from "@/editor/markdown-block/wiki-link";
+import { resolveWikiLinkTarget, workspaceWikiPages } from "@/editor/markdown-block/wiki-link";
 import type { FileItem } from "@/stores/file-store";
 
 function page(id: string, relPath: string): FileItem {
@@ -95,5 +95,45 @@ describe("resolveWikiLinkTarget", () => {
 
     expect(resolveWikiLinkTarget(files, "current", "Atlas")?.id).toBe("canonical");
     expect(resolveWikiLinkTarget(files, "current", "Project Atlas")?.id).toBe("canonical");
+  });
+});
+
+describe("workspaceWikiPages", () => {
+  it("titles a Page from frontmatter, then preview, then its filename", () => {
+    const titled = {
+      ...page("titled", "Specs/Canonical.md"),
+      meta: { id: "titled", title: "Project Atlas" },
+    };
+    const previewed = { ...page("previewed", "Notes/Today.md"), preview: "Today's standup" };
+    const bare = page("bare", "Roadmap.md");
+    const files = [titled, previewed, bare];
+
+    expect(workspaceWikiPages(files)).toEqual([
+      { id: "titled", path: "specs/canonical", title: "Project Atlas", aliases: [] },
+      { id: "previewed", path: "notes/today", title: "Today's standup", aliases: [] },
+      { id: "bare", path: "roadmap", title: "roadmap", aliases: [] },
+    ]);
+  });
+
+  it("drops folders and non-Markdown attachments — neither is a link target", () => {
+    const folder = { ...page("folder", "Projects"), isFolder: true };
+    const attachment = { ...page("pdf", "Spec.pdf"), documentType: "pdf" as const };
+    const files = [folder, attachment, page("note", "Note.md")];
+
+    expect(workspaceWikiPages(files).map((candidate) => candidate.id)).toEqual(["note"]);
+  });
+
+  it("carries frontmatter aliases through, blank ones dropped", () => {
+    const aliased = {
+      ...page("aliased", "Glossary.md"),
+      meta: {
+        id: "aliased",
+        title: "Glossary",
+        // Frontmatter is untrusted YAML — a stray non-string entry has to be dropped, not thrown.
+        aliases: ["Terms", "  ", 42, "Dictionary"] as unknown as string[],
+      },
+    };
+
+    expect(workspaceWikiPages([aliased])[0].aliases).toEqual(["Terms", "Dictionary"]);
   });
 });

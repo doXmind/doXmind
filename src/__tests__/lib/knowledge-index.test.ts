@@ -528,6 +528,33 @@ describe("buildKnowledgeIndex", () => {
     expect(from).toBe(3);
   });
 
+  it("still indexes a link inside a nested list item indented 4 or more columns", async () => {
+    // A depth-1 item nested under a "- " marker can land at column 4, the same indent an
+    // indented-code block opens at. `isMarkdownLinkOpaqueBlockSource` judges a span by its raw text
+    // alone and cannot tell those apart; the caller must skip it for any span the scanner has
+    // already tagged with a `listDepth`.
+    const source = pageEntry("source", "Source.md");
+    const visible = pageEntry("visible", "Visible.md");
+    const markdown = ["- Level 1", "    - Level 2 with [[Visible]]"].join("\n");
+    const adapter = adapterFixture(
+      [source, visible],
+      new Map([
+        [source.handle.id, content(source, markdown)],
+        [visible.handle.id, content(visible, "Visible")],
+      ])
+    );
+
+    const index = await buildKnowledgeIndex(adapter);
+
+    const from = markdown.indexOf("[[Visible]]");
+    expect(index.links).toHaveLength(1);
+    expect(index.links[0]).toMatchObject({
+      targetId: "visible",
+      status: "resolved",
+      range: { from, to: from + "[[Visible]]".length },
+    });
+  });
+
   it("keeps indexing links after a comment opener that only appears inside code", async () => {
     const source = pageEntry("source", "Source.md");
     const target = pageEntry("target", "Target.md");

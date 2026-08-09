@@ -33,6 +33,7 @@ function handlers() {
     onSetTaskChecked: vi.fn(),
     onMove: vi.fn(),
     onSetKind: vi.fn(),
+    onTurnIntoContainer: vi.fn(),
     onUndo: vi.fn(),
     onRedo: vi.fn(),
     onDragStart: vi.fn(),

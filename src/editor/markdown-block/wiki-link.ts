@@ -1,5 +1,32 @@
-import { resolveKnowledgeWikiPage } from "@/lib/knowledge-index";
+import { resolveKnowledgeWikiPage, type KnowledgePage } from "@/lib/knowledge-index";
 import type { FileItem } from "@/stores/file-store";
+
+/**
+ * The visible local workspace's Markdown Pages, shaped for wiki-link resolution and search —
+ * `[[` autocomplete and `[[target]]` resolution both read the same list, so a Page is a candidate
+ * in one exactly when it is reachable through the other.
+ */
+export function workspaceWikiPages(files: readonly FileItem[]): KnowledgePage[] {
+  return files
+    .filter(
+      (file) =>
+        !file.isFolder && (file.documentType === undefined || file.documentType === "markdown")
+    )
+    .map((file) => ({
+      id: file.id,
+      path: pagePath(file),
+      title:
+        nonEmptyString(file.meta?.title) ??
+        nonEmptyString(file.preview) ??
+        stripMarkdownExtension(baseName(pagePath(file))),
+      aliases: Array.isArray(file.meta?.aliases)
+        ? file.meta.aliases.flatMap((value) => {
+            const alias = nonEmptyString(value);
+            return alias ? [alias] : [];
+          })
+        : [],
+    }));
+}
 
 /** Resolve a wiki-link against the visible local workspace without an index database. */
 export function resolveWikiLinkTarget(
@@ -16,20 +43,7 @@ export function resolveWikiLinkTarget(
   );
   const current = pages.find((file) => file.id === currentFileId);
   const resolution = resolveKnowledgeWikiPage(
-    pages.map((file) => ({
-      id: file.id,
-      path: pagePath(file),
-      title:
-        nonEmptyString(file.meta?.title) ??
-        nonEmptyString(file.preview) ??
-        stripMarkdownExtension(baseName(pagePath(file))),
-      aliases: Array.isArray(file.meta?.aliases)
-        ? file.meta.aliases.flatMap((value) => {
-            const alias = nonEmptyString(value);
-            return alias ? [alias] : [];
-          })
-        : [],
-    })),
+    workspaceWikiPages(pages),
     current ? pagePath(current) : "",
     target
   );
