@@ -33,7 +33,7 @@ function QuickSwitcherContent() {
   // Get recent files sorted by updatedAt, excluding folders
   const recentFiles = React.useMemo(() => {
     return files
-      .filter((f) => !f.isFolder)
+      .filter((f) => !f.isFolder && !f.isAsset)
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, MAX_RECENT_FILES);
   }, [files]);

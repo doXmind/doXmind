@@ -1,6 +1,6 @@
 "use client";
 
-import { MoreHorizontal, Check, X, CheckSquare, Square } from "lucide-react";
+import { MoreHorizontal, Check, X, CheckSquare, Square, File } from "lucide-react";
 import {
   CsvGlyph,
   MarkdownGlyph,
@@ -77,6 +77,8 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const isCurrentFileDirty = useEditorStore((s) => (isActive ? s.isDirty : false));
   const isAttachment = !isMarkdownFile(file);
+  // A listed workspace file with no editor: reveal and open-externally are all it can do.
+  const isAsset = !!file.isAsset;
   const confirmPageRelocation = usePageRelocationConfirmation();
 
   // Close context menu when clicking outside
@@ -91,7 +93,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      const itemCount = getMenuItemCount(!!file.parentId, isAttachment);
+      const itemCount = getMenuItemCount(!!file.parentId, isAttachment, isAsset);
       const pageActionOffset = file.parentId ? 1 : 0;
       switch (e.key) {
         case "Escape":
@@ -110,7 +112,18 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
         case "Enter":
         case " ":
           e.preventDefault();
-          if (isAttachment) {
+          if (isAsset) {
+            setContextMenu(null);
+            setContextMenuFocusIndex(-1);
+            const run = contextMenuFocusIndex === 0 ? openFileExternally : revealFileInFinder;
+            if (contextMenuFocusIndex === 0 || contextMenuFocusIndex === 1) {
+              run(file).catch((error) => {
+                log.error("Failed to open workspace file", error);
+                const { title, description } = getErrorMessage(error);
+                notify.error(title, { description });
+              });
+            }
+          } else if (isAttachment) {
             if (contextMenuFocusIndex === 0) {
               setContextMenu(null);
               setContextMenuFocusIndex(-1);
@@ -237,16 +250,20 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
     if (isRenaming) return;
 
     // Multi-select: Ctrl+click toggles selection, Shift+click selects range
-    if (e?.ctrlKey || e?.metaKey) {
+    if ((e?.ctrlKey || e?.metaKey) && !isAsset) {
       toggleFileSelection(file.id);
       lastClickedFileId = file.id;
-    } else if (e?.shiftKey && lastClickedFileId) {
+    } else if (e?.shiftKey && lastClickedFileId && !isAsset) {
       selectFileRange(lastClickedFileId, file.id);
     } else {
       // Normal click: save a dirty Page before switching. The navigation
       // helper updates the store first, then the static-export-safe URL.
       if (isSelectionMode) {
         clearSelection();
+      }
+      if (isAsset) {
+        void handleOpenExternally();
+        return;
       }
       void navigateToEditorFile(file.id);
       lastClickedFileId = file.id;
@@ -255,6 +272,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isAsset) return;
     setNewName(getNameWithoutExtension(file.name));
     setIsRenaming(true);
   };
@@ -456,7 +474,8 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
       // External drag-drop resolves a drop on a file row to that
       // file's parent folder.
       data-drop-target-id={file.id}
-      draggable={!isRenaming && !isSelectionMode}
+      // An asset drag would reach moveAttachment, which rejects it by design.
+      draggable={!isRenaming && !isSelectionMode && !isAsset}
       onDragStart={handleDragStart}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
@@ -509,7 +528,9 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
           row, so wrapping this one centred it 1px right and pushed the label
           2px right of every folder label at the same depth. One glyph, one left
           edge per depth. */}
-      {isPdfFile(file) ? (
+      {isAsset ? (
+        <File className="h-[18px] w-[18px] shrink-0 text-[var(--sidebar-icon)]" />
+      ) : isPdfFile(file) ? (
         <PdfGlyph className="h-[18px] w-[18px] shrink-0" />
       ) : isExcelFile(file) ? (
         <SpreadsheetGlyph className="h-[18px] w-[18px] shrink-0" />
@@ -597,6 +618,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
           </Tooltip>
           <DropdownMenuContent align="end">
             <FileActionsMenuItems
+              isAsset={isAsset}
               variant="dropdown"
               hasParent={!!file.parentId}
               isAttachment={isAttachment}
@@ -648,6 +670,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
             )}
           >
             <FileActionsMenuItems
+              isAsset={isAsset}
               variant="context"
               hasParent={!!file.parentId}
               isAttachment={isAttachment}

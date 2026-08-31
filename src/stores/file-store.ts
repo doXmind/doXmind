@@ -652,7 +652,11 @@ function replaceWorkspaceLocation(target: RecentEntry | null): void {
 
 function handleForFile(file: FileItem): DocumentHandle {
   return (
-    file.storageHandle ?? { mode: "disk", id: file.id, kind: file.isFolder ? "folder" : "document" }
+    file.storageHandle ?? {
+      mode: "disk",
+      id: file.id,
+      kind: file.isFolder ? "folder" : file.isAsset ? "asset" : "document",
+    }
   );
 }
 
@@ -710,6 +714,7 @@ function fileFromEntry(entry: WorkspaceEntry, existingReadModel?: LoadedReadMode
     outline: existingReadModel?.outline,
     meta: existingReadModel?.meta ?? scanMeta,
     isFolder: entry.kind === "folder",
+    isAsset: entry.kind === "asset",
     parentId: entry.parent?.id ?? null,
     position: entry.position || 0,
     isFavorite: entry.isFavorite || false,
@@ -731,6 +736,7 @@ function sameScanFields(a: FileItem, b: FileItem): boolean {
   return (
     a.name === b.name &&
     a.isFolder === b.isFolder &&
+    a.isAsset === b.isAsset &&
     a.parentId === b.parentId &&
     a.position === b.position &&
     a.isFavorite === b.isFavorite &&
@@ -1459,6 +1465,11 @@ export const useFileStore = create<FileState>()(
           if (!id) {
             return state.currentFileId === null ? {} : { currentFileId: null };
           }
+          // A workspace file has no editor. The URL deep-link path calls this directly rather
+          // than through requestCurrentFile, so the refusal has to live here too.
+          if (state.files.find((item) => item.id === id)?.isAsset) {
+            return state.currentFileId === null ? {} : { currentFileId: null };
+          }
           const file = state.files.find((item) => item.id === id && !item.isFolder);
           if (!file) {
             return state.currentFileId === id ? {} : { currentFileId: id };
@@ -1476,6 +1487,9 @@ export const useFileStore = create<FileState>()(
       },
 
       requestCurrentFile: async (id: string | null) => {
+        // The one choke point that keeps a workspace file out of an editor tab, whichever surface
+        // asked: the sidebar, the command palette, the quick switcher, a Wiki Link, the URL sync.
+        if (id && get().files.find((file) => file.id === id)?.isAsset) return false;
         const request = ++fileNavigationRequest;
         if (get().currentFileId === id) return true;
         if (!useEditorStore.getState().isDirty) {
@@ -1732,7 +1746,7 @@ export const useFileStore = create<FileState>()(
       getRecentFiles: (limit = 3) => {
         const { files } = get();
         return files
-          .filter((f) => !f.isFolder)
+          .filter((f) => !f.isFolder && !f.isAsset)
           .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
           .slice(0, limit);
       },
@@ -2015,7 +2029,9 @@ export const useFileStore = create<FileState>()(
 
       selectFileRange: (fromId, toId) => {
         const { files, currentFolderId } = get();
-        const visibleFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+        const visibleFiles = files.filter(
+          (f) => !f.isFolder && !f.isAsset && f.parentId === currentFolderId
+        );
         const fromIndex = visibleFiles.findIndex((f) => f.id === fromId);
         const toIndex = visibleFiles.findIndex((f) => f.id === toId);
 
@@ -2036,7 +2052,11 @@ export const useFileStore = create<FileState>()(
 
       selectAll: () => {
         const { files, currentFolderId } = get();
-        const visibleFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+        // Assets stay out of the selection: bulk delete resolves straight to adapter.delete,
+        // which rejects them, so a range or a select-all could otherwise fail mid-batch.
+        const visibleFiles = files.filter(
+          (f) => !f.isFolder && !f.isAsset && f.parentId === currentFolderId
+        );
         set({ selectedFileIds: new Set(visibleFiles.map((f) => f.id)) });
       },
 

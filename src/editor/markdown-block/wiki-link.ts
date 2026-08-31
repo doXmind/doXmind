@@ -12,7 +12,11 @@ export function resolveWikiLinkTarget(
 
   const pages = files.filter(
     (file) =>
-      !file.isFolder && (file.documentType === undefined || file.documentType === "markdown")
+      !file.isFolder &&
+      // An asset also has no `documentType`, so without this `[[diagram]]` would resolve to
+      // `assets/diagram.png` and try to open an image as a Page.
+      !file.isAsset &&
+      (file.documentType === undefined || file.documentType === "markdown")
   );
   const current = pages.find((file) => file.id === currentFileId);
   const resolution = resolveKnowledgeWikiPage(

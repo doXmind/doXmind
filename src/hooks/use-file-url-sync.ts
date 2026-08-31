@@ -192,7 +192,7 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
         });
       }
     } else {
-      const nextFile = files.find((f) => !f.isFolder);
+      const nextFile = files.find((f) => !f.isFolder && !f.isAsset);
       const nextId = nextFile?.id ?? null;
       void navigateToEditorFile(nextId, { replace: true }).then((switched) => {
         if (switched) {

@@ -1707,6 +1707,64 @@ test("the scan carries frontmatter aliases, so a Wiki Link resolves without open
   });
 });
 
+test("the scan reports real folders and every other file, so nothing on disk is invisible", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    await fs.mkdir(path.join(root, "assets"), { recursive: true });
+    await fs.mkdir(path.join(root, "Empty"), { recursive: true });
+    await fs.mkdir(path.join(root, ".github"), { recursive: true });
+    await fs.mkdir(path.join(root, "node_modules"), { recursive: true });
+    await fs.writeFile(path.join(root, "Note.md"), "# Note\n");
+    // The directory our own image paste writes into, and the files an Obsidian vault brings.
+    await fs.writeFile(path.join(root, "assets", "diagram.png"), "not really a png");
+    await fs.writeFile(path.join(root, "Board.canvas"), "{}");
+    await fs.writeFile(path.join(root, "Tasks.base"), "{}");
+    await fs.writeFile(path.join(root, ".github", "README.md"), "# CI\n");
+    await fs.writeFile(path.join(root, "node_modules", "pkg.md"), "# Vendored\n");
+
+    const scan = await invoke("workspace_scan", { root });
+    const folders = scan.folders.map((folder) => folder.path);
+    const assets = scan.assets.map((asset) => asset.path);
+
+    // An empty folder survives, because folders are no longer inferred from the files inside them.
+    assert.deepEqual(folders, ["assets", "Empty"]);
+    assert.deepEqual(assets, ["assets/diagram.png", "Board.canvas", "Tasks.base"]);
+    assert.equal(
+      scan.documents.some((document) => document.path === "node_modules/pkg.md"),
+      false
+    );
+    // Descent still follows a dot directory, but neither it nor its contents becomes a row.
+    assert.equal(
+      scan.documents.some((document) => document.path === ".github/README.md"),
+      true
+    );
+    assert.equal(folders.includes(".github"), false);
+
+    // The asset keeps its extension: a file tree has to show `diagram.png`, not `diagram`.
+    assert.equal(scan.assets.find((asset) => asset.path === "assets/diagram.png").name, "diagram.png");
+  });
+});
+
+test("the scan skips the folders the user excluded, by name only", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    await fs.mkdir(path.join(root, "Archive"), { recursive: true });
+    await fs.writeFile(path.join(root, "Archive", "Old.md"), "# Old\n");
+    await fs.writeFile(path.join(root, "Keep.md"), "# Keep\n");
+
+    const excluded = await invoke("workspace_scan", { root, excludeDirs: ["Archive", "", "../x"] });
+    assert.deepEqual(
+      excluded.documents.map((document) => document.path),
+      ["Keep.md"]
+    );
+    assert.deepEqual(excluded.folders, []);
+
+    // A path-shaped or empty entry is discarded rather than matched, so it excludes nothing.
+    const unfiltered = await invoke("workspace_scan", { root, excludeDirs: ["Archive/Old.md"] });
+    assert.equal(unfiltered.documents.length, 2);
+  });
+});
+
 test("a vault written by Obsidian carries its tags and aliases into the scan", async () => {
   await withWorkspace(async (root) => {
     const invoke = createNativeWorkspaceDispatcher();

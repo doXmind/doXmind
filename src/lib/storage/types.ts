@@ -1,6 +1,9 @@
 export type WorkspaceMode = "disk";
 
-export type WorkspaceEntryKind = "document" | "folder";
+// An `asset` is a workspace file doXmind lists but never opens: not a Page, not an Attachment
+// workspace. It exists so the tree can show what is actually on disk — images, `.canvas`, `.base`
+// — with reveal and open-externally as its only actions.
+export type WorkspaceEntryKind = "document" | "folder" | "asset";
 export type WorkspacePageType = "markdown";
 export type WorkspaceAttachmentType = "pdf" | "excel" | "html";
 /** File-format discriminator retained for attachment scanning and legacy compatibility. */

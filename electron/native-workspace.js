@@ -88,7 +88,7 @@ function createNativeWorkspaceDispatcher(options = {}) {
   return async function dispatchNativeWorkspace(command, payload = {}) {
     switch (command) {
       case "workspace_scan":
-        return workspaceScan(payload.root);
+        return workspaceScan(payload.root, payload.excludeDirs);
       case "workspace_markdown_search":
         return workspaceMarkdownSearch(payload.root, payload.query, payload.limit);
       case "doc_read":
@@ -143,16 +143,21 @@ function createNativeWorkspaceDispatcher(options = {}) {
   };
 }
 
-async function workspaceScan(rootValue) {
+async function workspaceScan(rootValue, excludeDirs) {
   const root = await canonicalWorkspaceRoot(rootValue);
-  const documents = [];
-  await walkDocuments(root, root, documents);
+  const ignored = new Set([...IGNORED_SCAN_DIRS, ...sanitizeExcludeDirs(excludeDirs)]);
+  const out = { documents: [], folders: [], assets: [] };
+  await walkWorkspace(root, root, out, ignored, false);
+  const { documents, folders, assets } = out;
   resolveDuplicatePageIds(documents);
   documents.sort((left, right) => {
     const byName = left.name.toLowerCase().localeCompare(right.name.toLowerCase());
     return byName || left.path.localeCompare(right.path);
   });
-  return { root, documents };
+  const byPath = (left, right) => left.path.localeCompare(right.path);
+  folders.sort(byPath);
+  assets.sort(byPath);
+  return { root, documents, folders, assets };
 }
 
 function resolveDuplicatePageIds(documents) {
@@ -170,19 +175,48 @@ function resolveDuplicatePageIds(documents) {
   }
 }
 
-async function walkDocuments(root, current, documents) {
+/**
+ * Walk the workspace once, collecting Pages/Attachments, real directories, and every other file.
+ *
+ * Folders used to be inferred from the paths of the documents inside them, so an empty one — or one
+ * holding only images — vanished from the sidebar while still sitting on disk. Files outside
+ * `DOCUMENT_EXTENSIONS` were dropped outright, which hid `assets/`, the directory doXmind's own
+ * image paste writes into, along with the `.canvas` and `.base` files of an imported vault.
+ *
+ * `hidden` tracks whether any ancestor segment starts with a dot. Descent still follows dot
+ * directories, because `.github/README.md` has always been reachable; only the new folder and
+ * asset rows skip them, so the tree does not fill up with dotfiles.
+ */
+async function walkWorkspace(root, current, out, ignored, hidden) {
   const entries = await fsp.readdir(current, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.isSymbolicLink()) continue;
     const absolute = path.join(current, entry.name);
+    const isDotted = entry.name.startsWith(".");
     if (entry.isDirectory()) {
-      if (!IGNORED_SCAN_DIRS.has(entry.name)) await walkDocuments(root, absolute, documents);
+      if (ignored.has(entry.name)) continue;
+      if (!hidden && !isDotted) out.folders.push({ path: relativePath(root, absolute) });
+      await walkWorkspace(root, absolute, out, ignored, hidden || isDotted);
       continue;
     }
     if (!entry.isFile() || isHiddenSidecarName(entry.name)) continue;
-    if (!DOCUMENT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
-    documents.push(await scanDocumentDto(root, absolute));
+    if (DOCUMENT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+      out.documents.push(await scanDocumentDto(root, absolute));
+      continue;
+    }
+    if (!hidden && !isDotted) {
+      out.assets.push({ path: relativePath(root, absolute), name: entry.name });
+    }
   }
+}
+
+/** User-supplied directory names to skip. Plain names only — no paths, no globs, no patterns. */
+function sanitizeExcludeDirs(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((name) => typeof name === "string")
+    .map((name) => name.trim())
+    .filter((name) => name && name !== "." && name !== ".." && !/[/\\]/.test(name));
 }
 
 async function scanDocumentDto(root, absolute) {

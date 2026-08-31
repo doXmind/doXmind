@@ -78,7 +78,7 @@ export function entriesToWorkspaceIndex(
   const limit = query.limit ?? DEFAULT_INDEX_LIMIT;
 
   return entries
-    .filter((entry) => includeFolders || entry.kind === "document")
+    .filter((entry) => entry.kind !== "asset" && (includeFolders || entry.kind === "document"))
     .map(toWorkspaceIndexEntry)
     .filter((entry) => {
       if (!normalizedQuery) return true;

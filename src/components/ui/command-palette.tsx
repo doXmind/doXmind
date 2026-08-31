@@ -203,17 +203,19 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
     ];
 
     // Add file navigation commands
-    const fileCommands: CommandItem[] = files.map((file) => ({
-      id: `file-${file.id}`,
-      label: file.name,
-      icon: <FileText className="h-4 w-4" />,
-      category: "navigation" as const,
-      action: () => {
-        navigateToEditorFile(file.id);
-        onClose();
-      },
-      keywords: ["open", "go to", file.name.toLowerCase()],
-    }));
+    const fileCommands: CommandItem[] = files
+      .filter((file) => !file.isAsset)
+      .map((file) => ({
+        id: `file-${file.id}`,
+        label: file.name,
+        icon: <FileText className="h-4 w-4" />,
+        category: "navigation" as const,
+        action: () => {
+          navigateToEditorFile(file.id);
+          onClose();
+        },
+        keywords: ["open", "go to", file.name.toLowerCase()],
+      }));
 
     return [...baseCommands, ...fileCommands];
   }, [

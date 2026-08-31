@@ -22,6 +22,8 @@ export interface FileActionsMenuItemsProps {
   /** State */
   hasParent: boolean;
   isAttachment?: boolean;
+  /** A listed workspace file with no editor and no write path: two actions, nothing else. */
+  isAsset?: boolean;
 
   /** Rendering variant */
   variant: "dropdown" | "context";
@@ -47,6 +49,9 @@ export interface FileActionsMenuItemsProps {
  *   4+offset - Move to Trash
  *
  * Attachment indices: Open externally, Rename, Reveal, [Move to Root], Delete.
+ *
+ * Asset indices: Open externally, Reveal. Every other row routes into a write command that
+ * rejects a path outside the document extensions, so offering them would only produce errors.
  */
 export function FileActionsMenuItems({
   onOpenExternally,
@@ -58,6 +63,7 @@ export function FileActionsMenuItems({
   onDelete,
   hasParent,
   isAttachment = false,
+  isAsset = false,
   variant,
   focusIndex = -1,
   onFocusIndex,
@@ -68,6 +74,30 @@ export function FileActionsMenuItems({
   const exportOffset = hasParent ? 1 : 0;
 
   if (variant === "dropdown") {
+    if (isAsset) {
+      return (
+        <>
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenExternally?.();
+            }}
+          >
+            <ExternalLink className="mr-2 h-4 w-4" />
+            {tAttachment("openExternally")}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              onRevealInFinder();
+            }}
+          >
+            <FolderOpen className="mr-2 h-4 w-4" />
+            {t("revealInFinder")}
+          </DropdownMenuItem>
+        </>
+      );
+    }
     return (
       <>
         {isAttachment && (
@@ -171,6 +201,31 @@ export function FileActionsMenuItems({
   const revealIndex = renameIndex + 1;
   const moveIndex = revealIndex + 1;
   const deleteIndex = isAttachment ? moveIndex + exportOffset : 4 + exportOffset;
+
+  if (isAsset) {
+    return (
+      <>
+        <button
+          role="menuitem"
+          onClick={onOpenExternally}
+          onMouseEnter={() => setFocus(0)}
+          className={contextItemClass(0)}
+        >
+          <ExternalLink className="mr-2 h-4 w-4" />
+          {tAttachment("openExternally")}
+        </button>
+        <button
+          role="menuitem"
+          onClick={onRevealInFinder}
+          onMouseEnter={() => setFocus(1)}
+          className={contextItemClass(1)}
+        >
+          <FolderOpen className="mr-2 h-4 w-4" />
+          {t("revealInFinder")}
+        </button>
+      </>
+    );
+  }
 
   return (
     <>
@@ -276,7 +331,12 @@ export function FileActionsMenuItems({
  * Page items: Rename, Reveal, [Move to Root], Copy Source, Export PDF, Delete = 5 or 6.
  * Attachment items: Open externally, Rename, Reveal, [Move to Root], Delete = 4 or 5.
  */
-export function getMenuItemCount(hasParent: boolean, isAttachment = false): number {
+export function getMenuItemCount(
+  hasParent: boolean,
+  isAttachment = false,
+  isAsset = false
+): number {
+  if (isAsset) return 2;
   if (isAttachment) return hasParent ? 5 : 4;
   return hasParent ? 6 : 5;
 }
