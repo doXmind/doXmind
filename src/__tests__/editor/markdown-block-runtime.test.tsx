@@ -162,11 +162,49 @@ describe("MarkdownBlockRuntime", () => {
       discardPendingChanges: null,
     });
     useLayoutStore.setState({ autosaveEnabled: true, isSearchBarOpen: false });
-    usePageSessionStore.setState({ outlineSession: null });
+    usePageSessionStore.setState({ outlineSession: null, revealRequest: null });
   });
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("puts the caret in the Block a search hit's line falls inside", async () => {
+    const multi: FileItem = {
+      ...file,
+      content: "# Title\n\nAlpha needle\n\n## Section\n\nBeta needle\n",
+    };
+    render(<MarkdownBlockRuntime file={multi} />);
+
+    // Body line 7 is "Beta needle" — the fourth Block, not the fourth line of the first Block.
+    act(() => {
+      usePageSessionStore.getState().requestReveal("page-1", 7);
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("Beta needle");
+    // Consumed, so re-rendering for any other reason does not move the caret again.
+    expect(usePageSessionStore.getState().revealRequest).toBe(null);
+  });
+
+  it("ignores a reveal aimed at a different Page", async () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "Alpha\n\nBeta\n" }} />);
+
+    act(() => {
+      usePageSessionStore.getState().requestReveal("some-other-page", 3);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.queryByLabelText("Markdown block")).toBeNull();
+    // Left standing for the Page it was meant for.
+    expect(usePageSessionStore.getState().revealRequest).toMatchObject({
+      pageId: "some-other-page",
+    });
   });
 
   it("edits a source block and autosaves canonical Markdown", async () => {

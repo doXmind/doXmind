@@ -10,7 +10,9 @@ import { BulkActionBar } from "./bulk-action-bar";
 import { UpdatePill } from "./update-pill";
 import { TemplatePicker, getLocalizedFileName, type FileTemplate } from "./template-picker";
 import { WorkspaceHeader } from "./workspace-header";
+import { SearchSidebar } from "./search-sidebar";
 import { useFileStore } from "@/stores/file-store";
+import { useLayoutStore } from "@/stores/layout-store";
 import { getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
@@ -27,6 +29,8 @@ export function FilesSidebar() {
   const isLoading = useFileStore((s) => s.isLoading);
   const isSynced = useFileStore((s) => s.isSynced);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  const sidebarView = useLayoutStore((s) => s.sidebarView);
+  const setSidebarView = useLayoutStore((s) => s.setSidebarView);
   const folderTreeRef = useRef<FolderTreeHandle>(null);
 
   const handleCreateFile = async (parentId: string | null = null) => {
@@ -98,25 +102,30 @@ export function FilesSidebar() {
         onCreateFolder={() => handleCreateFolder(null)}
         onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
         onCollapseAll={() => folderTreeRef.current?.collapseAll()}
-        canCollapseAll={files.some((file) => file.isFolder)}
+        canCollapseAll={sidebarView === "files" && files.some((file) => file.isFolder)}
+        onOpenSearch={() => setSidebarView(sidebarView === "search" ? "files" : "search")}
       />
 
-      <ScrollArea className="min-h-0 flex-1">
-        {/* min-h-full lets FolderTree's spacer reach the bottom of the
-            scroll viewport so right-clicks on empty space below the
-            last row still hit the empty-area context menu. */}
-        <div className="flex min-h-full flex-col px-1.5 pb-3 pt-2">
-          {isLoading && !isSynced ? (
-            <FileListSkeleton />
-          ) : (
-            <FolderTree
-              ref={folderTreeRef}
-              onCreateFile={handleCreateFile}
-              onCreateFolder={handleCreateFolder}
-            />
-          )}
-        </div>
-      </ScrollArea>
+      {sidebarView === "search" ? (
+        <SearchSidebar />
+      ) : (
+        <ScrollArea className="min-h-0 flex-1">
+          {/* min-h-full lets FolderTree's spacer reach the bottom of the
+              scroll viewport so right-clicks on empty space below the
+              last row still hit the empty-area context menu. */}
+          <div className="flex min-h-full flex-col px-1.5 pb-3 pt-2">
+            {isLoading && !isSynced ? (
+              <FileListSkeleton />
+            ) : (
+              <FolderTree
+                ref={folderTreeRef}
+                onCreateFile={handleCreateFile}
+                onCreateFolder={handleCreateFolder}
+              />
+            )}
+          </div>
+        </ScrollArea>
+      )}
 
       <BulkActionBar />
 

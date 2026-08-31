@@ -145,6 +145,7 @@
   "sidebar": {
     "settings": "Settings",
     "search": "Search",
+    "searchSummary": "{hits} results in {pages} Pages",
     "newDocument": "New page",
     "newFile": "New File",
     "newFolder": "New folder",

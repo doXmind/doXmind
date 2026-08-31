@@ -505,6 +505,12 @@ export interface MarkdownSearchOptions {
   signal?: AbortSignal;
 }
 
+export interface MarkdownSearchHit {
+  /** 1-based line within the Page body — frontmatter is not part of the editor's document. */
+  line: number;
+  preview: string;
+}
+
 export interface MarkdownSearchResult {
   id: string;
   content: string;
@@ -517,6 +523,10 @@ export interface MarkdownSearchResult {
     chunkIndex?: number;
   };
   score?: number;
+  /** Every hit the backend sent for this Page, capped; `content` is the first one's preview. */
+  matches?: MarkdownSearchHit[];
+  /** Hits found, which can exceed `matches.length` when the previews were capped. */
+  matchCount?: number;
 }
 
 export interface MarkdownSearchResults {

@@ -96,6 +96,7 @@ interface MarkdownSearchResultDto {
     line: number;
     preview: string;
   }>;
+  matchCount?: number;
 }
 
 export class DiskStorageAdapter implements StorageAdapter {
@@ -472,6 +473,11 @@ export class DiskStorageAdapter implements StorageAdapter {
                 chunkIndex: firstMatch?.line,
               },
               score: 1,
+              // Every hit, not just the first: the command palette shows one row per Page, but the
+              // search panel groups them, and throwing the rest away here was the only reason it
+              // could not.
+              matches: result.matches,
+              matchCount: result.matchCount ?? result.matches.length,
             },
           ];
         })

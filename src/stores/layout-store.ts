@@ -12,6 +12,8 @@ import {
 interface LayoutState {
   // Desktop panel visibility
   isFilesSidebarOpen: boolean; // Files sidebar (left edge, independent)
+  /** Which view the left sidebar shows. Not persisted: a session starts on the file tree. */
+  sidebarView: "files" | "search";
   themeId: string;
   preferredLightTheme: string;
   preferredDarkTheme: string;
@@ -50,6 +52,7 @@ interface LayoutState {
   // Actions
   toggleFilesSidebar: () => void;
   setFilesSidebarOpen: (open: boolean) => void;
+  setSidebarView: (view: "files" | "search") => void;
   setThemeId: (id: string) => void;
   setPreferredLightTheme: (id: string) => void;
   setPreferredDarkTheme: (id: string) => void;
@@ -99,6 +102,7 @@ export const useLayoutStore = create<LayoutState>()(
     (set) => ({
       // Desktop panel visibility
       isFilesSidebarOpen: true,
+      sidebarView: "files",
       themeId: DEFAULT_LIGHT_THEME,
       preferredLightTheme: DEFAULT_LIGHT_THEME,
       preferredDarkTheme: DEFAULT_DARK_THEME,
@@ -139,6 +143,10 @@ export const useLayoutStore = create<LayoutState>()(
 
       setFilesSidebarOpen: (open: boolean) => {
         set({ isFilesSidebarOpen: open });
+      },
+
+      setSidebarView: (view) => {
+        set({ sidebarView: view });
       },
 
       setThemeId: (id: string) => {

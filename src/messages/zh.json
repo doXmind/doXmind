@@ -145,6 +145,7 @@
   "sidebar": {
     "settings": "设置",
     "search": "搜索",
+    "searchSummary": "{pages} 个页面中的 {hits} 条结果",
     "newDocument": "新建页面",
     "newFile": "新建文件",
     "newFolder": "新建文件夹",

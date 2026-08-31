@@ -190,6 +190,8 @@ export function MarkdownBlockRuntime({
   const setRequestRedo = useEditorRefStore((state) => state.setRequestRedo);
   const setDiscardPendingChanges = useEditorRefStore((state) => state.setDiscardPendingChanges);
   const publishOutline = usePageSessionStore((state) => state.publishOutline);
+  const revealRequest = usePageSessionStore((state) => state.revealRequest);
+  const clearReveal = usePageSessionStore((state) => state.clearReveal);
   const clearOutline = usePageSessionStore((state) => state.clearOutline);
 
   const initialMarkdown = file.content;
@@ -1099,6 +1101,21 @@ export function MarkdownBlockRuntime({
     },
     [debouncedSave]
   );
+
+  // A search result asks for a body line; the caret has to land in whichever Block spans it.
+  useEffect(() => {
+    if (!revealRequest || revealRequest.pageId !== file.id) return;
+    // `documentRef`, not `snapshot`: opening a different Page from a search result runs this on the
+    // commit where the store's file has changed but the snapshot state has not caught up yet.
+    const blocks = documentRef.current.getSnapshot().blocks;
+    const target = markdownBlockIdAtLine(blocks, revealRequest.line);
+    clearReveal();
+    if (!target) return;
+    setActiveBlockId(target);
+    setBlockSelection(null);
+    setPendingSelection({ blockId: target, anchor: 0, head: 0 });
+    // `revealRequest.token` is in the deps so two clicks on the same line both land.
+  }, [revealRequest, file.id, clearReveal]);
 
   const moveBlock = useCallback(
     (blockId: string, direction: -1 | 1): boolean => {
@@ -3397,6 +3414,23 @@ function settableKindPrefix(
     default:
       return "";
   }
+}
+
+/**
+ * The Block containing 1-based body `line`, or null.
+ *
+ * Block spans are byte offsets into the same Markdown the line number was counted over, so the
+ * mapping is a line-ending count rather than anything the projection has to be asked about.
+ */
+function markdownBlockIdAtLine(blocks: readonly MarkdownBlockView[], line: number): string | null {
+  if (!Number.isFinite(line) || line < 1) return null;
+  let current = 1;
+  for (const block of blocks) {
+    const lines = block.raw.split(/\r\n|\n|\r/).length - 1 || 1;
+    if (line < current + lines) return block.id;
+    current += lines;
+  }
+  return blocks.at(-1)?.id ?? null;
 }
 
 function findMarkdownSearchMatches(

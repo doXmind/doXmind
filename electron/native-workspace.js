@@ -1262,6 +1262,8 @@ function objectOrNull(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
 
+const MARKDOWN_SEARCH_PREVIEWS_PER_PAGE = 50;
+
 async function workspaceMarkdownSearch(rootValue, queryValue, limitValue) {
   const root = await canonicalWorkspaceRoot(rootValue);
   const query = String(queryValue || "")
@@ -1274,9 +1276,18 @@ async function workspaceMarkdownSearch(rootValue, queryValue, limitValue) {
   for (const document of scan.documents) {
     if (document.documentType !== "markdown") continue;
     const raw = await readUtf8(path.join(root, ...document.path.split("/")));
+    // The body, not the raw file. Line numbers counted over the frontmatter belong to no line the
+    // editor can show — `readPage` returns the body — so a hit reported at line 7 landed several
+    // Blocks off. It also stopped `id:` and `tags:` surfacing as if they were content.
+    const body = splitPageSource(raw).body;
     const matches = [];
-    for (const [index, line] of raw.split(/\r\n|\n|\r/).entries()) {
-      if (line.toLowerCase().includes(query)) {
+    let matchCount = 0;
+    for (const [index, line] of body.split(/\r\n|\n|\r/).entries()) {
+      if (!line.toLowerCase().includes(query)) continue;
+      matchCount += 1;
+      // Every hit is counted, but a Page with thousands of them does not send thousands of
+      // previews across the bridge for a panel that can only show a screen of them.
+      if (matches.length < MARKDOWN_SEARCH_PREVIEWS_PER_PAGE) {
         matches.push({ line: index + 1, preview: line.trim().slice(0, 240) });
       }
     }
@@ -1287,6 +1298,7 @@ async function workspaceMarkdownSearch(rootValue, queryValue, limitValue) {
         name: document.name,
         title: document.title,
         matches,
+        matchCount,
       });
       if (results.length >= limit) break;
     }

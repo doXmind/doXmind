@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronsDownUp } from "lucide-react";
+import { ChevronsDownUp, Search } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -13,6 +13,7 @@ interface WorkspaceHeaderProps {
   onCreateFolder: () => void;
   onOpenTemplatePicker: () => void;
   onCollapseAll: () => void;
+  onOpenSearch: () => void;
   canCollapseAll?: boolean;
 }
 
@@ -27,6 +28,7 @@ export function WorkspaceHeader({
   onCreateFolder,
   onOpenTemplatePicker,
   onCollapseAll,
+  onOpenSearch,
   canCollapseAll = true,
 }: WorkspaceHeaderProps) {
   const t = useTranslations("sidebar");
@@ -51,6 +53,17 @@ export function WorkspaceHeader({
             onCreateFolder={onCreateFolder}
             onOpenTemplatePicker={onOpenTemplatePicker}
           />
+          <Tooltip content={t("search")} side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onOpenSearch}
+              className="sidebar-action-button h-7 w-7 rounded-lg"
+              aria-label={t("search")}
+            >
+              <Search className="h-4 w-4" />
+            </Button>
+          </Tooltip>
           {canCollapseAll && (
             <Tooltip content={t("collapseAll")} side="bottom">
               {/* Same Button as NewButton next to it, not a bare <button>. As a

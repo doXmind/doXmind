@@ -1707,6 +1707,53 @@ test("the scan carries frontmatter aliases, so a Wiki Link resolves without open
   });
 });
 
+test("search reports every hit, at line numbers the editor can actually reach", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    // Line numbers used to be counted over the raw file, frontmatter included, so a hit in a Page
+    // with frontmatter pointed several lines past where it really was.
+    await fs.writeFile(
+      path.join(root, "Framed.md"),
+      "---\nid: framed\ntags: [needle]\n---\n\nAlpha\nneedle one\nBeta\nneedle two\n"
+    );
+    await fs.writeFile(path.join(root, "Plain.md"), "needle here\n");
+
+    const results = await invoke("workspace_markdown_search", { root, query: "needle" });
+    const framed = results.find((entry) => entry.path === "Framed.md");
+    const plain = results.find((entry) => entry.path === "Plain.md");
+
+    // Body lines 2 and 4 — not 7 and 9, and the `tags:` line is not content.
+    assert.deepEqual(
+      framed.matches.map((match) => [match.line, match.preview]),
+      [
+        [2, "needle one"],
+        [4, "needle two"],
+      ]
+    );
+    assert.equal(framed.matchCount, 2);
+    assert.deepEqual(
+      plain.matches.map((match) => match.line),
+      [1]
+    );
+    assert.equal(plain.matchCount, 1);
+  });
+});
+
+test("search counts every hit in a Page but sends a bounded number of previews", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    const lines = Array.from({ length: 120 }, (_, index) => `needle ${index}`);
+    await fs.writeFile(path.join(root, "Many.md"), `${lines.join("\n")}\n`);
+
+    const [result] = await invoke("workspace_markdown_search", { root, query: "needle" });
+    assert.equal(result.matchCount, 120);
+    assert.equal(result.matches.length, 50);
+    // The previews that do come back are the first ones, in order.
+    assert.equal(result.matches[0].line, 1);
+    assert.equal(result.matches.at(-1).line, 50);
+  });
+});
+
 test("the scan reports real folders and every other file, so nothing on disk is invisible", async () => {
   await withWorkspace(async (root) => {
     const invoke = createNativeWorkspaceDispatcher();
