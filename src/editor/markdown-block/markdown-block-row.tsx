@@ -1116,9 +1116,9 @@ function MarkdownBlockRowView({
         source.length === 0 &&
         (block.depth ?? 0) > 0 &&
         isListBlockKind(block.kind) &&
-        onIndent
+        onIndent &&
+        onIndent(block.id, -1, { anchor: 0, head: 0 }) !== false
       ) {
-        onIndent(block.id, -1, { anchor: 0, head: 0 });
         return;
       }
       // At a visible boundary the source offset may sit *inside* a delimiter run, so splitting
@@ -1130,8 +1130,14 @@ function MarkdownBlockRowView({
     }
     if (!sourceOnly && event.key === "Backspace" && atVisibleStart) {
       event.preventDefault();
-      if ((block.depth ?? 0) > 0 && isListBlockKind(block.kind) && onIndent) {
-        onIndent(block.id, -1, { anchor: 0, head: 0 });
+      // A refused outdent must not eat the keystroke — falling through to the merge keeps the
+      // Block reachable instead of leaving the caret in a dead end.
+      if (
+        (block.depth ?? 0) > 0 &&
+        isListBlockKind(block.kind) &&
+        onIndent &&
+        onIndent(block.id, -1, { anchor: 0, head: 0 }) !== false
+      ) {
         return;
       }
       onMergeBackward(block.id);
