@@ -1405,15 +1405,50 @@ function readLine(source, start) {
 
 function parseMetadataLines(lines) {
   const meta = {};
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; index += 1) {
     // Only a top-level mapping entry — the exact shape the patch writer can
     // target — becomes a Page property. Indented keys stay unknown-but-
     // preserved source so an edit never lands on a different YAML node.
+    const line = lines[index];
     const match = /^([A-Za-z_][A-Za-z0-9_.-]*)\s*:/.exec(line);
     if (!match) continue;
+    const sequence = readBlockSequence(lines, index);
+    if (sequence) {
+      meta[match[1]] = sequence.items;
+      index = sequence.end - 1;
+      continue;
+    }
     meta[match[1]] = parseYamlScalar(line.slice(match[0].length).trim());
   }
   return meta;
+}
+
+/**
+ * The block sequence opened by `lines[index]`, or null if that key's value is not one.
+ *
+ * `tags:` followed by `  - project` is how Obsidian writes a list, and reading only the key's own
+ * line saw an empty scalar — so every tag and alias in an imported vault arrived as `""`, invisible
+ * in the properties panel and unpatchable by the writer. A nested *mapping* is deliberately not a
+ * sequence: those stay opaque, because the writer cannot target a key inside one.
+ */
+function readBlockSequence(lines, index) {
+  const line = lines[index];
+  const match = /^([A-Za-z_][A-Za-z0-9_.-]*)\s*:/.exec(line);
+  if (!match) return null;
+  if (stripYamlInlineComment(line.slice(match[0].length)).trim()) return null;
+  const items = [];
+  let indent = null;
+  let end = index + 1;
+  for (; end < lines.length; end += 1) {
+    const entry = /^([ \t]*)-(?:[ \t]+(.*))?$/.exec(lines[end]);
+    if (!entry) break;
+    // Every entry of one sequence stands in the same column; a different one is another node.
+    if (indent === null) indent = entry[1];
+    else if (entry[1] !== indent) break;
+    items.push(parseYamlScalar((entry[2] ?? "").trim()));
+  }
+  if (!items.length) return null;
+  return { items, end, indent: indent ?? "  " };
 }
 
 function portablePageId(value) {
@@ -1454,6 +1489,12 @@ function parseYamlScalar(value) {
   const token = stripYamlInlineComment(value).trim();
   if (/^(true|false)$/i.test(token)) return token.toLowerCase() === "true";
   if (/^(null|~)$/i.test(token)) return null;
+  // YAML's flow sequence is only JSON when every item happens to be quoted. `tags: [a, b]` is
+  // ordinary YAML and was landing in the fallback as the literal string "[a, b]".
+  if (token.startsWith("[") && token.endsWith("]")) {
+    const items = splitYamlFlowItems(token.slice(1, -1));
+    if (items) return items.map((item) => parseYamlScalar(item));
+  }
   try {
     return JSON.parse(token);
   } catch {
@@ -1461,6 +1502,45 @@ function parseYamlScalar(value) {
     if (singleQuoted) return singleQuoted[1].replaceAll("''", "'");
     return token;
   }
+}
+
+/** Top-level commas of a flow sequence's interior, respecting quotes and nesting. */
+function splitYamlFlowItems(inner) {
+  const items = [];
+  let current = "";
+  let quote = null;
+  let escaped = false;
+  let depth = 0;
+  for (const char of inner) {
+    if (quote === '"') {
+      current += char;
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') quote = null;
+      continue;
+    }
+    if (quote === "'") {
+      current += char;
+      if (char === "'") quote = null;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (char === "[" || char === "{") depth += 1;
+    else if (char === "]" || char === "}") depth -= 1;
+    if (char === "," && depth === 0) {
+      items.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  if (quote !== null || depth !== 0) return null;
+  items.push(current);
+  return items.map((item) => item.trim()).filter((item) => item !== "");
 }
 
 function stripYamlInlineComment(value) {
@@ -1522,17 +1602,33 @@ function patchFrontmatterPrefix(prefix, patchValue) {
   const newline = head.includes("\r\n") ? "\r\n" : head.includes("\r") ? "\r" : "\n";
   const lines = head.split(/\r\n|\n|\r/);
   validatePagePropertyPatchSource(lines.slice(1, -1), patch);
+  const body = lines.slice(1, -1);
   const output = [lines[0]];
   const consumed = new Set();
-  for (const line of lines.slice(1, -1)) {
-    const match = /^([A-Za-z_][A-Za-z0-9_.-]*)\s*:/.exec(line);
-    const key = match && match[1];
+  for (let index = 0; index < body.length; index += 1) {
+    const line = body[index];
+    const key = pagePropertyLineKey(line);
+    const sequence = key ? readBlockSequence(body, index) : null;
     if (!key || !(key in patch)) {
       output.push(line);
+      // A sequence we are not touching is copied through exactly as the user wrote it.
+      if (sequence) {
+        for (let entry = index + 1; entry < sequence.end; entry += 1) output.push(body[entry]);
+        index = sequence.end - 1;
+      }
       continue;
     }
     consumed.add(key);
     const value = patch[key];
+    if (sequence) {
+      // Rewriting a list the user wrote as a block keeps it a block; collapsing it to flow style
+      // would reformat a file the user never asked us to reformat.
+      if (value !== null && value !== undefined) {
+        output.push(...renderBlockSequenceLines(line, key, value, sequence.indent));
+      }
+      index = sequence.end - 1;
+      continue;
+    }
     if (value !== null && value !== undefined) {
       output.push(patchPagePropertyLine(line, key, value));
     }
@@ -1591,7 +1687,10 @@ function validatePagePropertyPatchSource(lines, patch) {
     if (!yamlValueEndsOnLine(scalar)) {
       throw new Error(`cannot safely patch Page property '${key}': nested YAML value`);
     }
-    for (const continuation of lines.slice(index + 1)) {
+    // A block sequence is a shape the writer rewrites whole, so its own entries are not the
+    // nesting this guard exists to refuse. Resume the check past the sequence.
+    const sequence = readBlockSequence(lines, index);
+    for (const continuation of lines.slice(sequence ? sequence.end : index + 1)) {
       if (!continuation.trim() || continuation.trimStart().startsWith("#")) continue;
       if (/^[ \t]/.test(continuation)) {
         throw new Error(`cannot safely patch Page property '${key}': nested YAML value`);
@@ -1654,6 +1753,24 @@ function patchPagePropertyLine(line, key, value) {
     suffix = rawValue.slice(rawValue.trimEnd().length);
   }
   return `${prefix}${leadingWhitespace}${renderMetadataValue(key, value)}${suffix}`;
+}
+
+function renderBlockSequenceLines(keyLine, key, value, indent) {
+  if (!Array.isArray(value) || value.length === 0) {
+    return [patchPagePropertyLine(keyLine, key, value)];
+  }
+  return [keyLine, ...value.map((item) => `${indent}- ${renderYamlSequenceItem(item)}`)];
+}
+
+/**
+ * A sequence entry, left bare where YAML allows it so a round-trip through doXmind leaves an
+ * Obsidian tag list looking the way Obsidian wrote it.
+ */
+function renderYamlSequenceItem(value) {
+  if (typeof value === "string" && /^[A-Za-z0-9_][A-Za-z0-9 _./-]*$/.test(value)) {
+    return value;
+  }
+  return JSON.stringify(value);
 }
 
 function renderMetadataValue(key, value) {

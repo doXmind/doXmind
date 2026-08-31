@@ -20,6 +20,7 @@ from services.markdown_source import (
     extract_frontmatter_block,
     parse_frontmatter,
     portable_page_id_from_token,
+    read_block_sequence,
 )
 
 
@@ -203,6 +204,26 @@ def _render_yaml_scalar(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
+def _render_block_sequence_lines(key_line: str, key: str, value: Any, indent: str) -> list[str]:
+    if not isinstance(value, list) or not value:
+        return [_patch_page_property_line(key_line, key, value)]
+    return [key_line, *(f"{indent}- {_render_yaml_sequence_item(item)}" for item in value)]
+
+
+_BARE_SEQUENCE_ITEM = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9 _./-]*$")
+
+
+def _render_yaml_sequence_item(value: Any) -> str:
+    """A sequence entry, left bare where YAML allows it.
+
+    A round-trip through doXmind then leaves an Obsidian tag list looking the way Obsidian
+    wrote it.
+    """
+    if isinstance(value, str) and _BARE_SEQUENCE_ITEM.fullmatch(value):
+        return value
+    return _render_yaml_scalar(value)
+
+
 def _render_metadata_value(key: str, value: Any) -> str:
     if key == "id":
         return str(value)
@@ -236,16 +257,33 @@ def _patch_frontmatter_prefix(prefix: str | None, meta_patch: dict[str, Any]) ->
     output: list[str] = [lines[0]]
     consumed: set[str] = set()
 
-    for line in lines[1:-1]:
-        match = re.match(r"^([A-Za-z_][A-Za-z0-9_.-]*)\s*:", line)
-        key = match.group(1) if match else None
+    body = lines[1:-1]
+    index = 0
+    while index < len(body):
+        line = body[index]
+        key = _page_property_line_key(line)
+        sequence = read_block_sequence(body, index) if key is not None else None
         if key is None or key not in patch:
             output.append(line)
+            # A sequence we are not touching is copied through exactly as the user wrote it.
+            if sequence is not None:
+                output.extend(body[index + 1 : sequence[1]])
+                index = sequence[1]
+            else:
+                index += 1
             continue
         consumed.add(key)
         value = patch[key]
+        if sequence is not None:
+            # Rewriting a list the user wrote as a block keeps it a block; collapsing it to flow
+            # style would reformat a file the user never asked us to reformat.
+            if value is not None:
+                output.extend(_render_block_sequence_lines(line, key, value, sequence[2]))
+            index = sequence[1]
+            continue
         if value is not None:
             output.append(_patch_page_property_line(line, key, value))
+        index += 1
 
     for key, value in patch.items():
         if key not in consumed and value is not None:
@@ -292,7 +330,11 @@ def _validate_page_property_patch_source(lines: list[str], patch: dict[str, Any]
         scalar = _strip_yaml_inline_comment(line.split(":", 1)[1]).strip()
         if not _yaml_value_ends_on_line(scalar):
             raise ValueError(f"cannot safely patch Page property '{key}': nested YAML value")
-        for continuation in lines[index + 1 :]:
+        # A block sequence is a shape the writer rewrites whole, so its own entries are not the
+        # nesting this guard exists to refuse. Resume the check past the sequence.
+        sequence = read_block_sequence(lines, index)
+        resume = sequence[1] if sequence is not None else index + 1
+        for continuation in lines[resume:]:
             if not continuation.strip() or continuation.lstrip().startswith("#"):
                 continue
             if continuation.startswith((" ", "\t")):

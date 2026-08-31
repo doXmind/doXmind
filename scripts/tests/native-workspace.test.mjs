@@ -1707,6 +1707,48 @@ test("the scan carries frontmatter aliases, so a Wiki Link resolves without open
   });
 });
 
+test("a vault written by Obsidian carries its tags and aliases into the scan", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    // The block sequence is Obsidian's own default shape for both keys. Reading only the key's
+    // line saw an empty scalar, so an imported vault arrived with no tags and no aliases at all.
+    await fs.writeFile(
+      path.join(root, "Roadmap.md"),
+      "---\ntags:\n  - project\n  - urgent\naliases:\n  - Plan\n  - Q3 Plan\n---\n\n# Roadmap\n"
+    );
+    // Zero indentation is equally valid YAML, and Obsidian writes it too.
+    await fs.writeFile(path.join(root, "Flat.md"), "---\ntags:\n- inbox\n---\n\n# Flat\n");
+    // An unquoted flow sequence is not JSON, and used to survive as a literal string.
+    await fs.writeFile(path.join(root, "Flow.md"), "---\ntags: [alpha, beta]\n---\n\n# Flow\n");
+
+    // Aliases reach the scan, because a Wiki Link resolves against them without opening the Page.
+    const scan = await invoke("workspace_scan", { root });
+    const roadmap = scan.documents.find((document) => document.path === "Roadmap.md");
+    assert.deepEqual(roadmap.aliases, ["Plan", "Q3 Plan"]);
+
+    // Tags reach the properties panel through the Page itself.
+    const opened = await invoke("doc_read", { root, path: "Roadmap.md" });
+    assert.deepEqual(opened.meta.tags, ["project", "urgent"]);
+    assert.deepEqual(opened.meta.aliases, ["Plan", "Q3 Plan"]);
+    assert.deepEqual((await invoke("doc_read", { root, path: "Flat.md" })).meta.tags, ["inbox"]);
+    assert.deepEqual((await invoke("doc_read", { root, path: "Flow.md" })).meta.tags, [
+      "alpha",
+      "beta",
+    ]);
+
+    // Editing one list leaves the other, and the body, byte-identical.
+    await invoke("doc_write_workspace", {
+      root,
+      path: "Roadmap.md",
+      payload: { meta: { tags: ["project", "shipped"] }, expectedRevision: opened.revision },
+    });
+    assert.equal(
+      await fs.readFile(path.join(root, "Roadmap.md"), "utf8"),
+      "---\ntags:\n  - project\n  - shipped\naliases:\n  - Plan\n  - Q3 Plan\n---\n\n# Roadmap\n"
+    );
+  });
+});
+
 test("a Page save preserves the file's permissions through the process umask", async (t) => {
   if (process.platform === "win32") {
     t.skip("POSIX permission bits");
