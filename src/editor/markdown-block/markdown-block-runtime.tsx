@@ -54,6 +54,7 @@ import {
   type MarkdownCollectionContext,
   type MarkdownImageContext,
   type MarkdownSlashRun,
+  type MarkdownWikiLinkRun,
   type MarkdownWikiEmbedContext,
   type MarkdownWikiLinkServices,
 } from "@/editor/markdown-block/markdown-block-row";
@@ -64,6 +65,7 @@ import {
   markdownSlashCommandSource,
   type MarkdownSlashCommandId,
 } from "@/editor/markdown-block/slash-commands";
+import { wikiLinkPages } from "@/editor/markdown-block/wiki-link-suggestions";
 import { resolveWikiLinkTarget } from "@/editor/markdown-block/wiki-link";
 import { markdownImageDestinationForPage } from "@/editor/markdown-block/markdown-image";
 import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
@@ -2585,6 +2587,35 @@ export function MarkdownBlockRuntime({
     [publish]
   );
 
+  const suggestWikiLinks = useCallback(() => wikiLinkPages(useFileStore.getState().files), []);
+
+  const handleInsertWikiLink = useCallback(
+    (blockId: string, linkSource: string, run: MarkdownWikiLinkRun) => {
+      const latest = documentRef.current.getSnapshot();
+      const current = latest.blocks.find((candidate) => candidate.id === blockId);
+      if (!current) return;
+      // Replace exactly the `[[query` the user typed, mapped from editor offsets to source
+      // offsets — the text before the trigger stays byte for byte where it was.
+      const from = blockSourceOffsetForEditorOffset(current, run.start);
+      const to = blockSourceOffsetForEditorOffset(current, run.end);
+      const result = documentRef.current.apply({
+        type: "replaceText",
+        blockId,
+        range: { from, to },
+        text: linkSource,
+      });
+      publish(result, false);
+      const edited = result.snapshot.blocks.find((candidate) => candidate.id === blockId);
+      if (!edited) return;
+      // Just past the closing `]]`, so typing continues after the link rather than inside it.
+      const offset = editorOffsetForBlockSourceOffset(edited, from + linkSource.length);
+      setActiveBlockId(edited.id);
+      setBlockSelection(null);
+      setPendingSelection({ blockId: edited.id, anchor: offset, head: offset });
+    },
+    [publish]
+  );
+
   const pageFrameStyle = {
     "--editor-outline-gutter": `${reservedRightInset}px`,
   } as CSSProperties;
@@ -2959,6 +2990,8 @@ export function MarkdownBlockRuntime({
                     onSetTaskChecked={handleSetTaskChecked}
                     onMove={handleMoveBlock}
                     onIndent={handleIndent}
+                    onSuggestWikiLinks={suggestWikiLinks}
+                    onInsertWikiLink={handleInsertWikiLink}
                     onNavigate={navigateBlock}
                     onSetKind={setBlockKind}
                     onUndo={undo}

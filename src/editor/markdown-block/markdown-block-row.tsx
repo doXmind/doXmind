@@ -97,6 +97,11 @@ import {
   searchMarkdownSlashCommands,
   type MarkdownSlashCommandId,
 } from "@/editor/markdown-block/slash-commands";
+import {
+  searchWikiLinkPages,
+  wikiLinkSource,
+  type WikiLinkPage,
+} from "@/editor/markdown-block/wiki-link-suggestions";
 import { resolveKnowledgeWikiPage, type KnowledgeSourceCatalog } from "@/lib/knowledge-index";
 import {
   PageCollectionPreview,
@@ -230,6 +235,10 @@ interface MarkdownBlockRowProps {
   wikiEmbedContext?: MarkdownWikiEmbedContext;
   collectionContext?: MarkdownCollectionContext;
   imageContext?: MarkdownImageContext;
+  /** Every Page a Wiki Link could resolve to. Called only while a `[[` run is open. */
+  onSuggestWikiLinks?: () => readonly WikiLinkPage[];
+  /** Replace `run` with `source` (a complete `[[Link]]`) and put the caret after it. */
+  onInsertWikiLink?: (blockId: string, source: string, run: MarkdownWikiLinkRun) => void;
   onRunSlashCommand?: (
     blockId: string,
     commandId: MarkdownSlashCommandId,
@@ -391,6 +400,8 @@ function MarkdownBlockRowView({
   wikiEmbedContext,
   collectionContext,
   imageContext,
+  onSuggestWikiLinks,
+  onInsertWikiLink,
   onRunSlashCommand,
   listOrdinal,
 }: MarkdownBlockRowProps) {
@@ -418,6 +429,10 @@ function MarkdownBlockRowView({
   const [dismissedSlashStart, setDismissedSlashStart] = useState<number | null>(null);
   const [slashPosition, setSlashPosition] = useState<SlashMenuPosition | null>(null);
   const slashListRef = useRef<HTMLDivElement>(null);
+  const [wikiIndex, setWikiIndex] = useState(0);
+  const [dismissedWikiStart, setDismissedWikiStart] = useState<number | null>(null);
+  const [wikiPosition, setWikiPosition] = useState<SlashMenuPosition | null>(null);
+  const wikiListRef = useRef<HTMLDivElement>(null);
   const [linkEditor, setLinkEditor] = useState<{
     from: number;
     to: number;
@@ -467,15 +482,36 @@ function MarkdownBlockRowView({
     // closure's `source` tested the text as it was *before* the commit: composing 、 into an empty
     // Block tested "", found no trigger, and stored `null`. The insert panel then never opened, which
     // made the fullwidth trigger unreachable from the CJK keyboards it exists for.
-    setCaretOffset(SLASH_TRIGGER_PATTERN.test(text) ? offset : null);
+    setCaretOffset(SLASH_TRIGGER_PATTERN.test(text) || text.includes("[[") ? offset : null);
   };
   // While an IME composition is open the model deliberately lags the DOM, so the menu filters on the
   // live text. That is what makes `/` + pinyin narrow as you type, the way Feishu's insert panel
   // does — and it is safe because Enter belongs to the IME until the composition commits, so the
   // offsets used to execute a command always come from committed text.
   const liveSource = composingValue ?? source;
+  const wikiCaret =
+    composingValue === null ? (caretOffset ?? editorSelectionRef.current.head) : liveSource.length;
+  const wikiRun =
+    active && block.editable && !sourceOnly && onInsertWikiLink
+      ? wikiLinkRunAt(liveSource, wikiCaret)
+      : null;
+  const wikiQuery = wikiRun?.query ?? null;
+  const wikiStart = wikiRun?.start ?? null;
+  const wikiPages = useMemo(
+    () => (wikiQuery === null ? [] : (onSuggestWikiLinks?.() ?? [])),
+    [wikiQuery, onSuggestWikiLinks]
+  );
+  const wikiMatches = useMemo(
+    () => (wikiQuery === null ? [] : searchWikiLinkPages(wikiPages, wikiQuery)),
+    [wikiPages, wikiQuery]
+  );
+  // Closes with no match, unlike the slash menu: `[[` is also ordinary Markdown, so a query that
+  // matches nothing must let Enter split the Block instead of swallowing it.
+  const wikiMenuOpen =
+    wikiStart !== null && dismissedWikiStart !== wikiStart && wikiMatches.length > 0;
   const slashRun =
-    active && block.editable && !sourceOnly && onRunSlashCommand
+    // One popup at a time. `[[/foo` is inside a Wiki Link, not a command.
+    active && block.editable && !sourceOnly && onRunSlashCommand && wikiRun === null
       ? slashRunAt(
           liveSource,
           composingValue === null
@@ -698,6 +734,42 @@ function MarkdownBlockRowView({
       ?.scrollIntoView({ block: "nearest" });
   }, [slashIndex, slashMenuOpen]);
 
+  useEffect(() => {
+    setWikiIndex(0);
+  }, [wikiQuery]);
+
+  useEffect(() => {
+    // Forget the dismissal once the caret leaves the run it dismissed.
+    if (dismissedWikiStart !== null && wikiStart !== dismissedWikiStart) {
+      setDismissedWikiStart(null);
+    }
+  }, [dismissedWikiStart, wikiStart]);
+
+  useEffect(() => {
+    if (!wikiMenuOpen) {
+      setWikiPosition(null);
+      return;
+    }
+    const surface = rowRef.current?.querySelector<HTMLElement>("[data-native-block-editor]");
+    if (!surface || wikiStart === null) return;
+    const measure = () => setWikiPosition(slashMenuPosition(surface, wikiStart));
+    measure();
+    const scroller = surface.closest("[data-native-markdown-scroll]");
+    scroller?.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    return () => {
+      scroller?.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+    };
+  }, [wikiMenuOpen, wikiStart, wikiMatches.length]);
+
+  useEffect(() => {
+    if (!wikiMenuOpen) return;
+    wikiListRef.current
+      ?.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest" });
+  }, [wikiIndex, wikiMenuOpen]);
+
   // Which surface rendered last. Typing `**bold**` flips the Block from the raw textarea to the
   // semantic surface (and undo flips it back). React unmounts one and mounts the other, so unless
   // the caret is carried across explicitly it lands at offset 0 and the next keystroke goes to the
@@ -880,6 +952,26 @@ function MarkdownBlockRowView({
       : editorLength;
     const atVisibleStart = collapsed && visibleRange.from === 0;
     const atVisibleEnd = collapsed && visibleRange.to === visibleLength;
+    if (wikiMenuOpen) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const direction = event.key === "ArrowDown" ? 1 : -1;
+        setWikiIndex((current) => (current + direction + wikiMatches.length) % wikiMatches.length);
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        const page = wikiMatches[wikiIndex] ?? wikiMatches[0];
+        if (page && wikiRun) onInsertWikiLink?.(block.id, wikiLinkSource(page, wikiPages), wikiRun);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        // Leaves the literal `[[` the user typed in place — dismissing is never an edit.
+        setDismissedWikiStart(wikiRun?.start ?? null);
+        return;
+      }
+    }
     if (slashMenuOpen) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
@@ -1883,6 +1975,55 @@ function MarkdownBlockRowView({
                   document.body
                 )
               : null}
+            {wikiMenuOpen && wikiPosition
+              ? createPortal(
+                  <div
+                    ref={wikiListRef}
+                    role="listbox"
+                    aria-label="Wiki link targets"
+                    // Same exemption as the slash panel: portalled onto `document.body`, so without
+                    // this the runtime's outside-press listener would close the Block being edited.
+                    data-native-editor-overlay
+                    style={{
+                      position: "fixed",
+                      top: wikiPosition.top,
+                      left: wikiPosition.left,
+                      maxHeight: wikiPosition.maxHeight,
+                      transform: wikiPosition.flipped ? "translateY(-100%)" : undefined,
+                    }}
+                    className={`z-50 w-[min(314px,calc(100vw-2rem))] overflow-y-auto overscroll-contain ${MENU_PANEL_CLASS}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                  >
+                    {wikiMatches.map((page, pageIndex) => (
+                      <button
+                        key={page.id}
+                        type="button"
+                        role="option"
+                        tabIndex={-1}
+                        aria-selected={pageIndex === wikiIndex}
+                        className={`flex h-[31px] w-full items-center gap-2.5 rounded-md px-2 text-left transition-colors duration-[20ms] ease-in ${
+                          pageIndex === wikiIndex ? "bg-accent text-accent-foreground" : ""
+                        }`}
+                        onMouseMove={() => setWikiIndex(pageIndex)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (wikiRun) {
+                            onInsertWikiLink?.(block.id, wikiLinkSource(page, wikiPages), wikiRun);
+                          }
+                        }}
+                      >
+                        <span className="min-w-0 flex-1 truncate text-sm">{page.name}</span>
+                        {page.folder ? (
+                          <span className="min-w-0 max-w-[45%] shrink truncate text-[11px] text-muted-foreground">
+                            {page.folder}
+                          </span>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>,
+                  document.body
+                )
+              : null}
             <div data-native-block-print-preview className="hidden">
               <BlockPreview
                 block={block}
@@ -2002,6 +2143,34 @@ export interface MarkdownSlashRun {
  * requires that character to start a word. That last rule is what keeps `src/lib`, `and/or` and
  * `2026/07` typeable without the menu jumping in.
  */
+export interface MarkdownWikiLinkRun {
+  /** Offset of the opening `[[`. */
+  readonly start: number;
+  /** Caret offset — the end of what the user has typed so far. */
+  readonly end: number;
+  readonly query: string;
+}
+
+/**
+ * The `[[` run the caret sits inside, or null.
+ *
+ * Unlike a slash run, whitespace does not end it: Page names have spaces in them, and stopping at
+ * the first one would make every multi-word Page unreachable. A closing `]]` does end it, so the
+ * popup does not reopen behind a link the user already finished.
+ */
+function wikiLinkRunAt(source: string, caret: number): MarkdownWikiLinkRun | null {
+  const end = Math.min(Math.max(caret, 0), source.length);
+  for (let index = end - 1; index >= 1; index -= 1) {
+    const char = source[index];
+    if (char === "\n" || char === "\r") return null;
+    // A `]` between the caret and the `[[` closes the run, whichever half of `]]` it is.
+    if (char === "]") return null;
+    if (char !== "[" || source[index - 1] !== "[") continue;
+    return { start: index - 1, end, query: source.slice(index + 1, end) };
+  }
+  return null;
+}
+
 function slashRunAt(source: string, caret: number): MarkdownSlashRun | null {
   const end = Math.min(Math.max(caret, 0), source.length);
   for (let index = end - 1; index >= 0; index -= 1) {

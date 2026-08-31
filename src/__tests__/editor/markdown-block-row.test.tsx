@@ -443,6 +443,115 @@ describe("MarkdownBlockRow semantic previews", () => {
     expect(screen.getByRole("textbox", { name: "Toggle summary" })).toBeInTheDocument();
   });
 
+  const wikiPages = [
+    { id: "a", name: "Roadmap", folder: "Projects", path: "Projects/Roadmap", aliases: [] },
+    { id: "b", name: "Roadmap", folder: "Personal", path: "Personal/Roadmap", aliases: [] },
+    { id: "c", name: "Retro notes", folder: "", path: "Retro notes", aliases: [] },
+  ];
+
+  const renderWikiRow = (markdown: string, onInsertWikiLink = vi.fn()) => {
+    const [block] = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot().blocks;
+    render(
+      <MarkdownBlockRow
+        block={block}
+        active
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onRunSlashCommand={vi.fn()}
+        onSuggestWikiLinks={() => wikiPages}
+        onInsertWikiLink={onInsertWikiLink}
+      />
+    );
+    return { block, onInsertWikiLink };
+  };
+
+  it("suggests Pages while a [[ run is open, and inserts the one that is chosen", () => {
+    const { block, onInsertWikiLink } = renderWikiRow("See [[Retro");
+
+    expect(screen.getByRole("listbox", { name: "Wiki link targets" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Markdown block" }), { key: "Enter" });
+
+    // Only the `[[Retro` the user typed is replaced — "See " stays exactly where it was.
+    expect(onInsertWikiLink).toHaveBeenCalledWith(block.id, "[[Retro notes]]", {
+      start: 4,
+      end: 11,
+      query: "Retro",
+    });
+  });
+
+  it("writes the path when a bare name would be ambiguous", () => {
+    const { block, onInsertWikiLink } = renderWikiRow("[[Road");
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Markdown block" }), { key: "Enter" });
+
+    expect(onInsertWikiLink).toHaveBeenCalledWith(
+      block.id,
+      "[[Projects/Roadmap]]",
+      expect.objectContaining({ query: "Road" })
+    );
+  });
+
+  it("closes on a query no Page matches, so Enter still splits the Block", () => {
+    const onSplit = vi.fn();
+    const [block] = MarkdownBlockDocument.fromMarkdown("[[zzzz").getSnapshot().blocks;
+    render(
+      <MarkdownBlockRow
+        block={block}
+        active
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={onSplit}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onSuggestWikiLinks={() => wikiPages}
+        onInsertWikiLink={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole("listbox", { name: "Wiki link targets" })).toBeNull();
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Markdown block" }), { key: "Enter" });
+    expect(onSplit).toHaveBeenCalled();
+  });
+
+  it("does not suggest inside a Wiki Link the user already closed", () => {
+    renderWikiRow("[[Retro notes]] and more");
+
+    expect(screen.queryByRole("listbox", { name: "Wiki link targets" })).toBeNull();
+  });
+
+  it("keeps the slash menu out of a [[ run", () => {
+    renderWikiRow("[[Retro/tog");
+
+    expect(screen.queryByRole("listbox", { name: "Block commands" })).toBeNull();
+  });
+
   it("opens and executes the native slash menu without editor-framework state", () => {
     const [block] = MarkdownBlockDocument.fromMarkdown("/tog").getSnapshot().blocks;
     const onRunSlashCommand = vi.fn();
