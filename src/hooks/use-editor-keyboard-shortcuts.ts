@@ -8,10 +8,12 @@ import { useLayoutStore } from "@/stores/layout-store";
  *
  * Handles:
  * - Ctrl+? / Cmd+? - Toggle keyboard shortcuts modal
- * - Ctrl+K / Cmd+K - Toggle command palette. With text selected in the editor
- *   this never fires: the editor stops the event and opens its link editor
- *   instead, which is what the bubble menu and the shortcuts panel advertise.
+ * - Ctrl+P / Cmd+P - Toggle command palette
+ * - Ctrl+O / Cmd+O, or Ctrl+Tab - Quick switcher
  * - Ctrl+F / Cmd+F - Find in document
+ *
+ * Mod+K belongs to the editor's link editor, not to this hook: the editor stops that event and
+ * opens the link editor, which is what the bubble menu and the shortcuts panel advertise.
  */
 export function useEditorKeyboardShortcuts() {
   const {
@@ -50,8 +52,9 @@ export function useEditorKeyboardShortcuts() {
         return;
       }
 
-      // Ctrl+K or Cmd+K - Command palette (all scope)
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+      // Ctrl+P or Cmd+P - Command palette (all scope). Obsidian's map: ⌘P is the palette and ⌘O
+      // is the switcher. ⌘K stays free for the editor's own link editor.
+      if ((e.ctrlKey || e.metaKey) && e.key === "p") {
         e.preventDefault();
         if (isCommandPaletteOpen) {
           setCommandPaletteOpen(false);
@@ -98,8 +101,9 @@ export function useEditorKeyboardShortcuts() {
         return;
       }
 
-      // Ctrl+Tab - Quick file switcher
-      if ((e.ctrlKey || e.metaKey) && e.key === "Tab") {
+      // Ctrl+Tab, or Cmd/Ctrl+O - Quick file switcher. The desktop menu registers ⌘O so it works
+      // on every route; this branch is what makes it work in browser development too.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "Tab" || e.key === "o")) {
         e.preventDefault();
         setQuickSwitcherOpen(true);
         return;

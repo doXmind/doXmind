@@ -253,7 +253,7 @@ test("creates and reopens today's ordinary Markdown Daily Note", async ({ page }
 
   await page.locator('[data-drop-target-id="seed-page"]').click();
   await expect(page).toHaveTitle("Seed");
-  await page.keyboard.press("ControlOrMeta+k");
+  await page.keyboard.press("ControlOrMeta+p");
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await expect(palette).toBeVisible();
   await palette.getByLabel("Search commands").fill("daily");

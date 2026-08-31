@@ -82,7 +82,7 @@ function buildAppMenu(deps) {
         { type: "separator" },
         {
           label: "Open File…",
-          accelerator: "CmdOrCtrl+O",
+          accelerator: "CmdOrCtrl+Alt+O",
           click: () => focusThenEmitAll("menu://open-file"),
         },
         {
@@ -133,15 +133,16 @@ function buildAppMenu(deps) {
         },
         {
           label: "Quick Switcher…",
-          accelerator: "CmdOrCtrl+P",
+          accelerator: "CmdOrCtrl+O",
           click: () => emitToFocused("menu://quick-switcher", null),
         },
-        // `registerAccelerator: false` keeps the shortcut visible in the menu but leaves the key to
-        // the Renderer. A main-process accelerator fires before the page sees the event, so the
-        // editor could not claim Mod+K for its link editor while text is selected.
+        // `registerAccelerator: false` keeps the shortcut visible in the menu but leaves the key
+        // to the Renderer. A main-process accelerator fires before the page sees the event, and
+        // this menu item can only ever open the palette — the Renderer owns the toggle that also
+        // closes it.
         {
           label: "Command Palette…",
-          accelerator: "CmdOrCtrl+K",
+          accelerator: "CmdOrCtrl+P",
           registerAccelerator: false,
           click: () => emitToFocused("menu://command-palette", null),
         },

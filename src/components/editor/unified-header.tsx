@@ -289,9 +289,9 @@ export function UnifiedHeader() {
               </Tooltip>
 
               {/* Global search — opens the command palette (file names +
-                  cross-document content search), same as Cmd/Ctrl+K. */}
+                  cross-document content search), same as Cmd/Ctrl+P. */}
               <Tooltip
-                content={t("searchTooltip", { shortcut: formatShortcut("Ctrl+K") })}
+                content={t("searchTooltip", { shortcut: formatShortcut("Ctrl+P") })}
                 side="bottom"
               >
                 <Button
@@ -299,7 +299,7 @@ export function UnifiedHeader() {
                   size="icon"
                   className="desktop-header-button relative z-10 h-7 w-7 rounded-md"
                   onClick={openCommandPalette}
-                  aria-label={t("searchTooltip", { shortcut: formatShortcut("Ctrl+K") })}
+                  aria-label={t("searchTooltip", { shortcut: formatShortcut("Ctrl+P") })}
                 >
                   <Search className="h-4 w-4" />
                 </Button>
