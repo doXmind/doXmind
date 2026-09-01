@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { NextIntlClientProvider } from "next-intl";
 import en from "@/messages/en.json";
 import zh from "@/messages/zh.json";
+import { useLayoutStore } from "@/stores/layout-store";
 
 const SUPPORTED = ["en", "zh"] as const;
 type Locale = (typeof SUPPORTED)[number];
@@ -33,15 +34,21 @@ function readCookieLocale(): Locale | null {
 
 export function ClientIntlProvider({ children }: { children: React.ReactNode }) {
   // Render with the default locale on first paint to keep server/static markup
-  // and the initial client tree identical, then swap to the cookie's locale.
-  const [locale, setLocale] = useState<Locale>(DEFAULT_LOCALE);
+  // and the initial client tree identical, then swap to the chosen locale.
+  const [mounted, setMounted] = useState(false);
+  const stored = useLayoutStore((state) => state.locale);
 
   useEffect(() => {
+    setMounted(true);
+    // A cold start paints before the persisted store has hydrated, so the cookie the settings
+    // page also writes is what carries the choice across that gap.
     const cookieLocale = readCookieLocale();
-    if (cookieLocale && cookieLocale !== locale) setLocale(cookieLocale);
-    // intentional: only run on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (cookieLocale && cookieLocale !== useLayoutStore.getState().locale) {
+      useLayoutStore.getState().setLocale(cookieLocale);
+    }
   }, []);
+
+  const locale: Locale = mounted ? stored : DEFAULT_LOCALE;
 
   return (
     <NextIntlClientProvider

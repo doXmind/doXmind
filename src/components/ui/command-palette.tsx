@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
 import {
   Search,
@@ -62,6 +63,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 }
 
 function CommandPaletteContent({ onClose }: { onClose: () => void }) {
+  const t = useTranslations("commandPalette");
   const [query, setQuery] = React.useState("");
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -109,7 +111,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
       if (!controller.signal.aborted && filesRes) setFileSearchResults(filesRes.results);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
-      setSearchError("Search failed. Click to retry.");
+      setSearchError(t("searchFailed"));
     } finally {
       setIsSearching(false);
     }
@@ -133,7 +135,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
       // File commands
       {
         id: "new-file",
-        label: "New Page",
+        label: t("newPage"),
         icon: <FilePlus className="h-4 w-4" />,
         shortcut: ["Ctrl", "N"],
         category: "file",
@@ -148,7 +150,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
         ? [
             {
               id: "daily-note",
-              label: "Open today's Daily Note",
+              label: t("dailyNote"),
               icon: <CalendarDays className="h-4 w-4" />,
               category: "file" as const,
               action: async () => {
@@ -167,7 +169,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
         : []),
       {
         id: "toggle-theme",
-        label: currentTheme.baseMode === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode",
+        label: currentTheme.baseMode === "dark" ? t("switchToLight") : t("switchToDark"),
         icon: <Palette className="h-4 w-4" />,
         category: "view",
         action: () => {
@@ -178,7 +180,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
       },
       {
         id: "toggle-high-contrast",
-        label: isHighContrast ? "Disable High Contrast" : "Enable High Contrast",
+        label: isHighContrast ? t("disableHighContrast") : t("enableHighContrast"),
         icon: <Contrast className="h-4 w-4" />,
         category: "view",
         action: () => {
@@ -190,7 +192,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
       // Action commands
       {
         id: "keyboard-shortcuts",
-        label: "Keyboard Shortcuts",
+        label: t("keyboardShortcuts"),
         icon: <Keyboard className="h-4 w-4" />,
         shortcut: ["Ctrl", "?"],
         category: "action",
@@ -219,6 +221,9 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
 
     return [...baseCommands, ...fileCommands];
   }, [
+    // `t` belongs here: without it every command label stays in the language the palette first
+    // rendered in, so switching the UI language left the palette behind.
+    t,
     files,
     setKeyboardShortcutsOpen,
     isHighContrast,
@@ -372,7 +377,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Command palette"
+        aria-label={t("title")}
         className={cn(
           "relative z-50 w-full max-w-lg",
           // Same surface as every other menu in the app: 10px radius, no
@@ -399,13 +404,13 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Type a command or search..."
+            placeholder={t("placeholder")}
             className={cn(
               "flex-1 bg-transparent text-base md:text-sm",
               "placeholder:text-muted-foreground",
               "focus:outline-none"
             )}
-            aria-label="Search commands"
+            aria-label={t("searchLabel")}
           />
           {/* Close button */}
           <button
@@ -445,11 +450,11 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
           ref={listRef}
           className="max-h-[300px] overflow-y-auto p-1.5"
           role="listbox"
-          aria-label="Commands"
+          aria-label={t("commandsLabel")}
         >
           {flattenedCommands.length === 0 && !isSearching ? (
             <div className="px-2 py-8 text-center text-sm text-muted-foreground">
-              {query.trim() ? "No results found." : "Type to search files and commands..."}
+              {query.trim() ? t("noResults") : t("empty")}
             </div>
           ) : (
             Object.entries(groupedCommands).map(([category, items]) => (

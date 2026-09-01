@@ -14,6 +14,8 @@ interface LayoutState {
   isFilesSidebarOpen: boolean; // Files sidebar (left edge, independent)
   /** Which view the left sidebar shows. Not persisted: a session starts on the file tree. */
   sidebarView: "files" | "search";
+  /** UI language. Both catalogs ship in the bundle, so switching needs no reload. */
+  locale: "en" | "zh";
   themeId: string;
   preferredLightTheme: string;
   preferredDarkTheme: string;
@@ -53,6 +55,7 @@ interface LayoutState {
   toggleFilesSidebar: () => void;
   setFilesSidebarOpen: (open: boolean) => void;
   setSidebarView: (view: "files" | "search") => void;
+  setLocale: (locale: "en" | "zh") => void;
   setThemeId: (id: string) => void;
   setPreferredLightTheme: (id: string) => void;
   setPreferredDarkTheme: (id: string) => void;
@@ -103,6 +106,7 @@ export const useLayoutStore = create<LayoutState>()(
       // Desktop panel visibility
       isFilesSidebarOpen: true,
       sidebarView: "files",
+      locale: "en",
       themeId: DEFAULT_LIGHT_THEME,
       preferredLightTheme: DEFAULT_LIGHT_THEME,
       preferredDarkTheme: DEFAULT_DARK_THEME,
@@ -147,6 +151,15 @@ export const useLayoutStore = create<LayoutState>()(
 
       setSidebarView: (view) => {
         set({ sidebarView: view });
+      },
+
+      setLocale: (locale) => {
+        set({ locale });
+        // The provider reads this cookie on a cold start, before the persisted store has
+        // hydrated, so the two have to agree or the first paint would flip languages.
+        if (typeof document !== "undefined") {
+          document.cookie = `NEXT_LOCALE=${locale}; path=/; max-age=31536000; SameSite=Lax`;
+        }
       },
 
       setThemeId: (id: string) => {
@@ -356,6 +369,7 @@ export const useLayoutStore = create<LayoutState>()(
         lineHeight: state.lineHeight,
         autosaveEnabled: state.autosaveEnabled,
         filesSidebarWidth: state.filesSidebarWidth,
+        locale: state.locale,
       }),
     }
   )

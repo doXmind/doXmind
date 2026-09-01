@@ -32,6 +32,22 @@
     "youreOffline": "You're offline",
     "clear": "Clear"
   },
+  "commandPalette": {
+    "title": "Command palette",
+    "placeholder": "Type a command or search...",
+    "searchLabel": "Search commands",
+    "commandsLabel": "Commands",
+    "empty": "Type to search files and commands...",
+    "noResults": "No results found.",
+    "searchFailed": "Search failed. Click to retry.",
+    "newPage": "New Page",
+    "dailyNote": "Open today's Daily Note",
+    "switchToLight": "Switch to Light Mode",
+    "switchToDark": "Switch to Dark Mode",
+    "enableHighContrast": "Enable High Contrast",
+    "disableHighContrast": "Disable High Contrast",
+    "keyboardShortcuts": "Keyboard Shortcuts"
+  },
   "editor": {
     "saved": "Saved",
     "saving": "Saving...",
@@ -301,6 +317,8 @@
     "backToEditor": "Editor",
     "railHeading": "On this page",
     "appearanceDesc": "Theme and pointer behaviour.",
+    "language": "Language",
+    "languageDesc": "The language of the app's own interface. Your Pages are untouched.",
     "lightThemeVariants": "Light variants",
     "darkThemeVariants": "Dark variants",
     "lightThemeLabel": "Light theme",

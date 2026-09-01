@@ -32,6 +32,22 @@
     "youreOffline": "当前离线",
     "clear": "清除"
   },
+  "commandPalette": {
+    "title": "命令面板",
+    "placeholder": "输入命令或搜索…",
+    "searchLabel": "搜索命令",
+    "commandsLabel": "命令",
+    "empty": "输入以搜索文件和命令…",
+    "noResults": "没有找到结果。",
+    "searchFailed": "搜索失败，点击重试。",
+    "newPage": "新建页面",
+    "dailyNote": "打开今天的日记",
+    "switchToLight": "切换到浅色模式",
+    "switchToDark": "切换到深色模式",
+    "enableHighContrast": "开启高对比度",
+    "disableHighContrast": "关闭高对比度",
+    "keyboardShortcuts": "键盘快捷键"
+  },
   "editor": {
     "saved": "已保存",
     "saving": "保存中...",
@@ -301,6 +317,8 @@
     "backToEditor": "编辑器",
     "railHeading": "本页内容",
     "appearanceDesc": "主题与指针行为。",
+    "language": "语言",
+    "languageDesc": "应用界面自身的语言。不会改动你的页面。",
     "lightThemeVariants": "浅色配色",
     "darkThemeVariants": "深色配色",
     "lightThemeLabel": "浅色主题",
