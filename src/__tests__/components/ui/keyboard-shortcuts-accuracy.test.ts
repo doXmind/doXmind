@@ -2,22 +2,32 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { WORKSPACE_COMMANDS } from "@/lib/commands";
+
 const root = process.cwd();
 const read = (relative: string) => readFileSync(join(root, relative), "utf8");
 
 const modal = read("src/components/ui/keyboard-shortcuts-modal.tsx");
-const hook = read("src/hooks/use-editor-keyboard-shortcuts.ts");
 const menus = read("electron/menus.js");
+
+const binding = (id: string) =>
+  WORKSPACE_COMMANDS.find((command) => command.id === id)?.defaultBinding;
 
 describe("the shortcut reference matches the bindings", () => {
   // The modal is a hand-written table, so nothing stops it drifting from the code it documents.
   // It had been advertising Ctrl+K for the command palette after that moved.
-  it("advertises the palette and the switcher on the keys that actually open them", () => {
+  it("advertises the palette and the switcher on the keys the registry binds", () => {
     expect(modal).toContain('{ keys: ["Ctrl", "P"], descriptionKey: "commandPalette" }');
     expect(modal).toContain('{ keys: ["Ctrl", "O"], descriptionKey: "quickSwitcher" }');
 
-    expect(hook).toContain('e.key === "p"');
-    expect(hook).toContain('(e.key === "Tab" || e.key === "o")');
+    // One registry, so the reference and the binding cannot disagree the way they used to.
+    expect(binding("command-palette")).toBe("Mod+P");
+    expect(binding("quick-switcher")).toBe("Mod+O");
+  });
+
+  it("gives every registered command a unique default chord", () => {
+    const bindings = WORKSPACE_COMMANDS.map((command) => command.defaultBinding).filter(Boolean);
+    expect(new Set(bindings).size).toBe(bindings.length);
   });
 
   it("keeps the native menu on the same keys as the renderer", () => {
@@ -28,8 +38,8 @@ describe("the shortcut reference matches the bindings", () => {
   });
 
   it("leaves Mod+K to the editor's link editor", () => {
-    // The hook must not claim it: with a selection, Mod+K opens the link editor instead.
-    expect(hook).not.toContain('e.key === "k"');
+    // No command may claim it: with a selection, Mod+K opens the link editor instead.
+    expect(WORKSPACE_COMMANDS.some((command) => command.defaultBinding === "Mod+K")).toBe(false);
     expect(modal).toContain('{ keys: ["Ctrl", "K"], descriptionKey: "insertLink" }');
   });
 

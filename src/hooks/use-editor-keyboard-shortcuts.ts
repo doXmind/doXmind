@@ -2,6 +2,8 @@
 
 import { useEffect, useCallback } from "react";
 import { useLayoutStore } from "@/stores/layout-store";
+import { bindingForEvent } from "@/lib/commands";
+import { commandsByBinding, useHotkeysStore } from "@/stores/hotkeys-store";
 
 /**
  * Hook for managing global keyboard shortcuts in the editor page
@@ -17,15 +19,12 @@ import { useLayoutStore } from "@/stores/layout-store";
  * opens the link editor, which is what the bubble menu and the shortcuts panel advertise.
  */
 export function useEditorKeyboardShortcuts() {
+  // Only what the Escape rule below has to read. Every other action reaches its store through
+  // the command registry, at call time.
   const {
     isKeyboardShortcutsOpen,
-    setKeyboardShortcutsOpen,
     isCommandPaletteOpen,
-    setCommandPaletteOpen,
-    openCommandPalette,
     isSearchBarOpen,
-    setSearchBarOpen,
-    openReplaceBar,
     isFocusMode,
     toggleFocusMode,
     isQuickSwitcherOpen,
@@ -34,60 +33,28 @@ export function useEditorKeyboardShortcuts() {
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      // Ctrl+? or Cmd+? (Shift+/ on most keyboards) - Keyboard shortcuts
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "?") {
-        e.preventDefault();
-        setKeyboardShortcutsOpen(!isKeyboardShortcutsOpen);
-        return;
-      }
-
       // The editor claims a few Mod shortcuts when a text selection is live — Mod+K adds a link,
       // Mod+B/I/E apply marks — and signals that by calling `stopPropagation` and `preventDefault`.
       // Honouring `defaultPrevented` here is what stops one keystroke doing two things.
       if (e.defaultPrevented) return;
 
-      // Ctrl+B or Cmd+B - Toggle the files sidebar. Owned here rather than by a main-process
-      // accelerator so the editor can claim it for bold while text is selected.
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "b") {
+      // One registry, not a chain of conditions: every command is bindable, rebindable and
+      // searchable from the same declaration.
+      const binding = bindingForEvent(e);
+      const command = binding
+        ? commandsByBinding(useHotkeysStore.getState().overrides).get(binding)
+        : undefined;
+      if (command) {
         e.preventDefault();
-        useLayoutStore.getState().toggleFilesSidebar();
+        void command.run();
         return;
       }
 
-      // Ctrl+P or Cmd+P - Command palette (all scope). Obsidian's map: ⌘P is the palette and ⌘O
-      // is the switcher. ⌘K stays free for the editor's own link editor.
-      if ((e.ctrlKey || e.metaKey) && e.key === "p") {
+      // Ctrl+Tab - the quick switcher's second binding, which is a chord the registry's
+      // `Mod+Letter` shape cannot describe.
+      if ((e.ctrlKey || e.metaKey) && e.key === "Tab") {
         e.preventDefault();
-        if (isCommandPaletteOpen) {
-          setCommandPaletteOpen(false);
-        } else {
-          openCommandPalette();
-        }
-        return;
-      }
-
-      // Ctrl+Alt+F or Cmd+Alt+F - Find and replace. `e.code`, not `e.key`: macOS ⌥F emits "ƒ".
-      // One accelerator on every platform, following this repo's own Open File… = ⌘⌥O.
-      if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === "KeyF") {
-        e.preventDefault();
-        openReplaceBar();
-        return;
-      }
-
-      // Ctrl+F or Cmd+F - Search bar (find in document)
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === "f") {
-        e.preventDefault();
-        if (isCommandPaletteOpen) {
-          setCommandPaletteOpen(false);
-        }
-        setSearchBarOpen(!isSearchBarOpen);
-        return;
-      }
-
-      // F11 - Toggle focus mode
-      if (e.key === "F11") {
-        e.preventDefault();
-        toggleFocusMode();
+        setQuickSwitcherOpen(true);
         return;
       }
 
@@ -110,24 +77,11 @@ export function useEditorKeyboardShortcuts() {
         toggleFocusMode();
         return;
       }
-
-      // Ctrl+Tab, or Cmd/Ctrl+O - Quick file switcher. The desktop menu registers ⌘O so it works
-      // on every route; this branch is what makes it work in browser development too.
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "Tab" || e.key === "o")) {
-        e.preventDefault();
-        setQuickSwitcherOpen(true);
-        return;
-      }
     },
     [
       isKeyboardShortcutsOpen,
-      setKeyboardShortcutsOpen,
       isCommandPaletteOpen,
-      setCommandPaletteOpen,
-      openCommandPalette,
       isSearchBarOpen,
-      setSearchBarOpen,
-      openReplaceBar,
       isFocusMode,
       toggleFocusMode,
       isQuickSwitcherOpen,

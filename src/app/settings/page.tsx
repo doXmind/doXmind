@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Palette, Type, Info, FolderTree } from "lucide-react";
+import { Palette, Type, Info, FolderTree, Keyboard } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { SettingsNav, type SettingsNavItem } from "@/components/settings/settings-rail";
 import { AppearanceSection } from "@/components/settings/sections/appearance-section";
 import { TypographySection } from "@/components/settings/sections/typography-section";
 import { AboutSection } from "@/components/settings/sections/about-section";
 import { WorkspaceSection } from "@/components/settings/sections/workspace-section";
+import { HotkeysSection } from "@/components/settings/sections/hotkeys-section";
 
-const SECTION_IDS = ["appearance", "typography", "workspace", "about"] as const;
+const SECTION_IDS = ["appearance", "typography", "hotkeys", "workspace", "about"] as const;
 type SectionId = (typeof SECTION_IDS)[number];
 
 const SECTION_ID_SET = new Set<string>(SECTION_IDS);
@@ -36,6 +37,7 @@ export default function SettingsPage() {
     () => [
       { id: "appearance", label: t("appearance"), icon: Palette },
       { id: "typography", label: t("typography"), icon: Type },
+      { id: "hotkeys", label: t("hotkeys"), icon: Keyboard },
       { id: "workspace", label: t("workspace"), icon: FolderTree },
       { id: "about", label: t("about"), icon: Info },
     ],
@@ -75,6 +77,7 @@ export default function SettingsPage() {
         <div className="mx-auto max-w-[680px] px-10 pb-20 pt-[44px]">
           {active === "appearance" && <AppearanceSection />}
           {active === "typography" && <TypographySection />}
+          {active === "hotkeys" && <HotkeysSection />}
           {active === "workspace" && <WorkspaceSection />}
           {active === "about" && <AboutSection />}
         </div>

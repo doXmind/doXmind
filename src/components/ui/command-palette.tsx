@@ -2,15 +2,12 @@
 
 import * as React from "react";
 import { useTranslations } from "next-intl";
-import { useEditorRefStore } from "@/stores/editor-ref-store";
+import { WORKSPACE_COMMANDS, formatBinding } from "@/lib/commands";
+import { bindingFor, useHotkeysStore } from "@/stores/hotkeys-store";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   ArrowRight,
-  CalendarDays,
-  ChevronDown,
-  ChevronRight,
-  Contrast,
   FilePlus,
   FileText,
   Keyboard,
@@ -24,14 +21,10 @@ import { cn, formatShortcut } from "@/lib/utils";
 import { MENU_PANEL_CLASS, MENU_ROW_CLASS } from "@/components/ui/dropdown-menu";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useFileStore } from "@/stores/file-store";
-import { useLayoutStore } from "@/stores/layout-store";
 
 import { useThemeManager } from "@/hooks/use-theme-manager";
 import { createStorageAdapter, searchMarkdown, type MarkdownSearchResult } from "@/lib/storage";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
-import { createPageForContext } from "@/lib/new-page";
-import { openTodayDailyNote } from "@/lib/daily-notes";
-import { notify } from "@/lib/notifications";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -67,7 +60,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
 function CommandPaletteContent({ onClose }: { onClose: () => void }) {
   const t = useTranslations("commandPalette");
-  const requestFoldAll = useEditorRefStore((state) => state.requestFoldAll);
+  const tCommands = useTranslations("commands");
+  const overrides = useHotkeysStore((state) => state.overrides);
+  const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
   const [query, setQuery] = React.useState("");
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -81,9 +76,6 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
 
   const files = useFileStore((s) => s.files);
   const rootPath = useFileStore((s) => s.rootPath);
-  const setKeyboardShortcutsOpen = useLayoutStore((s) => s.setKeyboardShortcutsOpen);
-  const isHighContrast = useLayoutStore((s) => s.isHighContrast);
-  const toggleHighContrast = useLayoutStore((s) => s.toggleHighContrast);
   const { currentTheme, toggleBaseMode } = useThemeManager();
 
   // Perform search with debounce
@@ -135,104 +127,37 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
 
   // Build commands list
   const commands = React.useMemo<CommandItem[]>(() => {
-    const baseCommands: CommandItem[] = [
-      // File commands
-      {
-        id: "new-file",
-        label: t("newPage"),
-        icon: <FilePlus className="h-4 w-4" />,
-        shortcut: ["Ctrl", "N"],
-        category: "file",
-        action: async () => {
-          const newId = await createPageForContext(useFileStore.getState());
-          navigateToEditorFile(newId);
-          onClose();
-        },
-        keywords: ["create", "new", "document", "file"],
-      },
-      ...(rootPath
-        ? [
-            {
-              id: "daily-note",
-              label: t("dailyNote"),
-              icon: <CalendarDays className="h-4 w-4" />,
-              category: "file" as const,
-              action: async () => {
-                try {
-                  await openTodayDailyNote();
-                  onClose();
-                } catch (error) {
-                  notify.error("Could not open today's Daily Note", {
-                    description: error instanceof Error ? error.message : String(error),
-                  });
-                }
-              },
-              keywords: ["daily", "today", "journal", "日记", "今日日志"],
-            },
-          ]
-        : []),
-      {
-        id: "toggle-theme",
-        label: currentTheme.baseMode === "dark" ? t("switchToLight") : t("switchToDark"),
-        icon: <Palette className="h-4 w-4" />,
-        category: "view",
+    // Every registered command, not a hand-kept subset: the palette used to offer five of the
+    // roughly forty actions the app could perform, and nothing said which five or why.
+    const baseCommands: CommandItem[] = WORKSPACE_COMMANDS.map((command) => {
+      const binding = bindingFor(command, overrides);
+      return {
+        id: command.id,
+        label: tCommands(command.labelKey),
+        icon: <CommandIcon category={command.category} />,
+        shortcut: binding ? [formatBinding(binding, isMac)] : undefined,
+        category: command.category === "editor" ? "action" : command.category,
         action: () => {
-          toggleBaseMode();
+          void command.run();
           onClose();
         },
-        keywords: ["theme", "dark", "light", "mode", "appearance"],
+        keywords: command.keywords,
+      };
+    });
+
+    // The theme toggle stays here rather than in the registry: `toggleBaseMode` comes from
+    // `useThemeManager`, a hook, and the registry is a plain module of store-reachable actions.
+    baseCommands.push({
+      id: "toggle-theme",
+      label: currentTheme.baseMode === "dark" ? t("switchToLight") : t("switchToDark"),
+      icon: <Palette className="h-4 w-4" />,
+      category: "view",
+      action: () => {
+        toggleBaseMode();
+        onClose();
       },
-      {
-        id: "toggle-high-contrast",
-        label: isHighContrast ? t("disableHighContrast") : t("enableHighContrast"),
-        icon: <Contrast className="h-4 w-4" />,
-        category: "view",
-        action: () => {
-          toggleHighContrast();
-          onClose();
-        },
-        keywords: ["contrast", "accessibility", "a11y", "vision"],
-      },
-      ...(requestFoldAll
-        ? [
-            {
-              id: "fold-all",
-              label: t("foldAll"),
-              icon: <ChevronRight className="h-4 w-4" />,
-              category: "view" as const,
-              action: () => {
-                requestFoldAll(true);
-                onClose();
-              },
-              keywords: ["fold", "collapse", "outline", "sections"],
-            },
-            {
-              id: "unfold-all",
-              label: t("unfoldAll"),
-              icon: <ChevronDown className="h-4 w-4" />,
-              category: "view" as const,
-              action: () => {
-                requestFoldAll(false);
-                onClose();
-              },
-              keywords: ["unfold", "expand", "outline", "sections"],
-            },
-          ]
-        : []),
-      // Action commands
-      {
-        id: "keyboard-shortcuts",
-        label: t("keyboardShortcuts"),
-        icon: <Keyboard className="h-4 w-4" />,
-        shortcut: ["Ctrl", "?"],
-        category: "action",
-        action: () => {
-          onClose();
-          setTimeout(() => setKeyboardShortcutsOpen(true), 100);
-        },
-        keywords: ["keyboard", "shortcuts", "help", "hotkeys"],
-      },
-    ];
+      keywords: ["theme", "dark", "light", "mode", "appearance"],
+    });
 
     // Add file navigation commands
     const fileCommands: CommandItem[] = files
@@ -250,20 +175,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
       }));
 
     return [...baseCommands, ...fileCommands];
-  }, [
-    requestFoldAll,
-    // `t` belongs here: without it every command label stays in the language the palette first
-    // rendered in, so switching the UI language left the palette behind.
-    t,
-    files,
-    setKeyboardShortcutsOpen,
-    isHighContrast,
-    toggleHighContrast,
-    currentTheme,
-    toggleBaseMode,
-    onClose,
-    rootPath,
-  ]);
+  }, [t, tCommands, overrides, isMac, files, onClose, currentTheme.baseMode, toggleBaseMode]);
 
   // Filter commands based on query
   const filteredCommands = React.useMemo(() => {
@@ -572,4 +484,12 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
     </div>,
     document.body
   );
+}
+
+/** One glyph per category, so the list reads as groups without a header per row. */
+function CommandIcon({ category }: { category: string }) {
+  if (category === "file") return <FilePlus className="h-4 w-4" />;
+  if (category === "view") return <Palette className="h-4 w-4" />;
+  if (category === "editor") return <Keyboard className="h-4 w-4" />;
+  return <Search className="h-4 w-4" />;
 }
