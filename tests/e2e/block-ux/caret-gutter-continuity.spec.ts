@@ -77,3 +77,37 @@ test("the forgiving fade survives where it was written for: no pointer and no ca
   expect(timing.duration).toBe("0.11s");
   expect(timing.delay).toBe("0.09s");
 });
+
+/**
+ * One gutter at a time while the pointer is the thing choosing.
+ *
+ * `:hover` and `:focus-within` are independent, and the two kill switches above are timing only, so
+ * the caret in one row and the pointer over another lit both at `opacity: 1`. That is neither
+ * reference — Notion's controls follow the hovered row, and Feishu draws a single shared overlay
+ * that slides — and it puts two `+`/grip pairs under the hand at once, acting on different rows.
+ */
+test("the caret's row yields its controls to the row under the pointer", async ({ page }) => {
+  await openPage(page, "GutterHandoff", SOURCE);
+
+  const first = rows(page).first();
+  const second = rows(page).nth(1);
+  await activate(first);
+  await expect(first).toHaveAttribute("data-active", "true");
+
+  const box = await second.boundingBox();
+  if (!box) throw new Error("second row has no box");
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2);
+
+  // The hovered row is lit and the row holding the caret is not, even though it still matches
+  // `:focus-within`.
+  await expect.poll(async () => (await controlsTiming(second)).opacity).toBe("1");
+  await expect.poll(async () => (await controlsTiming(first)).opacity).toBe("0");
+
+  // The pointer leaving the Page hands them straight back to the caret, so keyboard-only use is
+  // untouched.
+  await page.mouse.move(2, 2);
+  await expect
+    .poll(() => page.evaluate(() => !!document.querySelector(".markdown-page:hover")))
+    .toBe(false);
+  await expect.poll(async () => (await controlsTiming(first)).opacity).toBe("1");
+});
