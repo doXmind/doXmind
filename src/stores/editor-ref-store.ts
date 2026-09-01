@@ -32,6 +32,8 @@ interface EditorRefState {
   editors: Record<string, EditorHandles>;
   /** Which registered editor the chrome is talking about. */
   activeEditorId: string | null;
+  /** The pane layer's claim, which outlives a re-registration of that editor. */
+  claimedEditorId: string | null;
 
   // Mirrors of the active editor's handles. Every consumer means "the editor the user is looking
   // at", so they read these and need to know nothing about the registry.
@@ -53,18 +55,29 @@ interface EditorRefState {
    * unsaved to lose, which is what the callers' old `currentFileId !== pageId` check meant.
    */
   requestSaveFor: (fileId: string) => Promise<boolean>;
+  /** Drop the pending edits of the editor showing `fileId`, in whichever pane holds it. */
+  discardPendingChangesFor: (fileId: string) => void;
 }
 
-/** Recompute the mirrored handles from the registry. */
-function mirror(editors: Record<string, EditorHandles>, activeEditorId: string | null) {
+/**
+ * Recompute the mirrored handles from the registry.
+ *
+ * `claimedEditorId` is what the pane layer asked for and is kept even while that editor is
+ * momentarily absent; `activeEditorId` is what it resolves to right now. Collapsing the two
+ * lost the claim whenever the focused pane's editor re-registered — switching tabs inside it
+ * re-runs the registration effect — and the sole-survivor fallback below then handed the
+ * chrome to the other pane, where an undo rewrites a Page the user cannot see.
+ */
+function mirror(editors: Record<string, EditorHandles>, claimedEditorId: string | null) {
   // Falling back to the sole editor keeps the chrome working before anything has claimed focus,
   // which is the state every session starts in.
   const ids = Object.keys(editors);
   const id =
-    (activeEditorId && editors[activeEditorId] ? activeEditorId : null) ??
+    (claimedEditorId && editors[claimedEditorId] ? claimedEditorId : null) ??
     (ids.length === 1 ? ids[0] : null);
   const active = id ? editors[id] : null;
   return {
+    claimedEditorId,
     activeEditorId: id,
     requestSave: active?.requestSave ?? null,
     requestUndo: active?.requestUndo ?? null,
@@ -77,6 +90,7 @@ function mirror(editors: Record<string, EditorHandles>, activeEditorId: string |
 export const useEditorRefStore = create<EditorRefState>()((set, get) => ({
   editors: {},
   activeEditorId: null,
+  claimedEditorId: null,
   requestSave: null,
   requestUndo: null,
   requestRedo: null,
@@ -86,14 +100,21 @@ export const useEditorRefStore = create<EditorRefState>()((set, get) => ({
   registerEditor: (id, handles) =>
     set((state) => {
       const editors = { ...state.editors, [id]: handles };
-      return { editors, ...mirror(editors, state.activeEditorId ?? id) };
+      // A claim naming an editor that is not registered is stale — either this very editor
+      // re-registering, or a pane that has gone — so the arriving editor may take it. A
+      // claim that still names a live editor is left alone, so a second pane opening does
+      // not steal the chrome from the pane the user is in.
+      const claim =
+        state.claimedEditorId && state.editors[state.claimedEditorId] ? state.claimedEditorId : id;
+      return { editors, ...mirror(editors, claim) };
     }),
 
   unregisterEditor: (id) =>
     set((state) => {
       const { [id]: _gone, ...editors } = state.editors;
-      const next = state.activeEditorId === id ? null : state.activeEditorId;
-      return { editors, ...mirror(editors, next) };
+      // The claim is deliberately kept: this editor may be re-registering rather than going
+      // away, and dropping it here is what let the other pane take the chrome.
+      return { editors, ...mirror(editors, state.claimedEditorId) };
     }),
 
   setActiveEditor: (id) => set((state) => mirror(state.editors, id)),
@@ -101,6 +122,12 @@ export const useEditorRefStore = create<EditorRefState>()((set, get) => ({
   requestSaveFor: async (fileId) => {
     const editor = Object.values(get().editors).find((handles) => handles.fileId === fileId);
     return editor ? editor.requestSave() : true;
+  },
+
+  discardPendingChangesFor: (fileId) => {
+    Object.values(get().editors)
+      .find((handles) => handles.fileId === fileId)
+      ?.discardPendingChanges();
   },
 
   saveAllEditors: async () => {

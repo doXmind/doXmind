@@ -73,6 +73,55 @@ describe("editor registry", () => {
     expect(useEditorRefStore.getState().requestFoldAll).toBeNull();
   });
 
+  it("keeps the claim with the focused pane when its editor re-registers", () => {
+    const store = () => useEditorRefStore.getState();
+    const focused = handles("page-a");
+    const other = handles("page-b");
+    store().registerEditor("pane-left", focused);
+    store().registerEditor("pane-right", other);
+    store().setActiveEditor("pane-left");
+    expect(store().activeEditorId).toBe("pane-left");
+
+    // Switching tabs inside the focused pane re-runs its registration effect: the same
+    // instance unregisters and registers again, without the pane ever losing focus.
+    store().unregisterEditor("pane-left");
+    store().registerEditor("pane-left", handles("page-c"));
+
+    // The claim must not drift to the pane the user is not in — the chrome's save, undo,
+    // redo and fold all resolve through it, and an undo there rewrites an unseen Page.
+    expect(store().activeEditorId).toBe("pane-left");
+    expect(store().requestSave).toBe(store().editors["pane-left"].requestSave);
+  });
+
+  it("hands the chrome to a fresh editor once the pane that claimed it is gone", () => {
+    const store = () => useEditorRefStore.getState();
+    store().registerEditor("pane-left", handles("page-a"));
+    store().setActiveEditor("pane-left");
+    store().unregisterEditor("pane-left");
+
+    // Everything unmounted, so the old claim names nothing. Two editors arriving must not
+    // leave the chrome inert between them.
+    store().registerEditor("pane-left", handles("page-c"));
+    store().registerEditor("pane-right", handles("page-d"));
+
+    expect(store().activeEditorId).toBe("pane-left");
+    expect(store().requestSave).not.toBeNull();
+  });
+
+  it("discards the editor showing that Page, whichever pane it is in", () => {
+    const store = () => useEditorRefStore.getState();
+    const focused = handles("page-a");
+    const other = handles("page-b");
+    store().registerEditor("pane-left", focused);
+    store().registerEditor("pane-right", other);
+    store().setActiveEditor("pane-left");
+
+    store().discardPendingChangesFor("page-b");
+
+    expect(other.discardPendingChanges).toHaveBeenCalledTimes(1);
+    expect(focused.discardPendingChanges).not.toHaveBeenCalled();
+  });
+
   it("saves every editor before closing, one at a time", async () => {
     const order: string[] = [];
     const a = {

@@ -43,11 +43,22 @@ describe("the shortcut reference matches the bindings", () => {
     expect(modal).toContain('{ keys: ["Ctrl", "K"], descriptionKey: "insertLink" }');
   });
 
-  it("leaves the accelerator unregistered only where the renderer owns the toggle", () => {
-    // A registered accelerator is consumed by the native menu and never reaches the page, so a
-    // menu item that only *opens* something can stay registered. These two also close.
-    const unregistered = menus.match(/^\s*registerAccelerator: false,$/gm) ?? [];
-    expect(unregistered).toHaveLength(2);
+  it("leaves the accelerator unregistered exactly where the renderer owns the key", () => {
+    // A registered accelerator is consumed by the native menu and never reaches the page. Two
+    // things need the page to see the key anyway: a menu item that toggles something the
+    // renderer also closes, and — since Settings ▸ Hotkeys — any key the user can reassign,
+    // because an accelerator registered here would outlive their rebinding.
+    const optedOut = menus.match(/^\s*registerAccelerator: false,$/gm) ?? [];
+    const rebindableInMenu = [
+      "CmdOrCtrl+N",
+      "CmdOrCtrl+P",
+      "CmdOrCtrl+O",
+      "CmdOrCtrl+F",
+      "CmdOrCtrl+Alt+F",
+      "CmdOrCtrl+B",
+      "F11",
+    ].filter((accelerator) => menus.includes(`accelerator: "${accelerator}"`));
+    expect(optedOut).toHaveLength(rebindableInMenu.length);
     expect(menus).toMatch(
       /label: "Command Palette…",\s*\n\s*accelerator: "CmdOrCtrl\+P",\s*\n\s*registerAccelerator: false/
     );

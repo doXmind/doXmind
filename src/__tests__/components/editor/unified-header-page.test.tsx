@@ -90,7 +90,16 @@ describe("UnifiedHeader Page safety", () => {
     const discardPendingChanges = vi.fn(() => {
       expect(useFileStore.getState().currentFileId).toBe(page.id);
     });
-    useEditorRefStore.setState({ discardPendingChanges });
+    // Registered as a real editor rather than stubbed onto the mirror: the discard is looked
+    // up by Page now, so that closing the other pane's tab cannot discard the focused one.
+    useEditorRefStore.getState().registerEditor("pane-left", {
+      fileId: page.id,
+      requestSave: vi.fn(async () => true),
+      requestUndo: vi.fn(),
+      requestRedo: vi.fn(),
+      requestFoldAll: vi.fn(),
+      discardPendingChanges,
+    });
     renderHeader();
 
     await user.click(screen.getByLabelText("Close"));

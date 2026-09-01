@@ -72,6 +72,7 @@ function buildAppMenu(deps) {
         {
           label: "New Page",
           accelerator: "CmdOrCtrl+N",
+          registerAccelerator: false,
           click: () => focusThenEmitAll("menu://new-file"),
         },
         {
@@ -129,22 +130,26 @@ function buildAppMenu(deps) {
         {
           label: "Find in Document…",
           accelerator: "CmdOrCtrl+F",
+          registerAccelerator: false,
           click: () => emitToFocused("menu://find", null),
         },
         {
           label: "Find and Replace…",
           accelerator: "CmdOrCtrl+Alt+F",
+          registerAccelerator: false,
           click: () => emitToFocused("menu://find-replace", null),
         },
         {
           label: "Quick Switcher…",
           accelerator: "CmdOrCtrl+O",
+          registerAccelerator: false,
           click: () => emitToFocused("menu://quick-switcher", null),
         },
         // `registerAccelerator: false` keeps the shortcut visible in the menu but leaves the key
         // to the Renderer. A main-process accelerator fires before the page sees the event, and
         // this menu item can only ever open the palette — the Renderer owns the toggle that also
-        // closes it.
+        // closes it. Every item whose key the Hotkeys page can reassign opts out for the same
+        // reason: an accelerator registered here would outlive the user's rebinding.
         {
           label: "Command Palette…",
           accelerator: "CmdOrCtrl+P",
@@ -166,6 +171,7 @@ function buildAppMenu(deps) {
         {
           label: "Toggle Focus Mode",
           accelerator: "F11",
+          registerAccelerator: false,
           click: () => emitToFocused("menu://toggle-focus", null),
         },
         { type: "separator" },

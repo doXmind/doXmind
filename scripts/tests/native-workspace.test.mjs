@@ -26,10 +26,18 @@ const propertiesContract = JSON.parse(
 
 async function withWorkspace(run) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "doxmind-native-"));
+  // A Page write captures a snapshot under DATA_DIR, which defaults to the real ~/.doxmind:
+  // without this the suite leaves snapshot directories in the developer's own data.
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "doxmind-native-data-"));
+  const previousDataDir = process.env.DATA_DIR;
+  process.env.DATA_DIR = dataDir;
   try {
     await run(root);
   } finally {
+    if (previousDataDir === undefined) delete process.env.DATA_DIR;
+    else process.env.DATA_DIR = previousDataDir;
     await fs.rm(root, { recursive: true, force: true });
+    await fs.rm(dataDir, { recursive: true, force: true });
   }
 }
 

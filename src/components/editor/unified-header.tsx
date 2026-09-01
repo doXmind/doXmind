@@ -200,12 +200,11 @@ export function UnifiedHeader() {
 
   const handleCloseTab = (fileId: string) => {
     const file = useFileStore.getState().files.find((candidate) => candidate.id === fileId);
-    if (
-      fileId === currentFileId &&
-      file &&
-      isMarkdownFile(file) &&
-      useEditorStore.getState().isDirty
-    ) {
+    // Either mounted pane, not just the focused one: the other pane's tab has a live editor
+    // behind it too, and closing it used to unmount that editor with no prompt at all.
+    const isMountedPane =
+      fileId === currentFileId || fileId === useFileStore.getState().otherPaneFileId;
+    if (isMountedPane && file && isMarkdownFile(file) && useEditorStore.getState().isDirty) {
       setCloseRequestId(fileId);
       return;
     }
@@ -227,11 +226,12 @@ export function UnifiedHeader() {
   const handleSaveAndClose = async () => {
     const targetId = closeRequestId;
     if (!targetId) return;
-    const requestSave = useEditorRefStore.getState().requestSave;
-    if (!requestSave) return;
+    // By Page, not by pane: the tab being closed may be the other pane's, and the mirrored
+    // handle would save the Page the user is looking at instead.
+    const requestSaveFor = useEditorRefStore.getState().requestSaveFor;
     let saved = false;
     try {
-      saved = await requestSave();
+      saved = await requestSaveFor(targetId);
     } catch {
       notify.error("Could not save Page");
       return;
@@ -244,13 +244,9 @@ export function UnifiedHeader() {
   };
 
   const handleDiscardAndClose = () => {
-    const discardPendingChanges = useEditorRefStore.getState().discardPendingChanges;
-    if (!discardPendingChanges) {
-      notify.error("Could not discard Page safely");
-      return;
-    }
     const targetId = closeRequestId;
-    discardPendingChanges();
+    if (!targetId) return;
+    useEditorRefStore.getState().discardPendingChangesFor(targetId);
     setCloseRequestId(null);
     performClose(targetId);
   };
