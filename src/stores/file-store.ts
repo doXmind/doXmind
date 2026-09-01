@@ -2144,9 +2144,6 @@ export const useFileStore = create<FileState>()(
       partialize: (state) => ({
         recents: state.recents,
         expandedFolderIds: Array.from(state.expandedFolderIds),
-        // Which Pages were open, so a restart resumes the session rather than an empty editor.
-        // Ids that no longer exist are dropped when the scan lands; see `loadFiles`.
-        openTabIds: state.openTabIds,
       }),
       merge: (persistedState, currentState) => {
         // Explicitly pick only the fields we want to rehydrate. A naive
@@ -2157,13 +2154,11 @@ export const useFileStore = create<FileState>()(
         const persisted = persistedState as Partial<{
           recents: RecentEntry[];
           expandedFolderIds: string[];
-          openTabIds: string[];
         }>;
         return {
           ...currentState,
           recents: persisted.recents ?? [],
           expandedFolderIds: new Set(persisted.expandedFolderIds ?? []),
-          openTabIds: persisted.openTabIds ?? [],
           files: currentState.files,
         };
       },

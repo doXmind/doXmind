@@ -52,6 +52,7 @@
   },
   "commands": {
     "newPage": "New Page",
+    "dailyNote": "Open today's Daily Note",
     "commandPalette": "Command palette",
     "quickSwitcher": "Quick switcher",
     "searchWorkspace": "Search this workspace",

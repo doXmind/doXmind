@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { WORKSPACE_COMMANDS, bindingForEvent, formatBinding } from "@/lib/commands";
 import { bindingFor, commandsByBinding, conflictingCommandIds } from "@/stores/hotkeys-store";
+import en from "@/messages/en.json";
+import zh from "@/messages/zh.json";
 
 const event = (init: Partial<KeyboardEvent>) =>
   ({
@@ -37,6 +39,16 @@ describe("bindingForEvent", () => {
 });
 
 describe("the registry", () => {
+  it("has a label in both catalogs for every command", () => {
+    // A missing label is invisible to the key-parity check — both catalogs lack it equally — and
+    // shows up in the UI as the raw message key, which is how `commands.dailyNote` shipped.
+    const missing = WORKSPACE_COMMANDS.filter(
+      (command) =>
+        !(command.labelKey in en.commands) || !(command.labelKey in (zh.commands as object))
+    ).map((command) => command.labelKey);
+    expect(missing).toEqual([]);
+  });
+
   it("gives every command a unique id", () => {
     const ids = WORKSPACE_COMMANDS.map((command) => command.id);
     expect(new Set(ids).size).toBe(ids.length);
