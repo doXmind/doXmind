@@ -181,6 +181,12 @@ interface FileState {
    * swap on each of them lands back where it started.
    */
   focusPane: (fileId: string) => void;
+  /**
+   * Show `fileId` in one pane, keeping at most one pane per Page.
+   *
+   * When the other pane already holds it, this is a swap rather than a second copy.
+   */
+  showInPane: (fileId: string, target: "active" | "other") => void;
   closeOtherPane: () => void;
   closeOtherTabs: (id: string) => void;
   closeAllTabs: () => void;
@@ -1606,6 +1612,37 @@ export const useFileStore = create<FileState>()(
               }
             : {}
         );
+      },
+
+      showInPane: (fileId: string, target: "active" | "other") => {
+        set((state) => {
+          if (!state.openTabIds.includes(fileId)) return {};
+          if (target === "active") {
+            if (state.currentFileId === fileId) return {};
+            // Dropping the other pane's Page onto the active one trades them, rather than
+            // leaving the same Page in both.
+            if (state.otherPaneFileId === fileId) {
+              return {
+                currentFileId: fileId,
+                otherPaneFileId: state.currentFileId,
+                otherPaneOnLeft: !state.otherPaneOnLeft,
+              };
+            }
+            return { currentFileId: fileId };
+          }
+          if (state.otherPaneFileId === fileId) return {};
+          if (state.currentFileId === fileId) {
+            // The active pane's own Page dropped into the other one: the panes trade.
+            return state.otherPaneFileId === null
+              ? {}
+              : {
+                  currentFileId: state.otherPaneFileId,
+                  otherPaneFileId: fileId,
+                  otherPaneOnLeft: !state.otherPaneOnLeft,
+                };
+          }
+          return { otherPaneFileId: fileId };
+        });
       },
 
       closeOtherPane: () => {

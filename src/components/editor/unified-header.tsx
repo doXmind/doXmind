@@ -59,6 +59,9 @@ function TabDocumentIcon({ file }: { file: FileItem }) {
   return <MarkdownGlyph className="h-4 w-4 text-[var(--sidebar-icon)]" />;
 }
 
+/** Identifies a tab drag to the panes, which are outside this component. */
+export const TAB_DRAG_TYPE = "application/x-doxmind-tab";
+
 export function UnifiedHeader() {
   const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
   const toggleFilesSidebar = useLayoutStore((s) => s.toggleFilesSidebar);
@@ -372,11 +375,14 @@ export function UnifiedHeader() {
                       aria-selected={isActive}
                       data-no-drag
                       title={file.storageHandle?.relPath ?? file.name}
-                      // Reordering is the only thing a tab drag does; a tab dragged out of the
-                      // bar is not a split, because there is no second pane to drop it into.
+                      // Dragging within the bar reorders; dragging onto a pane shows the Page
+                      // there. Dropped anywhere else the drag is simply abandoned.
                       draggable
                       onDragStart={(event) => {
                         event.dataTransfer.effectAllowed = "move";
+                        // A payload as well as the local state: reordering happens inside this
+                        // strip, but a pane is a different component and can only read the drag.
+                        event.dataTransfer.setData(TAB_DRAG_TYPE, file.id);
                         setDraggingTabId(file.id);
                       }}
                       onDragEnd={() => setDraggingTabId(null)}

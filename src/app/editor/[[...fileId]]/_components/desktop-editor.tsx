@@ -8,7 +8,7 @@ import { ResizeHandle } from "@/components/ui/resize-handle";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { WelcomeScreen } from "@/components/welcome-screen";
 import { WorkspaceHome } from "@/components/workspace/workspace-home";
-import { UnifiedHeader } from "@/components/editor/unified-header";
+import { TAB_DRAG_TYPE, UnifiedHeader } from "@/components/editor/unified-header";
 import { OutlineCollapsed } from "@/components/editor/mindlines/outline-collapsed";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -40,6 +40,8 @@ export function DesktopEditor() {
   const otherPaneFileId = useFileStore((s) => s.otherPaneFileId);
   const otherPaneOnLeft = useFileStore((s) => s.otherPaneOnLeft);
   const focusPane = useFileStore((s) => s.focusPane);
+  const showInPane = useFileStore((s) => s.showInPane);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const otherPaneFile = useFileStore((s) =>
     s.otherPaneFileId ? s.files.find((file) => file.id === s.otherPaneFileId) : undefined
   );
@@ -270,6 +272,29 @@ export function DesktopEditor() {
                       <div
                         className="relative flex h-full min-h-0 flex-col overflow-hidden"
                         style={{ flexBasis: `${pane.basis}%`, flexGrow: 0, flexShrink: 1 }}
+                        // Distinct from the document's own data-pane-active, which PDF export
+                        // and print select on; a wrapper sharing that name matches them too.
+                        data-editor-pane={pane.isActive ? "active" : "inactive"}
+                        data-pane-drop-target={dropTarget === pane.key ? "true" : undefined}
+                        onDragOver={(event) => {
+                          if (!event.dataTransfer.types.includes(TAB_DRAG_TYPE)) return;
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = "move";
+                          setDropTarget(pane.key);
+                        }}
+                        onDragLeave={(event) => {
+                          // Only when the pointer actually leaves this pane, not on the way over
+                          // one of its children.
+                          if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+                          setDropTarget((current) => (current === pane.key ? null : current));
+                        }}
+                        onDrop={(event) => {
+                          const dropped = event.dataTransfer.getData(TAB_DRAG_TYPE);
+                          setDropTarget(null);
+                          if (!dropped) return;
+                          event.preventDefault();
+                          showInPane(dropped, pane.isActive ? "active" : "other");
+                        }}
                         // Pointerdown alone owns this. A click raises pointerdown *and* focus, and
                         // acting on both swapped the panes and then swapped them straight back:
                         // by the time focus fired, the pane it landed on was the inactive one.
@@ -277,6 +302,21 @@ export function DesktopEditor() {
                           pane.isActive || !pane.fileId ? undefined : () => focusPane(pane.fileId!)
                         }
                       >
+                        {/* Which pane a keystroke, a save or an undo will land in. Both panes
+                            reserve the same 2px, so focus moving never shifts a line of text. */}
+                        <span
+                          aria-hidden="true"
+                          className={cn(
+                            "pointer-events-none absolute inset-x-0 top-0 z-30 h-[2px] transition-colors duration-[20ms] ease-in",
+                            pane.isActive ? "bg-primary/50" : "bg-transparent"
+                          )}
+                        />
+                        {dropTarget === pane.key && (
+                          <span
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-2 z-30 rounded-lg ring-2 ring-primary/40"
+                          />
+                        )}
                         <EditorPane
                           file={pane.file}
                           isLoaded={pane.isLoaded}

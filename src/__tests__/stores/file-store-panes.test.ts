@@ -93,6 +93,35 @@ describe("split panes", () => {
     expect(state().otherPaneFileId).toBe("a");
   });
 
+  it("moves a dropped tab into the pane it was dropped on", () => {
+    state().splitRight();
+    expect([state().currentFileId, state().otherPaneFileId]).toEqual(["a", "b"]);
+
+    state().showInPane("c", "other");
+    expect([state().currentFileId, state().otherPaneFileId]).toEqual(["a", "c"]);
+
+    state().showInPane("b", "active");
+    expect([state().currentFileId, state().otherPaneFileId]).toEqual(["b", "c"]);
+  });
+
+  it("trades the two panes rather than showing one Page twice", () => {
+    state().splitRight();
+
+    // Dropping the other pane's Page onto the active one.
+    state().showInPane("b", "active");
+    expect([state().currentFileId, state().otherPaneFileId]).toEqual(["b", "a"]);
+
+    // And the reverse: the active pane's Page dropped into the other one.
+    state().showInPane("b", "other");
+    expect([state().currentFileId, state().otherPaneFileId]).toEqual(["a", "b"]);
+  });
+
+  it("ignores a drop of a Page that is not open", () => {
+    state().splitRight();
+    state().showInPane("not-open", "other");
+    expect(state().otherPaneFileId).toBe("b");
+  });
+
   it("closes the split when the Page it holds is closed", () => {
     state().splitRight();
     state().closeTab("b");
