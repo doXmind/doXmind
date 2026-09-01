@@ -36,6 +36,8 @@ interface LayoutState {
 
   // Search bar (Cmd+F)
   isSearchBarOpen: boolean;
+  /** Whether the find bar also shows its replace row. Opening replace opens find. */
+  isReplaceOpen: boolean;
 
   // Quick file switcher
   isQuickSwitcherOpen: boolean;
@@ -82,6 +84,7 @@ interface LayoutState {
 
   // Search bar actions
   setSearchBarOpen: (open: boolean) => void;
+  openReplaceBar: () => void;
   toggleSearchBar: () => void;
 
   // Quick switcher actions
@@ -127,6 +130,7 @@ export const useLayoutStore = create<LayoutState>()(
 
       // Search bar
       isSearchBarOpen: false,
+      isReplaceOpen: false,
 
       // Quick file switcher
       isQuickSwitcherOpen: false,
@@ -245,8 +249,14 @@ export const useLayoutStore = create<LayoutState>()(
       },
 
       // Search bar actions
+      openReplaceBar: () => {
+        set({ isSearchBarOpen: true, isReplaceOpen: true });
+      },
+
       setSearchBarOpen: (open: boolean) => {
-        set({ isSearchBarOpen: open });
+        // Closing find closes replace with it: a replace row over a closed find bar has no
+        // matches to act on.
+        set(open ? { isSearchBarOpen: true } : { isSearchBarOpen: false, isReplaceOpen: false });
       },
 
       toggleSearchBar: () => {

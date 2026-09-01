@@ -11,6 +11,7 @@ import { useLayoutStore } from "@/stores/layout-store";
  * - Ctrl+P / Cmd+P - Toggle command palette
  * - Ctrl+O / Cmd+O, or Ctrl+Tab - Quick switcher
  * - Ctrl+F / Cmd+F - Find in document
+ * - Ctrl+Alt+F / Cmd+Alt+F - Find and replace
  *
  * Mod+K belongs to the editor's link editor, not to this hook: the editor stops that event and
  * opens the link editor, which is what the bubble menu and the shortcuts panel advertise.
@@ -24,6 +25,7 @@ export function useEditorKeyboardShortcuts() {
     openCommandPalette,
     isSearchBarOpen,
     setSearchBarOpen,
+    openReplaceBar,
     isFocusMode,
     toggleFocusMode,
     isQuickSwitcherOpen,
@@ -64,8 +66,16 @@ export function useEditorKeyboardShortcuts() {
         return;
       }
 
+      // Ctrl+Alt+F or Cmd+Alt+F - Find and replace. `e.code`, not `e.key`: macOS ⌥F emits "ƒ".
+      // One accelerator on every platform, following this repo's own Open File… = ⌘⌥O.
+      if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === "KeyF") {
+        e.preventDefault();
+        openReplaceBar();
+        return;
+      }
+
       // Ctrl+F or Cmd+F - Search bar (find in document)
-      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === "f") {
         e.preventDefault();
         if (isCommandPaletteOpen) {
           setCommandPaletteOpen(false);
@@ -117,6 +127,7 @@ export function useEditorKeyboardShortcuts() {
       openCommandPalette,
       isSearchBarOpen,
       setSearchBarOpen,
+      openReplaceBar,
       isFocusMode,
       toggleFocusMode,
       isQuickSwitcherOpen,

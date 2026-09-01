@@ -195,7 +195,8 @@ interface MarkdownBlockRowProps {
   listOrdinal?: number;
   active: boolean;
   autoFocusEditor?: boolean;
-  highlightSelection?: boolean;
+  /** The find bar's current match in this Block, if the current match is in this Block. */
+  searchHighlight?: { anchor: number; head: number };
   keyboardEntry?: boolean;
   blockSelected?: boolean;
   blockSelectionFocus?: boolean;
@@ -406,7 +407,7 @@ function MarkdownBlockRowView({
   canMoveDown,
   active,
   autoFocusEditor = true,
-  highlightSelection = false,
+  searchHighlight,
   keyboardEntry = true,
   blockSelected = false,
   blockSelectionFocus = false,
@@ -466,7 +467,12 @@ function MarkdownBlockRowView({
     !sourceOnly &&
     !/[\r\n]/.test(source) &&
     parseWikiEmbedBlock(source) === null &&
-    inlineProjection.visibleText !== source;
+    // A find match renders this surface even on text with no inline syntax to hide. The raw
+    // textarea can only show a match as its own selection, and Chromium paints no selection in an
+    // unfocused control — and the find bar keeps focus — so the counter said "2 of 5" while the
+    // Page showed nothing. With no delimiters the projection is the identity, so offsets and the
+    // caret are unchanged by taking this path.
+    (inlineProjection.visibleText !== source || searchHighlight !== undefined);
   // Opening the grip menu moves focus into a portalled dropdown, which takes the row out of
   // `:hover`/`:focus-within` and used to fade the very control the menu is attached to.
   const [controlsMenuOpen, setControlsMenuOpen] = useState(false);
@@ -1748,7 +1754,7 @@ function MarkdownBlockRowView({
                   source={source}
                   selection={restoredSelection}
                   autoFocus={autoFocusEditor}
-                  highlightSelection={highlightSelection}
+                  searchHighlight={searchHighlight}
                   placeholder={source.length === 0 ? blockPlaceholder(block) : undefined}
                   className="native-block-textarea block min-w-0 flex-1 whitespace-pre-wrap break-words bg-transparent outline-none"
                   onSourceChange={(nextSource, nextSelection) => {

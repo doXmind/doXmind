@@ -132,6 +132,11 @@ function buildAppMenu(deps) {
           click: () => emitToFocused("menu://find", null),
         },
         {
+          label: "Find and Replace…",
+          accelerator: "CmdOrCtrl+Alt+F",
+          click: () => emitToFocused("menu://find-replace", null),
+        },
+        {
           label: "Quick Switcher…",
           accelerator: "CmdOrCtrl+O",
           click: () => emitToFocused("menu://quick-switcher", null),

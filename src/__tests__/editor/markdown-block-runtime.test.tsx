@@ -180,6 +180,72 @@ describe("MarkdownBlockRuntime", () => {
     });
   };
 
+  const openFind = async (term: string) => {
+    useLayoutStore.setState({ isSearchBarOpen: true, isReplaceOpen: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.change(screen.getByLabelText("Search text"), { target: { value: term } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  };
+
+  it("marks the current match without waiting on a selection it has already consumed", async () => {
+    // A plain paragraph, which renders the raw textarea until a match asks otherwise.
+    render(<MarkdownBlockRuntime file={{ ...file, content: "alpha needle beta\n" }} />);
+    await openFind("needle");
+
+    expect(screen.getByText("1 of 1")).toBeInTheDocument();
+    // The highlight used to be derived from `pendingSelection`, which is cleared as soon as it is
+    // applied — so the counter said "1 of 1" while nothing on the Page was marked.
+    expect(document.querySelector("[data-native-search-selection]")).toHaveTextContent("needle");
+  });
+
+  it("counts matches case-sensitively once Aa is pressed", async () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "Needle and needle\n" }} />);
+    await openFind("needle");
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Match case"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText("1 of 1")).toBeInTheDocument();
+  });
+
+  it("reports a half-typed regex instead of throwing on the keystroke", async () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "needle\n" }} />);
+    await openFind("needle");
+    fireEvent.click(screen.getByLabelText("Use regular expression"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // `/(` is a syntax error on the way to `/(a)/`; the bar has to survive it.
+    fireEvent.change(screen.getByLabelText("Search text"), { target: { value: "ne(" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText("Bad pattern")).toBeInTheDocument();
+  });
+
+  it("replaces every match back to front, so the offsets ahead stay valid", async () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "one needle two needle three\n" }} />);
+    await openFind("needle");
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Replace with"), { target: { value: "PIN" } });
+    fireEvent.click(screen.getByLabelText("Replace all"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(updateFile).toHaveBeenCalledWith("page-1", {
+      content: "one PIN two PIN three\n",
+    });
+  });
+
   it("folds a heading section out of view and back, without touching the Markdown", async () => {
     const content = "# One\n\nunder one\n\n# Two\n\nunder two\n";
     render(<MarkdownBlockRuntime file={{ ...file, content }} />);
@@ -1068,10 +1134,12 @@ describe("MarkdownBlockRuntime", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next result" }));
     expect(screen.getByText("2 of 2")).toBeInTheDocument();
     expect(searchInput).toHaveFocus();
-    const textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
-    expect(textarea).toHaveValue("Second needle");
-    expect(textarea.selectionStart).toBe(7);
-    expect(textarea.selectionEnd).toBe(13);
+    // "Second needle" carries no inline syntax, so this Block would otherwise render the raw
+    // textarea — where the match exists only as a selection Chromium does not paint while the
+    // find bar holds focus. The current match renders the semantic surface for exactly that
+    // reason, so the hit the counter is pointing at is one the reader can see.
+    expect(screen.getByLabelText("Markdown block")).toHaveAttribute("data-native-semantic-editor");
+    expect(document.querySelector("[data-native-search-selection]")).toHaveTextContent("needle");
 
     fireEvent.click(screen.getByRole("button", { name: "Previous result" }));
     expect(screen.getByText("1 of 2")).toBeInTheDocument();

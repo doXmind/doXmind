@@ -185,6 +185,7 @@ export function MarkdownBlockRuntime({
   const lineHeight = useLayoutStore((state) => state.lineHeight);
   const autosaveEnabled = useLayoutStore((state) => state.autosaveEnabled);
   const isSearchBarOpen = useLayoutStore((state) => state.isSearchBarOpen);
+  const isReplaceOpen = useLayoutStore((state) => state.isReplaceOpen);
   const setSearchBarOpen = useLayoutStore((state) => state.setSearchBarOpen);
   const setDirty = useEditorStore((state) => state.setDirty);
   const setSaving = useEditorStore((state) => state.setSaving);
@@ -262,6 +263,11 @@ export function MarkdownBlockRuntime({
   // still only offering to throw the local edits away.
   const [saveBlockedByConflict, setSaveBlockedByConflict] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [replaceTerm, setReplaceTerm] = useState("");
+  const [findOptions, setFindOptions] = useState<MarkdownFindOptions>({
+    caseSensitive: false,
+    regex: false,
+  });
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchSelectionRef = useRef<MarkdownBlockSelectionRange | null>(null);
@@ -558,10 +564,11 @@ export function MarkdownBlockRuntime({
     return headings.length >= 2 ? headings : [];
   }, [snapshot.blocks]);
 
-  const searchMatches = useMemo(
-    () => findMarkdownSearchMatches(snapshot.blocks, searchTerm),
-    [searchTerm, snapshot.blocks]
+  const findResult = useMemo(
+    () => findMarkdownSearchMatches(snapshot.blocks, searchTerm, findOptions),
+    [searchTerm, snapshot.blocks, findOptions]
   );
+  const searchMatches = findResult.matches;
   const selectedBlockIdSet = useMemo(
     () =>
       new Set(
@@ -2710,12 +2717,10 @@ export function MarkdownBlockRuntime({
   } as CSSProperties;
   const wordCount = countWords(snapshot.markdown);
   const currentSearchMatch = searchMatches[currentSearchIndex];
-  const searchSelectionBlockId =
-    isSearchBarOpen &&
-    currentSearchMatch &&
-    sameBlockSelectionRange(pendingSelection, currentSearchMatch)
-      ? currentSearchMatch.blockId
-      : null;
+  // Derived from the match itself. Requiring `pendingSelection` to still equal it meant the
+  // highlight vanished the moment the selection was consumed — which is immediately — so the
+  // counter said "2 of 5" while nothing on the Page was marked.
+  const searchHighlight = isSearchBarOpen && currentSearchMatch ? currentSearchMatch : null;
 
   const reloadExternalMarkdown = () => {
     const markdown = externalMarkdownRef.current;
@@ -2760,6 +2765,42 @@ export function MarkdownBlockRuntime({
     );
   };
 
+  /** Rewrite one match through the ordinary source-backed text command. */
+  const replaceMatch = (match: MarkdownSearchMatch): boolean => {
+    const latest = documentRef.current.getSnapshot();
+    const block = latest.blocks.find((candidate) => candidate.id === match.blockId);
+    if (!block) return false;
+    const from = blockSourceOffsetForEditorOffset(block, Math.min(match.anchor, match.head));
+    const to = blockSourceOffsetForEditorOffset(block, Math.max(match.anchor, match.head));
+    publish(
+      documentRef.current.apply({
+        type: "replaceText",
+        blockId: match.blockId,
+        range: { from, to },
+        text: replaceTerm,
+      }),
+      false
+    );
+    return true;
+  };
+
+  const replaceCurrent = () => {
+    const match = searchMatches[currentSearchIndex];
+    if (!match || !replaceMatch(match)) return;
+    // The list is recomputed from the new text, so the index stays put and lands on what is now
+    // the next match — except at the end, where it has to wrap rather than point past the array.
+    setCurrentSearchIndex((index) => (index >= searchMatches.length - 1 ? 0 : index));
+  };
+
+  const replaceAllMatches = () => {
+    // Last to first: replacing shifts every offset after the match, and walking backwards means
+    // the offsets still ahead of the cursor are the ones that have not moved yet.
+    for (let index = searchMatches.length - 1; index >= 0; index -= 1) {
+      replaceMatch(searchMatches[index]);
+    }
+    setCurrentSearchIndex(0);
+  };
+
   return (
     <div
       className="relative flex h-full min-h-0 flex-col"
@@ -2801,11 +2842,42 @@ export function MarkdownBlockRuntime({
               className="min-w-[60px] whitespace-nowrap text-center text-xs text-muted-foreground"
             >
               {searchTerm
-                ? searchMatches.length > 0
-                  ? `${currentSearchIndex + 1} of ${searchMatches.length}`
-                  : "No matches"
+                ? findResult.invalid
+                  ? "Bad pattern"
+                  : searchMatches.length > 0
+                    ? `${currentSearchIndex + 1} of ${searchMatches.length}`
+                    : "No matches"
                 : null}
             </span>
+            <button
+              type="button"
+              aria-label="Match case"
+              title="Match case"
+              aria-pressed={findOptions.caseSensitive}
+              className={`rounded-md px-1.5 py-1 font-mono text-xs ${
+                findOptions.caseSensitive ? "bg-accent text-accent-foreground" : "hover:bg-accent"
+              }`}
+              onClick={() =>
+                setFindOptions((current) => ({
+                  ...current,
+                  caseSensitive: !current.caseSensitive,
+                }))
+              }
+            >
+              Aa
+            </button>
+            <button
+              type="button"
+              aria-label="Use regular expression"
+              title="Use regular expression"
+              aria-pressed={findOptions.regex}
+              className={`rounded-md px-1.5 py-1 font-mono text-xs ${
+                findOptions.regex ? "bg-accent text-accent-foreground" : "hover:bg-accent"
+              }`}
+              onClick={() => setFindOptions((current) => ({ ...current, regex: !current.regex }))}
+            >
+              .*
+            </button>
             <button
               type="button"
               aria-label="Previous result"
@@ -2836,6 +2908,36 @@ export function MarkdownBlockRuntime({
               ×
             </button>
           </div>
+          {isReplaceOpen ? (
+            <div className="flex items-center gap-2 border-t border-border px-3 py-2.5">
+              <input
+                type="text"
+                value={replaceTerm}
+                onChange={(event) => setReplaceTerm(event.target.value)}
+                placeholder="Replace with"
+                aria-label="Replace with"
+                className="min-w-[80px] flex-1 bg-transparent text-base placeholder:text-muted-foreground focus:outline-none md:text-sm"
+              />
+              <button
+                type="button"
+                aria-label="Replace"
+                disabled={searchMatches.length === 0}
+                className="rounded-md px-2 py-1 text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={replaceCurrent}
+              >
+                Replace
+              </button>
+              <button
+                type="button"
+                aria-label="Replace all"
+                disabled={searchMatches.length === 0}
+                className="rounded-md px-2 py-1 text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={replaceAllMatches}
+              >
+                All
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
       {hasExternalConflict ? (
@@ -3052,7 +3154,9 @@ export function MarkdownBlockRuntime({
                     canMoveDown={index < snapshot.blocks.length - 1}
                     active={active}
                     autoFocusEditor={!isSearchBarOpen}
-                    highlightSelection={searchSelectionBlockId === block.id}
+                    searchHighlight={
+                      searchHighlight?.blockId === block.id ? searchHighlight : undefined
+                    }
                     keyboardEntry={keyboardEntry}
                     blockSelected={selectedBlockIdSet.has(block.id)}
                     blockSelectionFocus={blockSelectionFocus}
@@ -3516,30 +3620,50 @@ function markdownBlockIdAtLine(blocks: readonly MarkdownBlockView[], line: numbe
   return blocks.at(-1)?.id ?? null;
 }
 
+export interface MarkdownFindOptions {
+  caseSensitive: boolean;
+  regex: boolean;
+}
+
+/**
+ * Every match of `searchTerm`, and whether the pattern itself was unusable.
+ *
+ * `invalid` matters because a regex is typed one character at a time: `/(` is a syntax error on
+ * the way to `/(a)/`, and throwing there would take the find bar down mid-keystroke.
+ */
 function findMarkdownSearchMatches(
   blocks: readonly MarkdownBlockView[],
-  searchTerm: string
-): MarkdownSearchMatch[] {
+  searchTerm: string,
+  options: MarkdownFindOptions = { caseSensitive: false, regex: false }
+): { matches: MarkdownSearchMatch[]; invalid: boolean } {
   const query = normalizeEditorLineEndings(searchTerm);
-  if (!query) return [];
-  const pattern = new RegExp(escapeRegExp(query), "gi");
-  const matches: MarkdownSearchMatch[] = [];
+  if (!query) return { matches: [], invalid: false };
 
+  let pattern: RegExp;
+  try {
+    pattern = new RegExp(
+      options.regex ? query : escapeRegExp(query),
+      options.caseSensitive ? "g" : "gi"
+    );
+  } catch {
+    return { matches: [], invalid: true };
+  }
+
+  const matches: MarkdownSearchMatch[] = [];
   for (const block of blocks) {
     if (!block.editable) continue;
     const source = normalizeEditorLineEndings(createBlockEditingProjection(block).editorText);
     pattern.lastIndex = 0;
     for (const match of source.matchAll(pattern)) {
+      // A zero-length match — `/a*/` against `b` — would advance nothing and make Next a no-op
+      // that looks like a hang.
+      if (match[0].length === 0) continue;
       const anchor = match.index;
-      matches.push({
-        blockId: block.id,
-        anchor,
-        head: anchor + match[0].length,
-      });
+      matches.push({ blockId: block.id, anchor, head: anchor + match[0].length });
     }
   }
 
-  return matches;
+  return { matches, invalid: false };
 }
 
 function escapeRegExp(value: string): string {

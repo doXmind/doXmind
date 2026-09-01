@@ -131,7 +131,7 @@ describe("SemanticInlineEditor", () => {
         <SemanticInlineEditor
           source="A **bold** Z"
           selection={{ anchor: "A **b".length, head: "A **bol".length }}
-          highlightSelection
+          searchHighlight={{ anchor: "A **b".length, head: "A **bol".length }}
           onSourceChange={onSourceChange}
         />
       </>
@@ -149,7 +149,7 @@ describe("SemanticInlineEditor", () => {
       <SemanticInlineEditor
         source={source}
         selection={{ anchor: from, head: from + "campus".length }}
-        highlightSelection
+        searchHighlight={{ anchor: from, head: from + "campus".length }}
         onSourceChange={vi.fn()}
       />
     );
