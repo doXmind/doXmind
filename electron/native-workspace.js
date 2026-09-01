@@ -90,7 +90,12 @@ function createNativeWorkspaceDispatcher(options = {}) {
       case "workspace_scan":
         return workspaceScan(payload.root, payload.excludeDirs);
       case "workspace_markdown_search":
-        return workspaceMarkdownSearch(payload.root, payload.query, payload.limit);
+        return workspaceMarkdownSearch(
+          payload.root,
+          payload.query,
+          payload.limit,
+          payload.criteria
+        );
       case "doc_read":
         return readWorkspacePage(payload.root, payload.path);
       case "workspace_read_asset":
@@ -1264,12 +1269,93 @@ function objectOrNull(value) {
 
 const MARKDOWN_SEARCH_PREVIEWS_PER_PAGE = 50;
 
-async function workspaceMarkdownSearch(rootValue, queryValue, limitValue) {
+/**
+ * Re-validate the renderer's parsed criteria here rather than trusting them.
+ *
+ * The renderer parses because that is where the query string is typed and where a syntax error has
+ * to be shown; the matching stays here because this is the only place that already reads every
+ * Page. A malformed group is dropped rather than throwing, so a criteria payload can never turn a
+ * search into a crash — same posture as `sanitizeExcludeDirs`.
+ */
+function sanitizeSearchCriteria(value) {
+  const groups = Array.isArray(value?.groups) ? value.groups : [];
+  const clean = [];
+  for (const group of groups) {
+    if (!Array.isArray(group)) continue;
+    const terms = [];
+    for (const term of group) {
+      if (!term || typeof term !== "object") continue;
+      const field = term.field;
+      if (field !== "content" && field !== "file" && field !== "path" && field !== "tag") continue;
+      if (typeof term.value !== "string" || !term.value) continue;
+      let regex = null;
+      if (typeof term.regexSource === "string" && term.regexSource) {
+        // Only the flags the renderer's own whitelist allows; `g` and `y` carry lastIndex state.
+        const flags = typeof term.regexFlags === "string" ? term.regexFlags : "";
+        if (!/^[imsu]*$/.test(flags)) continue;
+        try {
+          regex = new RegExp(term.regexSource, flags);
+        } catch {
+          continue;
+        }
+      }
+      terms.push({ field, value: term.value, negated: Boolean(term.negated), regex });
+    }
+    if (terms.length) clean.push(terms);
+  }
+  return clean;
+}
+
+/** Every tag a Page carries, lower-cased, including each ancestor of a nested `a/b`. */
+function pageTagSet(meta) {
+  const tags = new Set();
+  const values = Array.isArray(meta?.tags) ? meta.tags : [];
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const tag = value.trim().toLowerCase().replace(/^#/, "");
+    if (!tag) continue;
+    tags.add(tag);
+    // `tag:project` has to find a Page tagged `project/alpha`, the way a nested tag reads.
+    const parts = tag.split("/");
+    for (let index = 1; index < parts.length; index += 1) {
+      tags.add(parts.slice(0, index).join("/"));
+    }
+  }
+  return tags;
+}
+
+function matchesSearchTerm(term, context) {
+  const test = (haystack) =>
+    term.regex ? term.regex.test(haystack) : haystack.toLowerCase().includes(term.value);
+  let hit;
+  if (term.field === "tag") {
+    hit = term.regex
+      ? [...context.tags].some((tag) => term.regex.test(tag))
+      : context.tags.has(term.value);
+  } else if (term.field === "file") {
+    hit = test(context.name);
+  } else if (term.field === "path") {
+    hit = test(context.path);
+  } else {
+    hit = test(context.body);
+  }
+  return term.negated ? !hit : hit;
+}
+
+/** Every group must match; within a group any one term is enough. */
+function evaluateSearchCriteria(groups, context) {
+  return groups.every((group) => group.some((term) => matchesSearchTerm(term, context)));
+}
+
+async function workspaceMarkdownSearch(rootValue, queryValue, limitValue, criteriaValue) {
   const root = await canonicalWorkspaceRoot(rootValue);
   const query = String(queryValue || "")
     .trim()
     .toLowerCase();
-  if (!query) throw new Error("search query is required");
+  const criteria = sanitizeSearchCriteria(criteriaValue);
+  // `tag:project` is a complete query with no text in it, so the requirement is a query *or* a
+  // constraint — not a query string.
+  if (!query && !criteria.length) throw new Error("search query is required");
   const limit = Math.min(Math.max(Number(limitValue || 50), 1), 200);
   const scan = await workspaceScan(root);
   const results = [];
@@ -1279,7 +1365,19 @@ async function workspaceMarkdownSearch(rootValue, queryValue, limitValue) {
     // The body, not the raw file. Line numbers counted over the frontmatter belong to no line the
     // editor can show — `readPage` returns the body — so a hit reported at line 7 landed several
     // Blocks off. It also stopped `id:` and `tags:` surfacing as if they were content.
-    const body = splitPageSource(raw).body;
+    const split = splitPageSource(raw);
+    const body = split.body;
+    if (
+      criteria.length &&
+      !evaluateSearchCriteria(criteria, {
+        name: document.name,
+        path: document.path,
+        body,
+        tags: pageTagSet(split.meta),
+      })
+    ) {
+      continue;
+    }
     const matches = [];
     let matchCount = 0;
     for (const [index, line] of body.split(/\r\n|\n|\r/).entries()) {
@@ -1289,6 +1387,15 @@ async function workspaceMarkdownSearch(rootValue, queryValue, limitValue) {
       // previews across the bridge for a panel that can only show a screen of them.
       if (matches.length < MARKDOWN_SEARCH_PREVIEWS_PER_PAGE) {
         matches.push({ line: index + 1, preview: line.trim().slice(0, 240) });
+      }
+    }
+    // A query made only of constraints — `tag:project` alone — has no text to point at, so the
+    // Page is reported with its first non-empty line rather than dropped for having no line hits.
+    if (!query && criteria.length && matchCount === 0) {
+      const first = body.split(/\r\n|\n|\r/).findIndex((line) => line.trim());
+      if (first >= 0) {
+        matchCount = 1;
+        matches.push({ line: first + 1, preview: body.split(/\r\n|\n|\r/)[first].trim().slice(0, 240) });
       }
     }
     if (matches.length) {

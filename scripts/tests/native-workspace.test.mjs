@@ -1739,6 +1739,87 @@ test("search reports every hit, at line numbers the editor can actually reach", 
   });
 });
 
+test("search honours the query operators the renderer parsed", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    await fs.mkdir(path.join(root, "Projects"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, "Projects", "Alpha.md"),
+      "---\ntags:\n  - project/web\n---\n\nneedle in alpha\n"
+    );
+    await fs.writeFile(
+      path.join(root, "Beta.md"),
+      "---\ntags:\n  - draft\n---\n\nneedle in beta\n"
+    );
+    await fs.writeFile(path.join(root, "Gamma.md"), "needle in gamma\n");
+
+    const paths = async (criteria, query = "needle") =>
+      (await invoke("workspace_markdown_search", { root, query, criteria }))
+        .map((entry) => entry.path)
+        .sort();
+
+    const term = (field, value, extra = {}) => ({ field, value, negated: false, ...extra });
+
+    // A nested tag answers to its ancestor, the way `project/web` reads.
+    assert.deepEqual(await paths({ groups: [[term("tag", "project")]] }), ["Projects/Alpha.md"]);
+    assert.deepEqual(await paths({ groups: [[term("path", "projects")]] }), ["Projects/Alpha.md"]);
+    assert.deepEqual(await paths({ groups: [[term("file", "beta")]] }), ["Beta.md"]);
+
+    // Negation, and OR inside one group.
+    assert.deepEqual(await paths({ groups: [[{ ...term("tag", "draft"), negated: true }]] }), [
+      "Gamma.md",
+      "Projects/Alpha.md",
+    ]);
+    assert.deepEqual(await paths({ groups: [[term("file", "beta"), term("file", "gamma")]] }), [
+      "Beta.md",
+      "Gamma.md",
+    ]);
+
+    // Separate groups are ANDed.
+    assert.deepEqual(
+      await paths({ groups: [[term("tag", "project")], [term("file", "alpha")]] }),
+      ["Projects/Alpha.md"]
+    );
+
+    // A constraint with no text still reports the Page, using its first body line.
+    const constraintOnly = await invoke("workspace_markdown_search", {
+      root,
+      query: "",
+      criteria: { groups: [[term("tag", "draft")]] },
+    });
+    assert.deepEqual(
+      constraintOnly.map((entry) => entry.path),
+      ["Beta.md"]
+    );
+    assert.equal(constraintOnly[0].matches[0].preview, "needle in beta");
+  });
+});
+
+test("search recompiles a regex term but refuses stateful flags", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    await fs.writeFile(path.join(root, "A.md"), "needle one\n");
+    await fs.writeFile(path.join(root, "B.md"), "NEEDLE two\n");
+
+    const run = (criteria) => invoke("workspace_markdown_search", { root, query: "", criteria });
+
+    const insensitive = await run({
+      groups: [[{ field: "content", value: "/needle/i", negated: false, regexSource: "needle", regexFlags: "i" }]],
+    });
+    assert.deepEqual(insensitive.map((entry) => entry.path).sort(), ["A.md", "B.md"]);
+
+    // `g` carries lastIndex between calls, so a shared RegExp would skip results at random.
+    await assert.rejects(
+      run({
+        groups: [
+          [{ field: "content", value: "/needle/g", negated: false, regexSource: "needle", regexFlags: "g" }],
+        ],
+      }),
+      /search query is required/
+    );
+  });
+});
+
 test("search counts every hit in a Page but sends a bounded number of previews", async () => {
   await withWorkspace(async (root) => {
     const invoke = createNativeWorkspaceDispatcher();

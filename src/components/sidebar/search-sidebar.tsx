@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { createStorageAdapter, searchMarkdown, type MarkdownSearchResult } from "@/lib/storage";
+import { hasStructuredCriteria, parseSearchQuery } from "@/lib/search-query";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useFileStore } from "@/stores/file-store";
 import { usePageSessionStore } from "@/stores/page-session-store";
@@ -24,6 +25,7 @@ export function SearchSidebar() {
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<MarkdownSearchResult[]>([]);
   const [isSearching, setIsSearching] = React.useState(false);
+  const [syntaxError, setSyntaxError] = React.useState<string | null>(null);
   const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(new Set());
   const abortRef = React.useRef<AbortController | null>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -34,7 +36,12 @@ export function SearchSidebar() {
 
   const performSearch = useDebouncedCallback(async (searchQuery: string) => {
     const trimmed = searchQuery.trim();
-    if (trimmed.length < MIN_QUERY_CHARS || !rootPath) {
+    const parsed = parseSearchQuery(trimmed);
+    setSyntaxError(parsed.error);
+    // A structured query is short but complete: `tag:x` must not wait for a third character,
+    // while a bare letter still has to clear the minimum.
+    const longEnough = trimmed.length >= MIN_QUERY_CHARS || hasStructuredCriteria(parsed.criteria);
+    if (!longEnough || !rootPath) {
       abortRef.current?.abort();
       setResults([]);
       setIsSearching(false);
@@ -47,9 +54,22 @@ export function SearchSidebar() {
     setIsSearching(true);
     try {
       const adapter = createStorageAdapter({ disk: { root: rootPath } });
-      const found = await searchMarkdown(adapter, trimmed, {
+      const found = await searchMarkdown(adapter, parsed.text, {
         limit: FILE_LIMIT,
         signal: controller.signal,
+        criteria: {
+          groups: parsed.criteria.groups.map((group) =>
+            group.map((term) => ({
+              field: term.field,
+              value: term.value,
+              negated: term.negated,
+              // A compiled RegExp cannot cross the bridge; the far side recompiles it.
+              ...(term.regex
+                ? { regexSource: term.regex.source, regexFlags: term.regex.flags }
+                : {}),
+            }))
+          ),
+        },
       }).catch(() => null);
       // A slower earlier request must not overwrite a faster later one.
       if (!controller.signal.aborted) setResults(found?.results ?? []);
@@ -69,6 +89,8 @@ export function SearchSidebar() {
     0
   );
   const trimmed = query.trim();
+  // Highlight only the words the user actually searched for; `tag:project` marks nothing.
+  const highlightText = parseSearchQuery(trimmed).text;
   const showEmpty = trimmed.length >= MIN_QUERY_CHARS && !isSearching && results.length === 0;
 
   const openHit = (result: MarkdownSearchResult, line: number) => {
@@ -112,7 +134,12 @@ export function SearchSidebar() {
             </button>
           )}
         </div>
-        {results.length > 0 && (
+        {syntaxError && (
+          <p className="text-ui-xs px-1 pt-2 text-destructive">
+            {t("searchSyntaxError", { detail: syntaxError })}
+          </p>
+        )}
+        {!syntaxError && results.length > 0 && (
           <p className="text-ui-xs px-1 pt-2 text-[var(--sidebar-icon)]">
             {t("searchSummary", { hits: totalHits, pages: results.length })}
           </p>
@@ -166,7 +193,7 @@ export function SearchSidebar() {
                       )}
                     >
                       <span className="min-w-0 flex-1 truncate">
-                        <HighlightedPreview preview={hit.preview} query={trimmed} />
+                        <HighlightedPreview preview={hit.preview} query={highlightText} />
                       </span>
                     </button>
                   ))}

@@ -446,13 +446,16 @@ export class DiskStorageAdapter implements StorageAdapter {
     options: MarkdownSearchOptions = {}
   ): Promise<MarkdownSearchResults> {
     const normalizedQuery = query.trim();
-    if (!normalizedQuery) return { results: [] };
+    // A constraint-only query — `tag:project` — has no text but is still a search.
+    if (!normalizedQuery && !options.criteria?.groups.length) return { results: [] };
 
     const fileIdSet = options.fileIds ? new Set(options.fileIds) : null;
     const results = await this.invoke<MarkdownSearchResultDto[]>("workspace_markdown_search", {
       root: this.requireRoot(),
       query: normalizedQuery,
       limit: options.limit,
+      // Omitted when absent so a plain query sends exactly the payload it always did.
+      ...(options.criteria ? { criteria: options.criteria } : {}),
     });
 
     return {

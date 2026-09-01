@@ -167,6 +167,7 @@
     "settings": "Settings",
     "search": "Search",
     "searchSummary": "{hits} results in {pages} Pages",
+    "searchSyntaxError": "Search syntax: {detail}",
     "newDocument": "New page",
     "newFile": "New File",
     "newFolder": "New folder",

@@ -503,6 +503,21 @@ export interface MarkdownSearchOptions {
   fileIds?: string[];
   limit?: number;
   signal?: AbortSignal;
+  /**
+   * Parsed query operators. Serializable by construction — a compiled RegExp cannot cross the
+   * bridge, so a regex term travels as its source and flags and is recompiled on the far side.
+   */
+  criteria?: {
+    groups: Array<
+      Array<{
+        field: "content" | "file" | "path" | "tag";
+        value: string;
+        negated: boolean;
+        regexSource?: string;
+        regexFlags?: string;
+      }>
+    >;
+  };
 }
 
 export interface MarkdownSearchHit {
