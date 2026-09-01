@@ -246,6 +246,22 @@ describe("MarkdownBlockRuntime", () => {
     });
   });
 
+  it("registers each mounted Page as its own editor, so chrome can address one of them", () => {
+    // What jsdom can show: two runtimes coexist as two registered editors, and the first to mount
+    // holds the claim. What it cannot show is the window-listener behaviour those guards protect —
+    // `visibleEditableBlock` needs real layout, so a keystroke reaches neither document here.
+    // That has to be checked on the running app once a second pane can be rendered.
+    render(
+      <>
+        <MarkdownBlockRuntime file={{ ...file, id: "page-1", content: "alpha\n" }} />
+        <MarkdownBlockRuntime file={{ ...file, id: "page-2", content: "beta\n" }} />
+      </>
+    );
+
+    expect(Object.keys(useEditorRefStore.getState().editors)).toHaveLength(2);
+    expect(useEditorRefStore.getState().requestSave).not.toBeNull();
+  });
+
   it("folds a heading section out of view and back, without touching the Markdown", async () => {
     const content = "# One\n\nunder one\n\n# Two\n\nunder two\n";
     render(<MarkdownBlockRuntime file={{ ...file, content }} />);

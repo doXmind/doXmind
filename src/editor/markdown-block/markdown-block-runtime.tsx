@@ -196,6 +196,19 @@ export function MarkdownBlockRuntime({
   // One id per mounted runtime. Block ids restart per document and the file id changes as the
   // user navigates, so neither identifies *this editor* for the life of its mount.
   const editorInstanceId = useId();
+  const runtimeRootRef = useRef<HTMLDivElement>(null);
+  /**
+   * Whether this is the editor the user is working in.
+   *
+   * Three listeners below sit on `window` or on `document` and were written when only one runtime
+   * could be mounted. With a second Page on screen they all fire in both, so each one asks this
+   * first. Read from the store at event time rather than subscribed to, because these handlers must
+   * not re-register on every focus change.
+   */
+  const isActiveEditor = useCallback(
+    () => useEditorRefStore.getState().activeEditorId === editorInstanceId,
+    [editorInstanceId]
+  );
   const publishOutline = usePageSessionStore((state) => state.publishOutline);
   const revealRequest = usePageSessionStore((state) => state.revealRequest);
   const clearReveal = usePageSessionStore((state) => state.clearReveal);
@@ -952,6 +965,9 @@ export function MarkdownBlockRuntime({
     if (activeBlockId !== null || blockSelection !== null || isSearchBarOpen) return;
 
     const handleEditIntent = (event: KeyboardEvent) => {
+      // Without this, a keypress with no active Block in either pane — the state immediately after
+      // a split — is applied to both Pages at once.
+      if (!isActiveEditor()) return;
       if (isEventFromEditableElement(event.target)) return;
       if (isEventFromFocusedControl(event.target)) return;
       const key = keyboardEditIntentKey(event);
@@ -990,7 +1006,7 @@ export function MarkdownBlockRuntime({
 
     window.addEventListener("keydown", handleEditIntent);
     return () => window.removeEventListener("keydown", handleEditIntent);
-  }, [activeBlockId, apply, blockSelection, isSearchBarOpen]);
+  }, [activeBlockId, apply, blockSelection, isSearchBarOpen, isActiveEditor]);
 
   const undo = useCallback(() => {
     const before = documentRef.current.getSnapshot().blocks;
@@ -1082,6 +1098,7 @@ export function MarkdownBlockRuntime({
 
   useEffect(() => {
     const handleSave = (event: KeyboardEvent) => {
+      if (!isActiveEditor()) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
         void saveCurrentNow().catch(() => undefined);
@@ -1089,7 +1106,7 @@ export function MarkdownBlockRuntime({
     };
     window.addEventListener("keydown", handleSave);
     return () => window.removeEventListener("keydown", handleSave);
-  }, [saveCurrentNow]);
+  }, [saveCurrentNow, isActiveEditor]);
 
   useEffect(() => {
     const markdown = file.content;
@@ -1160,6 +1177,9 @@ export function MarkdownBlockRuntime({
   // A search result asks for a body line; the caret has to land in whichever Block spans it.
   useEffect(() => {
     if (!revealRequest || revealRequest.pageId !== file.id) return;
+    // The same Page can be open in both panes. Only the one the user is navigating consumes the
+    // request; the other would swallow it and clear it before the active pane ever saw it.
+    if (!isActiveEditor()) return;
     // `documentRef`, not `snapshot`: opening a different Page from a search result runs this on the
     // commit where the store's file has changed but the snapshot state has not caught up yet.
     const blocks = documentRef.current.getSnapshot().blocks;
@@ -1170,7 +1190,7 @@ export function MarkdownBlockRuntime({
     setBlockSelection(null);
     setPendingSelection({ blockId: target, anchor: 0, head: 0 });
     // `revealRequest.token` is in the deps so two clicks on the same line both land.
-  }, [revealRequest, file.id, clearReveal]);
+  }, [revealRequest, file.id, clearReveal, isActiveEditor]);
 
   const moveBlock = useCallback(
     (blockId: string, direction: -1 | 1): boolean => {
@@ -1417,11 +1437,12 @@ export function MarkdownBlockRuntime({
       // That is how pressing a callout's body deactivated the whole Block: the caret could reach the
       // title and never the body.
       if (target && !target.isConnected) return;
-      if (
-        target?.closest(
-          "[data-native-markdown-runtime], [data-native-editor-overlay], [data-radix-popper-content-wrapper]"
-        )
-      ) {
+      // `closest` on the shared attribute matches *any* runtime, so a press inside another Page
+      // used to count as inside this one and left two live carets on screen. Only this root, and
+      // the portalled overlays that belong to whichever editor opened them, keep the caret.
+      const insideSomeRuntime = target?.closest("[data-native-markdown-runtime]");
+      if (insideSomeRuntime && insideSomeRuntime === runtimeRootRef.current) return;
+      if (target?.closest("[data-native-editor-overlay], [data-radix-popper-content-wrapper]")) {
         return;
       }
       setActiveBlockId(null);
@@ -2804,6 +2825,7 @@ export function MarkdownBlockRuntime({
 
   return (
     <div
+      ref={runtimeRootRef}
       className="relative flex h-full min-h-0 flex-col"
       data-testid="markdown-block-runtime"
       data-native-markdown-runtime
