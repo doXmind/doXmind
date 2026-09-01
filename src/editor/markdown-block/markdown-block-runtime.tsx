@@ -1078,6 +1078,7 @@ export function MarkdownBlockRuntime({
 
   useEffect(() => {
     registerEditor(editorInstanceId, {
+      fileId: file.id,
       requestSave: saveCurrentNow,
       requestUndo: undo,
       requestRedo: redo,
@@ -1086,6 +1087,7 @@ export function MarkdownBlockRuntime({
     });
     return () => unregisterEditor(editorInstanceId);
   }, [
+    file.id,
     editorInstanceId,
     registerEditor,
     unregisterEditor,

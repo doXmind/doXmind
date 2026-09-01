@@ -2,6 +2,8 @@ import { create } from "zustand";
 
 /** What one mounted Markdown runtime can be asked to do. */
 export interface EditorHandles {
+  /** The Page this editor is showing, so a caller can flush one Page without knowing its pane. */
+  fileId: string;
   // Awaitable "save this document now", so chrome (e.g. the header's close
   // button) can save-then-close. Resolves true when saved (or there was nothing
   // to save), false when the user cancelled the save-location picker.
@@ -44,6 +46,13 @@ interface EditorRefState {
   setActiveEditor: (id: string | null) => void;
   /** Flush every mounted editor, for the paths that mean "before we close, save everything". */
   saveAllEditors: () => Promise<boolean>;
+  /**
+   * Flush the editor showing `fileId`, if one is mounted.
+   *
+   * Resolves true when no editor is showing it — the Page is not open, so there is nothing
+   * unsaved to lose, which is what the callers' old `currentFileId !== pageId` check meant.
+   */
+  requestSaveFor: (fileId: string) => Promise<boolean>;
 }
 
 /** Recompute the mirrored handles from the registry. */
@@ -88,6 +97,11 @@ export const useEditorRefStore = create<EditorRefState>()((set, get) => ({
     }),
 
   setActiveEditor: (id) => set((state) => mirror(state.editors, id)),
+
+  requestSaveFor: async (fileId) => {
+    const editor = Object.values(get().editors).find((handles) => handles.fileId === fileId);
+    return editor ? editor.requestSave() : true;
+  },
 
   saveAllEditors: async () => {
     // Sequential, not parallel: each save may open a native destination picker, and two at once

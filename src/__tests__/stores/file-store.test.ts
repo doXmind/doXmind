@@ -170,6 +170,30 @@ describe("useFileStore disk workspace", () => {
     expect(useFileStore.getState().openTabIds).toEqual([]);
   });
 
+  it("drops a Page the rescan no longer sees out of the split", async () => {
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "workspace_scan") {
+        return {
+          root: "/workspace",
+          documents: [{ id: "doc-1", idSource: "frontmatter", path: "Kept.md", name: "Kept.md" }],
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    // A split whose other pane holds a Page that is about to disappear from disk.
+    useFileStore.setState({
+      currentFileId: "doc-1",
+      otherPaneFileId: "gone",
+      openTabIds: ["doc-1", "gone"],
+    });
+
+    await useFileStore.getState().loadFiles();
+
+    expect(useFileStore.getState().otherPaneFileId).toBeNull();
+    expect(useFileStore.getState().openTabIds).toEqual(["doc-1"]);
+  });
+
   it("keeps today's tree when the scan reports no folders or assets", async () => {
     // The browser-development FastAPI scan omits both keys, and must keep working untouched.
     invokeMock.mockImplementation(async (command: string) => {

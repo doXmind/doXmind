@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useEditorRefStore, type EditorHandles } from "@/stores/editor-ref-store";
 
-const handles = (): EditorHandles => ({
+const handles = (fileId = "page-1"): EditorHandles => ({
+  fileId,
   requestSave: vi.fn(async () => true),
   requestUndo: vi.fn(),
   requestRedo: vi.fn(),
@@ -104,5 +105,28 @@ describe("editor registry", () => {
 
     await expect(useEditorRefStore.getState().saveAllEditors()).resolves.toBe(false);
     expect(b.requestSave).not.toHaveBeenCalled();
+  });
+});
+
+describe("requestSaveFor", () => {
+  beforeEach(() => {
+    useEditorRefStore.setState({ editors: {}, activeEditorId: null });
+  });
+
+  it("flushes the editor showing that Page, whichever pane it is in", async () => {
+    const a = handles("page-a");
+    const b = handles("page-b");
+    useEditorRefStore.getState().registerEditor("a", a);
+    useEditorRefStore.getState().registerEditor("b", b);
+
+    await useEditorRefStore.getState().requestSaveFor("page-b");
+
+    expect(b.requestSave).toHaveBeenCalledOnce();
+    expect(a.requestSave).not.toHaveBeenCalled();
+  });
+
+  it("resolves true when the Page is not open, because nothing is unsaved", async () => {
+    useEditorRefStore.getState().registerEditor("a", handles("page-a"));
+    await expect(useEditorRefStore.getState().requestSaveFor("elsewhere")).resolves.toBe(true);
   });
 });
