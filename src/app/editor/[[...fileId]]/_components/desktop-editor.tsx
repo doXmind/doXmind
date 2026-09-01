@@ -61,7 +61,6 @@ export function DesktopEditor() {
 
   const panes = useMemo(() => {
     const active = {
-      key: "active",
       fileId: currentFileId,
       file: currentFile ?? null,
       isLoaded: isCurrentFileLoaded,
@@ -69,14 +68,20 @@ export function DesktopEditor() {
       basis: otherPaneOnLeft ? (1 - splitRatio) * 100 : splitRatio * 100,
     };
     const other = {
-      key: "other",
       fileId: otherPaneFileId,
       file: otherPaneFile ?? null,
       isLoaded: isOtherPaneLoaded,
       isActive: false,
       basis: otherPaneOnLeft ? splitRatio * 100 : (1 - splitRatio) * 100,
     };
-    return otherPaneOnLeft ? [other, active] : [active, other];
+    // Keyed by where a pane sits, never by which one is focused. Focusing the other pane
+    // swaps the two ids *and* flips the order, so under a role key React reuses each fiber
+    // for the other pane's Page: both editors rebuild their document from the last written
+    // content, dropping unsaved edits and both undo histories while the screen looks still.
+    return (otherPaneOnLeft ? [other, active] : [active, other]).map((pane, index) => ({
+      ...pane,
+      key: index === 0 ? "left" : "right",
+    }));
   }, [
     currentFileId,
     currentFile,

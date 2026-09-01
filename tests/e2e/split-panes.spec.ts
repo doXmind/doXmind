@@ -72,6 +72,37 @@ test("clicking a pane moves the active marker to it", async ({ page }) => {
   await expect(documentIn(pane(page, "inactive"))).toHaveAttribute("data-file-id", before!);
 });
 
+test("each editor keeps its own Page when focus moves to the other pane", async ({ page }) => {
+  await openBothAndSplit(page);
+
+  // Tag the mounted documents. React moves a reused DOM node along with its fiber, so a tag
+  // that ends up beside a different data-file-id means that editor instance was handed the
+  // other pane's Page — which silently rebuilds its document, dropping unsaved edits and
+  // the undo history, while the screen looks unchanged.
+  await page.locator("[data-native-markdown-document]").evaluateAll((els) =>
+    els.forEach((el, index) => {
+      (el as HTMLElement).dataset.paneIdentityProbe = String(index);
+    })
+  );
+  const identities = () =>
+    page
+      .locator("[data-native-markdown-document]")
+      .evaluateAll((els) =>
+        els.map((el) => [
+          (el as HTMLElement).dataset.paneIdentityProbe,
+          (el as HTMLElement).dataset.fileId,
+        ])
+      );
+  const before = await identities();
+
+  await pane(page, "inactive").click({ position: { x: 200, y: 300 } });
+  await expect
+    .poll(() => documentIn(pane(page, "active")).getAttribute("data-file-id"))
+    .toBeTruthy();
+
+  expect(Object.fromEntries(await identities())).toEqual(Object.fromEntries(before));
+});
+
 test("a save reaches the file of the pane that was clicked into", async ({ page }) => {
   await openBothAndSplit(page);
   // The Page backed by a file is in the other pane; clicking into it is what makes the
