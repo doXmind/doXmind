@@ -115,7 +115,43 @@ import {
   subscribeMermaidTheme,
 } from "@/lib/mermaid-renderer";
 
-const inlinePreviewLexer = new Marked({ gfm: true });
+/**
+ * The rendered view's grammar.
+ *
+ * `marked` has no `==highlight==` and no `%%comment%%`, so both used to render as their own
+ * literal punctuation — which for a comment meant a Page displayed the text its author had
+ * deliberately marked as not part of the document.
+ */
+const inlinePreviewLexer = new Marked({ gfm: true }).use({
+  extensions: [
+    {
+      name: "inlineHighlight",
+      level: "inline" as const,
+      start: (src: string) => src.indexOf("=="),
+      tokenizer(src: string) {
+        const match = /^==(?=[^\s=])([\s\S]*?[^\s=])==/.exec(src);
+        if (!match) return undefined;
+        return {
+          type: "inlineHighlight",
+          raw: match[0],
+          text: match[1],
+          tokens: this.lexer.inlineTokens(match[1]),
+        };
+      },
+    },
+    {
+      name: "inlineComment",
+      level: "inline" as const,
+      start: (src: string) => src.indexOf("%%"),
+      tokenizer(src: string) {
+        const match = /^%%([\s\S]*?)%%/.exec(src);
+        if (!match) return undefined;
+        // No `tokens` and no text: a comment is not part of the rendered document.
+        return { type: "inlineComment", raw: match[0], text: "" };
+      },
+    },
+  ],
+});
 let katexPromise: Promise<typeof import("katex").default> | null = null;
 
 function loadKatex(): Promise<typeof import("katex").default> {
@@ -3943,6 +3979,15 @@ function renderInlineTokens(
         return <em key={key}>{children}</em>;
       case "del":
         return <del key={key}>{children}</del>;
+      case "inlineHighlight":
+        return (
+          <mark key={key} className="rounded-[2px] bg-primary/25 text-inherit">
+            {children}
+          </mark>
+        );
+      case "inlineComment":
+        // Rendered as nothing at all — that is what writing a comment means.
+        return <Fragment key={key} />;
       case "codespan":
         return (
           <code key={key} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]">

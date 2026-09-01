@@ -23,6 +23,14 @@ export interface MarkdownInlineMarks {
   readonly code: boolean;
   readonly link: boolean;
   readonly wiki: boolean;
+  /** Obsidian's `==highlight==`. */
+  readonly highlight: boolean;
+  /**
+   * Obsidian's `%%comment%%`. The text stays visible and dimmed while the Block is being edited —
+   * a comment you cannot see is a comment you cannot remove — and is absent from the rendered
+   * view, which is the whole point of writing one.
+   */
+  readonly comment: boolean;
 }
 
 export interface MarkdownInlineTextSegment {
@@ -84,10 +92,17 @@ interface Boundary {
 }
 
 interface Delimiter {
-  readonly character: "*" | "_" | "~";
+  readonly character: "*" | "_" | "~" | "=" | "%";
   readonly width: 1 | 2;
-  readonly mark: "bold" | "italic" | "strike";
+  readonly mark: "bold" | "italic" | "strike" | "highlight" | "comment";
 }
+
+/** Delimiters that exist only as a doubled run: `~~`, `==`, `%%`. */
+const PAIRED_ONLY_DELIMITERS: Record<string, "strike" | "highlight" | "comment"> = {
+  "~": "strike",
+  "=": "highlight",
+  "%": "comment",
+};
 
 interface ParseResult {
   readonly pieces: Piece[];
@@ -107,6 +122,8 @@ const EMPTY_MARKS: MarkdownInlineMarks = {
   code: false,
   link: false,
   wiki: false,
+  highlight: false,
+  comment: false,
 };
 
 export function projectMarkdownInline(source: string): MarkdownInlineProjection {
@@ -374,13 +391,20 @@ class InlineParser {
 
   private openingDelimiterAt(cursor: number, to: number): Delimiter | null {
     const character = this.source[cursor];
-    if (character !== "*" && character !== "_" && character !== "~") {
+    if (
+      character !== "*" &&
+      character !== "_" &&
+      character !== "~" &&
+      character !== "=" &&
+      character !== "%"
+    ) {
       return null;
     }
 
+    const paired = PAIRED_ONLY_DELIMITERS[character];
     const runLength = this.delimiterRunLength(cursor, character, to);
-    const width = character === "~" || runLength >= 2 ? 2 : 1;
-    if (character === "~" && runLength < 2) return null;
+    const width = paired || runLength >= 2 ? 2 : 1;
+    if (paired && runLength < 2) return null;
     const next = this.source[cursor + width] ?? "";
     const previous = this.source[cursor - 1] ?? "";
     if (!next || isWhitespace(next)) return null;
@@ -391,7 +415,7 @@ class InlineParser {
     return {
       character,
       width,
-      mark: character === "~" ? "strike" : width === 2 ? "bold" : "italic",
+      mark: paired ?? (width === 2 ? "bold" : "italic"),
     };
   }
 
@@ -453,7 +477,9 @@ class InlineParser {
         character === "<" ||
         character === "*" ||
         character === "_" ||
-        character === "~"
+        character === "~" ||
+        character === "=" ||
+        character === "%"
       ) {
         return cursor;
       }

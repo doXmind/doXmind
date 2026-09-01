@@ -111,6 +111,54 @@ describe("MarkdownBlockRow semantic previews", () => {
     renderMermaidSvgLight.mockClear();
   });
 
+  const renderInactive = (markdown: string) => {
+    const [block] = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot().blocks;
+    render(
+      <MarkdownBlockRow
+        block={block}
+        active={false}
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+      />
+    );
+    return document.querySelector<HTMLElement>("[data-native-block-row]")!;
+  };
+
+  it("renders ==highlight== as a mark, not as its own punctuation", () => {
+    const row = renderInactive("say ==this== loudly\n");
+
+    expect(row.querySelector("mark")?.textContent).toBe("this");
+    expect(row.textContent).toBe("say this loudly");
+  });
+
+  it("never renders the contents of a %%comment%%", () => {
+    // The author marked this text as not part of the document. Showing it anyway is the failure
+    // this case exists to prevent.
+    const row = renderInactive("public %%private note%% public\n");
+
+    expect(row.textContent).not.toContain("private note");
+    expect(row.textContent).toBe("public  public");
+  });
+
+  it("leaves a lone = or % as ordinary prose", () => {
+    expect(renderInactive("50% of x, a = b\n").textContent).toBe("50% of x, a = b");
+  });
+
   it("exposes an inactive Block as one keyboard entry point before its hidden gutter controls", () => {
     const [block] = MarkdownBlockDocument.fromMarkdown("Editable\n").getSnapshot().blocks;
     const onActivate = vi.fn();

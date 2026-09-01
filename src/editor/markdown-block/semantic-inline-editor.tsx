@@ -432,6 +432,14 @@ function SemanticSegment({
   if (segment.marks.bold) content = <strong>{content}</strong>;
   if (segment.marks.italic) content = <em>{content}</em>;
   if (segment.marks.strike) content = <del>{content}</del>;
+  if (segment.marks.highlight) {
+    content = <mark className="rounded-[2px] bg-primary/25 text-inherit">{content}</mark>;
+  }
+  if (segment.marks.comment) {
+    // Visible while the Block is being edited, so it can be read and removed, and dimmed so it
+    // is obviously not part of the document. The rendered view drops it entirely.
+    content = <span className="italic text-muted-foreground/70">{content}</span>;
+  }
   if (segment.marks.link) {
     content = (
       <a
