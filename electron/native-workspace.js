@@ -1450,7 +1450,10 @@ async function workspaceMarkdownSearch(rootValue, queryValue, limitValue, criter
     }
     const matches = [];
     let matchCount = 0;
-    for (const [index, line] of body.split(/\r\n|\n|\r/).entries()) {
+    // Only when there is text to look for. `includes("")` is true of every line, so a
+    // constraint-only query reported the whole Page line by line and never reached the
+    // branch below that exists to handle it.
+    for (const [index, line] of query ? body.split(/\r\n|\n|\r/).entries() : []) {
       if (!line.toLowerCase().includes(query)) continue;
       matchCount += 1;
       // Every hit is counted, but a Page with thousands of them does not send thousands of

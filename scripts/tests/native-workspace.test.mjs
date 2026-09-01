@@ -2297,3 +2297,39 @@ test("restoring a Page snapshot returns the file to its exact earlier bytes", as
     assert.equal(await fs.readFile(path.join(root, rel), "utf8"), original);
   });
 });
+
+test("a constraint-only search reports the Page, not every line in it", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    await fs.writeFile(
+      path.join(root, "Tagged.md"),
+      "---\ntags:\n  - project\n---\n\nAlpha line.\nBeta line.\nGamma line.\n",
+      "utf8"
+    );
+
+    const constraintOnly = await invoke("workspace_markdown_search", {
+      root,
+      query: "",
+      criteria: { groups: [[{ field: "tag", value: "project" }]] },
+    });
+    assert.equal(constraintOnly.length, 1);
+    // `tag:project` has no text to point at, so the Page is the hit: one preview, its first
+    // real line. Matching every line was `includes("")` being true for all of them.
+    assert.equal(constraintOnly[0].matchCount, 1);
+    assert.deepEqual(
+      constraintOnly[0].matches.map((match) => match.preview),
+      ["Alpha line."]
+    );
+
+    // A text term alongside the constraint still matches only that text.
+    const withText = await invoke("workspace_markdown_search", {
+      root,
+      query: "beta",
+      criteria: { groups: [[{ field: "tag", value: "project" }]] },
+    });
+    assert.deepEqual(
+      withText[0].matches.map((match) => match.preview),
+      ["Beta line."]
+    );
+  });
+});
