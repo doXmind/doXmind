@@ -43,9 +43,9 @@ const defaultServices: PageHistoryServices = {
     return result.markdown;
   },
   saveCurrentPage: async (pageId) => {
-    if (useFileStore.getState().currentFileId !== pageId) return true;
-    const requestSave = useEditorRefStore.getState().requestSave;
-    return requestSave ? requestSave() : true;
+    // By Page, not by pane: with a split open this Page may be the one the OTHER editor is
+    // holding, and returning true there would run this against stale bytes on disk.
+    return useEditorRefStore.getState().requestSaveFor(pageId);
   },
   // The ordinary revision-guarded write, not a restore command of its own: a snapshot coming back
   // is just another edit, and has to lose to a concurrent external change like any other.

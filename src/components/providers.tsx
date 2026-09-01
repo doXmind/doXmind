@@ -17,13 +17,15 @@ function ThemeInitializer() {
   return null;
 }
 
-function ShellCloseListener() {
+export function ShellCloseListener() {
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | null = null;
     void onShellCloseRequested(async () => {
-      const requestSave = useEditorRefStore.getState().requestSave;
-      if (requestSave) return requestSave();
+      // Every pane, not the focused one. Unsaved edits sitting in the other pane are just
+      // as real, and saving only the active editor dropped them on close.
+      const { editors, saveAllEditors } = useEditorRefStore.getState();
+      if (Object.keys(editors).length > 0) return saveAllEditors();
       return !useEditorStore.getState().isDirty;
     }).then((nextUnlisten) => {
       if (disposed) {

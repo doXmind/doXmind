@@ -122,6 +122,21 @@ describe("split panes", () => {
     expect(state().otherPaneFileId).toBe("b");
   });
 
+  it("drops a discarded transient Page out of the other pane", () => {
+    const transient = { ...page("t"), id: "t" };
+    useFileStore.setState({
+      files: [page("a"), transient] as never,
+      openTabIds: ["a", "t"],
+      currentFileId: "a",
+      otherPaneFileId: "t",
+      transientFile: transient as never,
+    });
+
+    state().discardTransient();
+
+    expect(state().otherPaneFileId).toBeNull();
+  });
+
   it("closes the split when the Page it holds is closed", () => {
     state().splitRight();
     state().closeTab("b");

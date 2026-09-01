@@ -338,6 +338,26 @@ async function executeFolderRelocation(
   return { plan, result, entries };
 }
 
+/**
+ * The other pane's Page id, after anything that changes which Pages are open.
+ *
+ * One rule, applied everywhere tabs move: a Page that is gone, or that the active pane has
+ * just landed on, cannot stay in the other pane. Two editors over one file are two
+ * independent edit histories over one set of bytes, so either can silently overwrite the
+ * other. Callers spread the result, which also drops the side when the split collapses.
+ */
+function paneAfterTabsChanged(
+  otherPaneFileId: string | null,
+  currentFileId: string | null,
+  openTabIds: string[]
+): { otherPaneFileId: string | null; otherPaneOnLeft?: boolean } {
+  const survives =
+    otherPaneFileId !== null &&
+    otherPaneFileId !== currentFileId &&
+    openTabIds.includes(otherPaneFileId);
+  return survives ? { otherPaneFileId } : { otherPaneFileId: null, otherPaneOnLeft: false };
+}
+
 function relocatedPageState(
   state: FileState,
   oldId: string,
@@ -510,16 +530,21 @@ function relocatedFolderState(
   const migrateList = (ids: string[]) =>
     ids.map(migrateId).filter((id, index, all) => nextIdSet.has(id) && all.indexOf(id) === index);
   const migratedCurrentFileId = state.currentFileId ? migrateId(state.currentFileId) : null;
+  const migratedOtherPaneFileId = state.otherPaneFileId ? migrateId(state.otherPaneFileId) : null;
   const migratedCurrentFolderId = state.currentFolderId ? migrateId(state.currentFolderId) : null;
   const migratedJustCreatedFileId = state.justCreatedFileId
     ? migrateId(state.justCreatedFileId)
     : null;
 
+  const nextCurrentFileId =
+    migratedCurrentFileId && nextIdSet.has(migratedCurrentFileId) ? migratedCurrentFileId : null;
+  const nextOpenTabIds = migrateList(state.openTabIds);
+
   return {
     files: sortFilesByOption(files, state.sortBy),
-    currentFileId:
-      migratedCurrentFileId && nextIdSet.has(migratedCurrentFileId) ? migratedCurrentFileId : null,
-    openTabIds: migrateList(state.openTabIds),
+    currentFileId: nextCurrentFileId,
+    openTabIds: nextOpenTabIds,
+    ...paneAfterTabsChanged(migratedOtherPaneFileId, nextCurrentFileId, nextOpenTabIds),
     currentFolderId:
       migratedCurrentFolderId &&
       files.some((file) => file.id === migratedCurrentFolderId && file.isFolder)
@@ -974,13 +999,15 @@ export const useFileStore = create<FileState>()(
               files,
               currentFileId: validCurrentFileId ?? validOpenTabIds[0] ?? null,
               openTabIds: validOpenTabIds,
-              // A Page the scan no longer sees cannot stay in the other pane either.
-              otherPaneFileId: (() => {
-                const other = state.otherPaneFileId
+              // A Page the scan no longer sees cannot stay in the other pane — and neither
+              // can one the fallback above just made the active Page.
+              ...paneAfterTabsChanged(
+                state.otherPaneFileId
                   ? (idMigrationByOldId.get(state.otherPaneFileId) ?? state.otherPaneFileId)
-                  : null;
-                return other && validOpenTabIds.includes(other) ? other : null;
-              })(),
+                  : null,
+                validCurrentFileId ?? validOpenTabIds[0] ?? null,
+                validOpenTabIds
+              ),
               currentFolderId: validCurrentFolderId,
               selectedFileIds: validSelectedFileIds,
               loadedContentIds: preservedContentIds,
@@ -1237,6 +1264,9 @@ export const useFileStore = create<FileState>()(
           files: [looseFile],
           currentFileId: looseFile.id,
           openTabIds: [looseFile.id],
+          // The whole workspace is being replaced; a pane holding one of its Pages is stale.
+          otherPaneFileId: null,
+          otherPaneOnLeft: false,
           currentFolderId: null,
           loadedContentIds: new Set([looseFile.id]),
           selectedFileIds: new Set(),
@@ -1490,14 +1520,19 @@ export const useFileStore = create<FileState>()(
 
         const newFiles = state.files.filter((f) => !idsLeavingStore.has(f.id));
         const newOpenTabIds = state.openTabIds.filter((tabId) => !idsLeavingStore.has(tabId));
+        // Prefer a tab the other pane is not already showing, so deleting an unrelated Page
+        // does not collapse the split.
         const newCurrentId = idsLeavingStore.has(state.currentFileId || "")
-          ? (newOpenTabIds[0] ?? null)
+          ? (newOpenTabIds.find((tabId) => tabId !== state.otherPaneFileId) ??
+            newOpenTabIds[0] ??
+            null)
           : state.currentFileId;
 
         set({
           files: newFiles,
           currentFileId: newCurrentId,
           openTabIds: newOpenTabIds,
+          ...paneAfterTabsChanged(state.otherPaneFileId, newCurrentId, newOpenTabIds),
         });
 
         try {
@@ -1861,6 +1896,11 @@ export const useFileStore = create<FileState>()(
           transientFile: null,
           openTabIds: state.openTabIds.filter((id) => id !== transient.id),
           currentFileId: state.currentFileId === transient.id ? null : state.currentFileId,
+          ...paneAfterTabsChanged(
+            state.otherPaneFileId,
+            state.currentFileId === transient.id ? null : state.currentFileId,
+            state.openTabIds.filter((id) => id !== transient.id)
+          ),
           loadedContentIds: new Set(
             Array.from(state.loadedContentIds).filter((id) => id !== transient.id)
           ),
@@ -2247,7 +2287,9 @@ export const useFileStore = create<FileState>()(
         const newFiles = state.files.filter((f) => !fileIds.includes(f.id));
         const newOpenTabIds = state.openTabIds.filter((tabId) => !fileIds.includes(tabId));
         const newCurrentId = fileIds.includes(state.currentFileId || "")
-          ? (newOpenTabIds[0] ?? null)
+          ? (newOpenTabIds.find((tabId) => tabId !== state.otherPaneFileId) ??
+            newOpenTabIds[0] ??
+            null)
           : state.currentFileId;
 
         // Optimistic update
@@ -2256,6 +2298,7 @@ export const useFileStore = create<FileState>()(
           currentFileId: newCurrentId,
           openTabIds: newOpenTabIds,
           selectedFileIds: new Set(), // Clear selection after delete
+          ...paneAfterTabsChanged(state.otherPaneFileId, newCurrentId, newOpenTabIds),
         });
 
         try {

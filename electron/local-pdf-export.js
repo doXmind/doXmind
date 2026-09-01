@@ -8,10 +8,13 @@ const exportQueues = new WeakMap();
 // The *focused* Page, not the only one. Two panes are two mounted documents, so a count of one
 // would make every export while split fail — and fail reporting that the Page had changed, which
 // names the wrong cause entirely.
+//
+// Single quotes inside the attribute selector on purpose: this is a template literal, so a
+// backslash-escaped double quote collapses to a bare one and closes the JavaScript string early.
 const ACTIVE_NATIVE_PAGE_SCRIPT = `(() => {
   const pages = Array.from(
     document.querySelectorAll(
-      "[data-native-markdown-document][data-file-id][data-pane-active=\"true\"]"
+      "[data-native-markdown-document][data-file-id][data-pane-active='true']"
     )
   );
   return pages.length === 1 ? pages[0].getAttribute("data-file-id") : null;
@@ -142,4 +145,4 @@ async function runExport({ contents, ownerWindow, suggestedName, targetFileId, s
   return { status: "saved", path: outputPath };
 }
 
-module.exports = { exportPagePdf };
+module.exports = { exportPagePdf, ACTIVE_NATIVE_PAGE_SCRIPT };

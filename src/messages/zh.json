@@ -63,6 +63,7 @@
     "unfoldAll": "展开全部分节",
     "splitRight": "向右分屏",
     "closeOtherPane": "关闭另一个窗格",
+    "focusOtherPane": "聚焦另一个窗格",
     "toggleSidebar": "切换侧边栏",
     "toggleFocusMode": "切换专注模式",
     "toggleHighContrast": "切换高对比度",

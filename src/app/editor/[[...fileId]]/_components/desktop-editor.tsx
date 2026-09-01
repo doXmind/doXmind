@@ -247,7 +247,11 @@ export function DesktopEditor() {
                   reservedRightInset={outlineContentGutterPx}
                 />
               ) : (
-                <div ref={splitHostRef} className="flex h-full min-h-0 w-full">
+                <div
+                  ref={splitHostRef}
+                  data-editor-split-host
+                  className="flex h-full min-h-0 w-full"
+                >
                   {panes.map((pane, index) => (
                     <Fragment key={pane.key}>
                       {index > 0 && (
@@ -306,6 +310,8 @@ export function DesktopEditor() {
                             reserve the same 2px, so focus moving never shifts a line of text. */}
                         <span
                           aria-hidden="true"
+                          // Chrome, not content: this is what keeps it off a printed page.
+                          data-native-editor-chrome
                           className={cn(
                             "pointer-events-none absolute inset-x-0 top-0 z-30 h-[2px] transition-colors duration-[20ms] ease-in",
                             pane.isActive ? "bg-primary/50" : "bg-transparent"

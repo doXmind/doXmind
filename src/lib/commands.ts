@@ -132,6 +132,16 @@ export const WORKSPACE_COMMANDS: readonly WorkspaceCommand[] = [
     run: () => useFileStore.getState().splitRight(),
   },
   {
+    id: "focus-other-pane",
+    labelKey: "focusOtherPane",
+    category: "editor",
+    // The only keyboard route into the second pane: the pane switch is otherwise a
+    // pointerdown, so without this a keyboard user can split and never leave the first Page.
+    defaultBinding: null,
+    keywords: ["split", "pane", "focus", "switch"],
+    run: () => useFileStore.getState().focusOtherPane(),
+  },
+  {
     id: "close-other-pane",
     labelKey: "closeOtherPane",
     category: "editor",

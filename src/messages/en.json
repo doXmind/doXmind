@@ -63,6 +63,7 @@
     "unfoldAll": "Unfold all sections",
     "splitRight": "Split right",
     "closeOtherPane": "Close the other pane",
+    "focusOtherPane": "Focus the other pane",
     "toggleSidebar": "Toggle sidebar",
     "toggleFocusMode": "Toggle focus mode",
     "toggleHighContrast": "Toggle high contrast",
