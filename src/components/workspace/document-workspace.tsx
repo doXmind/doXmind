@@ -194,7 +194,10 @@ function MarkdownPageWorkspace({
         <PagePropertiesPanel file={file} />
         <PageBacklinksPanel file={file} />
         <PageGraphPanel file={file} />
-        <PageHistoryPanel file={file} />
+        {/* Only the focused pane. The other three panels keep their open state locally, so a
+            pane each is fine; version history reads one global flag, and mounted twice a
+            single click opened it in both panes over two different Pages. */}
+        {isActivePane && <PageHistoryPanel file={file} />}
         <Button
           type="button"
           variant="ghost"
