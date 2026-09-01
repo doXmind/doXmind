@@ -39,7 +39,7 @@ export function DesktopEditor() {
   const openTarget = useFileStore((s) => s.openTarget);
   const otherPaneFileId = useFileStore((s) => s.otherPaneFileId);
   const otherPaneOnLeft = useFileStore((s) => s.otherPaneOnLeft);
-  const focusOtherPane = useFileStore((s) => s.focusOtherPane);
+  const focusPane = useFileStore((s) => s.focusPane);
   const otherPaneFile = useFileStore((s) =>
     s.otherPaneFileId ? s.files.find((file) => file.id === s.otherPaneFileId) : undefined
   );
@@ -270,8 +270,12 @@ export function DesktopEditor() {
                       <div
                         className="relative flex h-full min-h-0 flex-col overflow-hidden"
                         style={{ flexBasis: `${pane.basis}%`, flexGrow: 0, flexShrink: 1 }}
-                        onFocusCapture={pane.isActive ? undefined : focusOtherPane}
-                        onPointerDownCapture={pane.isActive ? undefined : focusOtherPane}
+                        // Pointerdown alone owns this. A click raises pointerdown *and* focus, and
+                        // acting on both swapped the panes and then swapped them straight back:
+                        // by the time focus fired, the pane it landed on was the inactive one.
+                        onPointerDownCapture={
+                          pane.isActive || !pane.fileId ? undefined : () => focusPane(pane.fileId!)
+                        }
                       >
                         <EditorPane
                           file={pane.file}

@@ -174,6 +174,13 @@ interface FileState {
   splitRight: () => void;
   /** Swap which pane is focused, keeping the two panes where they are on screen. */
   focusOtherPane: () => void;
+  /**
+   * Make the pane showing `fileId` the active one.
+   *
+   * Idempotent, unlike `focusOtherPane`: a click raises both a pointerdown and a focus, and a
+   * swap on each of them lands back where it started.
+   */
+  focusPane: (fileId: string) => void;
   closeOtherPane: () => void;
   closeOtherTabs: (id: string) => void;
   closeAllTabs: () => void;
@@ -1587,6 +1594,18 @@ export const useFileStore = create<FileState>()(
             otherPaneOnLeft: !state.otherPaneOnLeft,
           };
         });
+      },
+
+      focusPane: (fileId: string) => {
+        set((state) =>
+          state.otherPaneFileId !== null && state.otherPaneFileId === fileId
+            ? {
+                currentFileId: fileId,
+                otherPaneFileId: state.currentFileId,
+                otherPaneOnLeft: !state.otherPaneOnLeft,
+              }
+            : {}
+        );
       },
 
       closeOtherPane: () => {

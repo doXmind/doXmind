@@ -63,6 +63,26 @@ describe("split panes", () => {
     expect(state().otherPaneOnLeft).toBe(!sideBefore);
   });
 
+  it("focuses a pane by the Page it holds, idempotently", () => {
+    state().splitRight();
+
+    // A click raises pointerdown *and* focus. A swap-based handler ran twice and landed back
+    // where it started, so this takes the target rather than toggling.
+    state().focusPane("b");
+    state().focusPane("b");
+
+    expect(state().currentFileId).toBe("b");
+    expect(state().otherPaneFileId).toBe("a");
+  });
+
+  it("ignores a focus request for a Page neither pane holds", () => {
+    state().splitRight();
+    state().focusPane("c");
+
+    expect(state().currentFileId).toBe("a");
+    expect(state().otherPaneFileId).toBe("b");
+  });
+
   it("focuses the other pane instead of opening a Page twice", () => {
     state().splitRight();
     expect(state().otherPaneFileId).toBe("b");
