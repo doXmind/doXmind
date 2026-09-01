@@ -3925,15 +3925,75 @@ function InlineMarkdownPreview({
   source: string;
   onOpenWikiLink?: (target: string) => void;
 }) {
-  let tokens: InlinePreviewToken[] = [];
+  let blocks: InlinePreviewToken[] = [];
   try {
-    const block = inlinePreviewLexer.lexer(source)[0] as
-      (InlinePreviewToken & { tokens?: InlinePreviewToken[] }) | undefined;
-    tokens = block?.tokens ?? [{ type: "text", raw: source, text: source }];
+    blocks = inlinePreviewLexer.lexer(source) as InlinePreviewToken[];
   } catch {
-    tokens = [{ type: "text", raw: source, text: source }];
+    blocks = [];
   }
-  return <>{renderInlineTokens(tokens, "inline", onOpenWikiLink)}</>;
+  const renderable = blocks.filter((token) => token.type !== "space");
+  if (renderable.length === 0) {
+    return (
+      <>
+        {renderInlineTokens(
+          [{ type: "text", raw: source, text: source }],
+          "inline",
+          onOpenWikiLink
+        )}
+      </>
+    );
+  }
+  // The common case — one paragraph — renders exactly as it always has, which is what every
+  // caller inside a table cell or a callout line depends on.
+  if (renderable.length === 1) {
+    const only = renderable[0];
+    return (
+      <>
+        {renderInlineTokens(
+          only.tokens ?? [{ type: "text", raw: source, text: source }],
+          "inline",
+          onOpenWikiLink
+        )}
+      </>
+    );
+  }
+  // A list item can hold a second paragraph or an indented fence. Only the first token used to
+  // be rendered, so that content was on disk and nowhere on screen — the bytes survived every
+  // edit and the user could not see them.
+  return (
+    <>
+      {renderable.map((token, index) => (
+        <PreviewBlockToken
+          key={`block-${index}`}
+          token={token}
+          keyPrefix={`block-${index}`}
+          onOpenWikiLink={onOpenWikiLink}
+        />
+      ))}
+    </>
+  );
+}
+
+function PreviewBlockToken({
+  token,
+  keyPrefix,
+  onOpenWikiLink,
+}: {
+  token: InlinePreviewToken;
+  keyPrefix: string;
+  onOpenWikiLink?: (target: string) => void;
+}) {
+  if (token.type === "code") {
+    return (
+      <pre className="my-1 overflow-x-auto rounded-md bg-muted px-2 py-1.5 font-mono text-[0.9em]">
+        <code>{token.text ?? token.raw ?? ""}</code>
+      </pre>
+    );
+  }
+  const children = token.tokens
+    ? renderInlineTokens(token.tokens, keyPrefix, onOpenWikiLink)
+    : renderWikiText(token.text ?? token.raw ?? "", keyPrefix, onOpenWikiLink);
+  return <div>{children}</div>;
 }
 
 /**

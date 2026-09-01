@@ -139,6 +139,31 @@ describe("MarkdownBlockRow semantic previews", () => {
     return document.querySelector<HTMLElement>("[data-native-block-row]")!;
   };
 
+  it("renders a fenced code block nested in a list item, instead of dropping it", () => {
+    // The bytes were always on disk and never on screen: only the first of the item's top-level
+    // tokens was rendered, so the fence survived every edit invisibly.
+    const row = renderInactive("- item text\n\n  ```js\n  const a = 1;\n  ```\n");
+
+    expect(row.textContent).toContain("item text");
+    expect(row.textContent).toContain("const a = 1;");
+    expect(row.querySelector("pre code")).not.toBeNull();
+  });
+
+  it("renders a list item's second paragraph", () => {
+    const row = renderInactive("- one\n\n  second para\n");
+
+    expect(row.textContent).toContain("one");
+    expect(row.textContent).toContain("second para");
+  });
+
+  it("renders a plain list item exactly as before, with no block wrapper", () => {
+    const row = renderInactive("- item\n  continued\n");
+
+    // Continuation indentation is payload, not syntax, so it stays — unchanged by this fix.
+    expect(row.textContent).toBe("•item\n  continued");
+    expect(row.querySelector("pre")).toBeNull();
+  });
+
   it("renders ==highlight== as a mark, not as its own punctuation", () => {
     const row = renderInactive("say ==this== loudly\n");
 
