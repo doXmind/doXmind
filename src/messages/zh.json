@@ -151,6 +151,13 @@
     "loadFailed": "无法重新构建反向链接",
     "navigationFailed": "无法打开链接页面"
   },
+  "pageHistory": {
+    "title": "历史",
+    "description": "本页面在最近几次保存之前的副本，保存在应用数据中，不会放在你的文件旁边。",
+    "empty": "还没有更早的版本。",
+    "saveFirst": "恢复更早的版本前请先保存页面。",
+    "restoreLabel": "恢复 {time} 的版本"
+  },
   "pageGraph": {
     "title": "关系图谱",
     "description": "按需从本地 Markdown 页面中已解析的链接派生，不保存第二份状态。",

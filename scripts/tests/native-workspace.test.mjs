@@ -1739,6 +1739,84 @@ test("search reports every hit, at line numbers the editor can actually reach", 
   });
 });
 
+test("a Page write records the bytes it replaced, throttled and bounded", async () => {
+  await withWorkspace(async (root) => {
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "doxmind-snapshots-"));
+    const previousDataDir = process.env.DATA_DIR;
+    process.env.DATA_DIR = dataDir;
+    try {
+      const invoke = createNativeWorkspaceDispatcher();
+      await fs.writeFile(path.join(root, "Note.md"), "---\nid: note\n---\n\nfirst\n");
+
+      const write = async (markdown) => {
+        const opened = await invoke("doc_read", { root, path: "Note.md" });
+        return invoke("doc_write_workspace", {
+          root,
+          path: "Note.md",
+          payload: { markdown, expectedRevision: opened.revision },
+        });
+      };
+
+      // Nothing to recover before the first overwrite.
+      assert.deepEqual((await invoke("page_snapshot_list", { root, path: "Note.md" })).snapshots, []);
+
+      await write("second\n");
+      const afterFirst = await invoke("page_snapshot_list", { root, path: "Note.md" });
+      assert.equal(afterFirst.snapshots.length, 1);
+
+      // The snapshot is the state *before* the write, complete with its frontmatter.
+      const restored = await invoke("page_snapshot_read", {
+        root,
+        path: "Note.md",
+        id: afterFirst.snapshots[0].id,
+      });
+      assert.equal(restored.markdown, "---\nid: note\n---\n\nfirst\n");
+
+      // One per Page per five minutes: a save per keystroke must not fill the disk.
+      await write("third\n");
+      assert.equal((await invoke("page_snapshot_list", { root, path: "Note.md" })).snapshots.length, 1);
+
+      // The id is the only caller-supplied path segment, so it is validated before it is joined.
+      await assert.rejects(
+        invoke("page_snapshot_read", { root, path: "Note.md", id: "../../etc/passwd" }),
+        /invalid snapshot id/
+      );
+
+      // Snapshots live in app data, never beside the user's Markdown.
+      assert.deepEqual((await fs.readdir(root)).sort(), ["Note.md"]);
+    } finally {
+      if (previousDataDir === undefined) delete process.env.DATA_DIR;
+      else process.env.DATA_DIR = previousDataDir;
+      await fs.rm(dataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+test("a failing snapshot never fails the Page save", async () => {
+  await withWorkspace(async (root) => {
+    const previousDataDir = process.env.DATA_DIR;
+    // A path that cannot be a directory, so every snapshot write throws.
+    process.env.DATA_DIR = path.join(root, "Note.md", "nope");
+    try {
+      const invoke = createNativeWorkspaceDispatcher();
+      await fs.writeFile(path.join(root, "Note.md"), "first\n");
+      const opened = await invoke("doc_read", { root, path: "Note.md" });
+
+      const saved = await invoke("doc_write_workspace", {
+        root,
+        path: "Note.md",
+        payload: { markdown: "second\n", expectedRevision: opened.revision },
+      });
+
+      assert.equal(saved.markdown, "second\n");
+      assert.match(await fs.readFile(path.join(root, "Note.md"), "utf8"), /second/);
+    } finally {
+      if (previousDataDir === undefined) delete process.env.DATA_DIR;
+      else process.env.DATA_DIR = previousDataDir;
+    }
+  });
+});
+
 test("search honours the query operators the renderer parsed", async () => {
   await withWorkspace(async (root) => {
     const invoke = createNativeWorkspaceDispatcher();

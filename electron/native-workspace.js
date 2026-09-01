@@ -12,6 +12,11 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
+const {
+  capturePageSnapshot,
+  listPageSnapshots,
+  readPageSnapshot,
+} = require("./page-snapshots");
 const { TextDecoder } = require("node:util");
 
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
@@ -54,6 +59,8 @@ const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const NATIVE_WORKSPACE_COMMANDS = new Set([
   "workspace_scan",
   "workspace_markdown_search",
+  "page_snapshot_list",
+  "page_snapshot_read",
   "doc_read",
   "workspace_read_asset",
   "workspace_import_asset",
@@ -89,6 +96,21 @@ function createNativeWorkspaceDispatcher(options = {}) {
     switch (command) {
       case "workspace_scan":
         return workspaceScan(payload.root, payload.excludeDirs);
+      case "page_snapshot_list":
+        return listPageSnapshots(
+          await resolveExistingWorkspacePath(
+            await canonicalWorkspaceRoot(payload.root),
+            String(payload.path || "")
+          )
+        );
+      case "page_snapshot_read":
+        return readPageSnapshot(
+          await resolveExistingWorkspacePath(
+            await canonicalWorkspaceRoot(payload.root),
+            String(payload.path || "")
+          ),
+          payload.id
+        );
       case "workspace_markdown_search":
         return workspaceMarkdownSearch(
           payload.root,
@@ -558,7 +580,14 @@ async function writeWorkspacePage(rootValue, relPath, payload, beforePageReplace
     metaPatch = { ...(metaPatch || {}), id: crypto.randomUUID() };
   }
   const prefix = patchFrontmatterPrefix(split.prefix, metaPatch);
-  await atomicWrite(absolute, Buffer.from(`${prefix ?? ""}${markdown}`, "utf8"), {
+  const nextBytes = Buffer.from(`${prefix ?? ""}${markdown}`, "utf8");
+  // The state *before* this write, so an accidental overwrite has something to come back to.
+  // Only the ordinary Page write snapshots: link-repair writes go through `writePageBytes`, and
+  // deletion is already covered by the OS Trash.
+  if (existingBytes && !existingBytes.equals(nextBytes)) {
+    await capturePageSnapshot(absolute, existingBytes);
+  }
+  await atomicWrite(absolute, nextBytes, {
     expectedRevision: payload.expectedRevision,
     beforeReplace: beforePageReplace,
   });

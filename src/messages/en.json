@@ -151,6 +151,13 @@
     "loadFailed": "Could not rebuild backlinks",
     "navigationFailed": "Could not open the linked Page"
   },
+  "pageHistory": {
+    "title": "History",
+    "description": "Copies of this Page from before recent saves, kept in app data — never beside your files.",
+    "empty": "No earlier versions yet.",
+    "saveFirst": "Save the Page before restoring an earlier version.",
+    "restoreLabel": "Restore the version from {time}"
+  },
   "pageGraph": {
     "title": "Graph",
     "description": "Derived on demand from resolved links in local Markdown Pages.",

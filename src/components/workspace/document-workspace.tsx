@@ -7,6 +7,7 @@ import { AttachmentWorkspace } from "@/components/workspace/attachment-workspace
 import { Button } from "@/components/ui/button";
 import { PageEditorHost } from "@/editor/page-editor-host";
 import { PageBacklinksPanel } from "@/components/editor/page-backlinks-panel";
+import { PageHistoryPanel } from "@/components/editor/page-history-panel";
 import { PagePropertiesPanel } from "@/components/editor/page-properties-panel";
 import { PageGraphPanel } from "@/components/editor/page-graph-panel";
 import { isExcelFile, isHtmlFile, isMarkdownFile, isPdfFile } from "@/lib/document-types";
@@ -188,6 +189,7 @@ function MarkdownPageWorkspace({
         <PagePropertiesPanel file={file} />
         <PageBacklinksPanel file={file} />
         <PageGraphPanel file={file} />
+        <PageHistoryPanel file={file} />
         <Button
           type="button"
           variant="ghost"
