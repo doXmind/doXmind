@@ -171,6 +171,55 @@ describe("MarkdownBlockRuntime", () => {
     vi.useRealTimers();
   });
 
+  // The suite runs on fake timers, so the menu's own open transition has to be advanced rather
+  // than waited for.
+  const openBlockMenu = async () => {
+    fireEvent.click(screen.getAllByRole("button", { name: "Block actions" })[0]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+  };
+
+  it("folds a heading section out of view and back, without touching the Markdown", async () => {
+    const content = "# One\n\nunder one\n\n# Two\n\nunder two\n";
+    render(<MarkdownBlockRuntime file={{ ...file, content }} />);
+
+    expect(screen.getByText("under one")).toBeInTheDocument();
+
+    // Reached through the Block menu: the gutter's 54px slot holds exactly two 24px controls.
+    await openBlockMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Fold section" }));
+
+    expect(screen.queryByText("under one")).toBeNull();
+    // The other section is untouched, and so is the file.
+    expect(screen.getByText("under two")).toBeInTheDocument();
+    expect(updateFile).not.toHaveBeenCalled();
+
+    await openBlockMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Unfold section" }));
+    expect(screen.getByText("under one")).toBeInTheDocument();
+  });
+
+  it("reveals a folded section when the caret is sent inside it", async () => {
+    const content = "# One\n\nhidden needle\n\n# Two\n\ntail\n";
+    render(<MarkdownBlockRuntime file={{ ...file, content }} />);
+
+    await openBlockMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Fold section" }));
+    expect(screen.queryByText("hidden needle")).toBeNull();
+
+    // A search result asks for body line 3, which is inside the fold. A Block with no row cannot
+    // be edited or even seen, so the fold has to open rather than swallow the caret.
+    act(() => {
+      usePageSessionStore.getState().requestReveal("page-1", 3);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("hidden needle");
+  });
+
   it("puts the caret in the Block a search hit's line falls inside", async () => {
     const multi: FileItem = {
       ...file,

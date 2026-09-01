@@ -43,6 +43,8 @@ import {
 } from "@/editor/markdown-block/markdown-inline-format";
 import {
   editableMarkdownBlockSource,
+  hiddenMarkdownBlockIds,
+  isMarkdownFoldable,
   orderedListDisplayOrdinals,
 } from "@/editor/markdown-block/markdown-block-source";
 import {
@@ -190,6 +192,7 @@ export function MarkdownBlockRuntime({
   const setRequestSave = useEditorRefStore((state) => state.setRequestSave);
   const setRequestUndo = useEditorRefStore((state) => state.setRequestUndo);
   const setRequestRedo = useEditorRefStore((state) => state.setRequestRedo);
+  const setRequestFoldAll = useEditorRefStore((state) => state.setRequestFoldAll);
   const setDiscardPendingChanges = useEditorRefStore((state) => state.setDiscardPendingChanges);
   const publishOutline = usePageSessionStore((state) => state.publishOutline);
   const revealRequest = usePageSessionStore((state) => state.revealRequest);
@@ -215,6 +218,19 @@ export function MarkdownBlockRuntime({
   const listOrdinals = useMemo(
     () => orderedListDisplayOrdinals(snapshot.blocks),
     [snapshot.blocks]
+  );
+  /**
+   * Which Blocks are folded shut.
+   *
+   * View state, never Markdown. A save applies Block commands to canonical source and writes only
+   * the `.md`, so a fold has nowhere in the file to live that would not be an edit the user did
+   * not make — and a Page folded here would arrive folded in every other editor. It is also not
+   * persisted: a fold is about reading this Page right now.
+   */
+  const [foldedBlockIds, setFoldedBlockIds] = useState<ReadonlySet<string>>(() => new Set());
+  const hiddenBlocks = useMemo(
+    () => hiddenMarkdownBlockIds(snapshot.blocks, foldedBlockIds),
+    [snapshot.blocks, foldedBlockIds]
   );
   const [activeBlockId, setActiveBlockId] = useState<string | null>(
     file.id.startsWith(TRANSIENT_ID_PREFIX) ? (snapshot.blocks[0]?.id ?? null) : null
@@ -1017,18 +1033,41 @@ export function MarkdownBlockRuntime({
     setDirty(false);
   }, [debouncedSave, setDirty]);
 
+  const toggleFold = useCallback((blockId: string) => {
+    setFoldedBlockIds((current) => {
+      const next = new Set(current);
+      if (!next.delete(blockId)) next.add(blockId);
+      return next;
+    });
+  }, []);
+
+  const foldAll = useCallback((folded: boolean) => {
+    if (!folded) {
+      setFoldedBlockIds(new Set());
+      return;
+    }
+    const blocks = documentRef.current.getSnapshot().blocks;
+    setFoldedBlockIds(
+      new Set(blocks.filter((_, index) => isMarkdownFoldable(blocks, index)).map((b) => b.id))
+    );
+  }, []);
+
   useEffect(() => {
     setRequestSave(saveCurrentNow);
     setRequestUndo(undo);
     setRequestRedo(redo);
+    setRequestFoldAll(foldAll);
     setDiscardPendingChanges(discardPendingChanges);
     return () => {
       setRequestSave(null);
       setRequestUndo(null);
       setRequestRedo(null);
+      setRequestFoldAll(null);
       setDiscardPendingChanges(null);
     };
   }, [
+    foldAll,
+    setRequestFoldAll,
     discardPendingChanges,
     redo,
     saveCurrentNow,
@@ -1430,14 +1469,33 @@ export function MarkdownBlockRuntime({
     const host = documentElementRef.current;
     if (!host) return;
     const rows = host.querySelectorAll<HTMLElement>(":scope > [data-native-block-row]");
-    const count = snapshot.blocks.length;
-    snapshot.blocks.forEach((block, index) => {
+    // Folded rows are unmounted, so this has to enumerate what is on screen: pairing against the
+    // whole document would name every row after the wrong Block from the first fold onwards.
+    const visible = snapshot.blocks.filter((block) => !hiddenBlocks.has(block.id));
+    const count = visible.length;
+    visible.forEach((block, index) => {
       const row = rows[index];
       if (!row) return;
       const name = `${blockTypeLabel(block)}, block ${index + 1} of ${count}`;
       if (row.getAttribute("aria-label") !== name) row.setAttribute("aria-label", name);
     });
-  }, [snapshot.blocks]);
+  }, [snapshot.blocks, hiddenBlocks]);
+
+  // A caret can arrive inside a folded range — a search result, a Wiki Link, an undo — and a
+  // Block with no row cannot be edited or even seen. Opening the anchors that hide it is the only
+  // way the caret stays where it was put. A layout effect, so the row exists before the scroll
+  // the find-in-page path schedules for the next frame.
+  useLayoutEffect(() => {
+    if (hiddenBlocks.size === 0) return;
+    const focus = activeBlockId ?? blockSelection?.focusId ?? null;
+    const anchors = focus ? hiddenBlocks.get(focus) : undefined;
+    if (!anchors) return;
+    setFoldedBlockIds((current) => {
+      const next = new Set(current);
+      for (const anchor of anchors) next.delete(anchor);
+      return next;
+    });
+  }, [activeBlockId, blockSelection, hiddenBlocks]);
 
   // Measured after commit rather than during render: the rows have to exist before their union can
   // be read, and reading layout from a render pass is how you get a frame of stale geometry.
@@ -2979,6 +3037,9 @@ export function MarkdownBlockRuntime({
             </span>
             <MarkdownWikiLinkContext.Provider value={wikiLinkServices}>
               {snapshot.blocks.map((block, index) => {
+                // Unmounted, not hidden: row spacing is an adjacent-sibling rule, so a
+                // `display: none` row would still separate the two rows around it.
+                if (hiddenBlocks.has(block.id)) return null;
                 const active = activeBlockId === block.id;
                 const keyboardEntry = !activeBlockId && !blockSelection && index === 0;
                 const blockSelectionFocus = blockSelection?.focusId === block.id;
@@ -3021,6 +3082,14 @@ export function MarkdownBlockRuntime({
                     onSetTaskChecked={handleSetTaskChecked}
                     onMove={handleMoveBlock}
                     onIndent={handleIndent}
+                    foldState={
+                      isMarkdownFoldable(snapshot.blocks, index)
+                        ? foldedBlockIds.has(block.id)
+                          ? "folded"
+                          : "unfolded"
+                        : "none"
+                    }
+                    onToggleFold={toggleFold}
                     onSuggestWikiLinks={suggestWikiLinks}
                     onInsertWikiLink={handleInsertWikiLink}
                     onNavigate={navigateBlock}

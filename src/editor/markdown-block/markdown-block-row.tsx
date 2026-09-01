@@ -275,6 +275,15 @@ interface MarkdownBlockRowProps {
   onSuggestWikiLinks?: () => readonly WikiLinkPage[];
   /** Replace `run` with `source` (a complete `[[Link]]`) and put the caret after it. */
   onInsertWikiLink?: (blockId: string, source: string, run: MarkdownWikiLinkRun) => void;
+  /**
+   * Whether this Block owns a range that can be folded, and whether it is folded now.
+   *
+   * Always supplied, `"none"` included: `sameRowProps` compares key counts first, so a prop that
+   * appears on some rows and not others makes the memo bail for every row.
+   */
+  foldState?: "none" | "folded" | "unfolded";
+  /** Takes the Block id so the runtime can hand every row one stable callback. */
+  onToggleFold?: (blockId: string) => void;
   onRunSlashCommand?: (
     blockId: string,
     commandId: MarkdownSlashCommandId,
@@ -436,6 +445,8 @@ function MarkdownBlockRowView({
   wikiEmbedContext,
   collectionContext,
   imageContext,
+  foldState = "none",
+  onToggleFold,
   onSuggestWikiLinks,
   onInsertWikiLink,
   onRunSlashCommand,
@@ -1593,6 +1604,8 @@ function MarkdownBlockRowView({
             onDuplicate={() => onDuplicate(block.id)}
             onMoveUp={() => onMove(block.id, -1)}
             onMoveDown={() => onMove(block.id, 1)}
+            foldState={foldState}
+            onToggleFold={onToggleFold ? () => onToggleFold(block.id) : undefined}
             onDelete={() => onDelete(block.id)}
             onDragStart={(event) => onDragStart(block.id, event)}
             onDragEnd={onDragEnd}

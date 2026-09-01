@@ -2,20 +2,23 @@
 
 import * as React from "react";
 import { useTranslations } from "next-intl";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { createPortal } from "react-dom";
 import {
-  Search,
-  FileText,
-  FilePlus,
-  Palette,
-  Keyboard,
-  ArrowRight,
-  Contrast,
-  Loader2,
   AlertTriangle,
-  RefreshCw,
-  X,
+  ArrowRight,
   CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  Contrast,
+  FilePlus,
+  FileText,
+  Keyboard,
+  Loader2,
+  Palette,
+  RefreshCw,
+  Search,
+  X,
 } from "lucide-react";
 import { cn, formatShortcut } from "@/lib/utils";
 import { MENU_PANEL_CLASS, MENU_ROW_CLASS } from "@/components/ui/dropdown-menu";
@@ -64,6 +67,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
 function CommandPaletteContent({ onClose }: { onClose: () => void }) {
   const t = useTranslations("commandPalette");
+  const requestFoldAll = useEditorRefStore((state) => state.requestFoldAll);
   const [query, setQuery] = React.useState("");
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -189,6 +193,32 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
         },
         keywords: ["contrast", "accessibility", "a11y", "vision"],
       },
+      ...(requestFoldAll
+        ? [
+            {
+              id: "fold-all",
+              label: t("foldAll"),
+              icon: <ChevronRight className="h-4 w-4" />,
+              category: "view" as const,
+              action: () => {
+                requestFoldAll(true);
+                onClose();
+              },
+              keywords: ["fold", "collapse", "outline", "sections"],
+            },
+            {
+              id: "unfold-all",
+              label: t("unfoldAll"),
+              icon: <ChevronDown className="h-4 w-4" />,
+              category: "view" as const,
+              action: () => {
+                requestFoldAll(false);
+                onClose();
+              },
+              keywords: ["unfold", "expand", "outline", "sections"],
+            },
+          ]
+        : []),
       // Action commands
       {
         id: "keyboard-shortcuts",
@@ -221,6 +251,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
 
     return [...baseCommands, ...fileCommands];
   }, [
+    requestFoldAll,
     // `t` belongs here: without it every command label stays in the language the palette first
     // rendered in, so switching the UI language left the palette behind.
     t,

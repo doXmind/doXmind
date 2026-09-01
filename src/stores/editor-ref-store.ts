@@ -15,6 +15,10 @@ interface EditorRefState {
   setRequestUndo: (fn: (() => void) | null) => void;
   requestRedo: (() => void) | null;
   setRequestRedo: (fn: (() => void) | null) => void;
+  // Fold or unfold every foldable Block of the active Page. Registered by the runtime so the
+  // command palette can reach it, and so PDF export can unfold before it prints the live DOM.
+  requestFoldAll: ((folded: boolean) => void) | null;
+  setRequestFoldAll: (fn: ((folded: boolean) => void) | null) => void;
   // Called only after the user confirms discarding the active Page. The
   // runtime uses it to invalidate queued writes before its DOM unmounts.
   discardPendingChanges: (() => void) | null;
@@ -28,6 +32,8 @@ export const useEditorRefStore = create<EditorRefState>()((set) => ({
   setRequestUndo: (requestUndo) => set({ requestUndo }),
   requestRedo: null,
   setRequestRedo: (requestRedo) => set({ requestRedo }),
+  requestFoldAll: null,
+  setRequestFoldAll: (requestFoldAll) => set({ requestFoldAll }),
   discardPendingChanges: null,
   setDiscardPendingChanges: (discardPendingChanges) => set({ discardPendingChanges }),
 }));

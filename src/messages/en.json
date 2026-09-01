@@ -42,6 +42,8 @@
     "searchFailed": "Search failed. Click to retry.",
     "newPage": "New Page",
     "dailyNote": "Open today's Daily Note",
+    "foldAll": "Fold all sections",
+    "unfoldAll": "Unfold all sections",
     "switchToLight": "Switch to Light Mode",
     "switchToDark": "Switch to Dark Mode",
     "enableHighContrast": "Enable High Contrast",

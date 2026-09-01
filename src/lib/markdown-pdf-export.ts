@@ -5,6 +5,7 @@
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { hasDesktopBridge, invokeDesktop } from "@/lib/native-shell";
 import { notify } from "@/lib/notifications";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useFileStore } from "@/stores/file-store";
 
 export interface ExportMarkdownAsPdfArgs {
@@ -31,6 +32,9 @@ async function exportLocalPdf(
   if (!hasDesktopBridge()) {
     throw new Error("Local PDF export requires the Electron desktop app");
   }
+  // The export prints the live DOM, and a folded Block has no row in it. Unfolding first is what
+  // keeps a folded section — a reading convenience — from silently omitting itself from the PDF.
+  useEditorRefStore.getState().requestFoldAll?.(false);
   await waitForAsyncPdfPreviews();
   await waitForPdfLayout();
   return invokeDesktop<DesktopPdfExportResult>("export_page_pdf", {

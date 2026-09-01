@@ -42,6 +42,8 @@
     "searchFailed": "搜索失败，点击重试。",
     "newPage": "新建页面",
     "dailyNote": "打开今天的日记",
+    "foldAll": "折叠全部分节",
+    "unfoldAll": "展开全部分节",
     "switchToLight": "切换到浅色模式",
     "switchToDark": "切换到深色模式",
     "enableHighContrast": "开启高对比度",
