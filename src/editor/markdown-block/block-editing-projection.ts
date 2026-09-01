@@ -3,6 +3,7 @@ import type {
   Utf16Range,
 } from "@/editor/markdown-block/markdown-block-document";
 import { editableMarkdownBlockSource } from "@/editor/markdown-block/markdown-block-source";
+import { ATX_HEADING_PREFIX } from "@/editor/markdown-block/markdown-source-scanner";
 
 export interface BlockEditingProjection {
   readonly editorText: string;
@@ -275,7 +276,7 @@ function usesPayloadProjection(kind: MarkdownBlockView["kind"], source: string):
 }
 
 function sourcePrefixFor(kind: MarkdownBlockView["kind"], source: string): string {
-  if (kind === "heading") return source.match(/^#{1,6}[ \t]+/)?.[0] ?? "";
+  if (kind === "heading") return ATX_HEADING_PREFIX.exec(source)?.[0] ?? "";
   if (kind === "task_list_item") {
     return source.match(/^[ \t]*[-+*][ \t]+\[[ xX]\](?:[ \t]+|$)/)?.[0] ?? "";
   }

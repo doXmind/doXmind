@@ -19,12 +19,19 @@ interface ShortcutGroup {
   }[];
 }
 
+// Every row here is asserted against the real binding by
+// src/__tests__/components/ui/keyboard-shortcuts-accuracy.test.ts. A shortcut reference that has
+// drifted from the code is worse than none: it teaches the user a key that does nothing.
 const shortcutGroups: ShortcutGroup[] = [
   {
     titleKey: "navigationView",
     shortcuts: [
-      { keys: ["Ctrl", "K"], descriptionKey: "commandPalette" },
+      { keys: ["Ctrl", "P"], descriptionKey: "commandPalette" },
+      { keys: ["Ctrl", "O"], descriptionKey: "quickSwitcher" },
+      { keys: ["Ctrl", "N"], descriptionKey: "newPage" },
       { keys: ["Ctrl", "F"], descriptionKey: "findInDocument" },
+      { keys: ["Ctrl", "B"], descriptionKey: "toggleSidebar" },
+      { keys: ["F11"], descriptionKey: "toggleFocusMode" },
       { keys: ["Ctrl", "?"], descriptionKey: "keyboardShortcuts" },
     ],
   },
@@ -34,6 +41,9 @@ const shortcutGroups: ShortcutGroup[] = [
       { keys: ["Ctrl", "S"], descriptionKey: "saveAction" },
       { keys: ["Ctrl", "Z"], descriptionKey: "undoAction" },
       { keys: ["Ctrl", "Shift", "Z"], descriptionKey: "redoAction" },
+      { keys: ["Ctrl", "K"], descriptionKey: "insertLink" },
+      { keys: ["Ctrl", "D"], descriptionKey: "duplicateBlock" },
+      { keys: ["Ctrl", "/"], descriptionKey: "blockMenu" },
     ],
   },
 ];

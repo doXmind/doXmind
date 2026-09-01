@@ -38,7 +38,7 @@ Use **File → Open Folder…** (`Cmd/Ctrl+Shift+O`) when related documents belo
 
 ### Open one file
 
-Use **File → Open File…** (`Cmd/Ctrl+O`), double-click a registered document, or choose **Open With → doXmind** to work with one standalone supported file.
+Use **File → Open File…** (`Cmd/Ctrl+Alt+O`), double-click a registered document, or choose **Open With → doXmind** to work with one standalone supported file.
 
 - doXmind opens that file without scanning or displaying its siblings.
 - Closing the standalone document returns to the welcome screen.
@@ -234,7 +234,7 @@ Resize, crop, deletion, remote-image fetching, and binary image editing are not 
 
 - `Cmd/Ctrl+F` searches inside the active Page.
 - The outline rail lists headings and jumps to the selected section.
-- `Cmd/Ctrl+K` opens the command palette.
+- `Cmd/Ctrl+P` opens the command palette, and `Cmd/Ctrl+O` the quick switcher.
 - `Cmd/Ctrl+Shift+?` opens the shortcut reference.
 - Clicking an unambiguous `[[Wiki Link]]` opens the corresponding local Markdown Page.
 - A standalone `![[Page]]` or `![[Page#Heading]]` paragraph previews that Page or its unique ATX heading section recursively and read-only. Path, title, and alias can resolve a target; `|label` changes only the displayed label.
@@ -251,7 +251,27 @@ Save atomically writes only the Page's `.md`/`.markdown` file. It does not creat
 
 The storage layer reads the complete raw file, separates frontmatter from the Markdown body, and gives the body to the native Block editor. Opening a file does not modify it merely because it lacks a frontmatter id. Unknown frontmatter and untouched body source remain preserved when a supported edit patches another span.
 
+Before each ordinary save, doXmind keeps a byte-for-byte copy of the file as it
+was, so an accidental overwrite has something to come back to. These snapshots
+live in app data, never in your folder, and **History** in the Page's top bar
+lists them. Restoring one replaces the body and leaves the Page's current
+properties in place; like any other edit it loses to a concurrent external
+change rather than overwriting it.
+
 You can edit the same file in another application. If the on-disk revision changes while doXmind holds an older revision, the app stops the stale write instead of silently overwriting the external change. Reload/reopen the Page, review the external edit, and then continue.
+
+### Two Pages side by side
+
+**Split right** in the command palette, or on a tab's right-click menu, puts a
+second Page beside the first. Each pane is a full editor with its own saving and
+undo; a thin bar along the top of one pane marks the one your next keystroke,
+`Cmd/Ctrl+S` or PDF export will reach. Click a pane, or run **Focus the other
+pane**, to move to it.
+
+Drag a tab onto a pane to open it there. A Page is only ever in one pane at a
+time: dropping it onto the pane already showing it does nothing, and dropping
+the other pane's Page swaps the two. Drag the divider to resize, double-click it
+to even the panes up, and run **Close the other pane** to go back to one.
 
 ## 6. Copy the complete Markdown source or export a Page to PDF
 
@@ -343,8 +363,11 @@ Open **doXmind → Settings…** (`Cmd/Ctrl+,`) or select **Settings** at the bo
 
 The current settings surface contains:
 
-- **Appearance** — Light, Dark, or System mode and preferred themes
+- **Appearance** — Light, Dark, or System mode, preferred themes, and the
+  interface language
 - **Typography** — editor font and reading-rhythm preferences
+- **Hotkeys** — every command in the app, each one rebindable
+- **Workspace** — folders to leave out of the sidebar and out of search
 - **About** — app version, build/channel information, privacy notes, acknowledgements, and project information
 
 Settings stay local on the device.
@@ -353,25 +376,24 @@ Settings stay local on the device.
 
 The current public desktop release is for macOS, where shortcuts use `Cmd`. Browser development and compatibility builds on other platforms use `Ctrl` unless shown otherwise.
 
-| Action                                   | Shortcut                          |
-| ---------------------------------------- | --------------------------------- |
-| New Page in an open workspace            | `Cmd/Ctrl+N`                      |
-| New window                               | `Cmd/Ctrl+Shift+N`                |
-| Open file                                | `Cmd/Ctrl+O`                      |
-| Open folder                              | `Cmd/Ctrl+Shift+O`                |
-| Save                                     | `Cmd/Ctrl+S`                      |
-| Find in Page                             | `Cmd/Ctrl+F`                      |
-| Command palette                          | `Cmd/Ctrl+K`                      |
-| Quick switcher                           | `Cmd/Ctrl+Tab`                    |
-| Quick switcher from the native Edit menu | `Cmd/Ctrl+P`                      |
-| Toggle sidebar                           | `Cmd/Ctrl+B`                      |
-| Focus mode                               | `F11`                             |
-| Exit focus mode                          | `Esc`                             |
-| Shortcut reference                       | `Cmd/Ctrl+Shift+?`                |
-| Reveal active source file                | `Cmd/Ctrl+Alt+R`                  |
-| Move active Block                        | `Alt+ArrowUp/Down`                |
-| Duplicate active Block                   | `Cmd/Ctrl+Shift+D`                |
-| Delete active Block                      | `Cmd/Ctrl+Shift+Backspace/Delete` |
+| Action                        | Shortcut                          |
+| ----------------------------- | --------------------------------- |
+| New Page in an open workspace | `Cmd/Ctrl+N`                      |
+| New window                    | `Cmd/Ctrl+Shift+N`                |
+| Open file                     | `Cmd/Ctrl+Alt+O`                  |
+| Open folder                   | `Cmd/Ctrl+Shift+O`                |
+| Save                          | `Cmd/Ctrl+S`                      |
+| Find in Page                  | `Cmd/Ctrl+F`                      |
+| Command palette               | `Cmd/Ctrl+P`                      |
+| Quick switcher                | `Cmd/Ctrl+O` or `Cmd/Ctrl+Tab`    |
+| Toggle sidebar                | `Cmd/Ctrl+B`                      |
+| Focus mode                    | `F11`                             |
+| Exit focus mode               | `Esc`                             |
+| Shortcut reference            | `Cmd/Ctrl+Shift+?`                |
+| Reveal active source file     | `Cmd/Ctrl+Alt+R`                  |
+| Move active Block             | `Alt+ArrowUp/Down`                |
+| Duplicate active Block        | `Cmd/Ctrl+Shift+D`                |
+| Delete active Block           | `Cmd/Ctrl+Shift+Backspace/Delete` |
 
 Standard undo, redo, cut, copy, paste, and select-all shortcuts work in the active Markdown block.
 

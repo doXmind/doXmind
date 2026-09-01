@@ -97,7 +97,14 @@ import {
   searchMarkdownSlashCommands,
   type MarkdownSlashCommandId,
 } from "@/editor/markdown-block/slash-commands";
+import {
+  searchWikiLinkPages,
+  wikiLinkSource,
+  type WikiLinkPage,
+} from "@/editor/markdown-block/wiki-link-suggestions";
 import { resolveKnowledgeWikiPage, type KnowledgeSourceCatalog } from "@/lib/knowledge-index";
+import { tagsInText } from "@/lib/tags";
+import { useLayoutStore } from "@/stores/layout-store";
 import {
   PageCollectionPreview,
   type PageCollectionPreviewContext,
@@ -110,7 +117,43 @@ import {
   subscribeMermaidTheme,
 } from "@/lib/mermaid-renderer";
 
-const inlinePreviewLexer = new Marked({ gfm: true });
+/**
+ * The rendered view's grammar.
+ *
+ * `marked` has no `==highlight==` and no `%%comment%%`, so both used to render as their own
+ * literal punctuation — which for a comment meant a Page displayed the text its author had
+ * deliberately marked as not part of the document.
+ */
+const inlinePreviewLexer = new Marked({ gfm: true }).use({
+  extensions: [
+    {
+      name: "inlineHighlight",
+      level: "inline" as const,
+      start: (src: string) => src.indexOf("=="),
+      tokenizer(src: string) {
+        const match = /^==(?=[^\s=])([\s\S]*?[^\s=])==/.exec(src);
+        if (!match) return undefined;
+        return {
+          type: "inlineHighlight",
+          raw: match[0],
+          text: match[1],
+          tokens: this.lexer.inlineTokens(match[1]),
+        };
+      },
+    },
+    {
+      name: "inlineComment",
+      level: "inline" as const,
+      start: (src: string) => src.indexOf("%%"),
+      tokenizer(src: string) {
+        const match = /^%%([\s\S]*?)%%/.exec(src);
+        if (!match) return undefined;
+        // No `tokens` and no text: a comment is not part of the rendered document.
+        return { type: "inlineComment", raw: match[0], text: "" };
+      },
+    },
+  ],
+});
 let katexPromise: Promise<typeof import("katex").default> | null = null;
 
 function loadKatex(): Promise<typeof import("katex").default> {
@@ -154,7 +197,8 @@ interface MarkdownBlockRowProps {
   listOrdinal?: number;
   active: boolean;
   autoFocusEditor?: boolean;
-  highlightSelection?: boolean;
+  /** The find bar's current match in this Block, if the current match is in this Block. */
+  searchHighlight?: { anchor: number; head: number };
   keyboardEntry?: boolean;
   blockSelected?: boolean;
   blockSelectionFocus?: boolean;
@@ -230,6 +274,19 @@ interface MarkdownBlockRowProps {
   wikiEmbedContext?: MarkdownWikiEmbedContext;
   collectionContext?: MarkdownCollectionContext;
   imageContext?: MarkdownImageContext;
+  /** Every Page a Wiki Link could resolve to. Called only while a `[[` run is open. */
+  onSuggestWikiLinks?: () => readonly WikiLinkPage[];
+  /** Replace `run` with `source` (a complete `[[Link]]`) and put the caret after it. */
+  onInsertWikiLink?: (blockId: string, source: string, run: MarkdownWikiLinkRun) => void;
+  /**
+   * Whether this Block owns a range that can be folded, and whether it is folded now.
+   *
+   * Always supplied, `"none"` included: `sameRowProps` compares key counts first, so a prop that
+   * appears on some rows and not others makes the memo bail for every row.
+   */
+  foldState?: "none" | "folded" | "unfolded";
+  /** Takes the Block id so the runtime can hand every row one stable callback. */
+  onToggleFold?: (blockId: string) => void;
   onRunSlashCommand?: (
     blockId: string,
     commandId: MarkdownSlashCommandId,
@@ -352,7 +409,7 @@ function MarkdownBlockRowView({
   canMoveDown,
   active,
   autoFocusEditor = true,
-  highlightSelection = false,
+  searchHighlight,
   keyboardEntry = true,
   blockSelected = false,
   blockSelectionFocus = false,
@@ -391,6 +448,10 @@ function MarkdownBlockRowView({
   wikiEmbedContext,
   collectionContext,
   imageContext,
+  foldState = "none",
+  onToggleFold,
+  onSuggestWikiLinks,
+  onInsertWikiLink,
   onRunSlashCommand,
   listOrdinal,
 }: MarkdownBlockRowProps) {
@@ -408,7 +469,12 @@ function MarkdownBlockRowView({
     !sourceOnly &&
     !/[\r\n]/.test(source) &&
     parseWikiEmbedBlock(source) === null &&
-    inlineProjection.visibleText !== source;
+    // A find match renders this surface even on text with no inline syntax to hide. The raw
+    // textarea can only show a match as its own selection, and Chromium paints no selection in an
+    // unfocused control — and the find bar keeps focus — so the counter said "2 of 5" while the
+    // Page showed nothing. With no delimiters the projection is the identity, so offsets and the
+    // caret are unchanged by taking this path.
+    (inlineProjection.visibleText !== source || searchHighlight !== undefined);
   // Opening the grip menu moves focus into a portalled dropdown, which takes the row out of
   // `:hover`/`:focus-within` and used to fade the very control the menu is attached to.
   const [controlsMenuOpen, setControlsMenuOpen] = useState(false);
@@ -418,6 +484,10 @@ function MarkdownBlockRowView({
   const [dismissedSlashStart, setDismissedSlashStart] = useState<number | null>(null);
   const [slashPosition, setSlashPosition] = useState<SlashMenuPosition | null>(null);
   const slashListRef = useRef<HTMLDivElement>(null);
+  const [wikiIndex, setWikiIndex] = useState(0);
+  const [dismissedWikiStart, setDismissedWikiStart] = useState<number | null>(null);
+  const [wikiPosition, setWikiPosition] = useState<SlashMenuPosition | null>(null);
+  const wikiListRef = useRef<HTMLDivElement>(null);
   const [linkEditor, setLinkEditor] = useState<{
     from: number;
     to: number;
@@ -467,15 +537,36 @@ function MarkdownBlockRowView({
     // closure's `source` tested the text as it was *before* the commit: composing 、 into an empty
     // Block tested "", found no trigger, and stored `null`. The insert panel then never opened, which
     // made the fullwidth trigger unreachable from the CJK keyboards it exists for.
-    setCaretOffset(SLASH_TRIGGER_PATTERN.test(text) ? offset : null);
+    setCaretOffset(SLASH_TRIGGER_PATTERN.test(text) || text.includes("[[") ? offset : null);
   };
   // While an IME composition is open the model deliberately lags the DOM, so the menu filters on the
   // live text. That is what makes `/` + pinyin narrow as you type, the way Feishu's insert panel
   // does — and it is safe because Enter belongs to the IME until the composition commits, so the
   // offsets used to execute a command always come from committed text.
   const liveSource = composingValue ?? source;
+  const wikiCaret =
+    composingValue === null ? (caretOffset ?? editorSelectionRef.current.head) : liveSource.length;
+  const wikiRun =
+    active && block.editable && !sourceOnly && onInsertWikiLink
+      ? wikiLinkRunAt(liveSource, wikiCaret)
+      : null;
+  const wikiQuery = wikiRun?.query ?? null;
+  const wikiStart = wikiRun?.start ?? null;
+  const wikiPages = useMemo(
+    () => (wikiQuery === null ? [] : (onSuggestWikiLinks?.() ?? [])),
+    [wikiQuery, onSuggestWikiLinks]
+  );
+  const wikiMatches = useMemo(
+    () => (wikiQuery === null ? [] : searchWikiLinkPages(wikiPages, wikiQuery)),
+    [wikiPages, wikiQuery]
+  );
+  // Closes with no match, unlike the slash menu: `[[` is also ordinary Markdown, so a query that
+  // matches nothing must let Enter split the Block instead of swallowing it.
+  const wikiMenuOpen =
+    wikiStart !== null && dismissedWikiStart !== wikiStart && wikiMatches.length > 0;
   const slashRun =
-    active && block.editable && !sourceOnly && onRunSlashCommand
+    // One popup at a time. `[[/foo` is inside a Wiki Link, not a command.
+    active && block.editable && !sourceOnly && onRunSlashCommand && wikiRun === null
       ? slashRunAt(
           liveSource,
           composingValue === null
@@ -698,6 +789,42 @@ function MarkdownBlockRowView({
       ?.scrollIntoView({ block: "nearest" });
   }, [slashIndex, slashMenuOpen]);
 
+  useEffect(() => {
+    setWikiIndex(0);
+  }, [wikiQuery]);
+
+  useEffect(() => {
+    // Forget the dismissal once the caret leaves the run it dismissed.
+    if (dismissedWikiStart !== null && wikiStart !== dismissedWikiStart) {
+      setDismissedWikiStart(null);
+    }
+  }, [dismissedWikiStart, wikiStart]);
+
+  useEffect(() => {
+    if (!wikiMenuOpen) {
+      setWikiPosition(null);
+      return;
+    }
+    const surface = rowRef.current?.querySelector<HTMLElement>("[data-native-block-editor]");
+    if (!surface || wikiStart === null) return;
+    const measure = () => setWikiPosition(slashMenuPosition(surface, wikiStart));
+    measure();
+    const scroller = surface.closest("[data-native-markdown-scroll]");
+    scroller?.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    return () => {
+      scroller?.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+    };
+  }, [wikiMenuOpen, wikiStart, wikiMatches.length]);
+
+  useEffect(() => {
+    if (!wikiMenuOpen) return;
+    wikiListRef.current
+      ?.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest" });
+  }, [wikiIndex, wikiMenuOpen]);
+
   // Which surface rendered last. Typing `**bold**` flips the Block from the raw textarea to the
   // semantic surface (and undo flips it back). React unmounts one and mounts the other, so unless
   // the caret is carried across explicitly it lands at offset 0 and the next keystroke goes to the
@@ -880,6 +1007,26 @@ function MarkdownBlockRowView({
       : editorLength;
     const atVisibleStart = collapsed && visibleRange.from === 0;
     const atVisibleEnd = collapsed && visibleRange.to === visibleLength;
+    if (wikiMenuOpen) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const direction = event.key === "ArrowDown" ? 1 : -1;
+        setWikiIndex((current) => (current + direction + wikiMatches.length) % wikiMatches.length);
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        const page = wikiMatches[wikiIndex] ?? wikiMatches[0];
+        if (page && wikiRun) onInsertWikiLink?.(block.id, wikiLinkSource(page, wikiPages), wikiRun);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        // Leaves the literal `[[` the user typed in place — dismissing is never an edit.
+        setDismissedWikiStart(wikiRun?.start ?? null);
+        return;
+      }
+    }
     if (slashMenuOpen) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
@@ -1116,9 +1263,9 @@ function MarkdownBlockRowView({
         source.length === 0 &&
         (block.depth ?? 0) > 0 &&
         isListBlockKind(block.kind) &&
-        onIndent
+        onIndent &&
+        onIndent(block.id, -1, { anchor: 0, head: 0 }) !== false
       ) {
-        onIndent(block.id, -1, { anchor: 0, head: 0 });
         return;
       }
       // At a visible boundary the source offset may sit *inside* a delimiter run, so splitting
@@ -1130,8 +1277,14 @@ function MarkdownBlockRowView({
     }
     if (!sourceOnly && event.key === "Backspace" && atVisibleStart) {
       event.preventDefault();
-      if ((block.depth ?? 0) > 0 && isListBlockKind(block.kind) && onIndent) {
-        onIndent(block.id, -1, { anchor: 0, head: 0 });
+      // A refused outdent must not eat the keystroke — falling through to the merge keeps the
+      // Block reachable instead of leaving the caret in a dead end.
+      if (
+        (block.depth ?? 0) > 0 &&
+        isListBlockKind(block.kind) &&
+        onIndent &&
+        onIndent(block.id, -1, { anchor: 0, head: 0 }) !== false
+      ) {
         return;
       }
       onMergeBackward(block.id);
@@ -1459,6 +1612,8 @@ function MarkdownBlockRowView({
             onDuplicate={() => onDuplicate(block.id)}
             onMoveUp={() => onMove(block.id, -1)}
             onMoveDown={() => onMove(block.id, 1)}
+            foldState={foldState}
+            onToggleFold={onToggleFold ? () => onToggleFold(block.id) : undefined}
             onDelete={() => onDelete(block.id)}
             onDragStart={(event) => onDragStart(block.id, event)}
             onDragEnd={onDragEnd}
@@ -1601,7 +1756,7 @@ function MarkdownBlockRowView({
                   source={source}
                   selection={restoredSelection}
                   autoFocus={autoFocusEditor}
-                  highlightSelection={highlightSelection}
+                  searchHighlight={searchHighlight}
                   placeholder={source.length === 0 ? blockPlaceholder(block) : undefined}
                   className="native-block-textarea block min-w-0 flex-1 whitespace-pre-wrap break-words bg-transparent outline-none"
                   onSourceChange={(nextSource, nextSelection) => {
@@ -1877,6 +2032,55 @@ function MarkdownBlockRowView({
                   document.body
                 )
               : null}
+            {wikiMenuOpen && wikiPosition
+              ? createPortal(
+                  <div
+                    ref={wikiListRef}
+                    role="listbox"
+                    aria-label="Wiki link targets"
+                    // Same exemption as the slash panel: portalled onto `document.body`, so without
+                    // this the runtime's outside-press listener would close the Block being edited.
+                    data-native-editor-overlay
+                    style={{
+                      position: "fixed",
+                      top: wikiPosition.top,
+                      left: wikiPosition.left,
+                      maxHeight: wikiPosition.maxHeight,
+                      transform: wikiPosition.flipped ? "translateY(-100%)" : undefined,
+                    }}
+                    className={`z-50 w-[min(314px,calc(100vw-2rem))] overflow-y-auto overscroll-contain ${MENU_PANEL_CLASS}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                  >
+                    {wikiMatches.map((page, pageIndex) => (
+                      <button
+                        key={page.id}
+                        type="button"
+                        role="option"
+                        tabIndex={-1}
+                        aria-selected={pageIndex === wikiIndex}
+                        className={`flex h-[31px] w-full items-center gap-2.5 rounded-md px-2 text-left transition-colors duration-[20ms] ease-in ${
+                          pageIndex === wikiIndex ? "bg-accent text-accent-foreground" : ""
+                        }`}
+                        onMouseMove={() => setWikiIndex(pageIndex)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (wikiRun) {
+                            onInsertWikiLink?.(block.id, wikiLinkSource(page, wikiPages), wikiRun);
+                          }
+                        }}
+                      >
+                        <span className="min-w-0 flex-1 truncate text-sm">{page.name}</span>
+                        {page.folder ? (
+                          <span className="min-w-0 max-w-[45%] shrink truncate text-[11px] text-muted-foreground">
+                            {page.folder}
+                          </span>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>,
+                  document.body
+                )
+              : null}
             <div data-native-block-print-preview className="hidden">
               <BlockPreview
                 block={block}
@@ -1996,6 +2200,34 @@ export interface MarkdownSlashRun {
  * requires that character to start a word. That last rule is what keeps `src/lib`, `and/or` and
  * `2026/07` typeable without the menu jumping in.
  */
+export interface MarkdownWikiLinkRun {
+  /** Offset of the opening `[[`. */
+  readonly start: number;
+  /** Caret offset — the end of what the user has typed so far. */
+  readonly end: number;
+  readonly query: string;
+}
+
+/**
+ * The `[[` run the caret sits inside, or null.
+ *
+ * Unlike a slash run, whitespace does not end it: Page names have spaces in them, and stopping at
+ * the first one would make every multi-word Page unreachable. A closing `]]` does end it, so the
+ * popup does not reopen behind a link the user already finished.
+ */
+function wikiLinkRunAt(source: string, caret: number): MarkdownWikiLinkRun | null {
+  const end = Math.min(Math.max(caret, 0), source.length);
+  for (let index = end - 1; index >= 1; index -= 1) {
+    const char = source[index];
+    if (char === "\n" || char === "\r") return null;
+    // A `]` between the caret and the `[[` closes the run, whichever half of `]]` it is.
+    if (char === "]") return null;
+    if (char !== "[" || source[index - 1] !== "[") continue;
+    return { start: index - 1, end, query: source.slice(index + 1, end) };
+  }
+  return null;
+}
+
 function slashRunAt(source: string, caret: number): MarkdownSlashRun | null {
   const end = Math.min(Math.max(caret, 0), source.length);
   for (let index = end - 1; index >= 0; index -= 1) {
@@ -3714,15 +3946,75 @@ function InlineMarkdownPreview({
   source: string;
   onOpenWikiLink?: (target: string) => void;
 }) {
-  let tokens: InlinePreviewToken[] = [];
+  let blocks: InlinePreviewToken[] = [];
   try {
-    const block = inlinePreviewLexer.lexer(source)[0] as
-      (InlinePreviewToken & { tokens?: InlinePreviewToken[] }) | undefined;
-    tokens = block?.tokens ?? [{ type: "text", raw: source, text: source }];
+    blocks = inlinePreviewLexer.lexer(source) as InlinePreviewToken[];
   } catch {
-    tokens = [{ type: "text", raw: source, text: source }];
+    blocks = [];
   }
-  return <>{renderInlineTokens(tokens, "inline", onOpenWikiLink)}</>;
+  const renderable = blocks.filter((token) => token.type !== "space");
+  if (renderable.length === 0) {
+    return (
+      <>
+        {renderInlineTokens(
+          [{ type: "text", raw: source, text: source }],
+          "inline",
+          onOpenWikiLink
+        )}
+      </>
+    );
+  }
+  // The common case — one paragraph — renders exactly as it always has, which is what every
+  // caller inside a table cell or a callout line depends on.
+  if (renderable.length === 1) {
+    const only = renderable[0];
+    return (
+      <>
+        {renderInlineTokens(
+          only.tokens ?? [{ type: "text", raw: source, text: source }],
+          "inline",
+          onOpenWikiLink
+        )}
+      </>
+    );
+  }
+  // A list item can hold a second paragraph or an indented fence. Only the first token used to
+  // be rendered, so that content was on disk and nowhere on screen — the bytes survived every
+  // edit and the user could not see them.
+  return (
+    <>
+      {renderable.map((token, index) => (
+        <PreviewBlockToken
+          key={`block-${index}`}
+          token={token}
+          keyPrefix={`block-${index}`}
+          onOpenWikiLink={onOpenWikiLink}
+        />
+      ))}
+    </>
+  );
+}
+
+function PreviewBlockToken({
+  token,
+  keyPrefix,
+  onOpenWikiLink,
+}: {
+  token: InlinePreviewToken;
+  keyPrefix: string;
+  onOpenWikiLink?: (target: string) => void;
+}) {
+  if (token.type === "code") {
+    return (
+      <pre className="my-1 overflow-x-auto rounded-md bg-muted px-2 py-1.5 font-mono text-[0.9em]">
+        <code>{token.text ?? token.raw ?? ""}</code>
+      </pre>
+    );
+  }
+  const children = token.tokens
+    ? renderInlineTokens(token.tokens, keyPrefix, onOpenWikiLink)
+    : renderWikiText(token.text ?? token.raw ?? "", keyPrefix, onOpenWikiLink);
+  return <div>{children}</div>;
 }
 
 /**
@@ -3768,6 +4060,15 @@ function renderInlineTokens(
         return <em key={key}>{children}</em>;
       case "del":
         return <del key={key}>{children}</del>;
+      case "inlineHighlight":
+        return (
+          <mark key={key} className="rounded-[2px] bg-primary/25 text-inherit">
+            {children}
+          </mark>
+        );
+      case "inlineComment":
+        // Rendered as nothing at all — that is what writing a comment means.
+        return <Fragment key={key} />;
       case "codespan":
         return (
           <code key={key} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]">
@@ -3834,18 +4135,58 @@ function renderWikiText(
   keyPrefix: string,
   onOpenWikiLink?: (target: string) => void
 ): ReactNode[] {
-  return text.split(/(\[\[[^\]\r\n]+\]\])/g).map((part, index) => {
+  const parts: ReactNode[] = [];
+  text.split(/(\[\[[^\]\r\n]+\]\])/g).forEach((part, index) => {
     const match = part.match(/^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
-    if (!match) return part;
-    return (
-      <WikiLink
-        key={`${keyPrefix}-wiki-${index}`}
-        target={match[1]}
-        label={match[2] ?? match[1]}
-        onOpen={onOpenWikiLink}
-      />
-    );
+    if (match) {
+      parts.push(
+        <WikiLink
+          key={`${keyPrefix}-wiki-${index}`}
+          target={match[1]}
+          label={match[2] ?? match[1]}
+          onOpen={onOpenWikiLink}
+        />
+      );
+      return;
+    }
+    // A `#tag` inside the same run. Split after the Wiki Links, so a `#` inside `[[...]]` is
+    // already gone by the time this looks.
+    parts.push(...renderTagText(part, `${keyPrefix}-${index}`));
   });
+  return parts;
+}
+
+/** Prose with its `#tags` turned into pills that search for themselves. */
+function renderTagText(text: string, keyPrefix: string): ReactNode[] {
+  const tags = tagsInText(text);
+  if (tags.length === 0) return [text];
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  tags.forEach((tag, index) => {
+    if (tag.from > cursor) nodes.push(text.slice(cursor, tag.from));
+    nodes.push(<TagPill key={`${keyPrefix}-tag-${index}`} name={tag.name} />);
+    cursor = tag.to;
+  });
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return nodes;
+}
+
+/** One rendered `#tag`. Clicking it runs the search that finds every Page carrying it. */
+function TagPill({ name }: { name: string }) {
+  return (
+    <button
+      type="button"
+      data-markdown-inline-tag={name}
+      aria-label={`Search for tag ${name}`}
+      className="rounded-[4px] bg-primary/10 px-1 text-primary hover:bg-primary/20"
+      onClick={(event) => {
+        event.stopPropagation();
+        useLayoutStore.getState().openSidebarSearch(`tag:${name}`);
+      }}
+    >
+      #{name}
+    </button>
+  );
 }
 
 /**

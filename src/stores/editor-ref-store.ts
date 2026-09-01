@@ -1,33 +1,141 @@
 import { create } from "zustand";
 
-interface EditorRefState {
-  // Awaitable "save the active document now", registered by the markdown
-  // runtime so chrome (e.g. the header's close button) can save-then-close.
-  // Resolves true when saved (or there was nothing to save), false when the
-  // user cancelled the save-location picker. Null when no saveable document is
-  // mounted.
-  requestSave: (() => Promise<boolean>) | null;
-  setRequestSave: (fn: (() => Promise<boolean>) | null) => void;
-  // Source-history commands registered by the active Markdown runtime. Native
-  // application menus must call these instead of browser/webview undo roles,
-  // which can mutate the textarea without updating canonical Markdown.
-  requestUndo: (() => void) | null;
-  setRequestUndo: (fn: (() => void) | null) => void;
-  requestRedo: (() => void) | null;
-  setRequestRedo: (fn: (() => void) | null) => void;
-  // Called only after the user confirms discarding the active Page. The
-  // runtime uses it to invalidate queued writes before its DOM unmounts.
-  discardPendingChanges: (() => void) | null;
-  setDiscardPendingChanges: (fn: (() => void) | null) => void;
+/** What one mounted Markdown runtime can be asked to do. */
+export interface EditorHandles {
+  /** The Page this editor is showing, so a caller can flush one Page without knowing its pane. */
+  fileId: string;
+  // Awaitable "save this document now", so chrome (e.g. the header's close
+  // button) can save-then-close. Resolves true when saved (or there was nothing
+  // to save), false when the user cancelled the save-location picker.
+  requestSave: () => Promise<boolean>;
+  // Source-history commands. Native application menus must call these instead
+  // of browser/webview undo roles, which can mutate the textarea without
+  // updating canonical Markdown.
+  requestUndo: () => void;
+  requestRedo: () => void;
+  // Fold or unfold every foldable Block, so the command palette can reach it and
+  // PDF export can unfold before it prints the live DOM.
+  requestFoldAll: (folded: boolean) => void;
+  // Called only after the user confirms discarding the Page. The runtime uses it
+  // to invalidate queued writes before its DOM unmounts.
+  discardPendingChanges: () => void;
 }
 
-export const useEditorRefStore = create<EditorRefState>()((set) => ({
+interface EditorRefState {
+  /**
+   * Every mounted runtime, by its own id.
+   *
+   * A registry rather than one set of callbacks: with two Pages on screen, the second to mount
+   * would otherwise overwrite the first, and ⌘S, the native menu's undo and fold-all would all
+   * act on whichever happened to mount last rather than on the Page being looked at.
+   */
+  editors: Record<string, EditorHandles>;
+  /** Which registered editor the chrome is talking about. */
+  activeEditorId: string | null;
+  /** The pane layer's claim, which outlives a re-registration of that editor. */
+  claimedEditorId: string | null;
+
+  // Mirrors of the active editor's handles. Every consumer means "the editor the user is looking
+  // at", so they read these and need to know nothing about the registry.
+  requestSave: (() => Promise<boolean>) | null;
+  requestUndo: (() => void) | null;
+  requestRedo: (() => void) | null;
+  requestFoldAll: ((folded: boolean) => void) | null;
+  discardPendingChanges: (() => void) | null;
+
+  registerEditor: (id: string, handles: EditorHandles) => void;
+  unregisterEditor: (id: string) => void;
+  setActiveEditor: (id: string | null) => void;
+  /** Flush every mounted editor, for the paths that mean "before we close, save everything". */
+  saveAllEditors: () => Promise<boolean>;
+  /**
+   * Flush the editor showing `fileId`, if one is mounted.
+   *
+   * Resolves true when no editor is showing it — the Page is not open, so there is nothing
+   * unsaved to lose, which is what the callers' old `currentFileId !== pageId` check meant.
+   */
+  requestSaveFor: (fileId: string) => Promise<boolean>;
+  /** Drop the pending edits of the editor showing `fileId`, in whichever pane holds it. */
+  discardPendingChangesFor: (fileId: string) => void;
+}
+
+/**
+ * Recompute the mirrored handles from the registry.
+ *
+ * `claimedEditorId` is what the pane layer asked for and is kept even while that editor is
+ * momentarily absent; `activeEditorId` is what it resolves to right now. Collapsing the two
+ * lost the claim whenever the focused pane's editor re-registered — switching tabs inside it
+ * re-runs the registration effect — and the sole-survivor fallback below then handed the
+ * chrome to the other pane, where an undo rewrites a Page the user cannot see.
+ */
+function mirror(editors: Record<string, EditorHandles>, claimedEditorId: string | null) {
+  // Falling back to the sole editor keeps the chrome working before anything has claimed focus,
+  // which is the state every session starts in.
+  const ids = Object.keys(editors);
+  const id =
+    (claimedEditorId && editors[claimedEditorId] ? claimedEditorId : null) ??
+    (ids.length === 1 ? ids[0] : null);
+  const active = id ? editors[id] : null;
+  return {
+    claimedEditorId,
+    activeEditorId: id,
+    requestSave: active?.requestSave ?? null,
+    requestUndo: active?.requestUndo ?? null,
+    requestRedo: active?.requestRedo ?? null,
+    requestFoldAll: active?.requestFoldAll ?? null,
+    discardPendingChanges: active?.discardPendingChanges ?? null,
+  };
+}
+
+export const useEditorRefStore = create<EditorRefState>()((set, get) => ({
+  editors: {},
+  activeEditorId: null,
+  claimedEditorId: null,
   requestSave: null,
-  setRequestSave: (requestSave) => set({ requestSave }),
   requestUndo: null,
-  setRequestUndo: (requestUndo) => set({ requestUndo }),
   requestRedo: null,
-  setRequestRedo: (requestRedo) => set({ requestRedo }),
+  requestFoldAll: null,
   discardPendingChanges: null,
-  setDiscardPendingChanges: (discardPendingChanges) => set({ discardPendingChanges }),
+
+  registerEditor: (id, handles) =>
+    set((state) => {
+      const editors = { ...state.editors, [id]: handles };
+      // A claim naming an editor that is not registered is stale — either this very editor
+      // re-registering, or a pane that has gone — so the arriving editor may take it. A
+      // claim that still names a live editor is left alone, so a second pane opening does
+      // not steal the chrome from the pane the user is in.
+      const claim =
+        state.claimedEditorId && state.editors[state.claimedEditorId] ? state.claimedEditorId : id;
+      return { editors, ...mirror(editors, claim) };
+    }),
+
+  unregisterEditor: (id) =>
+    set((state) => {
+      const { [id]: _gone, ...editors } = state.editors;
+      // The claim is deliberately kept: this editor may be re-registering rather than going
+      // away, and dropping it here is what let the other pane take the chrome.
+      return { editors, ...mirror(editors, state.claimedEditorId) };
+    }),
+
+  setActiveEditor: (id) => set((state) => mirror(state.editors, id)),
+
+  requestSaveFor: async (fileId) => {
+    const editor = Object.values(get().editors).find((handles) => handles.fileId === fileId);
+    return editor ? editor.requestSave() : true;
+  },
+
+  discardPendingChangesFor: (fileId) => {
+    Object.values(get().editors)
+      .find((handles) => handles.fileId === fileId)
+      ?.discardPendingChanges();
+  },
+
+  saveAllEditors: async () => {
+    // Sequential, not parallel: each save may open a native destination picker, and two at once
+    // would stack two modal dialogs on the user.
+    for (const handles of Object.values(get().editors)) {
+      if (!(await handles.requestSave())) return false;
+    }
+    return true;
+  },
 }));

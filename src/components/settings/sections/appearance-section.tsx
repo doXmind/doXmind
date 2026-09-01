@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
+import { useLayoutStore } from "@/stores/layout-store";
 import { Check, ChevronDown, Monitor, Moon, Sun } from "lucide-react";
 import { useThemeManager } from "@/hooks/use-theme-manager";
 import { cn } from "@/lib/utils";
@@ -12,7 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FlatCard, SettingsSection } from "../settings-atoms";
+import { FlatCard, FlatRow, RowLabel, SettingsSection } from "../settings-atoms";
 
 type Mode = "light" | "dark" | "system";
 
@@ -76,6 +77,12 @@ export function AppearanceSection() {
             </div>
           )}
         </div>
+      </FlatCard>
+      <FlatCard>
+        <FlatRow first>
+          <RowLabel title={t("language")} desc={t("languageDesc")} />
+          <LanguagePick />
+        </FlatRow>
       </FlatCard>
     </SettingsSection>
   );
@@ -271,4 +278,40 @@ function ThemeSwatch({ theme, size = 24 }: { theme: ThemeDefinition; size?: numb
 // otherwise the browser silently rejects the raw triple.
 function hslToken(token: string): string {
   return `hsl(${token})`;
+}
+
+/**
+ * Both catalogs already ship in the bundle, so this is a swap rather than a reload.
+ *
+ * The label for each language is written in that language: someone who cannot read the current
+ * one still has to be able to find their way out.
+ */
+function LanguagePick() {
+  const locale = useLayoutStore((state) => state.locale);
+  const setLocale = useLayoutStore((state) => state.setLocale);
+  const options = [
+    { value: "en" as const, label: "English" },
+    { value: "zh" as const, label: "中文" },
+  ];
+
+  return (
+    <div className="flex shrink-0 gap-1 rounded-lg bg-muted p-0.5">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => setLocale(option.value)}
+          aria-pressed={locale === option.value}
+          className={cn(
+            "rounded-[6px] px-3 py-1 text-[13px] transition-colors duration-[20ms] ease-in",
+            locale === option.value
+              ? "bg-background font-medium text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
 }

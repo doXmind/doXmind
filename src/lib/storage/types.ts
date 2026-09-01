@@ -1,6 +1,9 @@
 export type WorkspaceMode = "disk";
 
-export type WorkspaceEntryKind = "document" | "folder";
+// An `asset` is a workspace file doXmind lists but never opens: not a Page, not an Attachment
+// workspace. It exists so the tree can show what is actually on disk — images, `.canvas`, `.base`
+// — with reveal and open-externally as its only actions.
+export type WorkspaceEntryKind = "document" | "folder" | "asset";
 export type WorkspacePageType = "markdown";
 export type WorkspaceAttachmentType = "pdf" | "excel" | "html";
 /** File-format discriminator retained for attachment scanning and legacy compatibility. */
@@ -110,6 +113,10 @@ export interface WorkspaceEntry {
   isFavorite?: boolean;
   /** Frontmatter aliases, carried by the scan so Wiki Links resolve without opening the Page. */
   aliases?: string[];
+
+  /** Frontmatter and inline tags, for the tag pane and `tag:` search. */
+
+  tags?: string[];
 }
 
 export interface StorageWriteInput {
@@ -500,6 +507,27 @@ export interface MarkdownSearchOptions {
   fileIds?: string[];
   limit?: number;
   signal?: AbortSignal;
+  /**
+   * Parsed query operators. Serializable by construction — a compiled RegExp cannot cross the
+   * bridge, so a regex term travels as its source and flags and is recompiled on the far side.
+   */
+  criteria?: {
+    groups: Array<
+      Array<{
+        field: "content" | "file" | "path" | "tag";
+        value: string;
+        negated: boolean;
+        regexSource?: string;
+        regexFlags?: string;
+      }>
+    >;
+  };
+}
+
+export interface MarkdownSearchHit {
+  /** 1-based line within the Page body — frontmatter is not part of the editor's document. */
+  line: number;
+  preview: string;
 }
 
 export interface MarkdownSearchResult {
@@ -514,6 +542,10 @@ export interface MarkdownSearchResult {
     chunkIndex?: number;
   };
   score?: number;
+  /** Every hit the backend sent for this Page, capped; `content` is the first one's preview. */
+  matches?: MarkdownSearchHit[];
+  /** Hits found, which can exceed `matches.length` when the previews were capped. */
+  matchCount?: number;
 }
 
 export interface MarkdownSearchResults {

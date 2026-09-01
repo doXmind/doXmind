@@ -124,7 +124,7 @@ describe("Block drag and outline scrolling", () => {
       discardPendingChanges: null,
     });
     useLayoutStore.setState({ autosaveEnabled: false, isSearchBarOpen: false });
-    usePageSessionStore.setState({ outlineSession: null });
+    usePageSessionStore.setState({ outlineSession: null, revealRequest: null });
   });
 
   afterEach(() => {

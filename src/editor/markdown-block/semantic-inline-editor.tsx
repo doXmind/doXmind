@@ -38,7 +38,13 @@ export interface SemanticInlineEditorProps {
   /** Shown through CSS when the Block has no text. Never part of the source. */
   readonly placeholder?: string;
   readonly autoFocus?: boolean;
-  readonly highlightSelection?: boolean;
+  /**
+   * The find bar's current match, in editor offsets.
+   *
+   * An explicit range rather than "highlight the selection": the selection is consumed as soon as
+   * it is applied, so a highlight derived from it disappeared the instant it appeared.
+   */
+  readonly searchHighlight?: { anchor: number; head: number };
   /**
    * The slash command panel this surface drives, when it has one. The panel never takes focus —
    * the caret has to stay where the command will be written — so without these the panel is
@@ -84,7 +90,7 @@ export function SemanticInlineEditor({
   selection,
   placeholder,
   autoFocus = false,
-  highlightSelection = false,
+  searchHighlight,
   slashListboxId,
   slashMenuOpen = false,
   slashActiveOptionId,
@@ -104,12 +110,12 @@ export function SemanticInlineEditor({
   const [restoreRevision, setRestoreRevision] = useState(0);
   const projection = useMemo(() => projectMarkdownInline(source), [source]);
   const sourceSelection = useMemo(() => {
-    if (!highlightSelection || !selection) return null;
+    if (!searchHighlight) return null;
     return {
-      from: Math.min(selection.anchor, selection.head),
-      to: Math.max(selection.anchor, selection.head),
+      from: Math.min(searchHighlight.anchor, searchHighlight.head),
+      to: Math.max(searchHighlight.anchor, searchHighlight.head),
     };
-  }, [highlightSelection, selection]);
+  }, [searchHighlight]);
   const visualSelection = useMemo(() => {
     if (!sourceSelection || sourceSelection.from === sourceSelection.to) return null;
     return projection.sourceRangeToVisible(sourceSelection);
@@ -432,6 +438,24 @@ function SemanticSegment({
   if (segment.marks.bold) content = <strong>{content}</strong>;
   if (segment.marks.italic) content = <em>{content}</em>;
   if (segment.marks.strike) content = <del>{content}</del>;
+  if (segment.marks.tag) {
+    content = (
+      <span
+        data-markdown-inline-tag={segment.marks.tagName}
+        className="cursor-pointer rounded-[4px] bg-primary/10 px-1 text-primary hover:bg-primary/20"
+      >
+        {content}
+      </span>
+    );
+  }
+  if (segment.marks.highlight) {
+    content = <mark className="rounded-[2px] bg-primary/25 text-inherit">{content}</mark>;
+  }
+  if (segment.marks.comment) {
+    // Visible while the Block is being edited, so it can be read and removed, and dimmed so it
+    // is obviously not part of the document. The rendered view drops it entirely.
+    content = <span className="italic text-muted-foreground/70">{content}</span>;
+  }
   if (segment.marks.link) {
     content = (
       <a

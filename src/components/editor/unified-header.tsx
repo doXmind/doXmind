@@ -1,22 +1,25 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 import {
-  Search,
-  MoreHorizontal,
-  PanelLeft,
+  Check,
+  Columns2,
+  Copy,
   Download,
   Keyboard,
-  Palette,
-  Check,
   Loader2,
+  MoreHorizontal,
+  Palette,
+  PanelLeft,
   Save,
-  Copy,
+  Search,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
+import { MENU_PANEL_CLASS, MENU_ROW_CLASS } from "@/components/ui/dropdown-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,6 +59,9 @@ function TabDocumentIcon({ file }: { file: FileItem }) {
   return <MarkdownGlyph className="h-4 w-4 text-[var(--sidebar-icon)]" />;
 }
 
+/** Identifies a tab drag to the panes, which are outside this component. */
+export const TAB_DRAG_TYPE = "application/x-doxmind-tab";
+
 export function UnifiedHeader() {
   const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
   const toggleFilesSidebar = useLayoutStore((s) => s.toggleFilesSidebar);
@@ -70,6 +76,12 @@ export function UnifiedHeader() {
   const currentFileId = useFileStore((s) => s.currentFileId);
   const files = useFileStore((s) => s.files);
   const openTabIds = useFileStore((s) => s.openTabIds);
+  const reorderTab = useFileStore((s) => s.reorderTab);
+  const splitRight = useFileStore((s) => s.splitRight);
+  const closeOtherPane = useFileStore((s) => s.closeOtherPane);
+  const otherPaneFileId = useFileStore((s) => s.otherPaneFileId);
+  const closeOtherTabs = useFileStore((s) => s.closeOtherTabs);
+  const closeAllTabs = useFileStore((s) => s.closeAllTabs);
   const openTarget = useFileStore((s) => s.openTarget);
   const closeTab = useFileStore((s) => s.closeTab);
   // Hide the sidebar toggle on the welcome screen — there's nothing to show.
@@ -167,6 +179,20 @@ export function UnifiedHeader() {
     }
   };
 
+  const [tabMenu, setTabMenu] = useState<{ fileId: string; x: number; y: number } | null>(null);
+  const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!tabMenu) return;
+    const close = () => setTabMenu(null);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("resize", close);
+    };
+  }, [tabMenu]);
+
   const handleActivateTab = (fileId: string) => {
     if (fileId === currentFileId) return;
     navigateToEditorFile(fileId);
@@ -174,12 +200,11 @@ export function UnifiedHeader() {
 
   const handleCloseTab = (fileId: string) => {
     const file = useFileStore.getState().files.find((candidate) => candidate.id === fileId);
-    if (
-      fileId === currentFileId &&
-      file &&
-      isMarkdownFile(file) &&
-      useEditorStore.getState().isDirty
-    ) {
+    // Either mounted pane, not just the focused one: the other pane's tab has a live editor
+    // behind it too, and closing it used to unmount that editor with no prompt at all.
+    const isMountedPane =
+      fileId === currentFileId || fileId === useFileStore.getState().otherPaneFileId;
+    if (isMountedPane && file && isMarkdownFile(file) && useEditorStore.getState().isDirty) {
       setCloseRequestId(fileId);
       return;
     }
@@ -201,11 +226,12 @@ export function UnifiedHeader() {
   const handleSaveAndClose = async () => {
     const targetId = closeRequestId;
     if (!targetId) return;
-    const requestSave = useEditorRefStore.getState().requestSave;
-    if (!requestSave) return;
+    // By Page, not by pane: the tab being closed may be the other pane's, and the mirrored
+    // handle would save the Page the user is looking at instead.
+    const requestSaveFor = useEditorRefStore.getState().requestSaveFor;
     let saved = false;
     try {
-      saved = await requestSave();
+      saved = await requestSaveFor(targetId);
     } catch {
       notify.error("Could not save Page");
       return;
@@ -218,13 +244,9 @@ export function UnifiedHeader() {
   };
 
   const handleDiscardAndClose = () => {
-    const discardPendingChanges = useEditorRefStore.getState().discardPendingChanges;
-    if (!discardPendingChanges) {
-      notify.error("Could not discard Page safely");
-      return;
-    }
     const targetId = closeRequestId;
-    discardPendingChanges();
+    if (!targetId) return;
+    useEditorRefStore.getState().discardPendingChangesFor(targetId);
     setCloseRequestId(null);
     performClose(targetId);
   };
@@ -289,9 +311,9 @@ export function UnifiedHeader() {
               </Tooltip>
 
               {/* Global search — opens the command palette (file names +
-                  cross-document content search), same as Cmd/Ctrl+K. */}
+                  cross-document content search), same as Cmd/Ctrl+P. */}
               <Tooltip
-                content={t("searchTooltip", { shortcut: formatShortcut("Ctrl+K") })}
+                content={t("searchTooltip", { shortcut: formatShortcut("Ctrl+P") })}
                 side="bottom"
               >
                 <Button
@@ -299,7 +321,7 @@ export function UnifiedHeader() {
                   size="icon"
                   className="desktop-header-button relative z-10 h-7 w-7 rounded-md"
                   onClick={openCommandPalette}
-                  aria-label={t("searchTooltip", { shortcut: formatShortcut("Ctrl+K") })}
+                  aria-label={t("searchTooltip", { shortcut: formatShortcut("Ctrl+P") })}
                 >
                   <Search className="h-4 w-4" />
                 </Button>
@@ -349,6 +371,35 @@ export function UnifiedHeader() {
                       aria-selected={isActive}
                       data-no-drag
                       title={file.storageHandle?.relPath ?? file.name}
+                      // Dragging within the bar reorders; dragging onto a pane shows the Page
+                      // there. Dropped anywhere else the drag is simply abandoned.
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "move";
+                        // A payload as well as the local state: reordering happens inside this
+                        // strip, but a pane is a different component and can only read the drag.
+                        event.dataTransfer.setData(TAB_DRAG_TYPE, file.id);
+                        setDraggingTabId(file.id);
+                      }}
+                      onDragEnd={() => setDraggingTabId(null)}
+                      onDragOver={(event) => {
+                        if (!draggingTabId || draggingTabId === file.id) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                      }}
+                      onDrop={(event) => {
+                        if (!draggingTabId || draggingTabId === file.id) return;
+                        event.preventDefault();
+                        reorderTab(
+                          draggingTabId,
+                          tabFiles.findIndex((t) => t.id === file.id)
+                        );
+                        setDraggingTabId(null);
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        setTabMenu({ fileId: file.id, x: event.clientX, y: event.clientY });
+                      }}
                       onClick={() => handleActivateTab(file.id)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
@@ -401,6 +452,52 @@ export function UnifiedHeader() {
             </div>
           )}
 
+          {tabMenu &&
+            typeof document !== "undefined" &&
+            createPortal(
+              <div
+                role="menu"
+                aria-label={t("tabActions")}
+                style={{ position: "fixed", top: tabMenu.y, left: tabMenu.x }}
+                className={`z-50 min-w-[180px] ${MENU_PANEL_CLASS}`}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={MENU_ROW_CLASS}
+                  onClick={() => {
+                    handleCloseTab(tabMenu.fileId);
+                    setTabMenu(null);
+                  }}
+                >
+                  {t("closeTab")}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={MENU_ROW_CLASS}
+                  onClick={() => {
+                    closeOtherTabs(tabMenu.fileId);
+                    setTabMenu(null);
+                  }}
+                >
+                  {t("closeOtherTabs")}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={MENU_ROW_CLASS}
+                  onClick={() => {
+                    closeAllTabs();
+                    setTabMenu(null);
+                  }}
+                >
+                  {t("closeAllTabs")}
+                </button>
+              </div>,
+              document.body
+            )}
           {title && tabFiles.length === 0 && (
             <div
               className={cn(
@@ -514,6 +611,13 @@ export function UnifiedHeader() {
                       <ThemePickerPanel />
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
+
+                  <DropdownMenuItem
+                    onClick={() => (otherPaneFileId ? closeOtherPane() : splitRight())}
+                  >
+                    <Columns2 className="mr-2 h-4 w-4" />
+                    {otherPaneFileId ? t("closeOtherPane") : t("splitRight")}
+                  </DropdownMenuItem>
 
                   <DropdownMenuItem onClick={() => setKeyboardShortcutsOpen(true)}>
                     <Keyboard className="mr-2 h-4 w-4" />

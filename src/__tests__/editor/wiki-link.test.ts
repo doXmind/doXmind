@@ -33,7 +33,29 @@ function page(id: string, relPath: string): FileItem {
   };
 }
 
+function asset(id: string, relPath: string): FileItem {
+  return {
+    ...page(id, relPath),
+    name: relPath.split("/").at(-1) ?? relPath,
+    documentType: undefined,
+    isAsset: true,
+    storageHandle: { mode: "disk", id, kind: "asset", path: relPath, relPath },
+  };
+}
+
 describe("resolveWikiLinkTarget", () => {
+  it("never resolves a Wiki Link to a workspace file", () => {
+    // An asset carries no `documentType`, which is also what an unopened Page looks like — so
+    // without an explicit guard `[[diagram]]` would resolve to the image and try to open it.
+    const files = [
+      page("home", "Home.md"),
+      asset("asset:assets/diagram.png", "assets/diagram.png"),
+    ];
+
+    expect(resolveWikiLinkTarget(files, "home", "diagram")).toBe(null);
+    expect(resolveWikiLinkTarget(files, "home", "assets/diagram.png")).toBe(null);
+  });
+
   it("resolves case-insensitive Page names and ignores heading fragments", () => {
     const files = [page("home", "Home.md"), page("roadmap", "Projects/Roadmap.md")];
 

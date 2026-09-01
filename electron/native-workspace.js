@@ -12,6 +12,11 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
+const {
+  capturePageSnapshot,
+  listPageSnapshots,
+  readPageSnapshot,
+} = require("./page-snapshots");
 const { TextDecoder } = require("node:util");
 
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
@@ -54,6 +59,8 @@ const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const NATIVE_WORKSPACE_COMMANDS = new Set([
   "workspace_scan",
   "workspace_markdown_search",
+  "page_snapshot_list",
+  "page_snapshot_read",
   "doc_read",
   "workspace_read_asset",
   "workspace_import_asset",
@@ -88,9 +95,34 @@ function createNativeWorkspaceDispatcher(options = {}) {
   return async function dispatchNativeWorkspace(command, payload = {}) {
     switch (command) {
       case "workspace_scan":
-        return workspaceScan(payload.root);
+        return workspaceScan(payload.root, payload.excludeDirs);
+      case "page_snapshot_list":
+        return listPageSnapshots(
+          await resolveExistingWorkspacePath(
+            await canonicalWorkspaceRoot(payload.root),
+            String(payload.path || "")
+          )
+        );
+      case "page_snapshot_read": {
+        const snapshot = await readPageSnapshot(
+          await resolveExistingWorkspacePath(
+            await canonicalWorkspaceRoot(payload.root),
+            String(payload.path || "")
+          ),
+          payload.id
+        );
+        // A snapshot is the whole file, frontmatter included, but a Page write takes a body
+        // and re-attaches the Page's own frontmatter. Split it here, with the same splitter
+        // the writer uses, so restoring cannot write the frontmatter a second time.
+        return { ...snapshot, body: splitPageSource(snapshot.markdown).body };
+      }
       case "workspace_markdown_search":
-        return workspaceMarkdownSearch(payload.root, payload.query, payload.limit);
+        return workspaceMarkdownSearch(
+          payload.root,
+          payload.query,
+          payload.limit,
+          payload.criteria
+        );
       case "doc_read":
         return readWorkspacePage(payload.root, payload.path);
       case "workspace_read_asset":
@@ -143,16 +175,21 @@ function createNativeWorkspaceDispatcher(options = {}) {
   };
 }
 
-async function workspaceScan(rootValue) {
+async function workspaceScan(rootValue, excludeDirs) {
   const root = await canonicalWorkspaceRoot(rootValue);
-  const documents = [];
-  await walkDocuments(root, root, documents);
+  const ignored = new Set([...IGNORED_SCAN_DIRS, ...sanitizeExcludeDirs(excludeDirs)]);
+  const out = { documents: [], folders: [], assets: [] };
+  await walkWorkspace(root, root, out, ignored, false);
+  const { documents, folders, assets } = out;
   resolveDuplicatePageIds(documents);
   documents.sort((left, right) => {
     const byName = left.name.toLowerCase().localeCompare(right.name.toLowerCase());
     return byName || left.path.localeCompare(right.path);
   });
-  return { root, documents };
+  const byPath = (left, right) => left.path.localeCompare(right.path);
+  folders.sort(byPath);
+  assets.sort(byPath);
+  return { root, documents, folders, assets };
 }
 
 function resolveDuplicatePageIds(documents) {
@@ -170,19 +207,48 @@ function resolveDuplicatePageIds(documents) {
   }
 }
 
-async function walkDocuments(root, current, documents) {
+/**
+ * Walk the workspace once, collecting Pages/Attachments, real directories, and every other file.
+ *
+ * Folders used to be inferred from the paths of the documents inside them, so an empty one — or one
+ * holding only images — vanished from the sidebar while still sitting on disk. Files outside
+ * `DOCUMENT_EXTENSIONS` were dropped outright, which hid `assets/`, the directory doXmind's own
+ * image paste writes into, along with the `.canvas` and `.base` files of an imported vault.
+ *
+ * `hidden` tracks whether any ancestor segment starts with a dot. Descent still follows dot
+ * directories, because `.github/README.md` has always been reachable; only the new folder and
+ * asset rows skip them, so the tree does not fill up with dotfiles.
+ */
+async function walkWorkspace(root, current, out, ignored, hidden) {
   const entries = await fsp.readdir(current, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.isSymbolicLink()) continue;
     const absolute = path.join(current, entry.name);
+    const isDotted = entry.name.startsWith(".");
     if (entry.isDirectory()) {
-      if (!IGNORED_SCAN_DIRS.has(entry.name)) await walkDocuments(root, absolute, documents);
+      if (ignored.has(entry.name)) continue;
+      if (!hidden && !isDotted) out.folders.push({ path: relativePath(root, absolute) });
+      await walkWorkspace(root, absolute, out, ignored, hidden || isDotted);
       continue;
     }
     if (!entry.isFile() || isHiddenSidecarName(entry.name)) continue;
-    if (!DOCUMENT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
-    documents.push(await scanDocumentDto(root, absolute));
+    if (DOCUMENT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+      out.documents.push(await scanDocumentDto(root, absolute));
+      continue;
+    }
+    if (!hidden && !isDotted) {
+      out.assets.push({ path: relativePath(root, absolute), name: entry.name });
+    }
   }
+}
+
+/** User-supplied directory names to skip. Plain names only — no paths, no globs, no patterns. */
+function sanitizeExcludeDirs(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((name) => typeof name === "string")
+    .map((name) => name.trim())
+    .filter((name) => name && name !== "." && name !== ".." && !/[/\\]/.test(name));
 }
 
 async function scanDocumentDto(root, absolute) {
@@ -205,6 +271,33 @@ async function scanDocumentDto(root, absolute) {
   }
 }
 
+/**
+ * The inline `#tag`s of a Page body.
+ *
+ * The second implementation of one grammar: this is CommonJS in the main process and cannot import
+ * `src/lib/tags.ts`. `tests/fixtures/page-tag-contract.json` is what keeps the two honest.
+ *
+ * Fenced regions, inline code and link destinations are masked first, so a `#` inside them is not
+ * a tag — the same exclusions the renderer's projection makes structurally.
+ */
+function inlineTagsInBody(body) {
+  if (!body) return [];
+  const masked = body
+    .replace(/^```[\s\S]*?^```/gm, (run) => " ".repeat(run.length))
+    .replace(/`[^`\r\n]*`/g, (run) => " ".repeat(run.length))
+    .replace(/\[\[[^\]\r\n]*\]\]/g, (run) => " ".repeat(run.length))
+    .replace(/\]\([^)\r\n]*\)/g, (run) => " ".repeat(run.length));
+  const found = [];
+  const pattern = /(^|[\s(（【[「])#([\p{L}\p{N}_\-/]+)/gu;
+  for (const match of masked.matchAll(pattern)) {
+    const name = match[2];
+    if (!/[^\p{Nd}/]/u.test(name)) continue;
+    if (name.startsWith("/") || name.endsWith("/") || name.includes("//")) continue;
+    found.push(name);
+  }
+  return found;
+}
+
 async function documentDtoForPath(root, absolute) {
   const relPath = relativePath(root, absolute);
   const extension = path.extname(absolute).toLowerCase();
@@ -213,9 +306,11 @@ async function documentDtoForPath(root, absolute) {
   let idSource = "path";
   let title = path.basename(absolute, extension);
   let meta = {};
+  let body = "";
   if (documentType === "markdown") {
     const raw = await readUtf8(absolute);
     const split = splitPageSource(raw);
+    body = split.body;
     meta = pageMetaProjection(split.meta);
     const sourceId = portablePageId(meta.id);
     if (sourceId) {
@@ -244,6 +339,13 @@ async function documentDtoForPath(root, absolute) {
   if (Array.isArray(meta.aliases) && meta.aliases.every((value) => typeof value === "string")) {
     dto.aliases = meta.aliases;
   }
+  // Frontmatter tags and the inline `#tag`s in the body, which is what a tag pane counts and what
+  // `tag:` searches. Absent rather than empty, so a Page with no tags stays the shape it was.
+  const tags = [
+    ...(Array.isArray(meta.tags) ? meta.tags.filter((value) => typeof value === "string") : []),
+    ...inlineTagsInBody(body),
+  ];
+  if (tags.length) dto.tags = [...new Set(tags)];
   return dto;
 }
 
@@ -483,7 +585,14 @@ async function writeWorkspacePage(rootValue, relPath, payload, beforePageReplace
     metaPatch = { ...(metaPatch || {}), id: crypto.randomUUID() };
   }
   const prefix = patchFrontmatterPrefix(split.prefix, metaPatch);
-  await atomicWrite(absolute, Buffer.from(`${prefix ?? ""}${markdown}`, "utf8"), {
+  const nextBytes = Buffer.from(`${prefix ?? ""}${markdown}`, "utf8");
+  // The state *before* this write, so an accidental overwrite has something to come back to.
+  // Only the ordinary Page write snapshots: link-repair writes go through `writePageBytes`, and
+  // deletion is already covered by the OS Trash.
+  if (existingBytes && !existingBytes.equals(nextBytes)) {
+    await capturePageSnapshot(absolute, existingBytes);
+  }
+  await atomicWrite(absolute, nextBytes, {
     expectedRevision: payload.expectedRevision,
     beforeReplace: beforePageReplace,
   });
@@ -1228,22 +1337,138 @@ function objectOrNull(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
 
-async function workspaceMarkdownSearch(rootValue, queryValue, limitValue) {
+const MARKDOWN_SEARCH_PREVIEWS_PER_PAGE = 50;
+
+/**
+ * Re-validate the renderer's parsed criteria here rather than trusting them.
+ *
+ * The renderer parses because that is where the query string is typed and where a syntax error has
+ * to be shown; the matching stays here because this is the only place that already reads every
+ * Page. A malformed group is dropped rather than throwing, so a criteria payload can never turn a
+ * search into a crash — same posture as `sanitizeExcludeDirs`.
+ */
+function sanitizeSearchCriteria(value) {
+  const groups = Array.isArray(value?.groups) ? value.groups : [];
+  const clean = [];
+  for (const group of groups) {
+    if (!Array.isArray(group)) continue;
+    const terms = [];
+    for (const term of group) {
+      if (!term || typeof term !== "object") continue;
+      const field = term.field;
+      if (field !== "content" && field !== "file" && field !== "path" && field !== "tag") continue;
+      if (typeof term.value !== "string" || !term.value) continue;
+      let regex = null;
+      if (typeof term.regexSource === "string" && term.regexSource) {
+        // Only the flags the renderer's own whitelist allows; `g` and `y` carry lastIndex state.
+        const flags = typeof term.regexFlags === "string" ? term.regexFlags : "";
+        if (!/^[imsu]*$/.test(flags)) continue;
+        try {
+          regex = new RegExp(term.regexSource, flags);
+        } catch {
+          continue;
+        }
+      }
+      terms.push({ field, value: term.value, negated: Boolean(term.negated), regex });
+    }
+    if (terms.length) clean.push(terms);
+  }
+  return clean;
+}
+
+/** Every tag a Page carries, lower-cased, including each ancestor of a nested `a/b`. */
+function pageTagSet(meta) {
+  const tags = new Set();
+  const values = Array.isArray(meta?.tags) ? meta.tags : [];
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const tag = value.trim().toLowerCase().replace(/^#/, "");
+    if (!tag) continue;
+    tags.add(tag);
+    // `tag:project` has to find a Page tagged `project/alpha`, the way a nested tag reads.
+    const parts = tag.split("/");
+    for (let index = 1; index < parts.length; index += 1) {
+      tags.add(parts.slice(0, index).join("/"));
+    }
+  }
+  return tags;
+}
+
+function matchesSearchTerm(term, context) {
+  const test = (haystack) =>
+    term.regex ? term.regex.test(haystack) : haystack.toLowerCase().includes(term.value);
+  let hit;
+  if (term.field === "tag") {
+    hit = term.regex
+      ? [...context.tags].some((tag) => term.regex.test(tag))
+      : context.tags.has(term.value);
+  } else if (term.field === "file") {
+    hit = test(context.name);
+  } else if (term.field === "path") {
+    hit = test(context.path);
+  } else {
+    hit = test(context.body);
+  }
+  return term.negated ? !hit : hit;
+}
+
+/** Every group must match; within a group any one term is enough. */
+function evaluateSearchCriteria(groups, context) {
+  return groups.every((group) => group.some((term) => matchesSearchTerm(term, context)));
+}
+
+async function workspaceMarkdownSearch(rootValue, queryValue, limitValue, criteriaValue) {
   const root = await canonicalWorkspaceRoot(rootValue);
   const query = String(queryValue || "")
     .trim()
     .toLowerCase();
-  if (!query) throw new Error("search query is required");
+  const criteria = sanitizeSearchCriteria(criteriaValue);
+  // `tag:project` is a complete query with no text in it, so the requirement is a query *or* a
+  // constraint — not a query string.
+  if (!query && !criteria.length) throw new Error("search query is required");
   const limit = Math.min(Math.max(Number(limitValue || 50), 1), 200);
   const scan = await workspaceScan(root);
   const results = [];
   for (const document of scan.documents) {
     if (document.documentType !== "markdown") continue;
     const raw = await readUtf8(path.join(root, ...document.path.split("/")));
+    // The body, not the raw file. Line numbers counted over the frontmatter belong to no line the
+    // editor can show — `readPage` returns the body — so a hit reported at line 7 landed several
+    // Blocks off. It also stopped `id:` and `tags:` surfacing as if they were content.
+    const split = splitPageSource(raw);
+    const body = split.body;
+    if (
+      criteria.length &&
+      !evaluateSearchCriteria(criteria, {
+        name: document.name,
+        path: document.path,
+        body,
+        tags: pageTagSet(split.meta),
+      })
+    ) {
+      continue;
+    }
     const matches = [];
-    for (const [index, line] of raw.split(/\r\n|\n|\r/).entries()) {
-      if (line.toLowerCase().includes(query)) {
+    let matchCount = 0;
+    // Only when there is text to look for. `includes("")` is true of every line, so a
+    // constraint-only query reported the whole Page line by line and never reached the
+    // branch below that exists to handle it.
+    for (const [index, line] of query ? body.split(/\r\n|\n|\r/).entries() : []) {
+      if (!line.toLowerCase().includes(query)) continue;
+      matchCount += 1;
+      // Every hit is counted, but a Page with thousands of them does not send thousands of
+      // previews across the bridge for a panel that can only show a screen of them.
+      if (matches.length < MARKDOWN_SEARCH_PREVIEWS_PER_PAGE) {
         matches.push({ line: index + 1, preview: line.trim().slice(0, 240) });
+      }
+    }
+    // A query made only of constraints — `tag:project` alone — has no text to point at, so the
+    // Page is reported with its first non-empty line rather than dropped for having no line hits.
+    if (!query && criteria.length && matchCount === 0) {
+      const first = body.split(/\r\n|\n|\r/).findIndex((line) => line.trim());
+      if (first >= 0) {
+        matchCount = 1;
+        matches.push({ line: first + 1, preview: body.split(/\r\n|\n|\r/)[first].trim().slice(0, 240) });
       }
     }
     if (matches.length) {
@@ -1253,6 +1478,7 @@ async function workspaceMarkdownSearch(rootValue, queryValue, limitValue) {
         name: document.name,
         title: document.title,
         matches,
+        matchCount,
       });
       if (results.length >= limit) break;
     }
@@ -1405,15 +1631,50 @@ function readLine(source, start) {
 
 function parseMetadataLines(lines) {
   const meta = {};
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; index += 1) {
     // Only a top-level mapping entry — the exact shape the patch writer can
     // target — becomes a Page property. Indented keys stay unknown-but-
     // preserved source so an edit never lands on a different YAML node.
+    const line = lines[index];
     const match = /^([A-Za-z_][A-Za-z0-9_.-]*)\s*:/.exec(line);
     if (!match) continue;
+    const sequence = readBlockSequence(lines, index);
+    if (sequence) {
+      meta[match[1]] = sequence.items;
+      index = sequence.end - 1;
+      continue;
+    }
     meta[match[1]] = parseYamlScalar(line.slice(match[0].length).trim());
   }
   return meta;
+}
+
+/**
+ * The block sequence opened by `lines[index]`, or null if that key's value is not one.
+ *
+ * `tags:` followed by `  - project` is how Obsidian writes a list, and reading only the key's own
+ * line saw an empty scalar — so every tag and alias in an imported vault arrived as `""`, invisible
+ * in the properties panel and unpatchable by the writer. A nested *mapping* is deliberately not a
+ * sequence: those stay opaque, because the writer cannot target a key inside one.
+ */
+function readBlockSequence(lines, index) {
+  const line = lines[index];
+  const match = /^([A-Za-z_][A-Za-z0-9_.-]*)\s*:/.exec(line);
+  if (!match) return null;
+  if (stripYamlInlineComment(line.slice(match[0].length)).trim()) return null;
+  const items = [];
+  let indent = null;
+  let end = index + 1;
+  for (; end < lines.length; end += 1) {
+    const entry = /^([ \t]*)-(?:[ \t]+(.*))?$/.exec(lines[end]);
+    if (!entry) break;
+    // Every entry of one sequence stands in the same column; a different one is another node.
+    if (indent === null) indent = entry[1];
+    else if (entry[1] !== indent) break;
+    items.push(parseYamlScalar((entry[2] ?? "").trim()));
+  }
+  if (!items.length) return null;
+  return { items, end, indent: indent ?? "  " };
 }
 
 function portablePageId(value) {
@@ -1454,6 +1715,12 @@ function parseYamlScalar(value) {
   const token = stripYamlInlineComment(value).trim();
   if (/^(true|false)$/i.test(token)) return token.toLowerCase() === "true";
   if (/^(null|~)$/i.test(token)) return null;
+  // YAML's flow sequence is only JSON when every item happens to be quoted. `tags: [a, b]` is
+  // ordinary YAML and was landing in the fallback as the literal string "[a, b]".
+  if (token.startsWith("[") && token.endsWith("]")) {
+    const items = splitYamlFlowItems(token.slice(1, -1));
+    if (items) return items.map((item) => parseYamlScalar(item));
+  }
   try {
     return JSON.parse(token);
   } catch {
@@ -1461,6 +1728,45 @@ function parseYamlScalar(value) {
     if (singleQuoted) return singleQuoted[1].replaceAll("''", "'");
     return token;
   }
+}
+
+/** Top-level commas of a flow sequence's interior, respecting quotes and nesting. */
+function splitYamlFlowItems(inner) {
+  const items = [];
+  let current = "";
+  let quote = null;
+  let escaped = false;
+  let depth = 0;
+  for (const char of inner) {
+    if (quote === '"') {
+      current += char;
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') quote = null;
+      continue;
+    }
+    if (quote === "'") {
+      current += char;
+      if (char === "'") quote = null;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (char === "[" || char === "{") depth += 1;
+    else if (char === "]" || char === "}") depth -= 1;
+    if (char === "," && depth === 0) {
+      items.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  if (quote !== null || depth !== 0) return null;
+  items.push(current);
+  return items.map((item) => item.trim()).filter((item) => item !== "");
 }
 
 function stripYamlInlineComment(value) {
@@ -1522,17 +1828,33 @@ function patchFrontmatterPrefix(prefix, patchValue) {
   const newline = head.includes("\r\n") ? "\r\n" : head.includes("\r") ? "\r" : "\n";
   const lines = head.split(/\r\n|\n|\r/);
   validatePagePropertyPatchSource(lines.slice(1, -1), patch);
+  const body = lines.slice(1, -1);
   const output = [lines[0]];
   const consumed = new Set();
-  for (const line of lines.slice(1, -1)) {
-    const match = /^([A-Za-z_][A-Za-z0-9_.-]*)\s*:/.exec(line);
-    const key = match && match[1];
+  for (let index = 0; index < body.length; index += 1) {
+    const line = body[index];
+    const key = pagePropertyLineKey(line);
+    const sequence = key ? readBlockSequence(body, index) : null;
     if (!key || !(key in patch)) {
       output.push(line);
+      // A sequence we are not touching is copied through exactly as the user wrote it.
+      if (sequence) {
+        for (let entry = index + 1; entry < sequence.end; entry += 1) output.push(body[entry]);
+        index = sequence.end - 1;
+      }
       continue;
     }
     consumed.add(key);
     const value = patch[key];
+    if (sequence) {
+      // Rewriting a list the user wrote as a block keeps it a block; collapsing it to flow style
+      // would reformat a file the user never asked us to reformat.
+      if (value !== null && value !== undefined) {
+        output.push(...renderBlockSequenceLines(line, key, value, sequence.indent));
+      }
+      index = sequence.end - 1;
+      continue;
+    }
     if (value !== null && value !== undefined) {
       output.push(patchPagePropertyLine(line, key, value));
     }
@@ -1591,7 +1913,10 @@ function validatePagePropertyPatchSource(lines, patch) {
     if (!yamlValueEndsOnLine(scalar)) {
       throw new Error(`cannot safely patch Page property '${key}': nested YAML value`);
     }
-    for (const continuation of lines.slice(index + 1)) {
+    // A block sequence is a shape the writer rewrites whole, so its own entries are not the
+    // nesting this guard exists to refuse. Resume the check past the sequence.
+    const sequence = readBlockSequence(lines, index);
+    for (const continuation of lines.slice(sequence ? sequence.end : index + 1)) {
       if (!continuation.trim() || continuation.trimStart().startsWith("#")) continue;
       if (/^[ \t]/.test(continuation)) {
         throw new Error(`cannot safely patch Page property '${key}': nested YAML value`);
@@ -1654,6 +1979,36 @@ function patchPagePropertyLine(line, key, value) {
     suffix = rawValue.slice(rawValue.trimEnd().length);
   }
   return `${prefix}${leadingWhitespace}${renderMetadataValue(key, value)}${suffix}`;
+}
+
+function renderBlockSequenceLines(keyLine, key, value, indent) {
+  if (!Array.isArray(value) || value.length === 0) {
+    return [patchPagePropertyLine(keyLine, key, value)];
+  }
+  return [keyLine, ...value.map((item) => `${indent}- ${renderYamlSequenceItem(item)}`)];
+}
+
+/**
+ * Written bare, YAML reads these back as something other than the string that was written:
+ * `1984` as a number, `true` and `no` as booleans, `null` as nothing at all.
+ */
+const YAML_NOT_A_STRING =
+  /^(?:true|false|yes|no|on|off|null|~|[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?|\.(?:inf|nan))$/i;
+
+/**
+ * A sequence entry, left bare where YAML allows it so a round-trip through doXmind leaves an
+ * Obsidian tag list looking the way Obsidian wrote it — but quoted whenever bare would change
+ * the value's type, which turned a tag the user wrote as "1984" into the number 1984.
+ */
+function renderYamlSequenceItem(value) {
+  if (
+    typeof value === "string" &&
+    /^[A-Za-z0-9_][A-Za-z0-9 _./-]*$/.test(value) &&
+    !YAML_NOT_A_STRING.test(value)
+  ) {
+    return value;
+  }
+  return JSON.stringify(value);
 }
 
 function renderMetadataValue(key, value) {

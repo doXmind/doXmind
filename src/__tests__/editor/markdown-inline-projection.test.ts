@@ -6,6 +6,33 @@ import {
 } from "@/editor/markdown-block/markdown-inline-projection";
 
 describe("Markdown inline projection", () => {
+  it("hides the delimiters of ==highlight== and marks what is between them", () => {
+    const projection = projectMarkdownInline("a ==hi== b");
+
+    expect(projection.visibleText).toBe("a hi b");
+    const marked = projection.segments.find((segment) => segment.marks.highlight);
+    expect(marked?.text).toBe("hi");
+    // The source span is intact, so a caret inside it still maps back onto the real bytes.
+    expect(marked).toMatchObject({ sourceFrom: 4, sourceTo: 6 });
+  });
+
+  it("marks %%comment%% content so the rendered view can drop it", () => {
+    const projection = projectMarkdownInline("keep %%private%% keep");
+
+    // Visible while editing — a comment you cannot see is one you cannot delete.
+    expect(projection.visibleText).toBe("keep private keep");
+    expect(projection.segments.find((segment) => segment.marks.comment)?.text).toBe("private");
+  });
+
+  it("leaves a lone = or % alone, so ordinary prose is not swallowed", () => {
+    for (const source of ["50% of x", "a = b = c", "100%", "x=y"]) {
+      const projection = projectMarkdownInline(source);
+      expect(projection.visibleText).toBe(source);
+      expect(projection.segments.some((segment) => segment.marks.highlight)).toBe(false);
+      expect(projection.segments.some((segment) => segment.marks.comment)).toBe(false);
+    }
+  });
+
   it("projects bold syntax as marked visible text without losing its source span", () => {
     const projection = projectMarkdownInline("Hello **bold**.");
 
@@ -25,6 +52,9 @@ describe("Markdown inline projection", () => {
           code: false,
           link: false,
           wiki: false,
+          highlight: false,
+          comment: false,
+          tag: false,
         },
       }),
       expect.objectContaining({

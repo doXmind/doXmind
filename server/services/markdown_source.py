@@ -18,6 +18,12 @@ def parse_yaml_scalar(value: str) -> Any:
         return False
     if token.lower() == "null" or token == "~":
         return None
+    # YAML's flow sequence is only JSON when every item happens to be quoted. ``tags: [a, b]``
+    # is ordinary YAML and was landing in the fallback as the literal string "[a, b]".
+    if token.startswith("[") and token.endswith("]"):
+        items = split_yaml_flow_items(token[1:-1])
+        if items is not None:
+            return [parse_yaml_scalar(item) for item in items]
     try:
         return json.loads(token)
     except json.JSONDecodeError:
@@ -60,6 +66,84 @@ def _strip_yaml_inline_comment(value: str) -> str:
     return value
 
 
+def split_yaml_flow_items(inner: str) -> list[str] | None:
+    """Top-level commas of a flow sequence's interior, respecting quotes and nesting."""
+    items: list[str] = []
+    current = ""
+    quote: str | None = None
+    escaped = False
+    depth = 0
+    for char in inner:
+        if quote == '"':
+            current += char
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quote = None
+            continue
+        if quote == "'":
+            current += char
+            if char == "'":
+                quote = None
+            continue
+        if char in {'"', "'"}:
+            quote = char
+            current += char
+            continue
+        if char in {"[", "{"}:
+            depth += 1
+        elif char in {"]", "}"}:
+            depth -= 1
+        if char == "," and depth == 0:
+            items.append(current)
+            current = ""
+            continue
+        current += char
+    if quote is not None or depth != 0:
+        return None
+    items.append(current)
+    return [item.strip() for item in items if item.strip()]
+
+
+_BLOCK_SEQUENCE_ENTRY = re.compile(r"^([ \t]*)-(?:[ \t]+(.*))?$")
+_MAPPING_KEY = re.compile(r"^([A-Za-z_][A-Za-z0-9_.-]*)\s*:")
+
+
+def read_block_sequence(lines: list[str], index: int) -> tuple[list[Any], int, str] | None:
+    """The block sequence opened by ``lines[index]``, or None if the value is not one.
+
+    ``tags:`` followed by ``  - project`` is how Obsidian writes a list, and reading only the
+    key's own line saw an empty scalar — so every tag and alias in an imported vault arrived as
+    ``""``, invisible in the properties panel and unpatchable by the writer. A nested *mapping*
+    is deliberately not a sequence: those stay opaque, because the writer cannot target a key
+    inside one.
+    """
+    match = _MAPPING_KEY.match(lines[index])
+    if match is None:
+        return None
+    if _strip_yaml_inline_comment(lines[index][match.end() :]).strip():
+        return None
+    items: list[Any] = []
+    indent: str | None = None
+    end = index + 1
+    while end < len(lines):
+        entry = _BLOCK_SEQUENCE_ENTRY.match(lines[end])
+        if entry is None:
+            break
+        # Every entry of one sequence stands in the same column; a different one is another node.
+        if indent is None:
+            indent = entry.group(1)
+        elif entry.group(1) != indent:
+            break
+        items.append(parse_yaml_scalar((entry.group(2) or "").strip()))
+        end += 1
+    if not items:
+        return None
+    return items, end, indent if indent is not None else "  "
+
+
 def parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
     source = raw.removeprefix("\ufeff")
     if extract_frontmatter_block(raw) is None:
@@ -76,14 +160,25 @@ def parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
         return {"id": str(uuid.uuid4())}, raw
 
     meta: dict[str, Any] = {}
-    for line in lines[1:closing_index]:
+    metadata_lines = lines[1:closing_index]
+    index = 0
+    while index < len(metadata_lines):
         # Only a top-level mapping entry — the exact shape the patch writer can
         # target — becomes a Page property. Indented keys stay unknown-but-
         # preserved source so an edit never lands on a different YAML node.
-        match = re.match(r"^([A-Za-z_][A-Za-z0-9_.-]*)\s*:", line)
+        line = metadata_lines[index]
+        match = _MAPPING_KEY.match(line)
         if match is None:
+            index += 1
+            continue
+        sequence = read_block_sequence(metadata_lines, index)
+        if sequence is not None:
+            items, end, _indent = sequence
+            meta[match.group(1)] = items
+            index = end
             continue
         meta[match.group(1)] = parse_yaml_scalar(line[match.end() :].strip())
+        index += 1
 
     body_lines = lines[closing_index + 1 :]
     if body_lines and body_lines[0] == "":

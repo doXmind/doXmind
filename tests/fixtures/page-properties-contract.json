@@ -3,7 +3,7 @@
     {
       "name": "flow lists keep surrounding source byte-stable",
       "filename": "Properties.md",
-      "source": "\ufeff---\r\n# user-owned frontmatter\r\nid: properties-1\r\ntags: [\"alpha\", \"two words\"]  # keep tag note\r\naliases: [\"Project One\", \"P1\"]\r\nstatus : \"idea\"  # keep status note\r\npriority: 1\r\npublished: true\r\ndue: \"2026-07-01\"\r\ntopics: [\"old\"]\r\ncustom: { nested: keep }\r\n---\r\n\r\nBody\r\n\r\n",
+      "source": "﻿---\r\n# user-owned frontmatter\r\nid: properties-1\r\ntags: [\"alpha\", \"two words\"]  # keep tag note\r\naliases: [\"Project One\", \"P1\"]\r\nstatus : \"idea\"  # keep status note\r\npriority: 1\r\npublished: true\r\ndue: \"2026-07-01\"\r\ntopics: [\"old\"]\r\ncustom: { nested: keep }\r\n---\r\n\r\nBody\r\n\r\n",
       "body": "Body\r\n\r\n",
       "tags": ["alpha", "two words"],
       "aliases": ["Project One", "P1"],
@@ -32,7 +32,47 @@
         "topics": ["local", "markdown"],
         "new_field": "portable"
       },
-      "expectedSource": "\ufeff---\r\n# user-owned frontmatter\r\nid: properties-1\r\ntags: [\"alpha\",\"roadmap\"]  # keep tag note\r\nstatus : \"doing\"  # keep status note\r\npriority: 2\r\npublished: false\r\ndue: \"2026-07-31\"\r\ntopics: [\"local\",\"markdown\"]\r\ncustom: { nested: keep }\r\nnew_field: \"portable\"\r\n---\r\n\r\nBody\r\n\r\n"
+      "expectedSource": "﻿---\r\n# user-owned frontmatter\r\nid: properties-1\r\ntags: [\"alpha\",\"roadmap\"]  # keep tag note\r\nstatus : \"doing\"  # keep status note\r\npriority: 2\r\npublished: false\r\ndue: \"2026-07-31\"\r\ntopics: [\"local\",\"markdown\"]\r\ncustom: { nested: keep }\r\nnew_field: \"portable\"\r\n---\r\n\r\nBody\r\n\r\n"
+    },
+    {
+      "name": "block sequences keep block style and leave untouched lists byte-stable",
+      "filename": "Block list.md",
+      "source": "---\nid: block-list\ntags:\n  - one\n  - two\naliases:\n  - Alpha\nstatus: draft\n---\n\nBody\n",
+      "body": "Body\n",
+      "tags": ["one", "two"],
+      "aliases": ["Alpha"],
+      "properties": {
+        "status": "draft"
+      },
+      "patch": {
+        "tags": ["replacement", "needs: quote"],
+        "status": "doing"
+      },
+      "expectedProperties": {
+        "tags": ["replacement", "needs: quote"],
+        "aliases": ["Alpha"],
+        "status": "doing"
+      },
+      "expectedSource": "---\nid: block-list\ntags:\n  - replacement\n  - \"needs: quote\"\naliases:\n  - Alpha\nstatus: \"doing\"\n---\n\nBody\n"
+    },
+    {
+      "name": "an unindented block sequence keeps its own indentation, and null removes it whole",
+      "filename": "Unindented list.md",
+      "source": "---\nid: unindented\ntags:\n- one\n- two\naliases:\n- Solo\nstatus: draft\n---\n\nBody\n",
+      "body": "Body\n",
+      "tags": ["one", "two"],
+      "properties": {
+        "status": "draft"
+      },
+      "patch": {
+        "tags": null
+      },
+      "expectedProperties": {
+        "aliases": ["Solo"],
+        "status": "draft"
+      },
+      "expectedSource": "---\nid: unindented\naliases:\n- Solo\nstatus: draft\n---\n\nBody\n",
+      "aliases": ["Solo"]
     }
   ],
   "reject": [
@@ -40,75 +80,95 @@
       "name": "duplicate property keys",
       "filename": "Duplicate.md",
       "source": "---\nid: duplicate\ntags: [\"one\"]\ntags: [\"two\"]\n---\n\nBody\n",
-      "patch": { "tags": ["replacement"] }
-    },
-    {
-      "name": "block property values with nested source",
-      "filename": "Block.md",
-      "source": "---\nid: block-list\ntags:\n  - one\n  - two\n---\n\nBody\n",
-      "patch": { "tags": ["replacement"] }
+      "patch": {
+        "tags": ["replacement"]
+      }
     },
     {
       "name": "duplicate arbitrary property keys",
       "filename": "Duplicate custom.md",
       "source": "---\nid: duplicate-custom\nstatus: \"one\"\nstatus: \"two\"\n---\n\nBody\n",
-      "patch": { "status": "replacement" }
+      "patch": {
+        "status": "replacement"
+      }
     },
     {
       "name": "arbitrary property with nested source",
       "filename": "Nested custom.md",
       "source": "---\nid: nested-custom\nworkflow:\n  status: todo\n---\n\nBody\n",
-      "patch": { "workflow": "replacement" }
+      "patch": {
+        "workflow": "replacement"
+      }
     },
     {
       "name": "folded block scalar property",
       "filename": "Folded.md",
       "source": "---\nid: folded\nsummary: >\n  first folded line\n  second folded line\nstatus: draft\n---\n\nBody\n",
-      "patch": { "summary": "replacement" }
+      "patch": {
+        "summary": "replacement"
+      }
     },
     {
       "name": "literal block scalar property with a chomping indicator",
       "filename": "Literal.md",
       "source": "---\nid: literal\nnotes: |-\n  line one\n  line two\n---\n\nBody\n",
-      "patch": { "notes": "replacement" }
+      "patch": {
+        "notes": "replacement"
+      }
     },
     {
       "name": "flow sequence property wrapped over indented lines",
       "filename": "Wrapped tags.md",
       "source": "---\nid: wrapped-tags\ntags: [\n  \"alpha\",\n  \"beta\"\n]\n---\n\nBody\n",
-      "patch": { "tags": ["replacement"] }
+      "patch": {
+        "tags": ["replacement"]
+      }
     },
     {
       "name": "flow mapping property wrapped without indentation",
       "filename": "Wrapped custom.md",
       "source": "---\nid: wrapped-custom\nsettings: {\n\"a\": 1\n}\n---\n\nBody\n",
-      "patch": { "settings": "replacement" }
+      "patch": {
+        "settings": "replacement"
+      }
     }
   ],
   "invalid": [
     {
       "name": "tags scalar payload",
-      "patch": { "tags": "one" },
+      "patch": {
+        "tags": "one"
+      },
       "error": "tags must be string[] or null"
     },
     {
       "name": "aliases non-string item payload",
-      "patch": { "aliases": [1] },
+      "patch": {
+        "aliases": [1]
+      },
       "error": "aliases must be string[] or null"
     },
     {
       "name": "invalid property key",
-      "patch": { "two words": "no" },
+      "patch": {
+        "two words": "no"
+      },
       "error": "invalid Page property key"
     },
     {
       "name": "object property payload",
-      "patch": { "settings": { "nested": true } },
+      "patch": {
+        "settings": {
+          "nested": true
+        }
+      },
       "error": "must be a string, finite number, boolean, string[], or null"
     },
     {
       "name": "mixed array property payload",
-      "patch": { "topics": ["one", 2] },
+      "patch": {
+        "topics": ["one", 2]
+      },
       "error": "must be a string, finite number, boolean, string[], or null"
     }
   ]

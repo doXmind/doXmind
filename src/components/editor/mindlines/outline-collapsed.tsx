@@ -107,7 +107,9 @@ function popoverColorClass(level: number, isActive: boolean) {
  */
 function measurePopoverWidth(railElement: HTMLElement | null): number {
   if (!railElement || typeof document === "undefined") return POPOVER_MAX_WIDTH_PX;
-  const frame = document.querySelector(".markdown-page");
+  // Scoped to the rail's own editor region rather than the whole document: `.markdown-page` is on
+  // every mounted Page, so a document-wide query measures whichever sits first in the DOM.
+  const frame = (railElement.closest("main") ?? document).querySelector(".markdown-page");
   if (!frame) return POPOVER_MAX_WIDTH_PX;
   const available =
     railElement.getBoundingClientRect().right -

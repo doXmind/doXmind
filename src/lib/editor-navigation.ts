@@ -48,7 +48,7 @@ export async function navigateToWorkspacePage(
   if (!normalizedPath) return false;
 
   const existing = state.files.find((file) => {
-    if (file.isFolder) return false;
+    if (file.isFolder || file.isAsset) return false;
     if (file.id === fileId) return true;
     const candidate = file.storageHandle?.relPath ?? file.storageHandle?.path;
     return candidate ? normalizeWorkspacePath(candidate) === normalizedPath : false;

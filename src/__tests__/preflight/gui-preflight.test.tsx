@@ -130,7 +130,7 @@ function resetGuiState() {
     isFilesSidebarOpen: true,
     filesSidebarWidth: 304,
   });
-  usePageSessionStore.setState({ outlineSession: null });
+  usePageSessionStore.setState({ outlineSession: null, revealRequest: null });
 }
 
 describe("GUI preflight", () => {

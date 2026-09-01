@@ -1,3 +1,4 @@
+import { tagAt } from "@/lib/tags";
 export interface Utf16Range {
   readonly from: number;
   readonly to: number;
@@ -23,6 +24,18 @@ export interface MarkdownInlineMarks {
   readonly code: boolean;
   readonly link: boolean;
   readonly wiki: boolean;
+  /** Obsidian's `==highlight==`. */
+  readonly highlight: boolean;
+  /**
+   * Obsidian's `%%comment%%`. The text stays visible and dimmed while the Block is being edited —
+   * a comment you cannot see is a comment you cannot remove — and is absent from the rendered
+   * view, which is the whole point of writing one.
+   */
+  readonly comment: boolean;
+  /** Obsidian's inline `#tag`. Rendered as a pill that searches for it. */
+  readonly tag: boolean;
+  /** The tag's body, without the `#`, when `tag` is set. */
+  readonly tagName?: string;
 }
 
 export interface MarkdownInlineTextSegment {
@@ -36,6 +49,7 @@ export interface MarkdownInlineTextSegment {
   readonly marks: MarkdownInlineMarks;
   readonly linkTarget?: string;
   readonly wikiTarget?: string;
+  readonly tagName?: string;
 }
 
 export interface MarkdownInlineImageSegment {
@@ -73,6 +87,7 @@ interface Piece {
   readonly marks: MarkdownInlineMarks;
   readonly linkTarget?: string;
   readonly wikiTarget?: string;
+  readonly tagName?: string;
   readonly imageAlt?: string;
   readonly imageTarget?: string;
   readonly unsafe?: true;
@@ -84,10 +99,17 @@ interface Boundary {
 }
 
 interface Delimiter {
-  readonly character: "*" | "_" | "~";
+  readonly character: "*" | "_" | "~" | "=" | "%";
   readonly width: 1 | 2;
-  readonly mark: "bold" | "italic" | "strike";
+  readonly mark: "bold" | "italic" | "strike" | "highlight" | "comment";
 }
+
+/** Delimiters that exist only as a doubled run: `~~`, `==`, `%%`. */
+const PAIRED_ONLY_DELIMITERS: Record<string, "strike" | "highlight" | "comment"> = {
+  "~": "strike",
+  "=": "highlight",
+  "%": "comment",
+};
 
 interface ParseResult {
   readonly pieces: Piece[];
@@ -107,6 +129,9 @@ const EMPTY_MARKS: MarkdownInlineMarks = {
   code: false,
   link: false,
   wiki: false,
+  highlight: false,
+  comment: false,
+  tag: false,
 };
 
 export function projectMarkdownInline(source: string): MarkdownInlineProjection {
@@ -328,6 +353,12 @@ class InlineParser {
         cursor = autolink.cursor;
         continue;
       }
+      const tag = this.tagAt(cursor, to, marks);
+      if (tag) {
+        pieces.push(tag.piece);
+        cursor = tag.cursor;
+        continue;
+      }
       const link = this.linkAt(cursor, to, marks);
       if (link) {
         pieces.push(...link.pieces);
@@ -374,13 +405,20 @@ class InlineParser {
 
   private openingDelimiterAt(cursor: number, to: number): Delimiter | null {
     const character = this.source[cursor];
-    if (character !== "*" && character !== "_" && character !== "~") {
+    if (
+      character !== "*" &&
+      character !== "_" &&
+      character !== "~" &&
+      character !== "=" &&
+      character !== "%"
+    ) {
       return null;
     }
 
+    const paired = PAIRED_ONLY_DELIMITERS[character];
     const runLength = this.delimiterRunLength(cursor, character, to);
-    const width = character === "~" || runLength >= 2 ? 2 : 1;
-    if (character === "~" && runLength < 2) return null;
+    const width = paired || runLength >= 2 ? 2 : 1;
+    if (paired && runLength < 2) return null;
     const next = this.source[cursor + width] ?? "";
     const previous = this.source[cursor - 1] ?? "";
     if (!next || isWhitespace(next)) return null;
@@ -391,7 +429,7 @@ class InlineParser {
     return {
       character,
       width,
-      mark: character === "~" ? "strike" : width === 2 ? "bold" : "italic",
+      mark: paired ?? (width === 2 ? "bold" : "italic"),
     };
   }
 
@@ -453,7 +491,10 @@ class InlineParser {
         character === "<" ||
         character === "*" ||
         character === "_" ||
-        character === "~"
+        character === "~" ||
+        character === "=" ||
+        character === "%" ||
+        character === "#"
       ) {
         return cursor;
       }
@@ -535,6 +576,35 @@ class InlineParser {
         unsafe: true as const,
       })),
       cursor: destination.cursor,
+    };
+  }
+
+  /**
+   * An inline `#tag`, kept whole and visible.
+   *
+   * Unlike a delimiter pair the `#` stays in the visible text: it is what the tag looks like, and
+   * hiding it would make deleting one a guessing game.
+   */
+  private tagAt(
+    cursor: number,
+    to: number,
+    marks: MarkdownInlineMarks
+  ): { piece: Piece; cursor: number } | null {
+    if (marks.code || marks.link || marks.wiki) return null;
+    const tag = tagAt(this.source.slice(0, to), cursor);
+    if (!tag) return null;
+    const text = this.source.slice(cursor, tag.end);
+    return {
+      piece: {
+        kind: "text",
+        text,
+        sourceFrom: cursor,
+        sourceTo: tag.end,
+        sourceBoundaries: [],
+        editable: true,
+        marks: { ...marks, tag: true, tagName: tag.name },
+      },
+      cursor: tag.end,
     };
   }
 
@@ -851,7 +921,11 @@ function sameMarks(left: MarkdownInlineMarks, right: MarkdownInlineMarks): boole
     left.strike === right.strike &&
     left.code === right.code &&
     left.link === right.link &&
-    left.wiki === right.wiki
+    left.wiki === right.wiki &&
+    left.highlight === right.highlight &&
+    left.comment === right.comment &&
+    left.tag === right.tag &&
+    left.tagName === right.tagName
   );
 }
 

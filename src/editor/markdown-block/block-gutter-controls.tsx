@@ -4,6 +4,8 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
+  ChevronDown,
+  ChevronRight,
   ClipboardCopy,
   Copy,
   GripVertical,
@@ -119,6 +121,9 @@ export interface BlockGutterControlsProps {
   onDuplicate: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  /** `"none"` when this Block owns nothing, so there is nothing to fold. */
+  foldState?: "none" | "folded" | "unfolded";
+  onToggleFold?: () => void;
   onDelete: () => void;
   onDragStart?: DragEventHandler<HTMLButtonElement>;
   onDragEnd?: DragEventHandler<HTMLButtonElement>;
@@ -141,6 +146,8 @@ export function BlockGutterControls({
   onDuplicate,
   onMoveUp,
   onMoveDown,
+  foldState = "none",
+  onToggleFold,
   onDelete,
   onDragStart,
   onDragEnd,
@@ -164,6 +171,10 @@ export function BlockGutterControls({
     duplicate: matchesAction("Duplicate", "clone"),
     moveUp: matchesAction("Move up", "reorder"),
     moveDown: matchesAction("Move down", "reorder"),
+    fold:
+      foldState !== "none" &&
+      onToggleFold !== undefined &&
+      matchesAction("Fold section", "Unfold section", "collapse", "expand"),
     delete: matchesAction("Delete", "remove"),
   };
   const hasMatchingAction = Object.values(matchingActions).some(Boolean);
@@ -394,6 +405,28 @@ export function BlockGutterControls({
               />
               <span className="min-w-0 flex-1 text-left">Move down</span>
               <kbd className="text-[10px] text-muted-foreground">⌥↓</kbd>
+            </DropdownMenuItem>
+          ) : null}
+          {matchingActions.fold ? (
+            <DropdownMenuItem
+              aria-label={foldState === "folded" ? "Unfold section" : "Fold section"}
+              onClick={onToggleFold}
+              className="gap-2.5"
+            >
+              {foldState === "folded" ? (
+                <ChevronRight
+                  className={`${MENU_ICON_CLASS} text-muted-foreground`}
+                  aria-hidden="true"
+                />
+              ) : (
+                <ChevronDown
+                  className={`${MENU_ICON_CLASS} text-muted-foreground`}
+                  aria-hidden="true"
+                />
+              )}
+              <span className="min-w-0 flex-1 text-left">
+                {foldState === "folded" ? "Unfold section" : "Fold section"}
+              </span>
             </DropdownMenuItem>
           ) : null}
           {matchingActions.delete ? (

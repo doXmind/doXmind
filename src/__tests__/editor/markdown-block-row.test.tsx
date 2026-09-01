@@ -24,6 +24,7 @@ vi.mock("katex", () => ({
 }));
 
 import { MarkdownBlockDocument } from "@/editor/markdown-block/markdown-block-document";
+import { useLayoutStore } from "@/stores/layout-store";
 import {
   firstLineBox,
   MarkdownBlockRow,
@@ -109,6 +110,99 @@ describe("MarkdownBlockRow semantic previews", () => {
     mermaidTheme.value = "test-light";
     renderMermaidSvg.mockClear();
     renderMermaidSvgLight.mockClear();
+  });
+
+  const renderInactive = (markdown: string) => {
+    const [block] = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot().blocks;
+    render(
+      <MarkdownBlockRow
+        block={block}
+        active={false}
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+      />
+    );
+    return document.querySelector<HTMLElement>("[data-native-block-row]")!;
+  };
+
+  it("renders a fenced code block nested in a list item, instead of dropping it", () => {
+    // The bytes were always on disk and never on screen: only the first of the item's top-level
+    // tokens was rendered, so the fence survived every edit invisibly.
+    const row = renderInactive("- item text\n\n  ```js\n  const a = 1;\n  ```\n");
+
+    expect(row.textContent).toContain("item text");
+    expect(row.textContent).toContain("const a = 1;");
+    expect(row.querySelector("pre code")).not.toBeNull();
+  });
+
+  it("renders a list item's second paragraph", () => {
+    const row = renderInactive("- one\n\n  second para\n");
+
+    expect(row.textContent).toContain("one");
+    expect(row.textContent).toContain("second para");
+  });
+
+  it("renders a plain list item exactly as before, with no block wrapper", () => {
+    const row = renderInactive("- item\n  continued\n");
+
+    // Continuation indentation is payload, not syntax, so it stays — unchanged by this fix.
+    expect(row.textContent).toBe("•item\n  continued");
+    expect(row.querySelector("pre")).toBeNull();
+  });
+
+  it("renders an inline #tag as a pill that searches for it", async () => {
+    useLayoutStore.setState({ sidebarSearchRequest: null, sidebarView: "files" });
+    const row = renderInactive("see #project/web here\n");
+
+    const pill = screen.getByRole("button", { name: "Search for tag project/web" });
+    expect(pill.textContent).toBe("#project/web");
+    expect(row.textContent).toBe("see #project/web here");
+
+    fireEvent.click(pill);
+    expect(useLayoutStore.getState().sidebarSearchRequest?.query).toBe("tag:project/web");
+    expect(useLayoutStore.getState().sidebarView).toBe("search");
+  });
+
+  it("leaves a sharp that is not a tag as ordinary prose", () => {
+    const row = renderInactive("C# and #1984 and src/lib#anchor\n");
+
+    expect(screen.queryByRole("button", { name: /Search for tag/ })).toBeNull();
+    expect(row.textContent).toBe("C# and #1984 and src/lib#anchor");
+  });
+
+  it("renders ==highlight== as a mark, not as its own punctuation", () => {
+    const row = renderInactive("say ==this== loudly\n");
+
+    expect(row.querySelector("mark")?.textContent).toBe("this");
+    expect(row.textContent).toBe("say this loudly");
+  });
+
+  it("never renders the contents of a %%comment%%", () => {
+    // The author marked this text as not part of the document. Showing it anyway is the failure
+    // this case exists to prevent.
+    const row = renderInactive("public %%private note%% public\n");
+
+    expect(row.textContent).not.toContain("private note");
+    expect(row.textContent).toBe("public  public");
+  });
+
+  it("leaves a lone = or % as ordinary prose", () => {
+    expect(renderInactive("50% of x, a = b\n").textContent).toBe("50% of x, a = b");
   });
 
   it("exposes an inactive Block as one keyboard entry point before its hidden gutter controls", () => {
@@ -441,6 +535,115 @@ describe("MarkdownBlockRow semantic previews", () => {
     expect(toggle.textContent).not.toContain("<summary>");
     expect(toggle.textContent).not.toContain("<details>");
     expect(screen.getByRole("textbox", { name: "Toggle summary" })).toBeInTheDocument();
+  });
+
+  const wikiPages = [
+    { id: "a", name: "Roadmap", folder: "Projects", path: "Projects/Roadmap", aliases: [] },
+    { id: "b", name: "Roadmap", folder: "Personal", path: "Personal/Roadmap", aliases: [] },
+    { id: "c", name: "Retro notes", folder: "", path: "Retro notes", aliases: [] },
+  ];
+
+  const renderWikiRow = (markdown: string, onInsertWikiLink = vi.fn()) => {
+    const [block] = MarkdownBlockDocument.fromMarkdown(markdown).getSnapshot().blocks;
+    render(
+      <MarkdownBlockRow
+        block={block}
+        active
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={vi.fn()}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onRunSlashCommand={vi.fn()}
+        onSuggestWikiLinks={() => wikiPages}
+        onInsertWikiLink={onInsertWikiLink}
+      />
+    );
+    return { block, onInsertWikiLink };
+  };
+
+  it("suggests Pages while a [[ run is open, and inserts the one that is chosen", () => {
+    const { block, onInsertWikiLink } = renderWikiRow("See [[Retro");
+
+    expect(screen.getByRole("listbox", { name: "Wiki link targets" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Markdown block" }), { key: "Enter" });
+
+    // Only the `[[Retro` the user typed is replaced — "See " stays exactly where it was.
+    expect(onInsertWikiLink).toHaveBeenCalledWith(block.id, "[[Retro notes]]", {
+      start: 4,
+      end: 11,
+      query: "Retro",
+    });
+  });
+
+  it("writes the path when a bare name would be ambiguous", () => {
+    const { block, onInsertWikiLink } = renderWikiRow("[[Road");
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Markdown block" }), { key: "Enter" });
+
+    expect(onInsertWikiLink).toHaveBeenCalledWith(
+      block.id,
+      "[[Projects/Roadmap]]",
+      expect.objectContaining({ query: "Road" })
+    );
+  });
+
+  it("closes on a query no Page matches, so Enter still splits the Block", () => {
+    const onSplit = vi.fn();
+    const [block] = MarkdownBlockDocument.fromMarkdown("[[zzzz").getSnapshot().blocks;
+    render(
+      <MarkdownBlockRow
+        block={block}
+        active
+        onActivate={vi.fn()}
+        onChange={vi.fn()}
+        onPaste={vi.fn()}
+        onCompositionStart={vi.fn()}
+        onCompositionEnd={vi.fn()}
+        onSplit={onSplit}
+        onMergeBackward={vi.fn()}
+        onInsertAfter={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSetTaskChecked={vi.fn()}
+        onMove={vi.fn()}
+        onSetKind={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+        onSuggestWikiLinks={() => wikiPages}
+        onInsertWikiLink={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole("listbox", { name: "Wiki link targets" })).toBeNull();
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Markdown block" }), { key: "Enter" });
+    expect(onSplit).toHaveBeenCalled();
+  });
+
+  it("does not suggest inside a Wiki Link the user already closed", () => {
+    renderWikiRow("[[Retro notes]] and more");
+
+    expect(screen.queryByRole("listbox", { name: "Wiki link targets" })).toBeNull();
+  });
+
+  it("keeps the slash menu out of a [[ run", () => {
+    renderWikiRow("[[Retro/tog");
+
+    expect(screen.queryByRole("listbox", { name: "Block commands" })).toBeNull();
   });
 
   it("opens and executes the native slash menu without editor-framework state", () => {

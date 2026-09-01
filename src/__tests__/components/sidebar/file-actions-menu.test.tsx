@@ -2,7 +2,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FileActionsMenuItems } from "@/components/sidebar/file-actions-menu";
+import { FileActionsMenuItems, getMenuItemCount } from "@/components/sidebar/file-actions-menu";
 import { FileItem } from "@/components/sidebar/file-item";
 import en from "@/messages/en.json";
 import { useFileStore } from "@/stores/file-store";
@@ -50,6 +50,40 @@ describe("FileActionsMenuItems attachment boundary", () => {
       rootPath: "/workspace",
       selectedFileIds: new Set(),
     });
+  });
+
+  it("offers a workspace file exactly two actions, and no write action at all", async () => {
+    const user = userEvent.setup();
+    const onOpenExternally = vi.fn();
+    const onRevealInFinder = vi.fn();
+
+    render(
+      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+        <div role="menu">
+          <FileActionsMenuItems
+            variant="context"
+            hasParent
+            isAsset
+            onOpenExternally={onOpenExternally}
+            onRename={vi.fn()}
+            onRevealInFinder={onRevealInFinder}
+            onMoveToRoot={vi.fn()}
+            onCopySource={vi.fn()}
+            onExportPdf={vi.fn()}
+            onDelete={vi.fn()}
+          />
+        </div>
+      </NextIntlClientProvider>
+    );
+
+    // Every other row routes into a command that rejects a non-document path, so offering one
+    // could only ever produce an error.
+    const items = screen.getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual(["Open externally", "Reveal in Finder"]);
+    expect(getMenuItemCount(true, false, true)).toBe(2);
+
+    await user.click(screen.getByRole("menuitem", { name: "Reveal in Finder" }));
+    expect(onRevealInFinder).toHaveBeenCalledOnce();
   });
 
   it("offers attachment actions without Page export actions", async () => {

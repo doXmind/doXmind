@@ -261,8 +261,19 @@ function isBlankLine(line: SourceLine): boolean {
   return /^[ \t]*$/.test(line.body);
 }
 
+/**
+ * CommonMark's ATX heading opener: up to three leading spaces, one to six `#`, then whitespace or
+ * the end of the line. Capturing group 1 is the marker.
+ *
+ * Exported because the scanner and the Block classifier disagreed about it. The classifier
+ * anchored at column zero and demanded a space, so an indented heading — anything a Prettier run
+ * has touched — and an empty `##` were scanned as headings but classified as raw, which drew them
+ * as grey code boxes that the Turn into menu then refused to repair.
+ */
+export const ATX_HEADING_PREFIX = /^ {0,3}(#{1,6})(?:[ \t]+|(?=\r|\n|$))/;
+
 function isAtxHeadingLine(line: SourceLine): boolean {
-  return /^ {0,3}#{1,6}(?:[ \t]+|$)/.test(line.body);
+  return ATX_HEADING_PREFIX.test(line.body);
 }
 
 function isSetextUnderlineLine(line: SourceLine): boolean {

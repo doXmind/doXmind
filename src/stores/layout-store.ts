@@ -12,6 +12,16 @@ import {
 interface LayoutState {
   // Desktop panel visibility
   isFilesSidebarOpen: boolean; // Files sidebar (left edge, independent)
+  /** Which view the left sidebar shows. Not persisted: a session starts on the file tree. */
+  sidebarView: "files" | "search" | "tags";
+  /**
+   * A search the sidebar should run, raised from outside it — clicking a tag pill, or a tag in
+   * the tag pane. The token distinguishes two clicks on the same tag, so the second one still
+   * re-runs rather than looking inert.
+   */
+  sidebarSearchRequest: { query: string; token: number } | null;
+  /** UI language. Both catalogs ship in the bundle, so switching needs no reload. */
+  locale: "en" | "zh";
   themeId: string;
   preferredLightTheme: string;
   preferredDarkTheme: string;
@@ -32,6 +42,8 @@ interface LayoutState {
 
   // Search bar (Cmd+F)
   isSearchBarOpen: boolean;
+  /** Whether the find bar also shows its replace row. Opening replace opens find. */
+  isReplaceOpen: boolean;
 
   // Quick file switcher
   isQuickSwitcherOpen: boolean;
@@ -50,6 +62,9 @@ interface LayoutState {
   // Actions
   toggleFilesSidebar: () => void;
   setFilesSidebarOpen: (open: boolean) => void;
+  setSidebarView: (view: "files" | "search" | "tags") => void;
+  openSidebarSearch: (query: string) => void;
+  setLocale: (locale: "en" | "zh") => void;
   setThemeId: (id: string) => void;
   setPreferredLightTheme: (id: string) => void;
   setPreferredDarkTheme: (id: string) => void;
@@ -76,6 +91,7 @@ interface LayoutState {
 
   // Search bar actions
   setSearchBarOpen: (open: boolean) => void;
+  openReplaceBar: () => void;
   toggleSearchBar: () => void;
 
   // Quick switcher actions
@@ -99,6 +115,9 @@ export const useLayoutStore = create<LayoutState>()(
     (set) => ({
       // Desktop panel visibility
       isFilesSidebarOpen: true,
+      sidebarView: "files",
+      sidebarSearchRequest: null,
+      locale: "en",
       themeId: DEFAULT_LIGHT_THEME,
       preferredLightTheme: DEFAULT_LIGHT_THEME,
       preferredDarkTheme: DEFAULT_DARK_THEME,
@@ -119,6 +138,7 @@ export const useLayoutStore = create<LayoutState>()(
 
       // Search bar
       isSearchBarOpen: false,
+      isReplaceOpen: false,
 
       // Quick file switcher
       isQuickSwitcherOpen: false,
@@ -139,6 +159,30 @@ export const useLayoutStore = create<LayoutState>()(
 
       setFilesSidebarOpen: (open: boolean) => {
         set({ isFilesSidebarOpen: open });
+      },
+
+      setSidebarView: (view) => {
+        set({ sidebarView: view });
+      },
+
+      openSidebarSearch: (query) => {
+        set((state) => ({
+          isFilesSidebarOpen: true,
+          sidebarView: "search",
+          sidebarSearchRequest: {
+            query,
+            token: (state.sidebarSearchRequest?.token ?? 0) + 1,
+          },
+        }));
+      },
+
+      setLocale: (locale) => {
+        set({ locale });
+        // The provider reads this cookie on a cold start, before the persisted store has
+        // hydrated, so the two have to agree or the first paint would flip languages.
+        if (typeof document !== "undefined") {
+          document.cookie = `NEXT_LOCALE=${locale}; path=/; max-age=31536000; SameSite=Lax`;
+        }
       },
 
       setThemeId: (id: string) => {
@@ -224,8 +268,14 @@ export const useLayoutStore = create<LayoutState>()(
       },
 
       // Search bar actions
+      openReplaceBar: () => {
+        set({ isSearchBarOpen: true, isReplaceOpen: true });
+      },
+
       setSearchBarOpen: (open: boolean) => {
-        set({ isSearchBarOpen: open });
+        // Closing find closes replace with it: a replace row over a closed find bar has no
+        // matches to act on.
+        set(open ? { isSearchBarOpen: true } : { isSearchBarOpen: false, isReplaceOpen: false });
       },
 
       toggleSearchBar: () => {
@@ -348,6 +398,7 @@ export const useLayoutStore = create<LayoutState>()(
         lineHeight: state.lineHeight,
         autosaveEnabled: state.autosaveEnabled,
         filesSidebarWidth: state.filesSidebarWidth,
+        locale: state.locale,
       }),
     }
   )

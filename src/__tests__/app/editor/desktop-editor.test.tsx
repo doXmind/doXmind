@@ -70,7 +70,7 @@ describe("DesktopEditor welcome shell", () => {
       isFilesSidebarOpen: true,
       filesSidebarWidth: 304,
     });
-    usePageSessionStore.setState({ outlineSession: null });
+    usePageSessionStore.setState({ outlineSession: null, revealRequest: null });
   });
 
   it("keeps the workspace home visible when a folder is mounted with no selected file", () => {

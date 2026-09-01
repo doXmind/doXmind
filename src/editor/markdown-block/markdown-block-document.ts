@@ -1,6 +1,7 @@
 import { Marked } from "marked";
 
 import {
+  ATX_HEADING_PREFIX,
   isTopLevelFencedCodeSource,
   scanMarkdownSource,
 } from "@/editor/markdown-block/markdown-source-scanner";
@@ -328,8 +329,10 @@ export class MarkdownBlockDocument {
       if (!parent || !firstSyntax || !parentSyntax) {
         throw new Error("outdentBlocks requires a source-backed list parent");
       }
-      const indentationWidth = firstSyntax.indent - parentSyntax.indent;
-      if (indentationWidth <= 0) {
+      // Columns, not characters: a tab-indented list — Obsidian's default — has an `indent` of 1
+      // while standing four columns in, and stripping one *space* from it matched nothing at all.
+      const indentationColumns = firstSyntax.indentColumns - parentSyntax.indentColumns;
+      if (indentationColumns <= 0) {
         throw new Error("outdentBlocks cannot determine a safe source indentation");
       }
 
@@ -344,7 +347,7 @@ export class MarkdownBlockDocument {
       }
       const outdented = sourceBlocks
         .slice(firstIndex, endIndex)
-        .map((candidate) => outdentSourceLines(candidate.raw, indentationWidth));
+        .map((candidate) => outdentSourceLines(candidate.raw, indentationColumns));
       if (outdented.some((raw) => raw === null)) {
         throw new Error("outdentBlocks cannot preserve a continuation line safely");
       }
@@ -814,7 +817,7 @@ export class MarkdownBlockDocument {
       // this already did correctly. Nor when the caret sits inside the `##` marker itself, where
       // there is no body to carry.
       const headingMarker =
-        block.kind === "heading" ? (/^#{1,6}[ \t]+/.exec(content)?.[0] ?? "") : "";
+        block.kind === "heading" ? (ATX_HEADING_PREFIX.exec(content)?.[0] ?? "") : "";
       const carriesHeading =
         headingMarker.length > 0 && at >= headingMarker.length && rightContent.trim().length > 0;
       const rightRaw = listItem
@@ -972,11 +975,24 @@ export class MarkdownBlockDocument {
       const { content, separator } = splitBlockSource(block.raw);
       const plain = plainBlockContent(block, content);
       const currentListItem = listItemSyntax(block.raw, true);
+      // A Block leaving the list takes its indentation with it, and nothing is left for its
+      // descendants to nest under. Promote them instead of refusing a command the gutter offers:
+      // the Block loses its own indentation, and the subtree loses its first level.
+      let promotedSubtree: { endIndex: number; sources: string[] } | null = null;
       if (currentListItem && !isListItemBlockKind(command.kind)) {
         const subtreeEndIndex = listDescendantRangeEnd(sourceBlocks, index, 1);
-        if ((block.depth ?? 0) > 0 || subtreeEndIndex > index + 1) {
+        const firstChild =
+          subtreeEndIndex > index + 1 ? listItemSyntax(sourceBlocks[index + 1].raw, true) : null;
+        const childColumns = firstChild?.indentColumns ?? 0;
+        const sources = sourceBlocks
+          .slice(index + 1, subtreeEndIndex)
+          .map((descendant) =>
+            childColumns > 0 ? outdentSourceLines(descendant.raw, childColumns) : descendant.raw
+          );
+        if (sources.some((raw) => raw === null)) {
           throw new Error("list hierarchy cannot be preserved by this Block kind");
         }
+        promotedSubtree = { endIndex: subtreeEndIndex, sources: sources as string[] };
       }
       if (currentListItem && isListItemBlockKind(command.kind)) {
         if (command.kind === block.kind) return { snapshot: this.getSnapshot() };
@@ -1070,6 +1086,18 @@ export class MarkdownBlockDocument {
       }
       this.recordHistory();
       sourceBlocks[index] = next;
+      if (promotedSubtree) {
+        for (
+          let descendantIndex = index + 1;
+          descendantIndex < promotedSubtree.endIndex;
+          descendantIndex += 1
+        ) {
+          sourceBlocks[descendantIndex] = {
+            ...sourceBlocks[descendantIndex],
+            raw: promotedSubtree.sources[descendantIndex - index - 1],
+          };
+        }
+      }
       normalizeNeighborBoundaries(sourceBlocks, index, this.markdown);
       this.commitSources(sourceBlocks);
       this.revision += 1;
@@ -1545,7 +1573,7 @@ function plainBlockContent(block: MarkdownBlockSource, content: string): string 
     // heading's own text carry a `===` line into whatever the Block turned into.
     const underline = SETEXT_UNDERLINE.exec(content);
     if (underline) return content.slice(0, underline.index);
-    return content.replace(/^#{1,6}[ \t]+/, "");
+    return content.replace(ATX_HEADING_PREFIX, "");
   }
   const listItem = listItemSyntax(block.raw, block.depth !== undefined);
   if (listItem) return content.slice(listItem.contentFrom);
@@ -1627,20 +1655,38 @@ function indentSourceLines(source: string, indentation: string): string {
   return indentation + source.replace(/(\r\n|\n|\r(?!\n))(?=.)/g, `$1${indentation}`);
 }
 
-function outdentSourceLines(source: string, indentationWidth: number): string | null {
-  const indentation = " ".repeat(indentationWidth);
+function outdentSourceLines(source: string, indentationColumns: number): string | null {
   const parts = source.split(/(\r\n|\n|\r)/);
   for (let partIndex = 0; partIndex < parts.length; partIndex += 2) {
     const line = parts[partIndex];
     if (!line) continue;
-    if (/^[ \t]*$/.test(line)) {
-      parts[partIndex] = line.slice(Math.min(indentationWidth, line.match(/^ */)?.[0].length ?? 0));
-      continue;
-    }
-    if (!line.startsWith(indentation)) return null;
-    parts[partIndex] = line.slice(indentationWidth);
+    const outdented = outdentLineColumns(line, indentationColumns);
+    if (outdented === null) return null;
+    parts[partIndex] = outdented;
   }
   return parts.join("");
+}
+
+/**
+ * Remove `columns` worth of leading indentation from one line.
+ *
+ * Measured in Markdown columns rather than characters, so a tab and the spaces it stands in for
+ * outdent identically. A tab straddling the boundary is paid back as the spaces it covered.
+ */
+function outdentLineColumns(line: string, columns: number): string | null {
+  let index = 0;
+  let column = 0;
+  while (index < line.length && column < columns) {
+    const character = line[index];
+    if (character !== " " && character !== "\t") break;
+    column = advanceMarkdownColumns(column, character);
+    index += 1;
+  }
+  const rest = line.slice(index);
+  // A whitespace-only line carries no content to misplace; it just loses what it had.
+  if (!rest) return "";
+  if (column < columns) return null;
+  return " ".repeat(column - columns) + rest;
 }
 
 function shiftContinuationIndentation(source: string, indentationDelta: number): string | null {
@@ -1688,8 +1734,11 @@ function preferredLineEnding(...sources: string[]): "\r\n" | "\n" | "\r" {
 }
 
 function blockFromSource(raw: string, id: string, listDepth?: number): MarkdownBlockSource {
-  const heading = raw.match(/^(#{1,6})[ \t]+[^\r\n]*(?:(?:\r\n|\n)+)?$/);
-  if (heading) {
+  // Classification is stricter than segmentation on purpose: a bare `#` stays text until the
+  // space that follows it, so the autoformat lands as its own undo step. The indentation
+  // allowance is the part that was missing — an ATX heading may stand up to three columns in.
+  const headingContent = splitBlockSource(raw).content;
+  if (!/\r\n|\n|\r/.test(headingContent) && /^ {0,3}#{1,6}[ \t]/.test(headingContent)) {
     return {
       id,
       kind: "heading",
@@ -2060,7 +2109,7 @@ function blockViewFromSpan(markdown: string, block: MarkdownBlockSpan): Markdown
  * be a setext one, and this runs for every Block of every snapshot.
  */
 function headingLevel(raw: string): 1 | 2 | 3 | 4 | 5 | 6 | undefined {
-  const atx = raw.match(/^(#{1,6})[ \t]+/);
+  const atx = ATX_HEADING_PREFIX.exec(raw);
   if (atx) return atx[1].length as 1 | 2 | 3 | 4 | 5 | 6;
   const underline = SETEXT_UNDERLINE.exec(splitBlockSource(raw).content)?.[1];
   if (!underline) return undefined;

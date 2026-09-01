@@ -242,6 +242,105 @@ describe("MarkdownBlockDocument", () => {
     expect(document.undo()).toEqual({ ...before, revision: 2 });
   });
 
+  it("classifies an indented ATX heading as a heading, not an unrepairable raw Block", () => {
+    // The source scanner has always segmented these as heading lines. The classifier anchored at
+    // column zero, so they arrived as grey `unsupported` boxes that Turn into then refused.
+    const document = MarkdownBlockDocument.fromMarkdown(" # one\n  ## two\n   ### three\n");
+
+    expect(
+      document.getSnapshot().blocks.map((block) => `${block.kind}/${block.level ?? ""}`)
+    ).toEqual(["heading/1", "heading/2", "heading/3"]);
+    // Four columns is an indented code block in CommonMark, and must stay raw.
+    expect(MarkdownBlockDocument.fromMarkdown("    # four\n").getSnapshot().blocks[0].kind).toBe(
+      "unsupported"
+    );
+  });
+
+  it("lets an indented heading change kind instead of stranding it", () => {
+    const markdown = "  ## two\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "setKind",
+      blockId: before.blocks[0].id,
+      kind: "paragraph",
+    });
+
+    expect(result.snapshot.markdown).toBe("two\n");
+    expect(document.undo().markdown).toBe(markdown);
+  });
+
+  it("turns a nested list item into a paragraph and promotes what nested under it", () => {
+    // The gutter offers Turn into on every list item, so refusing the nested ones left a menu
+    // entry that did nothing at all. The Block leaves the list, so its subtree loses one level.
+    const markdown = "- parent\n  - child\n    - grandchild\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "setKind",
+      blockId: before.blocks[1].id,
+      kind: "paragraph",
+    });
+
+    expect(result.snapshot.markdown).toBe("- parent\n\nchild\n\n- grandchild\n");
+    expect(result.snapshot.blocks.map(({ kind, depth }) => `${kind}@${depth ?? 0}`)).toEqual([
+      "bullet_list_item@0",
+      "paragraph@0",
+      "bullet_list_item@0",
+    ]);
+    expect(document.undo().markdown).toBe(markdown);
+  });
+
+  it("turns a tab-indented nested list item into a heading", () => {
+    const markdown = "- parent\n\t- child\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "setKind",
+      blockId: before.blocks[1].id,
+      kind: "heading",
+      level: 2,
+    });
+
+    expect(result.snapshot.markdown).toBe("- parent\n\n## child\n");
+    expect(document.undo().markdown).toBe(markdown);
+  });
+
+  it("outdents a tab-indented list the way Obsidian writes one", () => {
+    // Obsidian indents with tabs by default, so every nested list in an imported vault reaches
+    // this path. Measuring the indentation in characters made the outdent look for a space.
+    const markdown = "- parent\n\t- child\n\t\t- grandchild\n";
+    const document = MarkdownBlockDocument.fromMarkdown(markdown);
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "outdentBlocks",
+      blockIds: [before.blocks[1].id],
+    });
+
+    expect(result.snapshot.markdown).toBe("- parent\n- child\n\t- grandchild\n");
+    expect(result.snapshot.blocks.map((block) => block.depth)).toEqual([0, 0, 1]);
+    expect(document.undo().markdown).toBe(markdown);
+  });
+
+  it("pays back the columns a straddling tab covered when outdenting", () => {
+    // The child stands at column 4 behind two spaces and a tab; the parent at column 1. Removing
+    // three columns cuts through the tab, so the column it covered has to come back as a space.
+    const document = MarkdownBlockDocument.fromMarkdown(" - parent\n  \t- child\n");
+    const before = document.getSnapshot();
+
+    const result = document.apply({
+      type: "outdentBlocks",
+      blockIds: [before.blocks[1].id],
+    });
+
+    expect(result.snapshot.markdown).toBe(" - parent\n - child\n");
+    expect(result.snapshot.blocks[1].depth).toBe(0);
+  });
+
   it("rejects hierarchy commands for non-list, noncontiguous, or parentless selections atomically", () => {
     const document = MarkdownBlockDocument.fromMarkdown("- one\n- two\n\nParagraph\n\n- three\n");
     const before = document.getSnapshot();
@@ -1589,10 +1688,26 @@ describe("MarkdownBlockDocument", () => {
     );
   });
 
-  it("rejects list-to-text conversions that would orphan hierarchy before recording history", () => {
+  it("promotes the orphaned hierarchy when a list Block converts to text, atomically", () => {
     const cases = [
-      { markdown: "- root\r\n  + nested\r\n- after\r\n", blockIndex: 1 },
-      { markdown: "- parent\r\n  + child\r\n- after\r\n", blockIndex: 0 },
+      {
+        markdown: "- root\r\n  + nested\r\n- after\r\n",
+        blockIndex: 1,
+        expected: {
+          paragraph: "- root\r\n\r\nnested\r\n\r\n- after\r\n",
+          heading: "- root\r\n\r\n## nested\r\n\r\n- after\r\n",
+          blockquote: "- root\r\n\r\n> nested\r\n\r\n- after\r\n",
+        },
+      },
+      {
+        markdown: "- parent\r\n  + child\r\n- after\r\n",
+        blockIndex: 0,
+        expected: {
+          paragraph: "parent\r\n\r\n+ child\r\n- after\r\n",
+          heading: "## parent\r\n\r\n+ child\r\n- after\r\n",
+          blockquote: "> parent\r\n\r\n+ child\r\n- after\r\n",
+        },
+      },
     ] as const;
     const targets = [
       { kind: "paragraph" as const },
@@ -1600,20 +1715,20 @@ describe("MarkdownBlockDocument", () => {
       { kind: "blockquote" as const },
     ];
 
-    for (const { markdown, blockIndex } of cases) {
+    for (const { markdown, blockIndex, expected } of cases) {
       for (const target of targets) {
         const document = MarkdownBlockDocument.fromMarkdown(markdown);
         const before = document.getSnapshot();
 
-        expect(() =>
-          document.apply({
-            type: "setKind",
-            blockId: before.blocks[blockIndex].id,
-            ...target,
-          })
-        ).toThrow(/list hierarchy cannot be preserved/i);
-        expect(document.getSnapshot()).toEqual(before);
-        expect(document.undo()).toEqual(before);
+        const result = document.apply({
+          type: "setKind",
+          blockId: before.blocks[blockIndex].id,
+          ...target,
+        });
+
+        expect(result.snapshot.markdown).toBe(expected[target.kind]);
+        // One command, one undo step: the promotion never lands as a separate entry.
+        expect(document.undo()).toEqual({ ...before, revision: 2 });
       }
     }
   });

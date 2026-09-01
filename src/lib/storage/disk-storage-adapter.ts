@@ -19,6 +19,7 @@ import type {
   StorageImportInput,
   StorageWriteInput,
   WorkspaceEntry,
+  WorkspaceEntryKind,
   WorkspaceAssetImportInput,
   WorkspaceAssetImportResult,
   WorkspaceAssetRead,
@@ -26,6 +27,7 @@ import type {
   WorkspaceIndexQuery,
 } from "./types";
 import { ImportError } from "./types";
+import { getExcludedScanDirs } from "@/stores/workspace-settings-store";
 import { entriesToWorkspaceIndex } from "./search";
 import { apiUrl } from "@/lib/api/base";
 import { perfAsync } from "@/lib/perf";
@@ -41,6 +43,15 @@ export interface DiskStorageAdapterOptions {
 interface WorkspaceScanResultDto {
   root: string;
   documents: WorkspaceDocumentDto[];
+  // Optional: the browser-development FastAPI scan omits both, and then the tree keeps its old
+  // document-only, folder-inferred shape rather than losing rows.
+  folders?: Array<{ path: string }>;
+  assets?: WorkspaceAssetDto[];
+}
+
+interface WorkspaceAssetDto {
+  path: string;
+  name: string;
 }
 
 interface WorkspaceDocumentDto {
@@ -52,6 +63,7 @@ interface WorkspaceDocumentDto {
   documentType?: WorkspaceDocumentType;
   favorite?: boolean | null;
   aliases?: string[] | null;
+  tags?: string[] | null;
 }
 
 // `doc_move` is an Attachment-only compatibility command. Pages and folders
@@ -85,6 +97,7 @@ interface MarkdownSearchResultDto {
     line: number;
     preview: string;
   }>;
+  matchCount?: number;
 }
 
 export class DiskStorageAdapter implements StorageAdapter {
@@ -104,9 +117,12 @@ export class DiskStorageAdapter implements StorageAdapter {
 
   async list(): Promise<WorkspaceEntry[]> {
     const root = this.requireRoot();
-    const result = await this.invoke<WorkspaceScanResultDto>("workspace_scan", { root });
+    const result = await this.invoke<WorkspaceScanResultDto>("workspace_scan", {
+      root,
+      excludeDirs: getExcludedScanDirs(),
+    });
     this.root = result.root;
-    return entriesFromDocuments(result.documents);
+    return entriesFromScan(result);
   }
 
   async read(handle: DocumentHandle): Promise<DocumentContent> {
@@ -219,6 +235,7 @@ export class DiskStorageAdapter implements StorageAdapter {
 
   async create(input: StorageCreateInput): Promise<WorkspaceEntry> {
     const kind = input.kind ?? "document";
+    if (kind === "asset") throw new Error(ASSET_READ_ONLY);
     if (kind === "folder") {
       const path = childPath(input.parent, input.name);
       await this.invoke<void>("workspace_create_folder", {
@@ -350,6 +367,7 @@ export class DiskStorageAdapter implements StorageAdapter {
 
   async renameAttachment(handle: DocumentHandle, name: string): Promise<WorkspaceEntry> {
     const currentPath = requireHandlePath(handle);
+    assertNotAsset(handle);
     if (handle.kind === "folder") {
       throw new Error("Folder rename must use relocateFolder so Page links remain valid");
     }
@@ -379,6 +397,7 @@ export class DiskStorageAdapter implements StorageAdapter {
     parent: DocumentHandle | null
   ): Promise<WorkspaceEntry> {
     const currentPath = requireHandlePath(handle);
+    assertNotAsset(handle);
     if (handle.kind === "folder") {
       throw new Error("Folder move must use relocateFolder so Page links remain valid");
     }
@@ -404,6 +423,7 @@ export class DiskStorageAdapter implements StorageAdapter {
   }
 
   async delete(handle: DocumentHandle): Promise<void> {
+    assertNotAsset(handle);
     if (handle.kind === "folder") {
       await this.invoke<void>("workspace_delete_folder", {
         root: this.requireRoot(),
@@ -427,13 +447,16 @@ export class DiskStorageAdapter implements StorageAdapter {
     options: MarkdownSearchOptions = {}
   ): Promise<MarkdownSearchResults> {
     const normalizedQuery = query.trim();
-    if (!normalizedQuery) return { results: [] };
+    // A constraint-only query — `tag:project` — has no text but is still a search.
+    if (!normalizedQuery && !options.criteria?.groups.length) return { results: [] };
 
     const fileIdSet = options.fileIds ? new Set(options.fileIds) : null;
     const results = await this.invoke<MarkdownSearchResultDto[]>("workspace_markdown_search", {
       root: this.requireRoot(),
       query: normalizedQuery,
       limit: options.limit,
+      // Omitted when absent so a plain query sends exactly the payload it always did.
+      ...(options.criteria ? { criteria: options.criteria } : {}),
     });
 
     return {
@@ -454,6 +477,11 @@ export class DiskStorageAdapter implements StorageAdapter {
                 chunkIndex: firstMatch?.line,
               },
               score: 1,
+              // Every hit, not just the first: the command palette shows one row per Page, but the
+              // search panel groups them, and throwing the rest away here was the only reason it
+              // could not.
+              matches: result.matches,
+              matchCount: result.matchCount ?? result.matches.length,
             },
           ];
         })
@@ -552,25 +580,40 @@ async function invokeWorkspaceHttp<T>(
   return response.json() as Promise<T>;
 }
 
-function entriesFromDocuments(documents: WorkspaceDocumentDto[]): WorkspaceEntry[] {
+const ENTRY_KIND_RANK: Record<WorkspaceEntryKind, number> = { folder: 0, document: 1, asset: 2 };
+
+function entriesFromScan(result: WorkspaceScanResultDto): WorkspaceEntry[] {
   const folders = new Map<string, WorkspaceEntry>();
   const entries: WorkspaceEntry[] = [];
 
-  for (const doc of documents) {
-    const parts = doc.path.split("/").filter(Boolean);
+  // Real directories, when the scan reports them. This is the only thing that keeps an empty
+  // folder — or one holding nothing but images — in the tree across a rescan.
+  for (const folder of result.folders ?? []) {
+    const clean = trimSlashes(folder.path);
+    if (clean && !folders.has(clean)) folders.set(clean, folderEntryFromPath(clean));
+  }
+
+  const rememberAncestors = (path: string) => {
+    const parts = path.split("/").filter(Boolean);
     for (let i = 1; i < parts.length; i++) {
       const folderPath = parts.slice(0, i).join("/");
-      if (!folders.has(folderPath)) {
-        folders.set(folderPath, folderEntryFromPath(folderPath));
-      }
+      if (!folders.has(folderPath)) folders.set(folderPath, folderEntryFromPath(folderPath));
     }
+  };
+
+  for (const doc of result.documents) {
+    rememberAncestors(doc.path);
     entries.push(entryFromDocument(doc));
+  }
+  for (const asset of result.assets ?? []) {
+    rememberAncestors(asset.path);
+    entries.push(entryFromAsset(asset));
   }
 
   return [...folders.values(), ...entries].sort((a, b) => {
     if (a.parent?.id !== b.parent?.id)
       return (a.parent?.id || "").localeCompare(b.parent?.id || "");
-    if (a.kind !== b.kind) return a.kind === "folder" ? -1 : 1;
+    if (a.kind !== b.kind) return ENTRY_KIND_RANK[a.kind] - ENTRY_KIND_RANK[b.kind];
     return a.name.localeCompare(b.name);
   });
 }
@@ -602,6 +645,7 @@ function entryFromDocument(doc: WorkspaceDocumentDto): WorkspaceEntry {
     documentType: doc.documentType ?? documentTypeFromPath(doc.path),
     isFavorite: doc.favorite ?? false,
     aliases: Array.isArray(doc.aliases) ? doc.aliases : undefined,
+    tags: Array.isArray(doc.tags) ? doc.tags : undefined,
   };
 }
 
@@ -632,6 +676,43 @@ function folderHandle(path: string): DocumentHandle {
     path: clean,
     relPath: clean,
   };
+}
+
+function entryFromAsset(asset: WorkspaceAssetDto): WorkspaceEntry {
+  const parentPath = dirname(asset.path);
+  const now = new Date().toISOString();
+  return {
+    handle: assetHandle(asset.path),
+    kind: "asset",
+    // Verbatim, extension included: a file tree has to show `diagram.png`, not `diagram`.
+    name: asset.name,
+    parent: parentPath ? folderHandle(parentPath) : null,
+    position: 0,
+    createdAt: now,
+    updatedAt: now,
+    preview: "",
+    wordCount: 0,
+    isFavorite: false,
+  };
+}
+
+function assetHandle(path: string): DocumentHandle {
+  const clean = trimSlashes(path);
+  return {
+    mode: "disk",
+    id: `asset:${clean}`,
+    kind: "asset",
+    path: clean,
+    relPath: clean,
+  };
+}
+
+// Every write command below rejects a path outside DOCUMENT_EXTENSIONS anyway; failing here says
+// why, instead of surfacing "Unsupported workspace document type" from the type sniffer.
+const ASSET_READ_ONLY = "Workspace files are read-only in doXmind; open or reveal them instead";
+
+function assertNotAsset(handle: DocumentHandle): void {
+  if (handle.kind === "asset") throw new Error(ASSET_READ_ONLY);
 }
 
 function requireHandlePath(handle: DocumentHandle): string {

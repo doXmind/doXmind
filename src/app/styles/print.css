@@ -52,6 +52,13 @@
     display: none !important;
   }
 
+  /* `printToPDF` prints the whole webContents, and the layout rules below force every runtime to
+   * full width, so a split would otherwise concatenate both Pages into one PDF. Hung off the
+   * document element rather than a pane wrapper, so it cannot drift from whatever wraps a pane. */
+  [data-native-markdown-document]:not([data-pane-active="true"]) {
+    display: none !important;
+  }
+
   [data-native-block-print-preview] {
     display: block !important;
   }
@@ -73,6 +80,10 @@
   .desktop-content-canvas,
   .desktop-content-surface,
   main,
+  /* The split host and its panes, or the surviving Page prints into the half-width column
+   * it happened to be sitting in, with the rest of the sheet blank. */
+  [data-editor-split-host],
+  [data-editor-pane],
   .editor-page-frame,
   [data-native-markdown-runtime],
   [data-native-markdown-scroll] {
@@ -86,6 +97,7 @@
     padding: 0 !important;
     overflow: visible !important;
     transform: none !important;
+    flex-basis: auto !important;
     border: 0 !important;
     box-shadow: none !important;
     background: #ffffff !important;

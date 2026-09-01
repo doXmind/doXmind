@@ -2,26 +2,29 @@
 
 import { useEffect, useCallback } from "react";
 import { useLayoutStore } from "@/stores/layout-store";
+import { bindingForEvent } from "@/lib/commands";
+import { commandsByBinding, useHotkeysStore } from "@/stores/hotkeys-store";
 
 /**
  * Hook for managing global keyboard shortcuts in the editor page
  *
  * Handles:
  * - Ctrl+? / Cmd+? - Toggle keyboard shortcuts modal
- * - Ctrl+K / Cmd+K - Toggle command palette. With text selected in the editor
- *   this never fires: the editor stops the event and opens its link editor
- *   instead, which is what the bubble menu and the shortcuts panel advertise.
+ * - Ctrl+P / Cmd+P - Toggle command palette
+ * - Ctrl+O / Cmd+O, or Ctrl+Tab - Quick switcher
  * - Ctrl+F / Cmd+F - Find in document
+ * - Ctrl+Alt+F / Cmd+Alt+F - Find and replace
+ *
+ * Mod+K belongs to the editor's link editor, not to this hook: the editor stops that event and
+ * opens the link editor, which is what the bubble menu and the shortcuts panel advertise.
  */
 export function useEditorKeyboardShortcuts() {
+  // Only what the Escape rule below has to read. Every other action reaches its store through
+  // the command registry, at call time.
   const {
     isKeyboardShortcutsOpen,
-    setKeyboardShortcutsOpen,
     isCommandPaletteOpen,
-    setCommandPaletteOpen,
-    openCommandPalette,
     isSearchBarOpen,
-    setSearchBarOpen,
     isFocusMode,
     toggleFocusMode,
     isQuickSwitcherOpen,
@@ -30,51 +33,28 @@ export function useEditorKeyboardShortcuts() {
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      // Ctrl+? or Cmd+? (Shift+/ on most keyboards) - Keyboard shortcuts
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "?") {
-        e.preventDefault();
-        setKeyboardShortcutsOpen(!isKeyboardShortcutsOpen);
-        return;
-      }
-
       // The editor claims a few Mod shortcuts when a text selection is live — Mod+K adds a link,
       // Mod+B/I/E apply marks — and signals that by calling `stopPropagation` and `preventDefault`.
       // Honouring `defaultPrevented` here is what stops one keystroke doing two things.
       if (e.defaultPrevented) return;
 
-      // Ctrl+B or Cmd+B - Toggle the files sidebar. Owned here rather than by a main-process
-      // accelerator so the editor can claim it for bold while text is selected.
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "b") {
+      // One registry, not a chain of conditions: every command is bindable, rebindable and
+      // searchable from the same declaration.
+      const binding = bindingForEvent(e);
+      const command = binding
+        ? commandsByBinding(useHotkeysStore.getState().overrides).get(binding)
+        : undefined;
+      if (command) {
         e.preventDefault();
-        useLayoutStore.getState().toggleFilesSidebar();
+        void command.run();
         return;
       }
 
-      // Ctrl+K or Cmd+K - Command palette (all scope)
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+      // Ctrl+Tab - the quick switcher's second binding, which is a chord the registry's
+      // `Mod+Letter` shape cannot describe.
+      if ((e.ctrlKey || e.metaKey) && e.key === "Tab") {
         e.preventDefault();
-        if (isCommandPaletteOpen) {
-          setCommandPaletteOpen(false);
-        } else {
-          openCommandPalette();
-        }
-        return;
-      }
-
-      // Ctrl+F or Cmd+F - Search bar (find in document)
-      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
-        e.preventDefault();
-        if (isCommandPaletteOpen) {
-          setCommandPaletteOpen(false);
-        }
-        setSearchBarOpen(!isSearchBarOpen);
-        return;
-      }
-
-      // F11 - Toggle focus mode
-      if (e.key === "F11") {
-        e.preventDefault();
-        toggleFocusMode();
+        setQuickSwitcherOpen(true);
         return;
       }
 
@@ -97,22 +77,11 @@ export function useEditorKeyboardShortcuts() {
         toggleFocusMode();
         return;
       }
-
-      // Ctrl+Tab - Quick file switcher
-      if ((e.ctrlKey || e.metaKey) && e.key === "Tab") {
-        e.preventDefault();
-        setQuickSwitcherOpen(true);
-        return;
-      }
     },
     [
       isKeyboardShortcutsOpen,
-      setKeyboardShortcutsOpen,
       isCommandPaletteOpen,
-      setCommandPaletteOpen,
-      openCommandPalette,
       isSearchBarOpen,
-      setSearchBarOpen,
       isFocusMode,
       toggleFocusMode,
       isQuickSwitcherOpen,

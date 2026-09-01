@@ -2,15 +2,23 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { FileText, Clock } from "lucide-react";
+import { FileText, FilePlus, Search } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { MENU_PANEL_CLASS, MENU_ROW_CLASS } from "@/components/ui/dropdown-menu";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
+import { createPageForContext } from "@/lib/new-page";
+import {
+  duplicateNames,
+  quickSwitcherFolder,
+  searchQuickSwitcherFiles,
+} from "@/lib/quick-switcher-search";
+import { notify } from "@/lib/notifications";
+import { storeLogger } from "@/lib/logger";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 
-const MAX_RECENT_FILES = 10;
+const MAX_RESULTS = 20;
 
 export function QuickSwitcher() {
   const isQuickSwitcherOpen = useLayoutStore((s) => s.isQuickSwitcherOpen);
@@ -21,42 +29,55 @@ export function QuickSwitcher() {
 }
 
 function QuickSwitcherContent() {
-  const [mounted, setMounted] = React.useState(false);
+  const [query, setQuery] = React.useState("");
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const listRef = React.useRef<HTMLDivElement>(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   const files = useFileStore((s) => s.files);
   const currentFileId = useFileStore((s) => s.currentFileId);
   const setQuickSwitcherOpen = useLayoutStore((s) => s.setQuickSwitcherOpen);
   const t = useTranslations("quickSwitcher");
 
-  // Get recent files sorted by updatedAt, excluding folders
+  // Most-recently-used order is what the list falls back to before a query narrows it.
   const recentFiles = React.useMemo(() => {
-    return files
-      .filter((f) => !f.isFolder)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-      .slice(0, MAX_RECENT_FILES);
-  }, [files]);
+    const ordered = files
+      .filter((f) => !f.isFolder && !f.isAsset)
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    const current = ordered.find((f) => f.id === currentFileId);
+    const others = ordered.filter((f) => f.id !== currentFileId);
+    return current ? [current, ...others] : ordered;
+  }, [files, currentFileId]);
 
-  // Put current file at top, then the rest
-  const orderedFiles = React.useMemo(() => {
-    const current = recentFiles.find((f) => f.id === currentFileId);
-    const others = recentFiles.filter((f) => f.id !== currentFileId);
-    return current ? [current, ...others] : recentFiles;
-  }, [recentFiles, currentFileId]);
+  const results = React.useMemo(
+    () => searchQuickSwitcherFiles(recentFiles, query).slice(0, MAX_RESULTS),
+    [recentFiles, query]
+  );
 
-  // Start with second item selected (skip current file)
+  const repeated = React.useMemo(() => duplicateNames(results), [results]);
+
+  const trimmedQuery = query.trim();
+  // Offer creation only when nothing matched: a query that found its Page should not push a
+  // Create row in front of the answer the user was looking for.
+  const canCreate = trimmedQuery.length > 0 && results.length === 0;
+  const rowCount = results.length + (canCreate ? 1 : 0);
+
+  // With no query the previous Page is preselected, so ⌘O ↵ is a back-and-forth between two
+  // Pages. Once the user types, the best match leads.
   React.useEffect(() => {
-    setSelectedIndex(orderedFiles.length > 1 ? 1 : 0);
-  }, [orderedFiles.length]);
+    setSelectedIndex(trimmedQuery ? 0 : results.length > 1 ? 1 : 0);
+    // `results.length` rather than `results`: a scan that returns the same list must not move
+    // the caret out from under the user mid-keystroke.
+  }, [trimmedQuery, results.length]);
 
-  // Mount state
+  // No `mounted` gate: this component is `import()`ed from an effect and can only mount in a
+  // browser. Gating the portal made this focus a race the user lost silently — the dialog opened
+  // with the caret still in the Page, and their typing went into the Markdown.
   React.useEffect(() => {
-    setMounted(true);
+    if (window.innerWidth >= 768) inputRef.current?.focus();
   }, []);
 
-  // Navigate to selected file
-  const navigateToFile = React.useCallback(
+  const openFile = React.useCallback(
     (fileId: string) => {
       navigateToEditorFile(fileId);
       setQuickSwitcherOpen(false);
@@ -64,69 +85,63 @@ function QuickSwitcherContent() {
     [setQuickSwitcherOpen]
   );
 
-  // Handle keyboard events
-  React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setQuickSwitcherOpen(false);
+  const createAndOpen = React.useCallback(
+    async (name: string) => {
+      setQuickSwitcherOpen(false);
+      try {
+        const newId = await createPageForContext(useFileStore.getState(), name);
+        navigateToEditorFile(newId);
+      } catch (error) {
+        storeLogger.error("Failed to create Page from the quick switcher", error);
+        notify.error(t("createFailed"));
+      }
+    },
+    [setQuickSwitcherOpen, t]
+  );
+
+  const commit = React.useCallback(
+    (index: number) => {
+      if (canCreate && index === results.length) {
+        void createAndOpen(trimmedQuery);
         return;
       }
+      const file = results[index];
+      if (file) openFile(file.id);
+    },
+    [canCreate, results, trimmedQuery, createAndOpen, openFile]
+  );
 
-      // Tab or ArrowDown to go next
-      if (e.key === "Tab" || e.key === "ArrowDown") {
-        e.preventDefault();
-        setSelectedIndex((prev) => (prev < orderedFiles.length - 1 ? prev + 1 : 0));
-        return;
-      }
-
-      // ArrowUp to go prev
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : orderedFiles.length - 1));
-        return;
-      }
-
-      // Enter to confirm
-      if (e.key === "Enter") {
-        e.preventDefault();
-        if (orderedFiles[selectedIndex]) {
-          navigateToFile(orderedFiles[selectedIndex].id);
-        }
-        return;
-      }
-    };
-
-    // When Ctrl/Meta is released, confirm selection
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === "Control" || e.key === "Meta") {
-        if (orderedFiles[selectedIndex]) {
-          navigateToFile(orderedFiles[selectedIndex].id);
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-    };
-  }, [orderedFiles, selectedIndex, navigateToFile, setQuickSwitcherOpen]);
-
-  // Scroll selected into view
-  React.useEffect(() => {
-    if (listRef.current && orderedFiles.length > 0) {
-      const selectedItem = listRef.current.querySelector(`[data-index="${selectedIndex}"]`);
-      selectedItem?.scrollIntoView({ block: "nearest" });
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setQuickSwitcherOpen(false);
+      return;
     }
-  }, [selectedIndex, orderedFiles.length]);
+    if (event.key === "Tab" || event.key === "ArrowDown") {
+      event.preventDefault();
+      setSelectedIndex((prev) => (rowCount ? (prev + 1) % rowCount : 0));
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setSelectedIndex((prev) => (rowCount ? (prev - 1 + rowCount) % rowCount : 0));
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commit(selectedIndex);
+    }
+  };
 
-  // Format relative time
+  React.useEffect(() => {
+    listRef.current?.querySelector(`[data-index="${selectedIndex}"]`)?.scrollIntoView({
+      block: "nearest",
+    });
+  }, [selectedIndex, rowCount]);
+
   const formatRelativeTime = (dateStr: string) => {
     const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
+    const diffMs = Date.now() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
@@ -138,17 +153,13 @@ function QuickSwitcherContent() {
     return date.toLocaleDateString();
   };
 
-  if (!mounted) return null;
-
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
       onClick={() => setQuickSwitcherOpen(false)}
     >
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" aria-hidden="true" />
 
-      {/* Switcher panel */}
       <div
         role="dialog"
         aria-modal="true"
@@ -166,65 +177,99 @@ function QuickSwitcherContent() {
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header — px-3.5 lands the glyph on a row icon's 14px. */}
+        {/* Search row — px-3.5 lands the glyph on a row icon's 14px. */}
         <div className="flex items-center gap-2 border-b border-border px-3.5 py-3">
-          <Clock className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium">{t("recentFiles")}</span>
-          <span className="ml-auto text-xs text-muted-foreground">
-            {t("filesCount", { count: orderedFiles.length })}
-          </span>
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={t("searchPlaceholder")}
+            aria-label={t("searchPlaceholder")}
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
         </div>
 
-        {/* File list */}
         <div
           ref={listRef}
           className="max-h-[320px] overflow-y-auto p-1.5"
           role="listbox"
           aria-label={t("recentFilesLabel")}
         >
-          {orderedFiles.length === 0 ? (
+          {rowCount === 0 ? (
             <div className="px-2 py-8 text-center text-sm text-muted-foreground">
               {t("noRecentFiles")}
             </div>
           ) : (
-            orderedFiles.map((file, index) => {
-              const isSelected = index === selectedIndex;
-              const isCurrent = file.id === currentFileId;
-              return (
+            <>
+              {results.map((file, index) => {
+                const isSelected = index === selectedIndex;
+                const folder = repeated.has(file.name.toLocaleLowerCase())
+                  ? quickSwitcherFolder(file)
+                  : "";
+                return (
+                  <button
+                    key={file.id}
+                    data-index={index}
+                    role="option"
+                    aria-selected={isSelected}
+                    className={cn(
+                      // One menu row — 28px on a 6px radius.
+                      MENU_ROW_CLASS,
+                      "gap-2",
+                      isSelected
+                        ? "bg-accent text-accent-foreground"
+                        : "text-foreground hover:bg-accent"
+                    )}
+                    onClick={() => openFile(file.id)}
+                    onMouseEnter={() => setSelectedIndex(index)}
+                  >
+                    <FileText className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate text-left">{file.name}</span>
+                    {/* Only when the name alone is ambiguous — an always-on path turns the list
+                        into a wall of directories. */}
+                    {folder && (
+                      <span className="min-w-0 max-w-[45%] flex-shrink truncate text-xs text-muted-foreground">
+                        {folder}
+                      </span>
+                    )}
+                    {file.id === currentFileId && (
+                      <span className="text-ui-xs flex-shrink-0 rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
+                        {t("current")}
+                      </span>
+                    )}
+                    <span className="flex-shrink-0 text-xs text-muted-foreground">
+                      {formatRelativeTime(file.updatedAt)}
+                    </span>
+                  </button>
+                );
+              })}
+              {canCreate && (
                 <button
-                  key={file.id}
-                  data-index={index}
+                  data-index={results.length}
                   role="option"
-                  aria-selected={isSelected}
+                  aria-selected={selectedIndex === results.length}
                   className={cn(
-                    // One menu row — 28px on a 6px radius. These were 38.4px
-                    // full-bleed square rows.
                     MENU_ROW_CLASS,
                     "gap-2",
-                    isSelected
+                    selectedIndex === results.length
                       ? "bg-accent text-accent-foreground"
                       : "text-foreground hover:bg-accent"
                   )}
-                  onClick={() => navigateToFile(file.id)}
-                  onMouseEnter={() => setSelectedIndex(index)}
+                  onClick={() => void createAndOpen(trimmedQuery)}
+                  onMouseEnter={() => setSelectedIndex(results.length)}
                 >
-                  <FileText className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate text-left">{file.name}</span>
-                  {isCurrent && (
-                    <span className="text-ui-xs flex-shrink-0 rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
-                      {t("current")}
-                    </span>
-                  )}
-                  <span className="flex-shrink-0 text-xs text-muted-foreground">
-                    {formatRelativeTime(file.updatedAt)}
+                  <FilePlus className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    {t("createNote", { name: trimmedQuery })}
                   </span>
                 </button>
-              );
-            })
+              )}
+            </>
           )}
         </div>
 
-        {/* Footer hint */}
         <div className="flex items-center justify-between border-t border-border bg-muted/30 px-3.5 py-2">
           <span className="text-xs text-muted-foreground">
             <kbd className="text-ui-xs mr-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 font-medium">
@@ -237,11 +282,10 @@ function QuickSwitcherContent() {
             {t("navigate")}
           </span>
           <span className="text-xs text-muted-foreground">
-            Release
-            <kbd className="text-ui-xs mx-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 font-medium">
-              Ctrl
+            <kbd className="text-ui-xs mr-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 font-medium">
+              ↵
             </kbd>
-            to open
+            {t("open")}
           </span>
         </div>
       </div>

@@ -162,6 +162,7 @@ export function NativeMenuListener() {
         { name: "menu://redo", fn: redoCurrentPage },
         { name: "menu://reveal", fn: () => revealCurrent() },
         { name: "menu://find", fn: findInCurrentPage },
+        { name: "menu://find-replace", fn: () => useLayoutStore.getState().openReplaceBar() },
         {
           name: "menu://command-palette",
           fn: () => useLayoutStore.getState().openCommandPalette(),

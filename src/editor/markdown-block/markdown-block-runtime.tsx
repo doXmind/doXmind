@@ -12,6 +12,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useId,
 } from "react";
 
 import {
@@ -43,6 +44,8 @@ import {
 } from "@/editor/markdown-block/markdown-inline-format";
 import {
   editableMarkdownBlockSource,
+  hiddenMarkdownBlockIds,
+  isMarkdownFoldable,
   orderedListDisplayOrdinals,
 } from "@/editor/markdown-block/markdown-block-source";
 import {
@@ -54,6 +57,7 @@ import {
   type MarkdownCollectionContext,
   type MarkdownImageContext,
   type MarkdownSlashRun,
+  type MarkdownWikiLinkRun,
   type MarkdownWikiEmbedContext,
   type MarkdownWikiLinkServices,
 } from "@/editor/markdown-block/markdown-block-row";
@@ -64,6 +68,7 @@ import {
   markdownSlashCommandSource,
   type MarkdownSlashCommandId,
 } from "@/editor/markdown-block/slash-commands";
+import { wikiLinkPages } from "@/editor/markdown-block/wiki-link-suggestions";
 import { resolveWikiLinkTarget } from "@/editor/markdown-block/wiki-link";
 import { markdownImageDestinationForPage } from "@/editor/markdown-block/markdown-image";
 import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
@@ -78,6 +83,8 @@ import {
   type WorkspaceAssetRead,
 } from "@/lib/storage";
 import { notify } from "@/lib/notifications";
+import { storeLogger } from "@/lib/logger";
+import { createPageForContext } from "@/lib/new-page";
 import { debounce } from "@/lib/utils";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -88,6 +95,14 @@ import { projectWorkspacePageProperties } from "@/lib/workspace-page-catalog";
 
 interface MarkdownBlockRuntimeProps {
   file: FileItem;
+  /**
+   * Whether this is the pane the user is working in.
+   *
+   * Several listeners here sit on `window` or `document`, and the chrome — the find bar, the
+   * outline, the caret — describes one Page at a time. With a second pane on screen each of them
+   * asks this first.
+   */
+  isActivePane?: boolean;
   reservedRightInset?: number;
   transclusionServices?: MarkdownTransclusionServices;
   imageServices?: MarkdownImageServices;
@@ -168,6 +183,7 @@ function useSettledValue<T>(value: T, delayMs: number): T {
  */
 export function MarkdownBlockRuntime({
   file,
+  isActivePane = true,
   reservedRightInset = 0,
   transclusionServices = defaultTransclusionServices,
   imageServices = defaultImageServices,
@@ -179,15 +195,32 @@ export function MarkdownBlockRuntime({
   const lineHeight = useLayoutStore((state) => state.lineHeight);
   const autosaveEnabled = useLayoutStore((state) => state.autosaveEnabled);
   const isSearchBarOpen = useLayoutStore((state) => state.isSearchBarOpen);
+  const isReplaceOpen = useLayoutStore((state) => state.isReplaceOpen);
   const setSearchBarOpen = useLayoutStore((state) => state.setSearchBarOpen);
   const setDirty = useEditorStore((state) => state.setDirty);
   const setSaving = useEditorStore((state) => state.setSaving);
   const setLastSavedAt = useEditorStore((state) => state.setLastSavedAt);
-  const setRequestSave = useEditorRefStore((state) => state.setRequestSave);
-  const setRequestUndo = useEditorRefStore((state) => state.setRequestUndo);
-  const setRequestRedo = useEditorRefStore((state) => state.setRequestRedo);
-  const setDiscardPendingChanges = useEditorRefStore((state) => state.setDiscardPendingChanges);
+  const registerEditor = useEditorRefStore((state) => state.registerEditor);
+  const unregisterEditor = useEditorRefStore((state) => state.unregisterEditor);
+  // One id per mounted runtime. Block ids restart per document and the file id changes as the
+  // user navigates, so neither identifies *this editor* for the life of its mount.
+  const editorInstanceId = useId();
+  const runtimeRootRef = useRef<HTMLDivElement>(null);
+  /**
+   * Whether this is the editor the user is working in.
+   *
+   * Three listeners below sit on `window` or on `document` and were written when only one runtime
+   * could be mounted. With a second Page on screen they all fire in both, so each one asks this
+   * first. Read from the store at event time rather than subscribed to, because these handlers must
+   * not re-register on every focus change.
+   */
+  const isActivePaneRef = useRef(isActivePane);
+  isActivePaneRef.current = isActivePane;
+  // Read through a ref, so a focus change never re-registers a window listener.
+  const isActiveEditor = useCallback(() => isActivePaneRef.current, []);
   const publishOutline = usePageSessionStore((state) => state.publishOutline);
+  const revealRequest = usePageSessionStore((state) => state.revealRequest);
+  const clearReveal = usePageSessionStore((state) => state.clearReveal);
   const clearOutline = usePageSessionStore((state) => state.clearOutline);
 
   const initialMarkdown = file.content;
@@ -209,6 +242,19 @@ export function MarkdownBlockRuntime({
   const listOrdinals = useMemo(
     () => orderedListDisplayOrdinals(snapshot.blocks),
     [snapshot.blocks]
+  );
+  /**
+   * Which Blocks are folded shut.
+   *
+   * View state, never Markdown. A save applies Block commands to canonical source and writes only
+   * the `.md`, so a fold has nowhere in the file to live that would not be an edit the user did
+   * not make — and a Page folded here would arrive folded in every other editor. It is also not
+   * persisted: a fold is about reading this Page right now.
+   */
+  const [foldedBlockIds, setFoldedBlockIds] = useState<ReadonlySet<string>>(() => new Set());
+  const hiddenBlocks = useMemo(
+    () => hiddenMarkdownBlockIds(snapshot.blocks, foldedBlockIds),
+    [snapshot.blocks, foldedBlockIds]
   );
   const [activeBlockId, setActiveBlockId] = useState<string | null>(
     file.id.startsWith(TRANSIENT_ID_PREFIX) ? (snapshot.blocks[0]?.id ?? null) : null
@@ -240,6 +286,11 @@ export function MarkdownBlockRuntime({
   // still only offering to throw the local edits away.
   const [saveBlockedByConflict, setSaveBlockedByConflict] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [replaceTerm, setReplaceTerm] = useState("");
+  const [findOptions, setFindOptions] = useState<MarkdownFindOptions>({
+    caseSensitive: false,
+    regex: false,
+  });
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchSelectionRef = useRef<MarkdownBlockSelectionRange | null>(null);
@@ -492,13 +543,25 @@ export function MarkdownBlockRuntime({
       },
       open: (target) => {
         const destination = resolveWikiLinkTarget(useFileStore.getState().files, file.id, target);
-        if (!destination) {
-          // Deliberately says only what is certain. A single Page opened outside a workspace folder
-          // resolves nothing at all, so naming a workspace here would be wrong half the time.
+        if (destination) {
+          void navigateToEditorFile(destination.id);
+          return;
+        }
+        // An unresolved link is a Page the author intends to write, so clicking it writes one.
+        // The heading and block fragments are addresses inside a Page, not part of its name.
+        const name = target.split("#")[0].split("|")[0].trim();
+        if (!name) {
+          // Deliberately says only what is certain. A single Page opened outside a workspace
+          // folder resolves nothing at all, so naming a workspace here would be wrong half the time.
           notify.error(`No Page named "${target}"`);
           return;
         }
-        void navigateToEditorFile(destination.id);
+        void createPageForContext(useFileStore.getState(), name)
+          .then((newId) => navigateToEditorFile(newId))
+          .catch((error) => {
+            storeLogger.error("Failed to create a Page from an unresolved Wiki Link", error);
+            notify.error(`Could not create "${name}"`);
+          });
       },
     };
     // A Page created, renamed or deleted since this Page opened changes what resolves. Consumers
@@ -524,10 +587,11 @@ export function MarkdownBlockRuntime({
     return headings.length >= 2 ? headings : [];
   }, [snapshot.blocks]);
 
-  const searchMatches = useMemo(
-    () => findMarkdownSearchMatches(snapshot.blocks, searchTerm),
-    [searchTerm, snapshot.blocks]
+  const findResult = useMemo(
+    () => findMarkdownSearchMatches(snapshot.blocks, searchTerm, findOptions),
+    [searchTerm, snapshot.blocks, findOptions]
   );
+  const searchMatches = findResult.matches;
   const selectedBlockIdSet = useMemo(
     () =>
       new Set(
@@ -633,6 +697,8 @@ export function MarkdownBlockRuntime({
     // Do not relabel the previous Page's headings with the new Page id during
     // that intervening commit.
     if (fileIdRef.current !== file.id) return;
+    // One outline rail, one Page: the inactive pane would otherwise relabel it with its headings.
+    if (!isActivePane) return;
     publishOutline({
       pageId: file.id,
       headings: outlineHeadings,
@@ -641,7 +707,7 @@ export function MarkdownBlockRuntime({
         : null,
       navigateTo: navigateToOutline,
     });
-  }, [activeBlockId, file.id, navigateToOutline, outlineHeadings, publishOutline]);
+  }, [activeBlockId, file.id, isActivePane, navigateToOutline, outlineHeadings, publishOutline]);
 
   useEffect(
     () => () => {
@@ -910,6 +976,9 @@ export function MarkdownBlockRuntime({
     if (activeBlockId !== null || blockSelection !== null || isSearchBarOpen) return;
 
     const handleEditIntent = (event: KeyboardEvent) => {
+      // Without this, a keypress with no active Block in either pane — the state immediately after
+      // a split — is applied to both Pages at once.
+      if (!isActiveEditor()) return;
       if (isEventFromEditableElement(event.target)) return;
       if (isEventFromFocusedControl(event.target)) return;
       const key = keyboardEditIntentKey(event);
@@ -948,7 +1017,7 @@ export function MarkdownBlockRuntime({
 
     window.addEventListener("keydown", handleEditIntent);
     return () => window.removeEventListener("keydown", handleEditIntent);
-  }, [activeBlockId, apply, blockSelection, isSearchBarOpen]);
+  }, [activeBlockId, apply, blockSelection, isSearchBarOpen, isActiveEditor]);
 
   const undo = useCallback(() => {
     const before = documentRef.current.getSnapshot().blocks;
@@ -1000,29 +1069,53 @@ export function MarkdownBlockRuntime({
   }, [debouncedSave, setDirty]);
 
   useEffect(() => {
-    setRequestSave(saveCurrentNow);
-    setRequestUndo(undo);
-    setRequestRedo(redo);
-    setDiscardPendingChanges(discardPendingChanges);
-    return () => {
-      setRequestSave(null);
-      setRequestUndo(null);
-      setRequestRedo(null);
-      setDiscardPendingChanges(null);
-    };
+    if (isActivePane) useEditorRefStore.getState().setActiveEditor(editorInstanceId);
+  }, [isActivePane, editorInstanceId]);
+
+  const toggleFold = useCallback((blockId: string) => {
+    setFoldedBlockIds((current) => {
+      const next = new Set(current);
+      if (!next.delete(blockId)) next.add(blockId);
+      return next;
+    });
+  }, []);
+
+  const foldAll = useCallback((folded: boolean) => {
+    if (!folded) {
+      setFoldedBlockIds(new Set());
+      return;
+    }
+    const blocks = documentRef.current.getSnapshot().blocks;
+    setFoldedBlockIds(
+      new Set(blocks.filter((_, index) => isMarkdownFoldable(blocks, index)).map((b) => b.id))
+    );
+  }, []);
+
+  useEffect(() => {
+    registerEditor(editorInstanceId, {
+      fileId: file.id,
+      requestSave: saveCurrentNow,
+      requestUndo: undo,
+      requestRedo: redo,
+      requestFoldAll: foldAll,
+      discardPendingChanges,
+    });
+    return () => unregisterEditor(editorInstanceId);
   }, [
+    file.id,
+    editorInstanceId,
+    registerEditor,
+    unregisterEditor,
+    foldAll,
     discardPendingChanges,
     redo,
     saveCurrentNow,
-    setDiscardPendingChanges,
-    setRequestRedo,
-    setRequestSave,
-    setRequestUndo,
     undo,
   ]);
 
   useEffect(() => {
     const handleSave = (event: KeyboardEvent) => {
+      if (!isActiveEditor()) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
         void saveCurrentNow().catch(() => undefined);
@@ -1030,7 +1123,7 @@ export function MarkdownBlockRuntime({
     };
     window.addEventListener("keydown", handleSave);
     return () => window.removeEventListener("keydown", handleSave);
-  }, [saveCurrentNow]);
+  }, [saveCurrentNow, isActiveEditor]);
 
   useEffect(() => {
     const markdown = file.content;
@@ -1098,6 +1191,24 @@ export function MarkdownBlockRuntime({
     [debouncedSave]
   );
 
+  // A search result asks for a body line; the caret has to land in whichever Block spans it.
+  useEffect(() => {
+    if (!revealRequest || revealRequest.pageId !== file.id) return;
+    // The same Page can be open in both panes. Only the one the user is navigating consumes the
+    // request; the other would swallow it and clear it before the active pane ever saw it.
+    if (!isActiveEditor()) return;
+    // `documentRef`, not `snapshot`: opening a different Page from a search result runs this on the
+    // commit where the store's file has changed but the snapshot state has not caught up yet.
+    const blocks = documentRef.current.getSnapshot().blocks;
+    const target = markdownBlockIdAtLine(blocks, revealRequest.line);
+    clearReveal();
+    if (!target) return;
+    setActiveBlockId(target);
+    setBlockSelection(null);
+    setPendingSelection({ blockId: target, anchor: 0, head: 0 });
+    // `revealRequest.token` is in the deps so two clicks on the same line both land.
+  }, [revealRequest, file.id, clearReveal, isActiveEditor]);
+
   const moveBlock = useCallback(
     (blockId: string, direction: -1 | 1): boolean => {
       const blocks = documentRef.current.getSnapshot().blocks;
@@ -1144,7 +1255,13 @@ export function MarkdownBlockRuntime({
       const goalOffset =
         goalX === null
           ? null
-          : caretOffsetOnBlockEdge(target.id, goalX, direction < 0 ? "last" : "first", source);
+          : caretOffsetOnBlockEdge(
+              documentElementRef.current,
+              target.id,
+              goalX,
+              direction < 0 ? "last" : "first",
+              source
+            );
       const offset = goalOffset ?? (direction < 0 ? source.length : 0);
       verticalGoalRef.current = goalX === null ? null : { blockId: target.id, offset, x: goalX };
       setActiveBlockId(target.id);
@@ -1337,11 +1454,12 @@ export function MarkdownBlockRuntime({
       // That is how pressing a callout's body deactivated the whole Block: the caret could reach the
       // title and never the body.
       if (target && !target.isConnected) return;
-      if (
-        target?.closest(
-          "[data-native-markdown-runtime], [data-native-editor-overlay], [data-radix-popper-content-wrapper]"
-        )
-      ) {
+      // `closest` on the shared attribute matches *any* runtime, so a press inside another Page
+      // used to count as inside this one and left two live carets on screen. Only this root, and
+      // the portalled overlays that belong to whichever editor opened them, keep the caret.
+      const insideSomeRuntime = target?.closest("[data-native-markdown-runtime]");
+      if (insideSomeRuntime && insideSomeRuntime === runtimeRootRef.current) return;
+      if (target?.closest("[data-native-editor-overlay], [data-radix-popper-content-wrapper]")) {
         return;
       }
       setActiveBlockId(null);
@@ -1397,14 +1515,33 @@ export function MarkdownBlockRuntime({
     const host = documentElementRef.current;
     if (!host) return;
     const rows = host.querySelectorAll<HTMLElement>(":scope > [data-native-block-row]");
-    const count = snapshot.blocks.length;
-    snapshot.blocks.forEach((block, index) => {
+    // Folded rows are unmounted, so this has to enumerate what is on screen: pairing against the
+    // whole document would name every row after the wrong Block from the first fold onwards.
+    const visible = snapshot.blocks.filter((block) => !hiddenBlocks.has(block.id));
+    const count = visible.length;
+    visible.forEach((block, index) => {
       const row = rows[index];
       if (!row) return;
       const name = `${blockTypeLabel(block)}, block ${index + 1} of ${count}`;
       if (row.getAttribute("aria-label") !== name) row.setAttribute("aria-label", name);
     });
-  }, [snapshot.blocks]);
+  }, [snapshot.blocks, hiddenBlocks]);
+
+  // A caret can arrive inside a folded range — a search result, a Wiki Link, an undo — and a
+  // Block with no row cannot be edited or even seen. Opening the anchors that hide it is the only
+  // way the caret stays where it was put. A layout effect, so the row exists before the scroll
+  // the find-in-page path schedules for the next frame.
+  useLayoutEffect(() => {
+    if (hiddenBlocks.size === 0) return;
+    const focus = activeBlockId ?? blockSelection?.focusId ?? null;
+    const anchors = focus ? hiddenBlocks.get(focus) : undefined;
+    if (!anchors) return;
+    setFoldedBlockIds((current) => {
+      const next = new Set(current);
+      for (const anchor of anchors) next.delete(anchor);
+      return next;
+    });
+  }, [activeBlockId, blockSelection, hiddenBlocks]);
 
   // Measured after commit rather than during render: the rows have to exist before their union can
   // be read, and reading layout from a render pass is how you get a frame of stale geometry.
@@ -2585,17 +2722,44 @@ export function MarkdownBlockRuntime({
     [publish]
   );
 
+  const suggestWikiLinks = useCallback(() => wikiLinkPages(useFileStore.getState().files), []);
+
+  const handleInsertWikiLink = useCallback(
+    (blockId: string, linkSource: string, run: MarkdownWikiLinkRun) => {
+      const latest = documentRef.current.getSnapshot();
+      const current = latest.blocks.find((candidate) => candidate.id === blockId);
+      if (!current) return;
+      // Replace exactly the `[[query` the user typed, mapped from editor offsets to source
+      // offsets — the text before the trigger stays byte for byte where it was.
+      const from = blockSourceOffsetForEditorOffset(current, run.start);
+      const to = blockSourceOffsetForEditorOffset(current, run.end);
+      const result = documentRef.current.apply({
+        type: "replaceText",
+        blockId,
+        range: { from, to },
+        text: linkSource,
+      });
+      publish(result, false);
+      const edited = result.snapshot.blocks.find((candidate) => candidate.id === blockId);
+      if (!edited) return;
+      // Just past the closing `]]`, so typing continues after the link rather than inside it.
+      const offset = editorOffsetForBlockSourceOffset(edited, from + linkSource.length);
+      setActiveBlockId(edited.id);
+      setBlockSelection(null);
+      setPendingSelection({ blockId: edited.id, anchor: offset, head: offset });
+    },
+    [publish]
+  );
+
   const pageFrameStyle = {
     "--editor-outline-gutter": `${reservedRightInset}px`,
   } as CSSProperties;
   const wordCount = countWords(snapshot.markdown);
   const currentSearchMatch = searchMatches[currentSearchIndex];
-  const searchSelectionBlockId =
-    isSearchBarOpen &&
-    currentSearchMatch &&
-    sameBlockSelectionRange(pendingSelection, currentSearchMatch)
-      ? currentSearchMatch.blockId
-      : null;
+  // Derived from the match itself. Requiring `pendingSelection` to still equal it meant the
+  // highlight vanished the moment the selection was consumed — which is immediately — so the
+  // counter said "2 of 5" while nothing on the Page was marked.
+  const searchHighlight = isSearchBarOpen && currentSearchMatch ? currentSearchMatch : null;
 
   const reloadExternalMarkdown = () => {
     const markdown = externalMarkdownRef.current;
@@ -2640,13 +2804,50 @@ export function MarkdownBlockRuntime({
     );
   };
 
+  /** Rewrite one match through the ordinary source-backed text command. */
+  const replaceMatch = (match: MarkdownSearchMatch): boolean => {
+    const latest = documentRef.current.getSnapshot();
+    const block = latest.blocks.find((candidate) => candidate.id === match.blockId);
+    if (!block) return false;
+    const from = blockSourceOffsetForEditorOffset(block, Math.min(match.anchor, match.head));
+    const to = blockSourceOffsetForEditorOffset(block, Math.max(match.anchor, match.head));
+    publish(
+      documentRef.current.apply({
+        type: "replaceText",
+        blockId: match.blockId,
+        range: { from, to },
+        text: replaceTerm,
+      }),
+      false
+    );
+    return true;
+  };
+
+  const replaceCurrent = () => {
+    const match = searchMatches[currentSearchIndex];
+    if (!match || !replaceMatch(match)) return;
+    // The list is recomputed from the new text, so the index stays put and lands on what is now
+    // the next match — except at the end, where it has to wrap rather than point past the array.
+    setCurrentSearchIndex((index) => (index >= searchMatches.length - 1 ? 0 : index));
+  };
+
+  const replaceAllMatches = () => {
+    // Last to first: replacing shifts every offset after the match, and walking backwards means
+    // the offsets still ahead of the cursor are the ones that have not moved yet.
+    for (let index = searchMatches.length - 1; index >= 0; index -= 1) {
+      replaceMatch(searchMatches[index]);
+    }
+    setCurrentSearchIndex(0);
+  };
+
   return (
     <div
+      ref={runtimeRootRef}
       className="relative flex h-full min-h-0 flex-col"
       data-testid="markdown-block-runtime"
       data-native-markdown-runtime
     >
-      {isSearchBarOpen ? (
+      {isSearchBarOpen && isActivePane ? (
         <div
           role="search"
           data-native-editor-chrome
@@ -2681,11 +2882,42 @@ export function MarkdownBlockRuntime({
               className="min-w-[60px] whitespace-nowrap text-center text-xs text-muted-foreground"
             >
               {searchTerm
-                ? searchMatches.length > 0
-                  ? `${currentSearchIndex + 1} of ${searchMatches.length}`
-                  : "No matches"
+                ? findResult.invalid
+                  ? "Bad pattern"
+                  : searchMatches.length > 0
+                    ? `${currentSearchIndex + 1} of ${searchMatches.length}`
+                    : "No matches"
                 : null}
             </span>
+            <button
+              type="button"
+              aria-label="Match case"
+              title="Match case"
+              aria-pressed={findOptions.caseSensitive}
+              className={`rounded-md px-1.5 py-1 font-mono text-xs ${
+                findOptions.caseSensitive ? "bg-accent text-accent-foreground" : "hover:bg-accent"
+              }`}
+              onClick={() =>
+                setFindOptions((current) => ({
+                  ...current,
+                  caseSensitive: !current.caseSensitive,
+                }))
+              }
+            >
+              Aa
+            </button>
+            <button
+              type="button"
+              aria-label="Use regular expression"
+              title="Use regular expression"
+              aria-pressed={findOptions.regex}
+              className={`rounded-md px-1.5 py-1 font-mono text-xs ${
+                findOptions.regex ? "bg-accent text-accent-foreground" : "hover:bg-accent"
+              }`}
+              onClick={() => setFindOptions((current) => ({ ...current, regex: !current.regex }))}
+            >
+              .*
+            </button>
             <button
               type="button"
               aria-label="Previous result"
@@ -2716,6 +2948,36 @@ export function MarkdownBlockRuntime({
               ×
             </button>
           </div>
+          {isReplaceOpen ? (
+            <div className="flex items-center gap-2 border-t border-border px-3 py-2.5">
+              <input
+                type="text"
+                value={replaceTerm}
+                onChange={(event) => setReplaceTerm(event.target.value)}
+                placeholder="Replace with"
+                aria-label="Replace with"
+                className="min-w-[80px] flex-1 bg-transparent text-base placeholder:text-muted-foreground focus:outline-none md:text-sm"
+              />
+              <button
+                type="button"
+                aria-label="Replace"
+                disabled={searchMatches.length === 0}
+                className="rounded-md px-2 py-1 text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={replaceCurrent}
+              >
+                Replace
+              </button>
+              <button
+                type="button"
+                aria-label="Replace all"
+                disabled={searchMatches.length === 0}
+                className="rounded-md px-2 py-1 text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={replaceAllMatches}
+              >
+                All
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
       {hasExternalConflict ? (
@@ -2792,6 +3054,8 @@ export function MarkdownBlockRuntime({
             className="markdown-page max-w-none focus:outline-none"
             data-native-markdown-document
             data-file-id={file.id}
+            // Read by the PDF export guard and by print.css, which must resolve to one Page.
+            data-pane-active={isActivePane ? "true" : "false"}
             data-revision={snapshot.revision}
             onCopy={(event) => {
               if (!blockSelection) return;
@@ -2917,6 +3181,9 @@ export function MarkdownBlockRuntime({
             </span>
             <MarkdownWikiLinkContext.Provider value={wikiLinkServices}>
               {snapshot.blocks.map((block, index) => {
+                // Unmounted, not hidden: row spacing is an adjacent-sibling rule, so a
+                // `display: none` row would still separate the two rows around it.
+                if (hiddenBlocks.has(block.id)) return null;
                 const active = activeBlockId === block.id;
                 const keyboardEntry = !activeBlockId && !blockSelection && index === 0;
                 const blockSelectionFocus = blockSelection?.focusId === block.id;
@@ -2929,7 +3196,9 @@ export function MarkdownBlockRuntime({
                     canMoveDown={index < snapshot.blocks.length - 1}
                     active={active}
                     autoFocusEditor={!isSearchBarOpen}
-                    highlightSelection={searchSelectionBlockId === block.id}
+                    searchHighlight={
+                      searchHighlight?.blockId === block.id ? searchHighlight : undefined
+                    }
                     keyboardEntry={keyboardEntry}
                     blockSelected={selectedBlockIdSet.has(block.id)}
                     blockSelectionFocus={blockSelectionFocus}
@@ -2959,6 +3228,16 @@ export function MarkdownBlockRuntime({
                     onSetTaskChecked={handleSetTaskChecked}
                     onMove={handleMoveBlock}
                     onIndent={handleIndent}
+                    foldState={
+                      isMarkdownFoldable(snapshot.blocks, index)
+                        ? foldedBlockIds.has(block.id)
+                          ? "folded"
+                          : "unfolded"
+                        : "none"
+                    }
+                    onToggleFold={toggleFold}
+                    onSuggestWikiLinks={suggestWikiLinks}
+                    onInsertWikiLink={handleInsertWikiLink}
                     onNavigate={navigateBlock}
                     onSetKind={setBlockKind}
                     onUndo={undo}
@@ -3176,13 +3455,17 @@ function sameBlockSelectionRange(
  * the platform cannot hit-test text, in which case the caller falls back to a source edge.
  */
 function caretOffsetOnBlockEdge(
+  host: HTMLElement | null,
   blockId: string,
   caretX: number,
   edge: "first" | "last",
   source: string
 ): number | null {
   if (typeof document === "undefined" || typeof CSS === "undefined") return null;
-  const row = document.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`);
+  // Scoped to this Page's own container, like every other lookup here. Block ids are session-local
+  // and restart at `block-1` for each document, so a document-wide query would find whichever
+  // Page happens to sit first in the DOM once more than one is mounted.
+  const row = host?.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`);
   const content = row?.querySelector<HTMLElement>("[data-native-block-content]") ?? null;
   if (!content) return null;
   const range = document.createRange();
@@ -3366,30 +3649,67 @@ function settableKindPrefix(
   }
 }
 
+/**
+ * The Block containing 1-based body `line`, or null.
+ *
+ * Block spans are byte offsets into the same Markdown the line number was counted over, so the
+ * mapping is a line-ending count rather than anything the projection has to be asked about.
+ */
+function markdownBlockIdAtLine(blocks: readonly MarkdownBlockView[], line: number): string | null {
+  if (!Number.isFinite(line) || line < 1) return null;
+  let current = 1;
+  for (const block of blocks) {
+    const lines = block.raw.split(/\r\n|\n|\r/).length - 1 || 1;
+    if (line < current + lines) return block.id;
+    current += lines;
+  }
+  return blocks.at(-1)?.id ?? null;
+}
+
+export interface MarkdownFindOptions {
+  caseSensitive: boolean;
+  regex: boolean;
+}
+
+/**
+ * Every match of `searchTerm`, and whether the pattern itself was unusable.
+ *
+ * `invalid` matters because a regex is typed one character at a time: `/(` is a syntax error on
+ * the way to `/(a)/`, and throwing there would take the find bar down mid-keystroke.
+ */
 function findMarkdownSearchMatches(
   blocks: readonly MarkdownBlockView[],
-  searchTerm: string
-): MarkdownSearchMatch[] {
+  searchTerm: string,
+  options: MarkdownFindOptions = { caseSensitive: false, regex: false }
+): { matches: MarkdownSearchMatch[]; invalid: boolean } {
   const query = normalizeEditorLineEndings(searchTerm);
-  if (!query) return [];
-  const pattern = new RegExp(escapeRegExp(query), "gi");
-  const matches: MarkdownSearchMatch[] = [];
+  if (!query) return { matches: [], invalid: false };
 
+  let pattern: RegExp;
+  try {
+    pattern = new RegExp(
+      options.regex ? query : escapeRegExp(query),
+      options.caseSensitive ? "g" : "gi"
+    );
+  } catch {
+    return { matches: [], invalid: true };
+  }
+
+  const matches: MarkdownSearchMatch[] = [];
   for (const block of blocks) {
     if (!block.editable) continue;
     const source = normalizeEditorLineEndings(createBlockEditingProjection(block).editorText);
     pattern.lastIndex = 0;
     for (const match of source.matchAll(pattern)) {
+      // A zero-length match — `/a*/` against `b` — would advance nothing and make Next a no-op
+      // that looks like a hang.
+      if (match[0].length === 0) continue;
       const anchor = match.index;
-      matches.push({
-        blockId: block.id,
-        anchor,
-        head: anchor + match[0].length,
-      });
+      matches.push({ blockId: block.id, anchor, head: anchor + match[0].length });
     }
   }
 
-  return matches;
+  return { matches, invalid: false };
 }
 
 function escapeRegExp(value: string): string {

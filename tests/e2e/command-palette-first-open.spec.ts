@@ -3,7 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { openPage } from "./block-ux/harness";
 
 /**
- * The first Cmd+K must not wait on React's Suspense fallback throttle.
+ * The first Cmd+P must not wait on React's Suspense fallback throttle.
  *
  * The three overlays used to mount through `next/dynamic`, which wraps its lazy
  * component in `<Suspense fallback={null}>`. The first open suspended, committed
@@ -41,7 +41,7 @@ async function installProbe(page: Page): Promise<void> {
     document.addEventListener(
       "keydown",
       (e) => {
-        if ((e.metaKey || e.ctrlKey) && e.key === "k" && probe.keydown === null) {
+        if ((e.metaKey || e.ctrlKey) && e.key === "p" && probe.keydown === null) {
           probe.keydown = performance.now();
         }
       },
@@ -82,7 +82,7 @@ test("the first command palette open commits as soon as its chunk lands", async 
   await openPage(page, "First Open", "# First Open\n\nOne paragraph.\n");
   await installProbe(page);
 
-  await page.keyboard.press("Meta+k");
+  await page.keyboard.press("Meta+p");
   await expect(page.getByRole("dialog", { name: "Command palette" })).toBeVisible();
 
   const probe = await readProbe(page);

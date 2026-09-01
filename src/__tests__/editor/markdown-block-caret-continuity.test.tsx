@@ -59,7 +59,7 @@ describe("caret and focus continuity", () => {
       discardPendingChanges: null,
     });
     useLayoutStore.setState({ autosaveEnabled: true, isSearchBarOpen: false });
-    usePageSessionStore.setState({ outlineSession: null });
+    usePageSessionStore.setState({ outlineSession: null, revealRequest: null });
   });
 
   it.each([

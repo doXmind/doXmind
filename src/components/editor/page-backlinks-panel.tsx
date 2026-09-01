@@ -11,6 +11,7 @@ import {
   buildKnowledgeIndex,
   type KnowledgeIndex,
   type KnowledgeLink,
+  type KnowledgeUnlinkedMention,
 } from "@/lib/knowledge-index";
 import { createStorageAdapter } from "@/lib/storage";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
@@ -21,19 +22,41 @@ export interface PageBacklinksServices {
   saveCurrentPage: (pageId: string) => Promise<boolean>;
   rebuild: () => Promise<KnowledgeIndex>;
   navigate: (pageId: string, workspacePath: string) => Promise<boolean>;
+  /** Rewrite one unlinked mention into a Wiki Link, in its own Page. */
+  linkMention: (mention: KnowledgeUnlinkedMention) => Promise<void>;
 }
 
 const defaultServices: PageBacklinksServices = {
   saveCurrentPage: async (pageId) => {
-    if (useFileStore.getState().currentFileId !== pageId) return true;
-    const requestSave = useEditorRefStore.getState().requestSave;
-    return requestSave ? requestSave() : true;
+    // By Page, not by pane: with a split open this Page may be the one the OTHER editor is
+    // holding, and returning true there would run this against stale bytes on disk.
+    return useEditorRefStore.getState().requestSaveFor(pageId);
   },
   rebuild: async () => {
     const adapter = createStorageAdapter({ disk: { root: useFileStore.getState().rootPath } });
     return buildKnowledgeIndex(adapter);
   },
   navigate: navigateToWorkspacePage,
+  linkMention: async (mention) => {
+    const handle = useFileStore
+      .getState()
+      .files.find((file) => file.id === mention.sourceId)?.storageHandle;
+    if (!handle) throw new Error("The mentioning Page is no longer in this workspace");
+    const adapter = createStorageAdapter({ disk: { root: useFileStore.getState().rootPath } });
+    const current = await adapter.read(handle);
+    // The index may predate an external edit. The revision guard below is what makes the write
+    // safe; this check is what makes a stale offset say so instead of patching the wrong words.
+    if (current.markdown.slice(mention.range.from, mention.range.to) !== mention.text) {
+      throw new Error("This Page changed since the index was built; rebuild and try again");
+    }
+    await adapter.write(handle, {
+      markdown:
+        current.markdown.slice(0, mention.range.from) +
+        `[[${mention.text}]]` +
+        current.markdown.slice(mention.range.to),
+      expectedRevision: current.revision ?? null,
+    });
+  },
 };
 
 export function PageBacklinksPanel({
@@ -48,6 +71,7 @@ export function PageBacklinksPanel({
   const [index, setIndex] = useState<KnowledgeIndex | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [linking, setLinking] = useState<string | null>(null);
   const pagePath = file.storageHandle?.relPath ?? file.storageHandle?.path ?? file.name;
 
   useEffect(() => {
@@ -102,6 +126,25 @@ export function PageBacklinksPanel({
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
     if (nextOpen && !index && !isLoading) void rebuild();
+  };
+
+  const linkMention = async (mention: KnowledgeUnlinkedMention) => {
+    setError(null);
+    setLinking(`${mention.sourceId}:${mention.range.from}`);
+    try {
+      if (!(await services.saveCurrentPage(file.id))) {
+        setError(t("saveBeforeRebuild"));
+        return;
+      }
+      await services.linkMention(mention);
+      // The mention is gone once it is a link, so the list has to be rebuilt to stop offering it.
+      setIndex(await services.rebuild());
+    } catch (linkError) {
+      const detail = linkError instanceof Error ? linkError.message : String(linkError);
+      setError(`${t("linkFailed")}: ${detail}`);
+    } finally {
+      setLinking(null);
+    }
   };
 
   const openSource = async (source: Pick<KnowledgeLink, "sourceId" | "sourcePath">) => {
@@ -209,26 +252,45 @@ export function PageBacklinksPanel({
               </h3>
               <div className="space-y-1">
                 {unlinkedMentions.map((mention) => (
-                  <Button
+                  <div
                     key={`${mention.sourceId}:${mention.range.from}:${mention.range.to}`}
-                    type="button"
-                    variant="ghost"
-                    className="h-auto w-full justify-start px-2 py-2 text-left"
-                    aria-label={t("unlinkedSource", {
-                      path: mention.sourcePath,
-                      text: mention.text,
-                    })}
-                    onClick={() => void openSource(mention)}
+                    className="flex items-center gap-1"
                   >
-                    <span className="min-w-0">
-                      <span className="block truncate text-xs font-medium">
-                        {mention.sourcePath}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-auto min-w-0 flex-1 justify-start px-2 py-2 text-left"
+                      aria-label={t("unlinkedSource", {
+                        path: mention.sourcePath,
+                        text: mention.text,
+                      })}
+                      onClick={() => void openSource(mention)}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-medium">
+                          {mention.sourcePath}
+                        </span>
+                        <span className="block truncate text-[11px] font-normal text-muted-foreground">
+                          {mention.text}
+                        </span>
                       </span>
-                      <span className="block truncate text-[11px] font-normal text-muted-foreground">
-                        {mention.text}
-                      </span>
-                    </span>
-                  </Button>
+                    </Button>
+                    {/* The detector already knows the exact offsets; without this the panel could
+                        only take you there to retype what it had already found. */}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-7 shrink-0 px-2 text-[11px]"
+                      aria-label={t("linkMention", {
+                        path: mention.sourcePath,
+                        text: mention.text,
+                      })}
+                      disabled={linking !== null}
+                      onClick={() => void linkMention(mention)}
+                    >
+                      {t("link")}
+                    </Button>
+                  </div>
                 ))}
               </div>
             </section>

@@ -1,4 +1,5 @@
 import { markdownToggleTemplate } from "@/editor/markdown-block/markdown-toggle";
+import { SCORE_PREFIX, scoreFuzzyText } from "@/lib/fuzzy-match";
 
 export type MarkdownSlashCommandId =
   | "text"
@@ -251,11 +252,8 @@ const COMMANDS: readonly MarkdownSlashCommand[] = [
  * rather than listing declaration order, and a full-pinyin hit outranks an
  * incidental substring so `/biaoti` narrows to the Heading rows.
  */
-const SCORE_TITLE_PREFIX = 100;
 const SCORE_INITIALS_EXACT = 90;
 const SCORE_PINYIN_PREFIX = 70;
-const SCORE_TITLE_CONTAINS = 60;
-const SCORE_TITLE_ACRONYM = 45;
 const SCORE_KEYWORD = 30;
 const SCORE_DESCRIPTION = 10;
 
@@ -278,40 +276,22 @@ export function searchMarkdownSlashCommands(query: string): readonly MarkdownSla
  */
 function scoreMarkdownSlashCommand(command: MarkdownSlashCommand, query: string): number {
   const title = command.title.toLocaleLowerCase();
-  if (title.startsWith(query)) return SCORE_TITLE_PREFIX;
+  if (title.startsWith(query)) return SCORE_PREFIX;
   if (command.initials.some((entry) => entry.toLocaleLowerCase() === query)) {
     return SCORE_INITIALS_EXACT;
   }
   if (command.pinyin.some((entry) => entry.toLocaleLowerCase().startsWith(query))) {
     return SCORE_PINYIN_PREFIX;
   }
-  if (title.includes(query)) return SCORE_TITLE_CONTAINS;
-  if (matchesTitleAcronym(title, query)) return SCORE_TITLE_ACRONYM;
+  // The declared pinyin and initials outrank a plain substring, so the shared tiers sit here
+  // rather than at the top of the ladder.
+  const text = scoreFuzzyText(title, query);
+  if (text) return text;
   if (command.keywords.some((entry) => entry.toLocaleLowerCase().includes(query))) {
     return SCORE_KEYWORD;
   }
   if (command.description.toLocaleLowerCase().includes(query)) return SCORE_DESCRIPTION;
   return 0;
-}
-
-/** `bl` matches "Bulleted list" by word initials, `tbl` matches "Table" as a subsequence. */
-function matchesTitleAcronym(title: string, query: string): boolean {
-  const acronym = title
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter(Boolean)
-    .map((word) => word[0])
-    .join("");
-  if (acronym === query) return true;
-  return isSubsequence(title.replace(/\s+/g, ""), query);
-}
-
-function isSubsequence(haystack: string, needle: string): boolean {
-  let cursor = 0;
-  for (const character of haystack) {
-    if (character === needle[cursor]) cursor += 1;
-    if (cursor === needle.length) return true;
-  }
-  return false;
 }
 
 export function markdownSlashCommandSource(

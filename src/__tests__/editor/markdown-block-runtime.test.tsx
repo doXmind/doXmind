@@ -40,6 +40,7 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { useNotificationStore } from "@/stores/notification-store";
 import { usePageSessionStore } from "@/stores/page-session-store";
 
+const createTransientFile = vi.fn((name: string) => `transient-${name}`);
 const updateFile = vi.fn(
   async (_id: string, _updates: Partial<Pick<FileItem, "content" | "name">>): Promise<void> => {}
 );
@@ -153,6 +154,7 @@ describe("MarkdownBlockRuntime", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     updateFile.mockClear();
+    createTransientFile.mockClear();
     useFileStore.setState({ updateFile });
     useEditorStore.setState({ isDirty: false, isSaving: false, lastSavedAt: null });
     useEditorRefStore.setState({
@@ -162,11 +164,180 @@ describe("MarkdownBlockRuntime", () => {
       discardPendingChanges: null,
     });
     useLayoutStore.setState({ autosaveEnabled: true, isSearchBarOpen: false });
-    usePageSessionStore.setState({ outlineSession: null });
+    usePageSessionStore.setState({ outlineSession: null, revealRequest: null });
   });
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  // The suite runs on fake timers, so the menu's own open transition has to be advanced rather
+  // than waited for.
+  const openBlockMenu = async () => {
+    fireEvent.click(screen.getAllByRole("button", { name: "Block actions" })[0]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+  };
+
+  const openFind = async (term: string) => {
+    useLayoutStore.setState({ isSearchBarOpen: true, isReplaceOpen: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.change(screen.getByLabelText("Search text"), { target: { value: term } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  };
+
+  it("marks the current match without waiting on a selection it has already consumed", async () => {
+    // A plain paragraph, which renders the raw textarea until a match asks otherwise.
+    render(<MarkdownBlockRuntime file={{ ...file, content: "alpha needle beta\n" }} />);
+    await openFind("needle");
+
+    expect(screen.getByText("1 of 1")).toBeInTheDocument();
+    // The highlight used to be derived from `pendingSelection`, which is cleared as soon as it is
+    // applied — so the counter said "1 of 1" while nothing on the Page was marked.
+    expect(document.querySelector("[data-native-search-selection]")).toHaveTextContent("needle");
+  });
+
+  it("counts matches case-sensitively once Aa is pressed", async () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "Needle and needle\n" }} />);
+    await openFind("needle");
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Match case"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText("1 of 1")).toBeInTheDocument();
+  });
+
+  it("reports a half-typed regex instead of throwing on the keystroke", async () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "needle\n" }} />);
+    await openFind("needle");
+    fireEvent.click(screen.getByLabelText("Use regular expression"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // `/(` is a syntax error on the way to `/(a)/`; the bar has to survive it.
+    fireEvent.change(screen.getByLabelText("Search text"), { target: { value: "ne(" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText("Bad pattern")).toBeInTheDocument();
+  });
+
+  it("replaces every match back to front, so the offsets ahead stay valid", async () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "one needle two needle three\n" }} />);
+    await openFind("needle");
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Replace with"), { target: { value: "PIN" } });
+    fireEvent.click(screen.getByLabelText("Replace all"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(updateFile).toHaveBeenCalledWith("page-1", {
+      content: "one PIN two PIN three\n",
+    });
+  });
+
+  it("registers each mounted Page as its own editor, so chrome can address one of them", () => {
+    // What jsdom can show: two runtimes coexist as two registered editors, and the first to mount
+    // holds the claim. What it cannot show is the window-listener behaviour those guards protect —
+    // `visibleEditableBlock` needs real layout, so a keystroke reaches neither document here.
+    // That has to be checked on the running app once a second pane can be rendered.
+    render(
+      <>
+        <MarkdownBlockRuntime file={{ ...file, id: "page-1", content: "alpha\n" }} />
+        <MarkdownBlockRuntime file={{ ...file, id: "page-2", content: "beta\n" }} />
+      </>
+    );
+
+    expect(Object.keys(useEditorRefStore.getState().editors)).toHaveLength(2);
+    expect(useEditorRefStore.getState().requestSave).not.toBeNull();
+  });
+
+  it("folds a heading section out of view and back, without touching the Markdown", async () => {
+    const content = "# One\n\nunder one\n\n# Two\n\nunder two\n";
+    render(<MarkdownBlockRuntime file={{ ...file, content }} />);
+
+    expect(screen.getByText("under one")).toBeInTheDocument();
+
+    // Reached through the Block menu: the gutter's 54px slot holds exactly two 24px controls.
+    await openBlockMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Fold section" }));
+
+    expect(screen.queryByText("under one")).toBeNull();
+    // The other section is untouched, and so is the file.
+    expect(screen.getByText("under two")).toBeInTheDocument();
+    expect(updateFile).not.toHaveBeenCalled();
+
+    await openBlockMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Unfold section" }));
+    expect(screen.getByText("under one")).toBeInTheDocument();
+  });
+
+  it("reveals a folded section when the caret is sent inside it", async () => {
+    const content = "# One\n\nhidden needle\n\n# Two\n\ntail\n";
+    render(<MarkdownBlockRuntime file={{ ...file, content }} />);
+
+    await openBlockMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Fold section" }));
+    expect(screen.queryByText("hidden needle")).toBeNull();
+
+    // A search result asks for body line 3, which is inside the fold. A Block with no row cannot
+    // be edited or even seen, so the fold has to open rather than swallow the caret.
+    act(() => {
+      usePageSessionStore.getState().requestReveal("page-1", 3);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("hidden needle");
+  });
+
+  it("puts the caret in the Block a search hit's line falls inside", async () => {
+    const multi: FileItem = {
+      ...file,
+      content: "# Title\n\nAlpha needle\n\n## Section\n\nBeta needle\n",
+    };
+    render(<MarkdownBlockRuntime file={multi} />);
+
+    // Body line 7 is "Beta needle" — the fourth Block, not the fourth line of the first Block.
+    act(() => {
+      usePageSessionStore.getState().requestReveal("page-1", 7);
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("Beta needle");
+    // Consumed, so re-rendering for any other reason does not move the caret again.
+    expect(usePageSessionStore.getState().revealRequest).toBe(null);
+  });
+
+  it("ignores a reveal aimed at a different Page", async () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "Alpha\n\nBeta\n" }} />);
+
+    act(() => {
+      usePageSessionStore.getState().requestReveal("some-other-page", 3);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.queryByLabelText("Markdown block")).toBeNull();
+    // Left standing for the Page it was meant for.
+    expect(usePageSessionStore.getState().revealRequest).toMatchObject({
+      pageId: "some-other-page",
+    });
   });
 
   it("edits a source block and autosaves canonical Markdown", async () => {
@@ -979,10 +1150,12 @@ describe("MarkdownBlockRuntime", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next result" }));
     expect(screen.getByText("2 of 2")).toBeInTheDocument();
     expect(searchInput).toHaveFocus();
-    const textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
-    expect(textarea).toHaveValue("Second needle");
-    expect(textarea.selectionStart).toBe(7);
-    expect(textarea.selectionEnd).toBe(13);
+    // "Second needle" carries no inline syntax, so this Block would otherwise render the raw
+    // textarea — where the match exists only as a selection Chromium does not paint while the
+    // find bar holds focus. The current match renders the semantic surface for exactly that
+    // reason, so the hit the counter is pointing at is one the reader can see.
+    expect(screen.getByLabelText("Markdown block")).toHaveAttribute("data-native-semantic-editor");
+    expect(document.querySelector("[data-native-search-selection]")).toHaveTextContent("needle");
 
     fireEvent.click(screen.getByRole("button", { name: "Previous result" }));
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
@@ -3009,9 +3182,12 @@ describe("MarkdownBlockRuntime", () => {
     }
   });
 
-  it("marks an unresolved wiki link apart and reports the missing Page when it is clicked", () => {
+  it("marks an unresolved wiki link apart and writes the Page it points at when clicked", () => {
     useFileStore.setState({
       updateFile,
+      createTransientFile,
+      openTarget: "file",
+      rootPath: null,
       files: [
         { ...file, id: "page-1", name: "Notes.md", preview: "Notes" },
         { ...file, id: "page-real", name: "Real.md", content: "Real page.\n", preview: "Real" },
@@ -3040,9 +3216,10 @@ describe("MarkdownBlockRuntime", () => {
 
     fireEvent.click(unresolved);
 
-    expect(useNotificationStore.getState().errors.map((error) => error.title)).toEqual([
-      'No Page named "Ghost"',
-    ]);
+    // An unresolved link is a Page the author intends to write, so clicking it writes one rather
+    // than reporting that it is missing — which was all the click used to do.
+    expect(createTransientFile).toHaveBeenCalledWith("Ghost.md");
+    expect(useNotificationStore.getState().errors).toEqual([]);
   });
 
   it("opens a resolvable wiki link without a notification", async () => {

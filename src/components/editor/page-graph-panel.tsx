@@ -31,9 +31,9 @@ export interface PageGraphServices {
 
 const defaultServices: PageGraphServices = {
   saveCurrentPage: async (pageId) => {
-    if (useFileStore.getState().currentFileId !== pageId) return true;
-    const requestSave = useEditorRefStore.getState().requestSave;
-    return requestSave ? requestSave() : true;
+    // By Page, not by pane: with a split open this Page may be the one the OTHER editor is
+    // holding, and returning true there would run this against stale bytes on disk.
+    return useEditorRefStore.getState().requestSaveFor(pageId);
   },
   rebuild: async () => {
     const adapter = createStorageAdapter({ disk: { root: useFileStore.getState().rootPath } });

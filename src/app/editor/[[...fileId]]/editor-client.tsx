@@ -33,7 +33,7 @@ const loadQuickSwitcher = () =>
  * `<Suspense fallback={null}>`. The first open therefore suspended, committed
  * that invisible fallback, and React then held the real content back by
  * `FALLBACK_THROTTLE_MS` — 300ms — so that a loading state could not flash past
- * the user. Measured on the packaged app, first Cmd+K (n=6): the 17kB palette
+ * the user. Measured on the packaged app, first Cmd+P (n=6): the 17kB palette
  * chunk finished downloading at +2.0ms and the dialog did not enter the DOM
  * until +304.4ms, pixels at +313.2ms. Every open after that was 1.6-5.8ms to
  * insert, 14.9-16.7ms to pixels — a 20x cliff on the first press, and 2x the

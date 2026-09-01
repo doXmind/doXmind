@@ -124,18 +124,20 @@ export function useThemeManager() {
 
   const currentTheme = getTheme(themeId);
 
-  const persistThemePrefs = useCallback(
-    (overrides: Partial<StoredThemePrefs>) => {
-      writeStoredThemePrefs({
-        themeId,
-        preferredLightTheme,
-        preferredDarkTheme,
-        systemThemeEnabled,
-        ...overrides,
-      });
-    },
-    [themeId, preferredLightTheme, preferredDarkTheme, systemThemeEnabled]
-  );
+  // Read the live store instead of this render's values. The appearance section calls
+  // `selectTheme` and `setSystemMode` from one click handler, so the second call was rebuilding
+  // the record from the pre-click snapshot and writing the first call's choice straight back out.
+  // The session looked right and the preference was gone at the next launch.
+  const persistThemePrefs = useCallback((overrides: Partial<StoredThemePrefs>) => {
+    const state = useLayoutStore.getState();
+    writeStoredThemePrefs({
+      themeId: state.themeId,
+      preferredLightTheme: state.preferredLightTheme,
+      preferredDarkTheme: state.preferredDarkTheme,
+      systemThemeEnabled: state.systemThemeEnabled,
+      ...overrides,
+    });
+  }, []);
 
   // Apply a theme to the DOM
   const applyThemeToDOM = useCallback(
@@ -221,7 +223,9 @@ export function useThemeManager() {
       setSystemThemeEnabled(enabled);
       if (enabled && typeof window !== "undefined") {
         const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-        const newThemeId = isDark ? preferredDarkTheme : preferredLightTheme;
+        // Live store again: a theme picked earlier in this same handler is already committed.
+        const preferred = useLayoutStore.getState();
+        const newThemeId = isDark ? preferred.preferredDarkTheme : preferred.preferredLightTheme;
         const theme = getTheme(newThemeId);
         setThemeId(theme.id);
         persistThemePrefs({ themeId: theme.id, systemThemeEnabled: true });
@@ -230,15 +234,7 @@ export function useThemeManager() {
         persistThemePrefs({ themeId, systemThemeEnabled: false });
       }
     },
-    [
-      themeId,
-      setSystemThemeEnabled,
-      preferredLightTheme,
-      preferredDarkTheme,
-      setThemeId,
-      persistThemePrefs,
-      applyThemeToDOM,
-    ]
+    [themeId, setSystemThemeEnabled, setThemeId, persistThemePrefs, applyThemeToDOM]
   );
 
   useEffect(() => {

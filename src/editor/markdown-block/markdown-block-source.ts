@@ -52,3 +52,88 @@ export function orderedListDisplayOrdinals(
 
   return ordinals;
 }
+
+/** A Block the fold control can act on, and where the range it owns ends. */
+export interface MarkdownFoldable {
+  readonly id: string;
+  readonly kind: string;
+  readonly depth?: number;
+  readonly level?: number;
+}
+
+/**
+ * The index one past the last Block that folding `blocks[index]` would hide, or `index + 1` when
+ * nothing would be hidden.
+ *
+ * A heading owns everything down to the next heading of equal or higher level — the section, in
+ * the sense the outline already uses. A list item owns its deeper descendants. Nothing else owns
+ * anything, which is what makes a paragraph unfoldable rather than folding to itself.
+ */
+export function markdownFoldRangeEnd(blocks: readonly MarkdownFoldable[], index: number): number {
+  const block = blocks[index];
+  if (!block) return index;
+
+  if (block.kind === "heading") {
+    const level = block.level ?? 1;
+    let end = index + 1;
+    while (end < blocks.length) {
+      const candidate = blocks[end];
+      if (candidate.kind === "heading" && (candidate.level ?? 1) <= level) break;
+      end += 1;
+    }
+    return end;
+  }
+
+  if (isFoldableListKind(block.kind)) {
+    const depth = block.depth ?? 0;
+    let end = index + 1;
+    while (end < blocks.length) {
+      const candidate = blocks[end];
+      if (!isFoldableListKind(candidate.kind) || (candidate.depth ?? 0) <= depth) break;
+      end += 1;
+    }
+    return end;
+  }
+
+  return index + 1;
+}
+
+/** Whether `blocks[index]` owns anything, i.e. whether a fold control belongs on it. */
+export function isMarkdownFoldable(blocks: readonly MarkdownFoldable[], index: number): boolean {
+  return markdownFoldRangeEnd(blocks, index) > index + 1;
+}
+
+/**
+ * Every hidden Block, mapped to the folded anchors hiding it.
+ *
+ * A map rather than a set because the caret can arrive inside a folded range — from a search
+ * result, a Wiki Link, an undo — and the only way to reveal it is to know which anchors to open.
+ *
+ * Anchor ids that are no longer in `blocks` are ignored by construction, which is what makes fold
+ * state self-healing across edits: a folded heading that gets deleted takes its fold with it.
+ */
+export function hiddenMarkdownBlockIds(
+  blocks: readonly MarkdownFoldable[],
+  folded: ReadonlySet<string>
+): ReadonlyMap<string, readonly string[]> {
+  const hidden = new Map<string, string[]>();
+  if (folded.size === 0) return hidden;
+  for (let index = 0; index < blocks.length; index += 1) {
+    if (!folded.has(blocks[index].id)) continue;
+    const anchor = blocks[index].id;
+    const end = markdownFoldRangeEnd(blocks, index);
+    for (let inner = index + 1; inner < end; inner += 1) {
+      const anchors = hidden.get(blocks[inner].id);
+      if (anchors) anchors.push(anchor);
+      else hidden.set(blocks[inner].id, [anchor]);
+    }
+    // The folded Block itself stays visible; only what it owns is hidden. Skipping to the end of
+    // the range means a fold nested inside another contributes nothing extra.
+    index = end - 1;
+  }
+  return hidden;
+}
+
+function isFoldableListKind(kind: string): boolean {
+  return kind === "bullet_list_item" || kind === "ordered_list_item" || kind === "task_list_item";
+}
