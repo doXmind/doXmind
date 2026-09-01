@@ -5,9 +5,14 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const exportQueues = new WeakMap();
+// The *focused* Page, not the only one. Two panes are two mounted documents, so a count of one
+// would make every export while split fail — and fail reporting that the Page had changed, which
+// names the wrong cause entirely.
 const ACTIVE_NATIVE_PAGE_SCRIPT = `(() => {
   const pages = Array.from(
-    document.querySelectorAll("[data-native-markdown-document][data-file-id]")
+    document.querySelectorAll(
+      "[data-native-markdown-document][data-file-id][data-pane-active=\"true\"]"
+    )
   );
   return pages.length === 1 ? pages[0].getAttribute("data-file-id") : null;
 })()`;

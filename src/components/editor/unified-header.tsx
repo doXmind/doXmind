@@ -4,16 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import {
-  Search,
-  MoreHorizontal,
-  PanelLeft,
+  Check,
+  Columns2,
+  Copy,
   Download,
   Keyboard,
-  Palette,
-  Check,
   Loader2,
+  MoreHorizontal,
+  Palette,
+  PanelLeft,
   Save,
-  Copy,
+  Search,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -73,6 +74,9 @@ export function UnifiedHeader() {
   const files = useFileStore((s) => s.files);
   const openTabIds = useFileStore((s) => s.openTabIds);
   const reorderTab = useFileStore((s) => s.reorderTab);
+  const splitRight = useFileStore((s) => s.splitRight);
+  const closeOtherPane = useFileStore((s) => s.closeOtherPane);
+  const otherPaneFileId = useFileStore((s) => s.otherPaneFileId);
   const closeOtherTabs = useFileStore((s) => s.closeOtherTabs);
   const closeAllTabs = useFileStore((s) => s.closeAllTabs);
   const openTarget = useFileStore((s) => s.openTarget);
@@ -605,6 +609,13 @@ export function UnifiedHeader() {
                       <ThemePickerPanel />
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
+
+                  <DropdownMenuItem
+                    onClick={() => (otherPaneFileId ? closeOtherPane() : splitRight())}
+                  >
+                    <Columns2 className="mr-2 h-4 w-4" />
+                    {otherPaneFileId ? t("closeOtherPane") : t("splitRight")}
+                  </DropdownMenuItem>
 
                   <DropdownMenuItem onClick={() => setKeyboardShortcutsOpen(true)}>
                     <Keyboard className="mr-2 h-4 w-4" />

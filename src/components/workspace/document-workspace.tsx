@@ -21,6 +21,7 @@ interface DocumentWorkspaceProps {
   file: FileItem;
   reservedRightInset?: number;
   pageRecoveryServices?: PageRecoveryServices;
+  isActivePane?: boolean;
 }
 
 export interface PageRecoveryServices {
@@ -59,6 +60,7 @@ export function DocumentWorkspace({
   file,
   reservedRightInset = 0,
   pageRecoveryServices = defaultPageRecoveryServices,
+  isActivePane = true,
 }: DocumentWorkspaceProps) {
   if (isHtmlFile(file)) {
     return <AttachmentWorkspace file={file} />;
@@ -73,6 +75,7 @@ export function DocumentWorkspace({
     return (
       <MarkdownPageWorkspace
         file={file}
+        isActivePane={isActivePane}
         reservedRightInset={reservedRightInset}
         services={pageRecoveryServices}
       />
@@ -106,10 +109,12 @@ function UnsupportedAttachment({ file }: { file: FileItem }) {
 
 function MarkdownPageWorkspace({
   file,
+  isActivePane,
   reservedRightInset,
   services,
 }: {
   file: FileItem;
+  isActivePane: boolean;
   reservedRightInset: number;
   services: PageRecoveryServices;
 }) {
@@ -255,7 +260,11 @@ function MarkdownPageWorkspace({
         </div>
       )}
       <div className="min-h-0 flex-1">
-        <PageEditorHost file={file} reservedRightInset={reservedRightInset} />
+        <PageEditorHost
+          file={file}
+          isActivePane={isActivePane}
+          reservedRightInset={reservedRightInset}
+        />
       </div>
     </div>
   );

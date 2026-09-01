@@ -61,6 +61,8 @@
     "findAndReplace": "Find and replace",
     "foldAll": "Fold all sections",
     "unfoldAll": "Unfold all sections",
+    "splitRight": "Split right",
+    "closeOtherPane": "Close the other pane",
     "toggleSidebar": "Toggle sidebar",
     "toggleFocusMode": "Toggle focus mode",
     "toggleHighContrast": "Toggle high contrast",
@@ -90,7 +92,9 @@
     "tabActions": "Tab actions",
     "closeTab": "Close",
     "closeOtherTabs": "Close others",
-    "closeAllTabs": "Close all"
+    "closeAllTabs": "Close all",
+    "splitRight": "Split right",
+    "closeOtherPane": "Close other pane"
   },
   "attachment": {
     "pdfLabel": "PDF attachment",

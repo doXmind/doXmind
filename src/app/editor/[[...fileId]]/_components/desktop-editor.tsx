@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties, useEffect } from "react";
+import { Fragment, type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { FilesSidebar } from "@/components/sidebar/files-sidebar";
 import { DocumentWorkspace } from "@/components/workspace/document-workspace";
@@ -10,7 +10,7 @@ import { WelcomeScreen } from "@/components/welcome-screen";
 import { WorkspaceHome } from "@/components/workspace/workspace-home";
 import { UnifiedHeader } from "@/components/editor/unified-header";
 import { OutlineCollapsed } from "@/components/editor/mindlines/outline-collapsed";
-import { useFileStore } from "@/stores/file-store";
+import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { usePageSessionStore } from "@/stores/page-session-store";
 import { isMarkdownFile } from "@/lib/document-types";
@@ -18,6 +18,14 @@ import { MINDLINES_WIDTH } from "@/lib/constants";
 import { MarkdownSkeleton } from "@/components/workspace/markdown-skeleton";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+
+/**
+ * The narrowest a pane may be dragged.
+ *
+ * Measured, not guessed: the content column is the pane's width less 132px at every width, so this
+ * leaves roughly 350px of text — about the point where a Markdown line stops being readable.
+ */
+const MIN_PANE_PX = 480;
 
 export function DesktopEditor() {
   const currentFileId = useFileStore((s) => s.currentFileId);
@@ -29,6 +37,54 @@ export function DesktopEditor() {
     s.currentFileId ? s.loadedContentIds.has(s.currentFileId) : false
   );
   const openTarget = useFileStore((s) => s.openTarget);
+  const otherPaneFileId = useFileStore((s) => s.otherPaneFileId);
+  const otherPaneOnLeft = useFileStore((s) => s.otherPaneOnLeft);
+  const focusOtherPane = useFileStore((s) => s.focusOtherPane);
+  const otherPaneFile = useFileStore((s) =>
+    s.otherPaneFileId ? s.files.find((file) => file.id === s.otherPaneFileId) : undefined
+  );
+  const isOtherPaneLoaded = useFileStore((s) =>
+    s.otherPaneFileId ? s.loadedContentIds.has(s.otherPaneFileId) : false
+  );
+  const loadFileContent = useFileStore((s) => s.loadFileContent);
+  /** Local, not persisted: a split lasts as long as the session that opened it. */
+  const [splitRatio, setSplitRatio] = useState(0.5);
+  const splitHostRef = useRef<HTMLDivElement>(null);
+
+  // The other pane's Page needs its content like any other. `loadFileContent` no-ops on a cache
+  // hit, so this cannot cause a second read.
+  useEffect(() => {
+    if (otherPaneFileId && !isOtherPaneLoaded) void loadFileContent(otherPaneFileId);
+  }, [otherPaneFileId, isOtherPaneLoaded, loadFileContent]);
+
+  const panes = useMemo(() => {
+    const active = {
+      key: "active",
+      fileId: currentFileId,
+      file: currentFile ?? null,
+      isLoaded: isCurrentFileLoaded,
+      isActive: true,
+      basis: otherPaneOnLeft ? (1 - splitRatio) * 100 : splitRatio * 100,
+    };
+    const other = {
+      key: "other",
+      fileId: otherPaneFileId,
+      file: otherPaneFile ?? null,
+      isLoaded: isOtherPaneLoaded,
+      isActive: false,
+      basis: otherPaneOnLeft ? splitRatio * 100 : (1 - splitRatio) * 100,
+    };
+    return otherPaneOnLeft ? [other, active] : [active, other];
+  }, [
+    currentFileId,
+    currentFile,
+    isCurrentFileLoaded,
+    otherPaneFileId,
+    otherPaneFile,
+    isOtherPaneLoaded,
+    otherPaneOnLeft,
+    splitRatio,
+  ]);
   // VSCode-style: the sidebar appears whenever a file or folder is open.
   // The welcome surface can remain mounted beside it, so opening a folder
   // expands the file tree instead of replacing the main content with a blank
@@ -146,7 +202,7 @@ export function DesktopEditor() {
               {/* Outline rail — collapsed by default, expands into a floating
                 outline popover on hover. Keep it close to the scroll edge so
                 the popover reads as part of the document navigation chrome. */}
-              {!isFocusMode && hasLiveHeadings && (
+              {!isFocusMode && hasLiveHeadings && otherPaneFileId === null && (
                 <div
                   data-native-editor-chrome
                   // right-4 is the one chrome inset: the same 16px the word
@@ -178,53 +234,61 @@ export function DesktopEditor() {
                 </div>
               )}
 
-              <div className="relative flex h-full min-w-0 flex-col overflow-hidden">
-                <ErrorBoundary>
-                  {currentFile ? (
-                    // Crossfade between the loading skeleton and the editor so
-                    // a first open / file switch fades instead of snapping.
-                    // `mode="wait"` keeps a single element in flow (no layout
-                    // doubling); `initial={false}` skips animating the very
-                    // first mount.
-                    <AnimatePresence mode="wait" initial={false}>
-                      {isCurrentFileLoaded ? (
-                        <motion.div
-                          key="document"
-                          className="h-full"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.18, ease: "easeOut" }}
-                        >
-                          <DocumentWorkspace
-                            file={currentFile}
-                            reservedRightInset={outlineContentGutterPx}
-                          />
-                        </motion.div>
-                      ) : (
-                        <motion.div
-                          key="skeleton"
-                          className="h-full"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.18, ease: "easeOut" }}
-                        >
-                          <MarkdownSkeleton
-                            file={{ name: currentFile.name, outline: currentFile.outline }}
-                          />
-                        </motion.div>
+              {otherPaneFileId === null ? (
+                <EditorPane
+                  file={currentFile ?? null}
+                  isLoaded={isCurrentFileLoaded}
+                  isActive
+                  isSynced={isSynced}
+                  pendingFileId={currentFileId}
+                  openTarget={openTarget}
+                  reservedRightInset={outlineContentGutterPx}
+                />
+              ) : (
+                <div ref={splitHostRef} className="flex h-full min-h-0 w-full">
+                  {panes.map((pane, index) => (
+                    <Fragment key={pane.key}>
+                      {index > 0 && (
+                        <ResizeHandle
+                          side="left"
+                          // The divider is the only thing saying where one Page ends and the next
+                          // begins; without it the two columns read as one ragged document.
+                          className="z-20"
+                          onResize={(delta) => {
+                            const width = splitHostRef.current?.getBoundingClientRect().width ?? 0;
+                            if (width <= 0) return;
+                            // Clamped so neither pane drops below a readable column: the content
+                            // column is the pane's width less 132px, measured.
+                            const min = MIN_PANE_PX / width;
+                            setSplitRatio((ratio) =>
+                              Math.min(1 - min, Math.max(min, ratio + delta / width))
+                            );
+                          }}
+                          onDoubleClick={() => setSplitRatio(0.5)}
+                        />
                       )}
-                    </AnimatePresence>
-                  ) : !isSynced && currentFileId ? (
-                    <MarkdownSkeleton />
-                  ) : openTarget === "folder" ? (
-                    <WorkspaceHome />
-                  ) : (
-                    <WelcomeScreen />
-                  )}
-                </ErrorBoundary>
-              </div>
+                      <div
+                        className="relative flex h-full min-h-0 flex-col overflow-hidden"
+                        style={{ flexBasis: `${pane.basis}%`, flexGrow: 0, flexShrink: 1 }}
+                        onFocusCapture={pane.isActive ? undefined : focusOtherPane}
+                        onPointerDownCapture={pane.isActive ? undefined : focusOtherPane}
+                      >
+                        <EditorPane
+                          file={pane.file}
+                          isLoaded={pane.isLoaded}
+                          isActive={pane.isActive}
+                          isSynced={isSynced}
+                          pendingFileId={pane.fileId}
+                          openTarget={openTarget}
+                          // Only an unsplit editor reserves room for the outline rail; while split
+                          // the rail is suppressed, so neither pane pays for it.
+                          reservedRightInset={0}
+                        />
+                      </div>
+                    </Fragment>
+                  ))}
+                </div>
+              )}
             </main>
           </div>
         </div>
@@ -244,5 +308,76 @@ export function DesktopEditor() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+/**
+ * One editor column: the Page, its loading skeleton, or the empty-workspace surface.
+ *
+ * Extracted verbatim from the single-pane tree so an unsplit editor renders exactly the DOM it
+ * always did — the split is a second instance of this, not a different shape.
+ */
+function EditorPane({
+  file,
+  isLoaded,
+  isActive,
+  isSynced,
+  pendingFileId,
+  openTarget,
+  reservedRightInset,
+}: {
+  file: FileItem | null;
+  isLoaded: boolean;
+  isActive: boolean;
+  isSynced: boolean;
+  pendingFileId: string | null;
+  openTarget: string;
+  reservedRightInset: number;
+}) {
+  return (
+    <div className="relative flex h-full min-w-0 flex-col overflow-hidden">
+      <ErrorBoundary>
+        {file ? (
+          // Crossfade between the loading skeleton and the editor so a first open / file switch
+          // fades instead of snapping. `mode="wait"` keeps a single element in flow (no layout
+          // doubling); `initial={false}` skips animating the very first mount.
+          <AnimatePresence mode="wait" initial={false}>
+            {isLoaded ? (
+              <motion.div
+                key="document"
+                className="h-full"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+              >
+                <DocumentWorkspace
+                  file={file}
+                  isActivePane={isActive}
+                  reservedRightInset={reservedRightInset}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="skeleton"
+                className="h-full"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+              >
+                <MarkdownSkeleton file={{ name: file.name, outline: file.outline }} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        ) : !isSynced && pendingFileId ? (
+          <MarkdownSkeleton />
+        ) : openTarget === "folder" ? (
+          <WorkspaceHome />
+        ) : (
+          <WelcomeScreen />
+        )}
+      </ErrorBoundary>
+    </div>
   );
 }

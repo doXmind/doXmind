@@ -52,6 +52,13 @@
     display: none !important;
   }
 
+  /* `printToPDF` prints the whole webContents, and the layout rules below force every runtime to
+   * full width, so a split would otherwise concatenate both Pages into one PDF. Hung off the
+   * document element rather than a pane wrapper, so it cannot drift from whatever wraps a pane. */
+  [data-native-markdown-document]:not([data-pane-active="true"]) {
+    display: none !important;
+  }
+
   [data-native-block-print-preview] {
     display: block !important;
   }

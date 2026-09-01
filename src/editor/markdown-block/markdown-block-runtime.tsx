@@ -95,6 +95,14 @@ import { projectWorkspacePageProperties } from "@/lib/workspace-page-catalog";
 
 interface MarkdownBlockRuntimeProps {
   file: FileItem;
+  /**
+   * Whether this is the pane the user is working in.
+   *
+   * Several listeners here sit on `window` or `document`, and the chrome — the find bar, the
+   * outline, the caret — describes one Page at a time. With a second pane on screen each of them
+   * asks this first.
+   */
+  isActivePane?: boolean;
   reservedRightInset?: number;
   transclusionServices?: MarkdownTransclusionServices;
   imageServices?: MarkdownImageServices;
@@ -175,6 +183,7 @@ function useSettledValue<T>(value: T, delayMs: number): T {
  */
 export function MarkdownBlockRuntime({
   file,
+  isActivePane = true,
   reservedRightInset = 0,
   transclusionServices = defaultTransclusionServices,
   imageServices = defaultImageServices,
@@ -205,10 +214,10 @@ export function MarkdownBlockRuntime({
    * first. Read from the store at event time rather than subscribed to, because these handlers must
    * not re-register on every focus change.
    */
-  const isActiveEditor = useCallback(
-    () => useEditorRefStore.getState().activeEditorId === editorInstanceId,
-    [editorInstanceId]
-  );
+  const isActivePaneRef = useRef(isActivePane);
+  isActivePaneRef.current = isActivePane;
+  // Read through a ref, so a focus change never re-registers a window listener.
+  const isActiveEditor = useCallback(() => isActivePaneRef.current, []);
   const publishOutline = usePageSessionStore((state) => state.publishOutline);
   const revealRequest = usePageSessionStore((state) => state.revealRequest);
   const clearReveal = usePageSessionStore((state) => state.clearReveal);
@@ -688,6 +697,8 @@ export function MarkdownBlockRuntime({
     // Do not relabel the previous Page's headings with the new Page id during
     // that intervening commit.
     if (fileIdRef.current !== file.id) return;
+    // One outline rail, one Page: the inactive pane would otherwise relabel it with its headings.
+    if (!isActivePane) return;
     publishOutline({
       pageId: file.id,
       headings: outlineHeadings,
@@ -696,7 +707,7 @@ export function MarkdownBlockRuntime({
         : null,
       navigateTo: navigateToOutline,
     });
-  }, [activeBlockId, file.id, navigateToOutline, outlineHeadings, publishOutline]);
+  }, [activeBlockId, file.id, isActivePane, navigateToOutline, outlineHeadings, publishOutline]);
 
   useEffect(
     () => () => {
@@ -1056,6 +1067,10 @@ export function MarkdownBlockRuntime({
     sessionGenerationRef.current += 1;
     setDirty(false);
   }, [debouncedSave, setDirty]);
+
+  useEffect(() => {
+    if (isActivePane) useEditorRefStore.getState().setActiveEditor(editorInstanceId);
+  }, [isActivePane, editorInstanceId]);
 
   const toggleFold = useCallback((blockId: string) => {
     setFoldedBlockIds((current) => {
@@ -2832,7 +2847,7 @@ export function MarkdownBlockRuntime({
       data-testid="markdown-block-runtime"
       data-native-markdown-runtime
     >
-      {isSearchBarOpen ? (
+      {isSearchBarOpen && isActivePane ? (
         <div
           role="search"
           data-native-editor-chrome
@@ -3039,6 +3054,8 @@ export function MarkdownBlockRuntime({
             className="markdown-page max-w-none focus:outline-none"
             data-native-markdown-document
             data-file-id={file.id}
+            // Read by the PDF export guard and by print.css, which must resolve to one Page.
+            data-pane-active={isActivePane ? "true" : "false"}
             data-revision={snapshot.revision}
             onCopy={(event) => {
               if (!blockSelection) return;
