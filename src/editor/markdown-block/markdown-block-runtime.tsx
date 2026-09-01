@@ -12,6 +12,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useId,
 } from "react";
 
 import {
@@ -190,11 +191,11 @@ export function MarkdownBlockRuntime({
   const setDirty = useEditorStore((state) => state.setDirty);
   const setSaving = useEditorStore((state) => state.setSaving);
   const setLastSavedAt = useEditorStore((state) => state.setLastSavedAt);
-  const setRequestSave = useEditorRefStore((state) => state.setRequestSave);
-  const setRequestUndo = useEditorRefStore((state) => state.setRequestUndo);
-  const setRequestRedo = useEditorRefStore((state) => state.setRequestRedo);
-  const setRequestFoldAll = useEditorRefStore((state) => state.setRequestFoldAll);
-  const setDiscardPendingChanges = useEditorRefStore((state) => state.setDiscardPendingChanges);
+  const registerEditor = useEditorRefStore((state) => state.registerEditor);
+  const unregisterEditor = useEditorRefStore((state) => state.unregisterEditor);
+  // One id per mounted runtime. Block ids restart per document and the file id changes as the
+  // user navigates, so neither identifies *this editor* for the life of its mount.
+  const editorInstanceId = useId();
   const publishOutline = usePageSessionStore((state) => state.publishOutline);
   const revealRequest = usePageSessionStore((state) => state.revealRequest);
   const clearReveal = usePageSessionStore((state) => state.clearReveal);
@@ -1060,28 +1061,22 @@ export function MarkdownBlockRuntime({
   }, []);
 
   useEffect(() => {
-    setRequestSave(saveCurrentNow);
-    setRequestUndo(undo);
-    setRequestRedo(redo);
-    setRequestFoldAll(foldAll);
-    setDiscardPendingChanges(discardPendingChanges);
-    return () => {
-      setRequestSave(null);
-      setRequestUndo(null);
-      setRequestRedo(null);
-      setRequestFoldAll(null);
-      setDiscardPendingChanges(null);
-    };
+    registerEditor(editorInstanceId, {
+      requestSave: saveCurrentNow,
+      requestUndo: undo,
+      requestRedo: redo,
+      requestFoldAll: foldAll,
+      discardPendingChanges,
+    });
+    return () => unregisterEditor(editorInstanceId);
   }, [
+    editorInstanceId,
+    registerEditor,
+    unregisterEditor,
     foldAll,
-    setRequestFoldAll,
     discardPendingChanges,
     redo,
     saveCurrentNow,
-    setDiscardPendingChanges,
-    setRequestRedo,
-    setRequestSave,
-    setRequestUndo,
     undo,
   ]);
 
@@ -1223,7 +1218,13 @@ export function MarkdownBlockRuntime({
       const goalOffset =
         goalX === null
           ? null
-          : caretOffsetOnBlockEdge(target.id, goalX, direction < 0 ? "last" : "first", source);
+          : caretOffsetOnBlockEdge(
+              documentElementRef.current,
+              target.id,
+              goalX,
+              direction < 0 ? "last" : "first",
+              source
+            );
       const offset = goalOffset ?? (direction < 0 ? source.length : 0);
       verticalGoalRef.current = goalX === null ? null : { blockId: target.id, offset, x: goalX };
       setActiveBlockId(target.id);
@@ -3413,13 +3414,17 @@ function sameBlockSelectionRange(
  * the platform cannot hit-test text, in which case the caller falls back to a source edge.
  */
 function caretOffsetOnBlockEdge(
+  host: HTMLElement | null,
   blockId: string,
   caretX: number,
   edge: "first" | "last",
   source: string
 ): number | null {
   if (typeof document === "undefined" || typeof CSS === "undefined") return null;
-  const row = document.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`);
+  // Scoped to this Page's own container, like every other lookup here. Block ids are session-local
+  // and restart at `block-1` for each document, so a document-wide query would find whichever
+  // Page happens to sit first in the DOM once more than one is mounted.
+  const row = host?.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`);
   const content = row?.querySelector<HTMLElement>("[data-native-block-content]") ?? null;
   if (!content) return null;
   const range = document.createRange();
