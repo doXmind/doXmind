@@ -2035,3 +2035,50 @@ describe("useFileStore disk workspace", () => {
     expect(state.files.map((file) => file.name)).toEqual(["Draft.md"]);
   });
 });
+
+describe("useFileStore tabs", () => {
+  const page = (id: string) => ({
+    id,
+    name: `${id}.md`,
+    isFolder: false,
+    parentId: null,
+    position: 0,
+    isFavorite: false,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    wordCount: 0,
+    preview: "",
+    content: "",
+  });
+
+  beforeEach(() => {
+    useFileStore.setState({
+      files: [page("a"), page("b"), page("c")] as never,
+      openTabIds: ["a", "b", "c"],
+      currentFileId: "a",
+    });
+  });
+
+  it("reorders a tab to the position it was dropped on", () => {
+    useFileStore.getState().reorderTab("c", 0);
+    expect(useFileStore.getState().openTabIds).toEqual(["c", "a", "b"]);
+
+    useFileStore.getState().reorderTab("c", 2);
+    expect(useFileStore.getState().openTabIds).toEqual(["a", "b", "c"]);
+  });
+
+  it("ignores a reorder of a tab that is not open", () => {
+    useFileStore.getState().reorderTab("missing", 0);
+    expect(useFileStore.getState().openTabIds).toEqual(["a", "b", "c"]);
+  });
+
+  it("closes the others and keeps the one that was kept", async () => {
+    useFileStore.getState().closeOtherTabs("b");
+    expect(useFileStore.getState().openTabIds).toEqual(["b"]);
+  });
+
+  it("closes them all", () => {
+    useFileStore.getState().closeAllTabs();
+    expect(useFileStore.getState().openTabIds).toEqual([]);
+  });
+});

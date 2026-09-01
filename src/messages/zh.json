@@ -85,7 +85,11 @@
     "copyMarkdownSource": "复制 Markdown 源文件",
     "failedToCopyMarkdownSource": "无法复制 Markdown 源文件",
     "exportAsPDF": "导出为 PDF",
-    "keyboardShortcuts": "快捷键"
+    "keyboardShortcuts": "快捷键",
+    "tabActions": "标签页操作",
+    "closeTab": "关闭",
+    "closeOtherTabs": "关闭其他",
+    "closeAllTabs": "全部关闭"
   },
   "attachment": {
     "pdfLabel": "PDF 附件",

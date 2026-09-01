@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 import {
   Search,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
+import { MENU_PANEL_CLASS, MENU_ROW_CLASS } from "@/components/ui/dropdown-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -70,6 +72,9 @@ export function UnifiedHeader() {
   const currentFileId = useFileStore((s) => s.currentFileId);
   const files = useFileStore((s) => s.files);
   const openTabIds = useFileStore((s) => s.openTabIds);
+  const reorderTab = useFileStore((s) => s.reorderTab);
+  const closeOtherTabs = useFileStore((s) => s.closeOtherTabs);
+  const closeAllTabs = useFileStore((s) => s.closeAllTabs);
   const openTarget = useFileStore((s) => s.openTarget);
   const closeTab = useFileStore((s) => s.closeTab);
   // Hide the sidebar toggle on the welcome screen — there's nothing to show.
@@ -166,6 +171,20 @@ export function UnifiedHeader() {
       navigateToEditorFile(useFileStore.getState().currentFileId, { replace: true });
     }
   };
+
+  const [tabMenu, setTabMenu] = useState<{ fileId: string; x: number; y: number } | null>(null);
+  const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!tabMenu) return;
+    const close = () => setTabMenu(null);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("resize", close);
+    };
+  }, [tabMenu]);
 
   const handleActivateTab = (fileId: string) => {
     if (fileId === currentFileId) return;
@@ -349,6 +368,32 @@ export function UnifiedHeader() {
                       aria-selected={isActive}
                       data-no-drag
                       title={file.storageHandle?.relPath ?? file.name}
+                      // Reordering is the only thing a tab drag does; a tab dragged out of the
+                      // bar is not a split, because there is no second pane to drop it into.
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "move";
+                        setDraggingTabId(file.id);
+                      }}
+                      onDragEnd={() => setDraggingTabId(null)}
+                      onDragOver={(event) => {
+                        if (!draggingTabId || draggingTabId === file.id) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                      }}
+                      onDrop={(event) => {
+                        if (!draggingTabId || draggingTabId === file.id) return;
+                        event.preventDefault();
+                        reorderTab(
+                          draggingTabId,
+                          tabFiles.findIndex((t) => t.id === file.id)
+                        );
+                        setDraggingTabId(null);
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        setTabMenu({ fileId: file.id, x: event.clientX, y: event.clientY });
+                      }}
                       onClick={() => handleActivateTab(file.id)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
@@ -401,6 +446,52 @@ export function UnifiedHeader() {
             </div>
           )}
 
+          {tabMenu &&
+            typeof document !== "undefined" &&
+            createPortal(
+              <div
+                role="menu"
+                aria-label={t("tabActions")}
+                style={{ position: "fixed", top: tabMenu.y, left: tabMenu.x }}
+                className={`z-50 min-w-[180px] ${MENU_PANEL_CLASS}`}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={MENU_ROW_CLASS}
+                  onClick={() => {
+                    handleCloseTab(tabMenu.fileId);
+                    setTabMenu(null);
+                  }}
+                >
+                  {t("closeTab")}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={MENU_ROW_CLASS}
+                  onClick={() => {
+                    closeOtherTabs(tabMenu.fileId);
+                    setTabMenu(null);
+                  }}
+                >
+                  {t("closeOtherTabs")}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={MENU_ROW_CLASS}
+                  onClick={() => {
+                    closeAllTabs();
+                    setTabMenu(null);
+                  }}
+                >
+                  {t("closeAllTabs")}
+                </button>
+              </div>,
+              document.body
+            )}
           {title && tabFiles.length === 0 && (
             <div
               className={cn(

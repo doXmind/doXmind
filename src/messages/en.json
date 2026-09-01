@@ -85,7 +85,11 @@
     "copyMarkdownSource": "Copy Markdown Source",
     "failedToCopyMarkdownSource": "Could not copy Markdown source",
     "exportAsPDF": "Export as PDF",
-    "keyboardShortcuts": "Keyboard Shortcuts"
+    "keyboardShortcuts": "Keyboard Shortcuts",
+    "tabActions": "Tab actions",
+    "closeTab": "Close",
+    "closeOtherTabs": "Close others",
+    "closeAllTabs": "Close all"
   },
   "attachment": {
     "pdfLabel": "PDF attachment",

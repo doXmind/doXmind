@@ -160,6 +160,10 @@ interface FileState {
   setCurrentFile: (id: string | null) => void;
   requestCurrentFile: (id: string | null) => Promise<boolean>;
   closeTab: (id: string) => void;
+  closeOtherTabs: (id: string) => void;
+  closeAllTabs: () => void;
+  /** Move an open tab to a new position, for drag reordering. */
+  reorderTab: (id: string, toIndex: number) => void;
   renameFile: (id: string, name: string, options?: WorkspaceRelocationOptions) => Promise<void>;
   getFile: (id: string) => FileItem | undefined;
 
@@ -1511,6 +1515,27 @@ export const useFileStore = create<FileState>()(
         }
       },
 
+      closeOtherTabs: (id: string) => {
+        set((state) => (state.openTabIds.includes(id) ? { openTabIds: [id] } : {}));
+        void get().requestCurrentFile(id);
+      },
+
+      closeAllTabs: () => {
+        set({ openTabIds: [] });
+        void get().requestCurrentFile(null);
+      },
+
+      reorderTab: (id: string, toIndex: number) => {
+        set((state) => {
+          const from = state.openTabIds.indexOf(id);
+          if (from === -1) return {};
+          const next = [...state.openTabIds];
+          next.splice(from, 1);
+          next.splice(Math.max(0, Math.min(toIndex, next.length)), 0, id);
+          return { openTabIds: next };
+        });
+      },
+
       closeTab: (id: string) => {
         set((state) => {
           const index = state.openTabIds.indexOf(id);
@@ -2119,6 +2144,9 @@ export const useFileStore = create<FileState>()(
       partialize: (state) => ({
         recents: state.recents,
         expandedFolderIds: Array.from(state.expandedFolderIds),
+        // Which Pages were open, so a restart resumes the session rather than an empty editor.
+        // Ids that no longer exist are dropped when the scan lands; see `loadFiles`.
+        openTabIds: state.openTabIds,
       }),
       merge: (persistedState, currentState) => {
         // Explicitly pick only the fields we want to rehydrate. A naive
@@ -2129,11 +2157,13 @@ export const useFileStore = create<FileState>()(
         const persisted = persistedState as Partial<{
           recents: RecentEntry[];
           expandedFolderIds: string[];
+          openTabIds: string[];
         }>;
         return {
           ...currentState,
           recents: persisted.recents ?? [],
           expandedFolderIds: new Set(persisted.expandedFolderIds ?? []),
+          openTabIds: persisted.openTabIds ?? [],
           files: currentState.files,
         };
       },
