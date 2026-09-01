@@ -168,6 +168,8 @@
     "search": "Search",
     "searchSummary": "{hits} results in {pages} Pages",
     "searchSyntaxError": "Search syntax: {detail}",
+    "tags": "Tags",
+    "searchTag": "Search for tag {tag}",
     "newDocument": "New page",
     "newFile": "New File",
     "newFolder": "New folder",

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronsDownUp, Search } from "lucide-react";
+import { ChevronsDownUp, Hash, Search } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -14,6 +14,7 @@ interface WorkspaceHeaderProps {
   onOpenTemplatePicker: () => void;
   onCollapseAll: () => void;
   onOpenSearch: () => void;
+  onOpenTags: () => void;
   canCollapseAll?: boolean;
 }
 
@@ -29,6 +30,7 @@ export function WorkspaceHeader({
   onOpenTemplatePicker,
   onCollapseAll,
   onOpenSearch,
+  onOpenTags,
   canCollapseAll = true,
 }: WorkspaceHeaderProps) {
   const t = useTranslations("sidebar");
@@ -62,6 +64,17 @@ export function WorkspaceHeader({
               aria-label={t("search")}
             >
               <Search className="h-4 w-4" />
+            </Button>
+          </Tooltip>
+          <Tooltip content={t("tags")} side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onOpenTags}
+              className="sidebar-action-button h-7 w-7 rounded-lg"
+              aria-label={t("tags")}
+            >
+              <Hash className="h-4 w-4" />
             </Button>
           </Tooltip>
           {canCollapseAll && (

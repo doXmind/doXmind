@@ -15,6 +15,7 @@ function renderHeader() {
         onOpenTemplatePicker={vi.fn()}
         onCollapseAll={vi.fn()}
         onOpenSearch={vi.fn()}
+        onOpenTags={vi.fn()}
       />
     </NextIntlClientProvider>
   );
@@ -37,9 +38,10 @@ describe("Sidebar action cluster", () => {
 
     const newPage = screen.getByRole("button", { name: /new/i });
     const search = screen.getByRole("button", { name: /^search$/i });
+    const tags = screen.getByRole("button", { name: /^tags$/i });
     const collapse = screen.getByRole("button", { name: /collapse all/i });
 
-    for (const button of [newPage, search, collapse]) {
+    for (const button of [newPage, search, tags, collapse]) {
       const classes = button.className.split(/\s+/);
       expect(classes).toContain("sidebar-action-button");
       expect(classes).toContain("h-7");
@@ -53,7 +55,7 @@ describe("Sidebar action cluster", () => {
   it("gives both cluster glyphs the one 16px chrome size", () => {
     renderHeader();
 
-    for (const name of [/new/i, /^search$/i, /collapse all/i]) {
+    for (const name of [/new/i, /^search$/i, /^tags$/i, /collapse all/i]) {
       const glyph = screen.getByRole("button", { name }).querySelector("svg")!;
       expect(glyph.getAttribute("class")?.split(/\s+/)).toEqual(
         expect.arrayContaining(["h-4", "w-4"])

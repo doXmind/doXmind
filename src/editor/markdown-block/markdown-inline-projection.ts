@@ -1,3 +1,4 @@
+import { tagAt } from "@/lib/tags";
 export interface Utf16Range {
   readonly from: number;
   readonly to: number;
@@ -31,6 +32,10 @@ export interface MarkdownInlineMarks {
    * view, which is the whole point of writing one.
    */
   readonly comment: boolean;
+  /** Obsidian's inline `#tag`. Rendered as a pill that searches for it. */
+  readonly tag: boolean;
+  /** The tag's body, without the `#`, when `tag` is set. */
+  readonly tagName?: string;
 }
 
 export interface MarkdownInlineTextSegment {
@@ -44,6 +49,7 @@ export interface MarkdownInlineTextSegment {
   readonly marks: MarkdownInlineMarks;
   readonly linkTarget?: string;
   readonly wikiTarget?: string;
+  readonly tagName?: string;
 }
 
 export interface MarkdownInlineImageSegment {
@@ -81,6 +87,7 @@ interface Piece {
   readonly marks: MarkdownInlineMarks;
   readonly linkTarget?: string;
   readonly wikiTarget?: string;
+  readonly tagName?: string;
   readonly imageAlt?: string;
   readonly imageTarget?: string;
   readonly unsafe?: true;
@@ -124,6 +131,7 @@ const EMPTY_MARKS: MarkdownInlineMarks = {
   wiki: false,
   highlight: false,
   comment: false,
+  tag: false,
 };
 
 export function projectMarkdownInline(source: string): MarkdownInlineProjection {
@@ -345,6 +353,12 @@ class InlineParser {
         cursor = autolink.cursor;
         continue;
       }
+      const tag = this.tagAt(cursor, to, marks);
+      if (tag) {
+        pieces.push(tag.piece);
+        cursor = tag.cursor;
+        continue;
+      }
       const link = this.linkAt(cursor, to, marks);
       if (link) {
         pieces.push(...link.pieces);
@@ -479,7 +493,8 @@ class InlineParser {
         character === "_" ||
         character === "~" ||
         character === "=" ||
-        character === "%"
+        character === "%" ||
+        character === "#"
       ) {
         return cursor;
       }
@@ -561,6 +576,35 @@ class InlineParser {
         unsafe: true as const,
       })),
       cursor: destination.cursor,
+    };
+  }
+
+  /**
+   * An inline `#tag`, kept whole and visible.
+   *
+   * Unlike a delimiter pair the `#` stays in the visible text: it is what the tag looks like, and
+   * hiding it would make deleting one a guessing game.
+   */
+  private tagAt(
+    cursor: number,
+    to: number,
+    marks: MarkdownInlineMarks
+  ): { piece: Piece; cursor: number } | null {
+    if (marks.code || marks.link || marks.wiki) return null;
+    const tag = tagAt(this.source.slice(0, to), cursor);
+    if (!tag) return null;
+    const text = this.source.slice(cursor, tag.end);
+    return {
+      piece: {
+        kind: "text",
+        text,
+        sourceFrom: cursor,
+        sourceTo: tag.end,
+        sourceBoundaries: [],
+        editable: true,
+        marks: { ...marks, tag: true, tagName: tag.name },
+      },
+      cursor: tag.end,
     };
   }
 
@@ -877,7 +921,11 @@ function sameMarks(left: MarkdownInlineMarks, right: MarkdownInlineMarks): boole
     left.strike === right.strike &&
     left.code === right.code &&
     left.link === right.link &&
-    left.wiki === right.wiki
+    left.wiki === right.wiki &&
+    left.highlight === right.highlight &&
+    left.comment === right.comment &&
+    left.tag === right.tag &&
+    left.tagName === right.tagName
   );
 }
 

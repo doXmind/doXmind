@@ -13,7 +13,13 @@ interface LayoutState {
   // Desktop panel visibility
   isFilesSidebarOpen: boolean; // Files sidebar (left edge, independent)
   /** Which view the left sidebar shows. Not persisted: a session starts on the file tree. */
-  sidebarView: "files" | "search";
+  sidebarView: "files" | "search" | "tags";
+  /**
+   * A search the sidebar should run, raised from outside it — clicking a tag pill, or a tag in
+   * the tag pane. The token distinguishes two clicks on the same tag, so the second one still
+   * re-runs rather than looking inert.
+   */
+  sidebarSearchRequest: { query: string; token: number } | null;
   /** UI language. Both catalogs ship in the bundle, so switching needs no reload. */
   locale: "en" | "zh";
   themeId: string;
@@ -56,7 +62,8 @@ interface LayoutState {
   // Actions
   toggleFilesSidebar: () => void;
   setFilesSidebarOpen: (open: boolean) => void;
-  setSidebarView: (view: "files" | "search") => void;
+  setSidebarView: (view: "files" | "search" | "tags") => void;
+  openSidebarSearch: (query: string) => void;
   setLocale: (locale: "en" | "zh") => void;
   setThemeId: (id: string) => void;
   setPreferredLightTheme: (id: string) => void;
@@ -109,6 +116,7 @@ export const useLayoutStore = create<LayoutState>()(
       // Desktop panel visibility
       isFilesSidebarOpen: true,
       sidebarView: "files",
+      sidebarSearchRequest: null,
       locale: "en",
       themeId: DEFAULT_LIGHT_THEME,
       preferredLightTheme: DEFAULT_LIGHT_THEME,
@@ -155,6 +163,17 @@ export const useLayoutStore = create<LayoutState>()(
 
       setSidebarView: (view) => {
         set({ sidebarView: view });
+      },
+
+      openSidebarSearch: (query) => {
+        set((state) => ({
+          isFilesSidebarOpen: true,
+          sidebarView: "search",
+          sidebarSearchRequest: {
+            query,
+            token: (state.sidebarSearchRequest?.token ?? 0) + 1,
+          },
+        }));
       },
 
       setLocale: (locale) => {

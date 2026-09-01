@@ -11,6 +11,7 @@ import { UpdatePill } from "./update-pill";
 import { TemplatePicker, getLocalizedFileName, type FileTemplate } from "./template-picker";
 import { WorkspaceHeader } from "./workspace-header";
 import { SearchSidebar } from "./search-sidebar";
+import { TagsSidebar } from "./tags-sidebar";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { getErrorMessage } from "@/lib/utils";
@@ -104,10 +105,13 @@ export function FilesSidebar() {
         onCollapseAll={() => folderTreeRef.current?.collapseAll()}
         canCollapseAll={sidebarView === "files" && files.some((file) => file.isFolder)}
         onOpenSearch={() => setSidebarView(sidebarView === "search" ? "files" : "search")}
+        onOpenTags={() => setSidebarView(sidebarView === "tags" ? "files" : "tags")}
       />
 
       {sidebarView === "search" ? (
         <SearchSidebar />
+      ) : sidebarView === "tags" ? (
+        <TagsSidebar />
       ) : (
         <ScrollArea className="min-h-0 flex-1">
           {/* min-h-full lets FolderTree's spacer reach the bottom of the

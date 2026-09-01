@@ -438,6 +438,16 @@ function SemanticSegment({
   if (segment.marks.bold) content = <strong>{content}</strong>;
   if (segment.marks.italic) content = <em>{content}</em>;
   if (segment.marks.strike) content = <del>{content}</del>;
+  if (segment.marks.tag) {
+    content = (
+      <span
+        data-markdown-inline-tag={segment.marks.tagName}
+        className="cursor-pointer rounded-[4px] bg-primary/10 px-1 text-primary hover:bg-primary/20"
+      >
+        {content}
+      </span>
+    );
+  }
   if (segment.marks.highlight) {
     content = <mark className="rounded-[2px] bg-primary/25 text-inherit">{content}</mark>;
   }

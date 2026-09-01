@@ -244,6 +244,33 @@ async function scanDocumentDto(root, absolute) {
   }
 }
 
+/**
+ * The inline `#tag`s of a Page body.
+ *
+ * The second implementation of one grammar: this is CommonJS in the main process and cannot import
+ * `src/lib/tags.ts`. `tests/fixtures/page-tag-contract.json` is what keeps the two honest.
+ *
+ * Fenced regions, inline code and link destinations are masked first, so a `#` inside them is not
+ * a tag — the same exclusions the renderer's projection makes structurally.
+ */
+function inlineTagsInBody(body) {
+  if (!body) return [];
+  const masked = body
+    .replace(/^```[\s\S]*?^```/gm, (run) => " ".repeat(run.length))
+    .replace(/`[^`\r\n]*`/g, (run) => " ".repeat(run.length))
+    .replace(/\[\[[^\]\r\n]*\]\]/g, (run) => " ".repeat(run.length))
+    .replace(/\]\([^)\r\n]*\)/g, (run) => " ".repeat(run.length));
+  const found = [];
+  const pattern = /(^|[\s(（【[「])#([\p{L}\p{N}_\-/]+)/gu;
+  for (const match of masked.matchAll(pattern)) {
+    const name = match[2];
+    if (!/[^\p{Nd}/]/u.test(name)) continue;
+    if (name.startsWith("/") || name.endsWith("/") || name.includes("//")) continue;
+    found.push(name);
+  }
+  return found;
+}
+
 async function documentDtoForPath(root, absolute) {
   const relPath = relativePath(root, absolute);
   const extension = path.extname(absolute).toLowerCase();
@@ -252,9 +279,11 @@ async function documentDtoForPath(root, absolute) {
   let idSource = "path";
   let title = path.basename(absolute, extension);
   let meta = {};
+  let body = "";
   if (documentType === "markdown") {
     const raw = await readUtf8(absolute);
     const split = splitPageSource(raw);
+    body = split.body;
     meta = pageMetaProjection(split.meta);
     const sourceId = portablePageId(meta.id);
     if (sourceId) {
@@ -283,6 +312,13 @@ async function documentDtoForPath(root, absolute) {
   if (Array.isArray(meta.aliases) && meta.aliases.every((value) => typeof value === "string")) {
     dto.aliases = meta.aliases;
   }
+  // Frontmatter tags and the inline `#tag`s in the body, which is what a tag pane counts and what
+  // `tag:` searches. Absent rather than empty, so a Page with no tags stays the shape it was.
+  const tags = [
+    ...(Array.isArray(meta.tags) ? meta.tags.filter((value) => typeof value === "string") : []),
+    ...inlineTagsInBody(body),
+  ];
+  if (tags.length) dto.tags = [...new Set(tags)];
   return dto;
 }
 

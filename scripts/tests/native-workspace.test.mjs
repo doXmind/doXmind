@@ -1893,6 +1893,55 @@ test("the scan skips the folders the user excluded, by name only", async () => {
   });
 });
 
+test("the scan reads inline #tags by the same grammar the renderer uses", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    const contract = JSON.parse(
+      await fs.readFile(new URL("../../tests/fixtures/page-tag-contract.json", import.meta.url), "utf8")
+    );
+
+    // One grammar, written twice: this is CommonJS in main and cannot import src/lib/tags.ts.
+    for (const [index, entry] of contract.cases.entries()) {
+      const name = `Tag ${index}.md`;
+      await fs.writeFile(path.join(root, name), `${entry.text}\n`);
+      const scan = await invoke("workspace_scan", { root });
+      const document = scan.documents.find((candidate) => candidate.path === name);
+      assert.deepEqual(document.tags ?? [], entry.tags, entry.name);
+      await fs.rm(path.join(root, name));
+    }
+  });
+});
+
+test("the scan merges frontmatter tags with the inline ones, without duplicates", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    await fs.writeFile(
+      path.join(root, "Both.md"),
+      "---\ntags:\n  - project\n---\n\nbody with #project and #inbox\n"
+    );
+    await fs.writeFile(path.join(root, "None.md"), "no tags here\n");
+
+    const scan = await invoke("workspace_scan", { root });
+    const both = scan.documents.find((candidate) => candidate.path === "Both.md");
+    assert.deepEqual(both.tags, ["project", "inbox"]);
+    // Absent rather than empty, so a Page with no tags stays the shape it was.
+    assert.equal("tags" in scan.documents.find((c) => c.path === "None.md"), false);
+  });
+});
+
+test("a code fence is not a source of tags", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    await fs.writeFile(
+      path.join(root, "Code.md"),
+      "```sh\n# not a tag\ngit commit -m '#nope'\n```\n\nbut #real is\n"
+    );
+
+    const scan = await invoke("workspace_scan", { root });
+    assert.deepEqual(scan.documents.find((c) => c.path === "Code.md").tags, ["real"]);
+  });
+});
+
 test("a vault written by Obsidian carries its tags and aliases into the scan", async () => {
   await withWorkspace(async (root) => {
     const invoke = createNativeWorkspaceDispatcher();

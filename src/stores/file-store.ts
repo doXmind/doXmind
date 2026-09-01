@@ -715,6 +715,7 @@ function fileFromEntry(entry: WorkspaceEntry, existingReadModel?: LoadedReadMode
     meta: existingReadModel?.meta ?? scanMeta,
     isFolder: entry.kind === "folder",
     isAsset: entry.kind === "asset",
+    tags: entry.tags,
     parentId: entry.parent?.id ?? null,
     position: entry.position || 0,
     isFavorite: entry.isFavorite || false,

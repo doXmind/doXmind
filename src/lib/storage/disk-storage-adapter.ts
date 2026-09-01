@@ -63,6 +63,7 @@ interface WorkspaceDocumentDto {
   documentType?: WorkspaceDocumentType;
   favorite?: boolean | null;
   aliases?: string[] | null;
+  tags?: string[] | null;
 }
 
 // `doc_move` is an Attachment-only compatibility command. Pages and folders
@@ -644,6 +645,7 @@ function entryFromDocument(doc: WorkspaceDocumentDto): WorkspaceEntry {
     documentType: doc.documentType ?? documentTypeFromPath(doc.path),
     isFavorite: doc.favorite ?? false,
     aliases: Array.isArray(doc.aliases) ? doc.aliases : undefined,
+    tags: Array.isArray(doc.tags) ? doc.tags : undefined,
   };
 }
 

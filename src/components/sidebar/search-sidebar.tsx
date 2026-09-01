@@ -9,6 +9,7 @@ import { createStorageAdapter, searchMarkdown, type MarkdownSearchResult } from 
 import { hasStructuredCriteria, parseSearchQuery } from "@/lib/search-query";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useFileStore } from "@/stores/file-store";
+import { useLayoutStore } from "@/stores/layout-store";
 import { usePageSessionStore } from "@/stores/page-session-store";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +24,7 @@ export function SearchSidebar() {
   const requestReveal = usePageSessionStore((s) => s.requestReveal);
 
   const [query, setQuery] = React.useState("");
+  const searchRequest = useLayoutStore((s) => s.sidebarSearchRequest);
   const [results, setResults] = React.useState<MarkdownSearchResult[]>([]);
   const [isSearching, setIsSearching] = React.useState(false);
   const [syntaxError, setSyntaxError] = React.useState<string | null>(null);
@@ -33,6 +35,12 @@ export function SearchSidebar() {
   React.useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // A tag pill or the tag pane asks for a search. Keyed on the token, so clicking the same tag
+  // twice re-runs it instead of looking inert.
+  React.useEffect(() => {
+    if (searchRequest) setQuery(searchRequest.query);
+  }, [searchRequest]);
 
   const performSearch = useDebouncedCallback(async (searchQuery: string) => {
     const trimmed = searchQuery.trim();

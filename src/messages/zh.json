@@ -168,6 +168,8 @@
     "search": "搜索",
     "searchSummary": "{pages} 个页面中的 {hits} 条结果",
     "searchSyntaxError": "搜索语法错误：{detail}",
+    "tags": "标签",
+    "searchTag": "搜索标签 {tag}",
     "newDocument": "新建页面",
     "newFile": "新建文件",
     "newFolder": "新建文件夹",
