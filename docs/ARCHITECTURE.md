@@ -380,20 +380,28 @@ local-desk/
 
 ## Storage ownership at a glance
 
-| Concern                                | Owner                                                               |
-| -------------------------------------- | ------------------------------------------------------------------- |
-| Page body, properties, aliases, links  | `~/.../Foo.md` (one complete user file)                             |
-| Block spans, selection, undo, preview  | In-memory `MarkdownBlockDocument` / React Adapter                   |
-| Surfaced Attachments                   | Workspace PDF/spreadsheet/HTML files                                |
-| Current Page identity index            | Rebuilt in Electron memory; app-private in browser development      |
-| Markdown search                        | On-demand, zero-write workspace scan                                |
-| Preferences and recents                | Desktop WebView local application profile                           |
-| Legacy Page/DatabaseBlock recovery     | Preserved Sidecars + byte-exact Markdown recovery reports           |
-| Legacy PDF/Excel edit recovery state   | Preserved attachment Sidecar artifact families                      |
-| Referenced/imported local image assets | Ordinary workspace files; Electron no-overwrite copy + Blob preview |
+| Concern                                | Owner                                                                      |
+| -------------------------------------- | -------------------------------------------------------------------------- |
+| Page body, properties, aliases, links  | `~/.../Foo.md` (one complete user file)                                    |
+| Block spans, selection, undo, preview  | In-memory `MarkdownBlockDocument` / React Adapter                          |
+| Surfaced Attachments                   | Workspace PDF/spreadsheet/HTML files                                       |
+| Current Page identity index            | Rebuilt in Electron memory; app-private in browser development             |
+| Markdown search                        | On-demand, zero-write workspace scan                                       |
+| Preferences and recents                | Desktop WebView local application profile                                  |
+| Legacy Page/DatabaseBlock recovery     | Preserved Sidecars + byte-exact Markdown recovery reports                  |
+| Legacy PDF/Excel edit recovery state   | Preserved attachment Sidecar artifact families                             |
+| Referenced/imported local image assets | Ordinary workspace files; Electron no-overwrite copy + Blob preview        |
+| Pre-write Page snapshots               | App-private `<DATA_DIR>/page-snapshots/`; never written into the workspace |
 
 Anything not in this table should be treated as either a bug or a new
 ownership decision that needs to be added here.
+
+A Page snapshot is a byte-for-byte copy of the file as it stood _before_ an
+ordinary Page write, frontmatter and BOM included, kept outside the workspace so
+a vault gains no doXmind-owned file. Capturing one never fails a save. Restoring
+one goes through the ordinary revision-guarded write and therefore replaces the
+body while the Page keeps its current frontmatter: a snapshot coming back is
+just another edit, and loses to a concurrent external change like any other.
 
 Workspace scan/open writes no doXmind-owned file into the mounted folder.
 Browser development may persist the current frontmatter-id/path map under

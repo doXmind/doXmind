@@ -35,12 +35,14 @@ const defaultServices: PageHistoryServices = {
   },
   read: async (workspacePath, id) => {
     const root = useFileStore.getState().rootPath;
-    const result = await invokeDesktop<{ markdown: string }>("page_snapshot_read", {
+    const result = await invokeDesktop<{ markdown: string; body: string }>("page_snapshot_read", {
       root,
       path: workspacePath,
       id,
     });
-    return result.markdown;
+    // The body, not the snapshot's whole bytes: `restore` goes through the ordinary Page
+    // write, which re-attaches this Page's frontmatter to whatever body it is given.
+    return result.body;
   },
   saveCurrentPage: async (pageId) => {
     // By Page, not by pane: with a split open this Page may be the one the OTHER editor is

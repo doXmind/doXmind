@@ -2256,3 +2256,36 @@ test("a case-only Attachment rename is a relocation, not a destination collision
     );
   });
 });
+
+test("restoring a Page snapshot returns the file to its exact earlier bytes", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    const rel = "Note.md";
+    // Frontmatter is the case that matters: every Obsidian vault Page has it.
+    const original = "---\ntags:\n  - project\n---\n\nOriginal body.\n";
+    await fs.writeFile(path.join(root, rel), original, "utf8");
+
+    const before = await invoke("doc_read", { root, path: rel });
+    await invoke("doc_write_workspace", {
+      root,
+      path: rel,
+      payload: { markdown: "\nEdited body.\n", expectedRevision: before.revision },
+    });
+
+    const { snapshots } = await invoke("page_snapshot_list", { root, path: rel });
+    assert.equal(snapshots.length, 1);
+    const snapshot = await invoke("page_snapshot_read", { root, path: rel, id: snapshots[0].id });
+
+    // What the history panel restores through the ordinary write, which takes a body and
+    // re-attaches the Page's own frontmatter. Handing it the snapshot's whole bytes wrote
+    // the frontmatter a second time and left the duplicate sitting in the body.
+    const current = await invoke("doc_read", { root, path: rel });
+    await invoke("doc_write_workspace", {
+      root,
+      path: rel,
+      payload: { markdown: snapshot.body, expectedRevision: current.revision },
+    });
+
+    assert.equal(await fs.readFile(path.join(root, rel), "utf8"), original);
+  });
+});

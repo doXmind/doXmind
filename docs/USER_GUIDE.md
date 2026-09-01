@@ -251,7 +251,27 @@ Save atomically writes only the Page's `.md`/`.markdown` file. It does not creat
 
 The storage layer reads the complete raw file, separates frontmatter from the Markdown body, and gives the body to the native Block editor. Opening a file does not modify it merely because it lacks a frontmatter id. Unknown frontmatter and untouched body source remain preserved when a supported edit patches another span.
 
+Before each ordinary save, doXmind keeps a byte-for-byte copy of the file as it
+was, so an accidental overwrite has something to come back to. These snapshots
+live in app data, never in your folder, and **History** in the Page's top bar
+lists them. Restoring one replaces the body and leaves the Page's current
+properties in place; like any other edit it loses to a concurrent external
+change rather than overwriting it.
+
 You can edit the same file in another application. If the on-disk revision changes while doXmind holds an older revision, the app stops the stale write instead of silently overwriting the external change. Reload/reopen the Page, review the external edit, and then continue.
+
+### Two Pages side by side
+
+**Split right** in the command palette, or on a tab's right-click menu, puts a
+second Page beside the first. Each pane is a full editor with its own saving and
+undo; a thin bar along the top of one pane marks the one your next keystroke,
+`Cmd/Ctrl+S` or PDF export will reach. Click a pane, or run **Focus the other
+pane**, to move to it.
+
+Drag a tab onto a pane to open it there. A Page is only ever in one pane at a
+time: dropping it onto the pane already showing it does nothing, and dropping
+the other pane's Page swaps the two. Drag the divider to resize, double-click it
+to even the panes up, and run **Close the other pane** to go back to one.
 
 ## 6. Copy the complete Markdown source or export a Page to PDF
 
@@ -343,8 +363,11 @@ Open **doXmind → Settings…** (`Cmd/Ctrl+,`) or select **Settings** at the bo
 
 The current settings surface contains:
 
-- **Appearance** — Light, Dark, or System mode and preferred themes
+- **Appearance** — Light, Dark, or System mode, preferred themes, and the
+  interface language
 - **Typography** — editor font and reading-rhythm preferences
+- **Hotkeys** — every command in the app, each one rebindable
+- **Workspace** — folders to leave out of the sidebar and out of search
 - **About** — app version, build/channel information, privacy notes, acknowledgements, and project information
 
 Settings stay local on the device.

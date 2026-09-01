@@ -103,14 +103,19 @@ function createNativeWorkspaceDispatcher(options = {}) {
             String(payload.path || "")
           )
         );
-      case "page_snapshot_read":
-        return readPageSnapshot(
+      case "page_snapshot_read": {
+        const snapshot = await readPageSnapshot(
           await resolveExistingWorkspacePath(
             await canonicalWorkspaceRoot(payload.root),
             String(payload.path || "")
           ),
           payload.id
         );
+        // A snapshot is the whole file, frontmatter included, but a Page write takes a body
+        // and re-attaches the Page's own frontmatter. Split it here, with the same splitter
+        // the writer uses, so restoring cannot write the frontmatter a second time.
+        return { ...snapshot, body: splitPageSource(snapshot.markdown).body };
+      }
       case "workspace_markdown_search":
         return workspaceMarkdownSearch(
           payload.root,
