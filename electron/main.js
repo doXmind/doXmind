@@ -194,6 +194,7 @@ function createWindow(target, recoveryAttempt = 0) {
       additionalArguments: [`--doxmind-platform=${platformArg}`],
     },
   });
+  attachEditorContextMenu(win);
   win.webContents.on("will-navigate", (event, navigationUrl) => {
     if (isTrustedRendererUrl(rendererServer?.url, navigationUrl)) return;
     event.preventDefault();
@@ -293,6 +294,47 @@ function resolveDroppedPath(p) {
   } catch {
     return null;
   }
+}
+
+/**
+ * The editing context menu.
+ *
+ * The renderer's ContextMenuGuard deliberately lets a right-click through on inputs, textareas and
+ * contenteditable surfaces so the native Cut/Copy/Paste/spellcheck menu can appear. Electron does
+ * not provide one: without a `context-menu` handler here, nothing appeared at all, and the
+ * spellchecker — which is switched on for every prose Block — had no way to offer a correction.
+ */
+function attachEditorContextMenu(win) {
+  win.webContents.on("context-menu", (_event, params) => {
+    if (!params.isEditable && !params.selectionText) return;
+    const template = [];
+
+    for (const suggestion of params.dictionarySuggestions ?? []) {
+      template.push({
+        label: suggestion,
+        click: () => win.webContents.replaceMisspelling(suggestion),
+      });
+    }
+    if (template.length) template.push({ type: "separator" });
+    if (params.misspelledWord) {
+      template.push({
+        label: "Add to Dictionary",
+        click: () =>
+          win.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord),
+      });
+      template.push({ type: "separator" });
+    }
+
+    const { canCut, canCopy, canPaste, canSelectAll } = params.editFlags;
+    template.push(
+      { role: "cut", enabled: canCut },
+      { role: "copy", enabled: canCopy },
+      { role: "paste", enabled: canPaste }
+    );
+    if (canSelectAll) template.push({ type: "separator" }, { role: "selectAll" });
+
+    Menu.buildFromTemplate(template).popup({ window: win });
+  });
 }
 
 // ── Native -> renderer event bridge ─────────────────────────────────────────

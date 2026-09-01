@@ -40,6 +40,7 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { useNotificationStore } from "@/stores/notification-store";
 import { usePageSessionStore } from "@/stores/page-session-store";
 
+const createTransientFile = vi.fn((name: string) => `transient-${name}`);
 const updateFile = vi.fn(
   async (_id: string, _updates: Partial<Pick<FileItem, "content" | "name">>): Promise<void> => {}
 );
@@ -153,6 +154,7 @@ describe("MarkdownBlockRuntime", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     updateFile.mockClear();
+    createTransientFile.mockClear();
     useFileStore.setState({ updateFile });
     useEditorStore.setState({ isDirty: false, isSaving: false, lastSavedAt: null });
     useEditorRefStore.setState({
@@ -3047,9 +3049,12 @@ describe("MarkdownBlockRuntime", () => {
     }
   });
 
-  it("marks an unresolved wiki link apart and reports the missing Page when it is clicked", () => {
+  it("marks an unresolved wiki link apart and writes the Page it points at when clicked", () => {
     useFileStore.setState({
       updateFile,
+      createTransientFile,
+      openTarget: "file",
+      rootPath: null,
       files: [
         { ...file, id: "page-1", name: "Notes.md", preview: "Notes" },
         { ...file, id: "page-real", name: "Real.md", content: "Real page.\n", preview: "Real" },
@@ -3078,9 +3083,10 @@ describe("MarkdownBlockRuntime", () => {
 
     fireEvent.click(unresolved);
 
-    expect(useNotificationStore.getState().errors.map((error) => error.title)).toEqual([
-      'No Page named "Ghost"',
-    ]);
+    // An unresolved link is a Page the author intends to write, so clicking it writes one rather
+    // than reporting that it is missing — which was all the click used to do.
+    expect(createTransientFile).toHaveBeenCalledWith("Ghost.md");
+    expect(useNotificationStore.getState().errors).toEqual([]);
   });
 
   it("opens a resolvable wiki link without a notification", async () => {

@@ -90,11 +90,23 @@ const index: KnowledgeIndex = {
   unlinkedMentions: [],
 };
 
+const mention = {
+  sourceId: "source",
+  sourcePath: "Notes/Source.md",
+  targetId: "target",
+  targetPath: "Notes/Target.md",
+  text: "Target",
+  range: { from: 6, to: 12 },
+};
+
+const indexWithMention: KnowledgeIndex = { ...index, unlinkedMentions: [mention] };
+
 function services(overrides: Partial<PageBacklinksServices> = {}): PageBacklinksServices {
   return {
     saveCurrentPage: vi.fn().mockResolvedValue(true),
     rebuild: vi.fn().mockResolvedValue(index),
     navigate: vi.fn().mockResolvedValue(true),
+    linkMention: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -181,5 +193,39 @@ describe("PageBacklinksPanel", () => {
 
     expect(value.rebuild).not.toHaveBeenCalled();
     expect(await screen.findByRole("alert")).toHaveTextContent("Save the Page before rebuilding");
+  });
+});
+
+describe("linking an unlinked mention", () => {
+  const openPanel = async (overrides: Partial<PageBacklinksServices> = {}) => {
+    const svc = services({ rebuild: vi.fn().mockResolvedValue(indexWithMention), ...overrides });
+    const user = userEvent.setup();
+    render(
+      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+        <PageBacklinksPanel file={page} services={svc} />
+      </NextIntlClientProvider>
+    );
+    await user.click(screen.getByRole("button", { name: /backlinks/i }));
+    return { user, svc };
+  };
+
+  it("offers a Link action for a mention the detector already located", async () => {
+    const { user, svc } = await openPanel();
+
+    await user.click(await screen.findByRole("button", { name: /Link the mention of Target/ }));
+
+    expect(svc.linkMention).toHaveBeenCalledWith(mention);
+    // The mention stops existing once it is a link, so the list is rebuilt rather than left stale.
+    expect(svc.rebuild).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a refusal instead of leaving the row looking done", async () => {
+    const { user } = await openPanel({
+      linkMention: vi.fn().mockRejectedValue(new Error("This Page changed since the index")),
+    });
+
+    await user.click(await screen.findByRole("button", { name: /Link the mention of Target/ }));
+
+    expect(await screen.findByText(/This Page changed since the index/)).toBeInTheDocument();
   });
 });

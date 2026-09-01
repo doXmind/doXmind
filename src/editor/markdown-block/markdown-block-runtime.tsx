@@ -80,6 +80,8 @@ import {
   type WorkspaceAssetRead,
 } from "@/lib/storage";
 import { notify } from "@/lib/notifications";
+import { storeLogger } from "@/lib/logger";
+import { createPageForContext } from "@/lib/new-page";
 import { debounce } from "@/lib/utils";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -496,13 +498,25 @@ export function MarkdownBlockRuntime({
       },
       open: (target) => {
         const destination = resolveWikiLinkTarget(useFileStore.getState().files, file.id, target);
-        if (!destination) {
-          // Deliberately says only what is certain. A single Page opened outside a workspace folder
-          // resolves nothing at all, so naming a workspace here would be wrong half the time.
+        if (destination) {
+          void navigateToEditorFile(destination.id);
+          return;
+        }
+        // An unresolved link is a Page the author intends to write, so clicking it writes one.
+        // The heading and block fragments are addresses inside a Page, not part of its name.
+        const name = target.split("#")[0].split("|")[0].trim();
+        if (!name) {
+          // Deliberately says only what is certain. A single Page opened outside a workspace
+          // folder resolves nothing at all, so naming a workspace here would be wrong half the time.
           notify.error(`No Page named "${target}"`);
           return;
         }
-        void navigateToEditorFile(destination.id);
+        void createPageForContext(useFileStore.getState(), name)
+          .then((newId) => navigateToEditorFile(newId))
+          .catch((error) => {
+            storeLogger.error("Failed to create a Page from an unresolved Wiki Link", error);
+            notify.error(`Could not create "${name}"`);
+          });
       },
     };
     // A Page created, renamed or deleted since this Page opened changes what resolves. Consumers
