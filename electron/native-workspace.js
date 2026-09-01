@@ -1989,11 +1989,23 @@ function renderBlockSequenceLines(keyLine, key, value, indent) {
 }
 
 /**
+ * Written bare, YAML reads these back as something other than the string that was written:
+ * `1984` as a number, `true` and `no` as booleans, `null` as nothing at all.
+ */
+const YAML_NOT_A_STRING =
+  /^(?:true|false|yes|no|on|off|null|~|[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?|\.(?:inf|nan))$/i;
+
+/**
  * A sequence entry, left bare where YAML allows it so a round-trip through doXmind leaves an
- * Obsidian tag list looking the way Obsidian wrote it.
+ * Obsidian tag list looking the way Obsidian wrote it — but quoted whenever bare would change
+ * the value's type, which turned a tag the user wrote as "1984" into the number 1984.
  */
 function renderYamlSequenceItem(value) {
-  if (typeof value === "string" && /^[A-Za-z0-9_][A-Za-z0-9 _./-]*$/.test(value)) {
+  if (
+    typeof value === "string" &&
+    /^[A-Za-z0-9_][A-Za-z0-9 _./-]*$/.test(value) &&
+    !YAML_NOT_A_STRING.test(value)
+  ) {
     return value;
   }
   return JSON.stringify(value);

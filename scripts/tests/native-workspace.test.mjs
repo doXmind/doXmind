@@ -2333,3 +2333,38 @@ test("a constraint-only search reports the Page, not every line in it", async ()
     );
   });
 });
+
+test("rewriting a tag list keeps entries that YAML would read back as another type", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    const rel = "Note.md";
+    await fs.writeFile(
+      path.join(root, rel),
+      '---\ntags:\n  - "1984"\n  - "true"\n  - plain\n  - work/active\n---\n\nBody.\n',
+      "utf8"
+    );
+
+    const before = await invoke("doc_read", { root, path: rel });
+    assert.deepEqual(before.meta.tags, ["1984", "true", "plain", "work/active"]);
+
+    // Adding a tag rewrites the whole sequence. Emitting "1984" bare would make YAML read it
+    // back as the number 1984, and "true" as a boolean — the user's tag changing type.
+    await invoke("doc_write_workspace", {
+      root,
+      path: rel,
+      payload: {
+        meta: { tags: ["1984", "true", "plain", "work/active", "added"] },
+        expectedRevision: before.revision,
+      },
+    });
+
+    const after = await invoke("doc_read", { root, path: rel });
+    assert.deepEqual(after.meta.tags, ["1984", "true", "plain", "work/active", "added"]);
+    // Obsidian-style bare tags stay bare, so a round-trip still looks hand-written.
+    const source = await fs.readFile(path.join(root, rel), "utf8");
+    assert.match(source, /^ {2}- plain$/m);
+    assert.match(source, /^ {2}- work\/active$/m);
+    assert.match(source, /^ {2}- "1984"$/m);
+    assert.match(source, /^ {2}- "true"$/m);
+  });
+});
