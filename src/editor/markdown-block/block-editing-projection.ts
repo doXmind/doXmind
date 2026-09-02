@@ -16,6 +16,18 @@ export interface BlockEditingProjection {
   sourceRangeToEditor(range: Utf16Range): Utf16Range;
 }
 
+/**
+ * The line endings the editing surfaces work in.
+ *
+ * A textarea's `.value` is LF whatever the file holds — the DOM normalises it — and the find
+ * matcher counts in the same space. A contenteditable does no such thing, so a Block with CRLF
+ * handed to it raw put every offset after the first line ending one character out, and a search
+ * hit was highlighted starting on the `\n`.
+ */
+export function normalizeEditorLineEndings(source: string): string {
+  return source.replace(/\r\n|\r/g, "\n");
+}
+
 export function createBlockEditingProjection(
   block: Pick<MarkdownBlockView, "kind" | "raw">
 ): BlockEditingProjection {
