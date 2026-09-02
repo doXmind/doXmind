@@ -1063,7 +1063,26 @@
   @apply border-collapse;
   width: 100%;
   max-width: 100%;
-  table-layout: auto;
+  /*
+   * Every column the same width. `auto` sized each one to its own text, so the two columns of a
+   * freshly inserted table came out 471px and 483px, and a column added later took whatever its
+   * emptiness earned rather than its share. A utility class cannot say this: `.table-fixed` loses
+   * to this selector, so the decision has to live where the losing rule did.
+   */
+  table-layout: fixed;
+}
+
+/*
+ * A cell keeps one line of height with nothing in it.
+ *
+ * An empty cell has no line box, so a body row of empty cells collapsed to its own padding — 13px
+ * against the header's 41px, which is what a table looks like the moment it is inserted. `1lh`
+ * rather than a fixed length so it follows the reading-rhythm setting instead of pinning one
+ * line-height into the stylesheet.
+ */
+.markdown-page th > span,
+.markdown-page td > span {
+  min-height: 1lh;
 }
 
 .markdown-page th,

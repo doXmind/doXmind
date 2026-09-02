@@ -633,7 +633,7 @@ describe("MarkdownBlockRow semantic previews", () => {
   });
 
   it("opens and executes the native slash menu without editor-framework state", () => {
-    const [block] = MarkdownBlockDocument.fromMarkdown("/tog").getSnapshot().blocks;
+    const [block] = MarkdownBlockDocument.fromMarkdown("/quo").getSnapshot().blocks;
     const onRunSlashCommand = vi.fn();
     render(
       <MarkdownBlockRow
@@ -662,11 +662,11 @@ describe("MarkdownBlockRow semantic previews", () => {
 
     expect(screen.getByRole("listbox", { name: "Block commands" })).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("textbox", { name: "Markdown block" }), { key: "Enter" });
-    // The run is passed through so the executor replaces only `/tog`, never the whole Block.
-    expect(onRunSlashCommand).toHaveBeenCalledWith(block.id, "toggle", {
+    // The run is passed through so the executor replaces only `/quo`, never the whole Block.
+    expect(onRunSlashCommand).toHaveBeenCalledWith(block.id, "quote", {
       start: 0,
       end: 4,
-      query: "tog",
+      query: "quo",
     });
   });
 

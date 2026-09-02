@@ -28,19 +28,12 @@ const PROMISED_KIND: Record<MarkdownSlashCommandId, MarkdownBlockKind> = {
   "numbered-list": "ordered_list_item",
   task: "task_list_item",
   quote: "blockquote",
-  toggle: "toggle",
-  callout: "callout",
   divider: "thematic_break",
   code: "fenced_code",
   table: "table",
-  collection: "collection",
-  "collection-board": "collection",
-  "collection-calendar": "collection",
   image: "image",
   equation: "block_math",
   mermaid: "mermaid",
-  "wiki-link": "paragraph",
-  embed: "paragraph",
 };
 
 describe("native Markdown slash commands", () => {
@@ -50,14 +43,9 @@ describe("native Markdown slash commands", () => {
         .slice(0, 4)
         .map((command) => command.id)
     ).toEqual(["text", "heading-1", "heading-2", "heading-3"]);
-    expect(searchMarkdownSlashCommands("折叠").map((command) => command.id)).toEqual(["toggle"]);
+    expect(searchMarkdownSlashCommands("引用").map((command) => command.id)).toEqual(["quote"]);
     expect(searchMarkdownSlashCommands("mer").map((command) => command.id)).toContain("mermaid");
-    expect(searchMarkdownSlashCommands("看板").map((command) => command.id)).toEqual([
-      "collection-board",
-    ]);
-    expect(searchMarkdownSlashCommands("calendar").map((command) => command.id)).toEqual([
-      "collection-calendar",
-    ]);
+    expect(searchMarkdownSlashCommands("表格").map((command) => command.id)).toEqual(["table"]);
   });
 
   it("narrows full pinyin the way the Feishu insert panel does", () => {
@@ -100,13 +88,9 @@ describe("native Markdown slash commands", () => {
     expect(code.slice(0, caret)).toBe("```\n");
     expect(code.slice(caret)).toBe("\n```");
     expect(markdownSlashCommandCaret("code", "\r\n")).toBe("```\r\n".length);
-    expect(markdownSlashCommandSource("toggle").slice(markdownSlashCommandCaret("toggle"))).toBe(
-      "Write something…\n\n</details>"
-    );
     expect(markdownSlashCommandSource("table").slice(markdownSlashCommandCaret("table"))).toBe(
       " |  |"
     );
-    expect(markdownSlashCommandCaret("callout")).toBe(markdownSlashCommandSource("callout").length);
     expect(markdownSlashCommandCaret("text")).toBe(0);
   });
 
@@ -154,35 +138,11 @@ describe("native Markdown slash commands", () => {
     expect(blocks[0].raw).toContain("E = mc^2");
   });
 
-  it.each([
-    ["collection-board", '"view": "board"', '"groupBy": "status"'],
-    ["collection-calendar", '"view": "calendar"', '"dateBy": "date"'],
-  ] as const)("creates a portable %s Collection Block", (command, view, grouping) => {
-    const source = `${markdownSlashCommandSource(command)}\n`;
-    const snapshot = MarkdownBlockDocument.fromMarkdown(source).getSnapshot();
-
-    expect(source).toContain('"version": 2');
-    expect(source).toContain(view);
-    expect(source).toContain(grouping);
-    expect(snapshot.blocks[0]).toMatchObject({ kind: "collection", raw: source });
-  });
-
-  it("creates a Collection that reopens through the native source Block model", () => {
-    const source = `${markdownSlashCommandSource("collection", "\r\n")}\r\n`;
-    const snapshot = MarkdownBlockDocument.fromMarkdown(source).getSnapshot();
-
-    expect(snapshot.blocks).toHaveLength(1);
-    expect(snapshot.blocks[0]).toMatchObject({ kind: "collection", raw: source });
-  });
-
   it("expands commands to canonical Markdown using the Page line ending", () => {
     expect(markdownSlashCommandSource("task", "\r\n")).toBe("- [ ] ");
     expect(markdownSlashCommandSource("code", "\r\n")).toBe("```\r\n\r\n```");
-    expect(markdownSlashCommandSource("toggle", "\r\n")).toContain(
-      "<summary>Toggle</summary>\r\n\r\n"
-    );
-    expect(markdownSlashCommandSource("collection", "\r\n")).toContain(
-      '```doxmind-collection\r\n{\r\n  "version": 2,'
+    expect(markdownSlashCommandSource("mermaid", "\r\n")).toBe(
+      "```mermaid\r\nflowchart LR\r\n  A --> B\r\n```"
     );
     expect(markdownSlashCommandSource("image", "\r\n")).toBe("![Image](assets/image.png)");
   });

@@ -398,16 +398,15 @@ describe("MarkdownBlockRuntime", () => {
   });
 
   it("runs one slash command through canonical source history and preserves CRLF", async () => {
-    const { container } = render(<MarkdownBlockRuntime file={{ ...file, content: "/tog\r\n" }} />);
+    const { container } = render(<MarkdownBlockRuntime file={{ ...file, content: "/quo\r\n" }} />);
 
-    fireEvent.click(screen.getByText("/tog"));
+    fireEvent.click(screen.getByText("/quo"));
     fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Enter" });
 
-    // The command inserts a toggle, and a toggle renders as a disclosure rather than as its own
-    // `<details>` scaffolding — so what proves the insertion is the rendered Block, not raw source
-    // in a field. The scaffolding still has to reach the file, which the save assertion below covers.
-    expect(screen.getByTestId("toggle-block")).toBeInTheDocument();
-    expect(screen.getByTestId("toggle-block").textContent).not.toContain("<summary>");
+    // The command inserts a blockquote, which renders as a quote rather than as its own `>` —
+    // so what proves the insertion is the rendered Block, not raw source in a field. The marker
+    // still has to reach the file, which the save assertion below covers.
+    expect(container.querySelector("blockquote")).toBeInTheDocument();
     expect(container.querySelector("[data-native-markdown-document]")).toHaveAttribute(
       "data-revision",
       "1"
@@ -416,7 +415,7 @@ describe("MarkdownBlockRuntime", () => {
     // Undo from wherever the command left the caret, which is inside the Block it created.
     const undoFrom = () => document.activeElement ?? document.body;
     fireEvent.keyDown(undoFrom(), { key: "z", metaKey: true });
-    expect(screen.getByLabelText("Markdown block")).toHaveValue("/tog");
+    expect(screen.getByLabelText("Markdown block")).toHaveValue("/quo");
     fireEvent.keyDown(undoFrom(), {
       key: "z",
       metaKey: true,
@@ -429,8 +428,7 @@ describe("MarkdownBlockRuntime", () => {
     expect(updateFile).toHaveBeenCalledWith(
       "page-1",
       expect.objectContaining({
-        content:
-          "<details>\r\n<summary>Toggle</summary>\r\n\r\nWrite something…\r\n\r\n</details>\r\n",
+        content: "> \r\n",
       })
     );
   });
