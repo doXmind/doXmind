@@ -277,13 +277,14 @@ export function UnifiedHeader() {
           {isMacElectron && (
             <>
               {/* Two drag strips that physically avoid the macOS traffic-light
-                  cluster (centered at y=30, ~14px tall). These siblings restore window-drag
+                  cluster (12px dots centred at y=22 with the header's own
+                  buttons, so y=16..28). These siblings restore window-drag
                   for the empty space around the buttons without ever sitting
                   on top of the close/min/max controls. */}
               <span
                 data-window-drag-region
                 aria-hidden
-                className="pointer-events-auto absolute inset-x-0 top-0 h-5"
+                className="pointer-events-auto absolute inset-x-0 top-0 h-4"
               />
               <span
                 data-window-drag-region
