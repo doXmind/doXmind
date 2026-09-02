@@ -46,6 +46,7 @@ import {
 import {
   createBlockEditingProjection,
   splitDelimitedBlockSource,
+  normalizeEditorLineEndings,
 } from "@/editor/markdown-block/block-editing-projection";
 import {
   editableMarkdownBlockSource,
@@ -462,12 +463,20 @@ function MarkdownBlockRowView({
   const descriptionId = NATIVE_BLOCK_SHORTCUTS_ID;
   const rawSource = editableMarkdownBlockSource(block.raw);
   const editingProjection = useMemo(() => createBlockEditingProjection(block), [block]);
-  const source = editingProjection.editorText;
+  // The space every offset in this row is counted in: the find matcher normalises, and a
+  // textarea's `.value` is LF whatever the file holds. The semantic surface renders the string it
+  // is given, so handing it CRLF put its offsets one out per line ending.
+  const source = normalizeEditorLineEndings(editingProjection.editorText);
   const sourceOnly = isMarkdownSourceOnlyBlockKind(block.kind);
   const inlineProjection = useMemo(() => projectMarkdownInline(source), [source]);
   const useSemanticInlineEditor =
     !sourceOnly &&
-    !/[\r\n]/.test(source) &&
+    // A heading carrying a newline is a setext heading, and its second line is structure rather
+    // than prose. `====` also happens to be `==highlight==` delimiters to the inline grammar, so
+    // the projection swallows the underline whole — 12 of its 25 characters reach no segment —
+    // and a surface that cannot see those bytes must not be the one editing them. `----` survives
+    // by luck, not by rule, so both levels stay on the textarea.
+    !(block.kind === "heading" && /[\r\n]/.test(source)) &&
     parseWikiEmbedBlock(source) === null &&
     // A find match renders this surface even on text with no inline syntax to hide. The raw
     // textarea can only show a match as its own selection, and Chromium paints no selection in an
@@ -1248,6 +1257,23 @@ function MarkdownBlockRowView({
     ) {
       event.preventDefault();
       onMergeForward(block.id);
+      return;
+    }
+    if (
+      event.key === "Enter" &&
+      event.shiftKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      useSemanticInlineEditor
+    ) {
+      // A soft break, written here rather than left to the browser. In a textarea the default
+      // inserts exactly "\n"; in a contenteditable it inserts a block element, which came back
+      // through the projection as a blank line — and a blank line ends the paragraph, so
+      // Shift+Enter split the Block instead of adding a line to it. That is what kept every
+      // multi-line Block on the raw textarea.
+      event.preventDefault();
+      onChange(block.id, `${source.slice(0, from)}\n${source.slice(to)}`, { caret: from + 1 });
       return;
     }
     if (

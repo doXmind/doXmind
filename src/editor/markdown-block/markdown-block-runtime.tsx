@@ -25,6 +25,7 @@ import {
 } from "@/editor/markdown-block/markdown-block-document";
 import {
   createBlockEditingProjection,
+  normalizeEditorLineEndings,
   splitDelimitedBlockSource,
 } from "@/editor/markdown-block/block-editing-projection";
 import {
@@ -3871,10 +3872,6 @@ function preferredSourceLineEnding(...sources: string[]): "\r\n" | "\n" | "\r" {
     if (match) return match[0] as "\r\n" | "\n" | "\r";
   }
   return "\n";
-}
-
-function normalizeEditorLineEndings(source: string): string {
-  return source.replace(/\r\n|\r/g, "\n");
 }
 
 /**

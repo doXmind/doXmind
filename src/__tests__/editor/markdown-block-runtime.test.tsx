@@ -1205,7 +1205,7 @@ describe("MarkdownBlockRuntime", () => {
     expect(window.getSelection()?.toString()).toBe("Hello");
   });
 
-  it("maps a search match after CRLF to normalized textarea offsets", () => {
+  it("maps a search match after CRLF to the right characters of a multi-line Block", () => {
     render(
       <MarkdownBlockRuntime
         file={{ ...file, content: "first line\r\nneedle here\r\n\r\nKeep\r\n" }}
@@ -1217,10 +1217,13 @@ describe("MarkdownBlockRuntime", () => {
       target: { value: "needle" },
     });
 
-    const textarea = screen.getByLabelText("Markdown block") as HTMLTextAreaElement;
-    expect(textarea).toHaveValue("first line\nneedle here");
-    expect(textarea.selectionStart).toBe(11);
-    expect(textarea.selectionEnd).toBe(17);
+    // A Block with a newline renders the semantic surface like any other, so the match is a real
+    // highlight rather than a textarea selection Chromium refuses to paint while the find bar
+    // holds focus. CRLF is still normalised: the offsets that pick out "needle" are LF offsets.
+    const highlight = document.querySelector("[data-native-search-selection]");
+    expect(highlight).not.toBeNull();
+    expect(highlight?.textContent).toBe("needle");
+    expect(screen.getByLabelText("Markdown block").textContent).toContain("needle here");
   });
 
   it("does not create an invalid match across Blocks and closes search on Escape", () => {
