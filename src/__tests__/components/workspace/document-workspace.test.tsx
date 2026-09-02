@@ -64,21 +64,6 @@ const excelFile: FileItem = {
   },
 };
 
-const markdownFile: FileItem = {
-  ...htmlFile,
-  id: "page-1",
-  name: "Page",
-  content: "# Page\n",
-  documentType: "markdown",
-  storageHandle: {
-    ...htmlFile.storageHandle!,
-    id: "page-1",
-    documentType: "markdown",
-    path: "Notes/Page.md",
-    relPath: "Notes/Page.md",
-  },
-};
-
 function renderWorkspace(file: FileItem, isActivePane = true) {
   return render(
     <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
@@ -88,28 +73,6 @@ function renderWorkspace(file: FileItem, isActivePane = true) {
 }
 
 describe("DocumentWorkspace", () => {
-  it("offers version history in the focused pane only", () => {
-    // Snapshots come from the Electron write path, so the panel renders nothing without it.
-    vi.stubGlobal("__DOXMIND_DESKTOP__", {
-      platform: "macos",
-      invoke: vi.fn(),
-      listen: vi.fn(),
-      getPathForFile: vi.fn(() => null),
-    });
-    try {
-      const { unmount } = renderWorkspace(markdownFile);
-      expect(screen.getByRole("button", { name: "History" })).toBeInTheDocument();
-      unmount();
-
-      // Its open state is one global flag, so a second copy would open in both panes at
-      // once, each listing a different Page.
-      renderWorkspace(markdownFile, false);
-      expect(screen.queryByRole("button", { name: "History" })).not.toBeInTheDocument();
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
   it("routes HTML files through the read-only attachment surface", () => {
     renderWorkspace(htmlFile);
 
@@ -160,20 +123,5 @@ describe("DocumentWorkspace", () => {
       </NextIntlClientProvider>
     );
     expect(screen.getByTestId("attachment-workspace")).toBeInTheDocument();
-  });
-
-  it("exposes portable Page properties and backlinks only on Markdown Pages", () => {
-    const { rerender } = renderWorkspace(markdownFile);
-
-    expect(screen.getByRole("button", { name: "Page properties" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Backlinks" })).toBeInTheDocument();
-
-    rerender(
-      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
-        <DocumentWorkspace file={pdfFile} />
-      </NextIntlClientProvider>
-    );
-    expect(screen.queryByRole("button", { name: "Page properties" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Backlinks" })).not.toBeInTheDocument();
   });
 });

@@ -34,7 +34,6 @@ interface LayoutState {
   isCommandPaletteOpen: boolean;
 
   // Version history panel
-  isVersionHistoryOpen: boolean;
 
   // Focus mode
   isFocusMode: boolean;
@@ -85,8 +84,6 @@ interface LayoutState {
   toggleFocusMode: () => void;
 
   // Version history actions
-  setVersionHistoryOpen: (open: boolean) => void;
-  toggleVersionHistory: () => void;
 
   // Search bar actions
   setSearchBarOpen: (open: boolean) => void;
@@ -133,7 +130,6 @@ export const useLayoutStore = create<LayoutState>()(
       isFocusMode: false,
 
       // Version history panel
-      isVersionHistoryOpen: false,
 
       // Search bar
       isSearchBarOpen: false,
@@ -258,13 +254,6 @@ export const useLayoutStore = create<LayoutState>()(
       },
 
       // Version history actions
-      setVersionHistoryOpen: (open: boolean) => {
-        set({ isVersionHistoryOpen: open });
-      },
-
-      toggleVersionHistory: () => {
-        set((state) => ({ isVersionHistoryOpen: !state.isVersionHistoryOpen }));
-      },
 
       // Search bar actions
       openReplaceBar: () => {
