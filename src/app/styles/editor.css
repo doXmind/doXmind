@@ -382,6 +382,31 @@
 }
 
 /*
+ * One gutter at a time, when the pointer is the thing choosing.
+ *
+ * The two rules above are timing only, so which rows are lit was left entirely to
+ * `:hover` / `:focus-within` / `[data-controls-open]`. Those are independent: put the caret in one
+ * row and hover another and both matched, both at `opacity: 1`. Measured — caret in row 1, pointer
+ * over row 2 — two clusters on screen at once, which is neither reference: Notion's controls follow
+ * the hovered row, and Feishu has a single shared overlay that slides, so one is all it can ever
+ * draw. It also puts two `+`/grip pairs under the hand at once, acting on different rows.
+ *
+ * While the pointer is over the Page it is the thing choosing, so a row it is not on drops its
+ * controls even if the caret is in it. Two rows are deliberately exempt: the one the pointer is
+ * actually on, and one holding an open menu — closing that menu is the click that puts the pointer
+ * somewhere else, and the row it belongs to has to stay lit until then.
+ *
+ * With the pointer off the Page nothing here matches and the caret decides again, so keyboard-only
+ * use is untouched — which is what `caret-gutter-continuity.spec.ts` pins.
+ */
+.markdown-page:hover
+  [data-native-block-row]:not(:hover):not([data-controls-open="true"])
+  [data-native-block-controls] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/*
  * ONE TABLE OF INTERACTION STATES
  *
  * Every pressable thing in the editor answers a pointer the same way, because the answer is written
