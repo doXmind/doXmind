@@ -152,10 +152,11 @@ export function DesktopEditor() {
     } else {
       setFilesSidebarOpen(false);
     }
-    if (filesSidebarWidth < 288) {
-      setFilesSidebarWidth(304);
-    }
-  }, [filesSidebarWidth, hasOpenTarget, setFilesSidebarOpen, setFilesSidebarWidth]);
+    // Nothing repairs the width here. This effect re-runs on every width change, so a
+    // "snap anything under 288px back to 304" rule reads as a broken drag: the pane
+    // jumps back the moment the pointer crosses that line. The store's clamp is the
+    // single place the bounds live.
+  }, [hasOpenTarget, setFilesSidebarOpen]);
 
   return (
     <AppShell hideHeader>
@@ -185,7 +186,15 @@ export function DesktopEditor() {
                 </div>
               )}
             </aside>
-            <div data-native-editor-chrome className="min-w-0 overflow-hidden">
+            {/* Two things this column must not do, or the sidebar cannot be dragged at all.
+                It must not be `overflow-hidden` like the aside: the column is 0px wide, so
+                clipping to it erases the handle's absolutely positioned ±4px hit strip. And
+                it must stretch the handle vertically — ResizeHandle sets no height and its
+                only children are absolute, so as a plain block child it collapses to 0px
+                tall. `flex` makes it a stretched flex item, the same way the split-pane host
+                already stretches its own divider. Measured both ways in a browser: with
+                either one wrong the strip is 8x0 and elementFromPoint never returns it. */}
+            <div data-native-editor-chrome className="flex min-w-0">
               {!isFocusMode && hasOpenTarget && isFilesSidebarOpen && (
                 <ResizeHandle
                   side="left"

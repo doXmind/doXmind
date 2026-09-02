@@ -92,8 +92,16 @@ export function ResizeHandle({
       <div
         onMouseDown={handleMouseDown}
         onDoubleClick={onDoubleClick}
-        className="absolute inset-y-0 -left-[4px] -right-[4px] cursor-col-resize"
-      />
+        className="group absolute inset-y-0 -left-[4px] -right-[4px] cursor-col-resize"
+      >
+        {/* The only thing announcing the seam is draggable. Transparent until the pointer
+            is on it, so an idle window keeps the clean edge; `active` holds the highlight
+            for the whole drag, since the button stays pressed on this element throughout. */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-transparent transition-colors duration-150 group-hover:bg-primary/40 group-active:bg-primary/60"
+        />
+      </div>
       {/* Visible 1px separator — Notion style */}
       {showSeparator && (
         <div className="pointer-events-none absolute inset-y-0 left-0 w-px bg-border/40" />
