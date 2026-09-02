@@ -59,7 +59,6 @@ export interface DocumentOutlineItem {
 export interface DocumentMeta {
   id: string;
   title?: string | null;
-  tags?: string[] | null;
   aliases?: string[] | null;
   favorite?: boolean | null;
   created?: string | null;
@@ -81,10 +80,6 @@ export interface WorkspaceEntry {
   isFavorite?: boolean;
   /** Frontmatter aliases, carried by the scan so Wiki Links resolve without opening the Page. */
   aliases?: string[];
-
-  /** Frontmatter and inline tags, for the tag pane and `tag:` search. */
-
-  tags?: string[];
 }
 
 export interface StorageWriteInput {

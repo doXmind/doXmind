@@ -139,7 +139,7 @@ Nested and fenced content is source-parsed without a private Toggle schema. Open
 
 ### Properties
 
-Open **Properties** in the Page context bar to edit tags, aliases, and custom fields. Custom property names start with a letter or underscore and may contain letters, digits, `_`, `.`, or `-`. Values are limited to portable YAML strings, finite numbers, checkboxes/booleans, and string lists. A **Relation** uses that same string-list grammar: selecting other workspace Pages writes exact extension-free Wiki Link targets into frontmatter, for example:
+Open **Properties** in the Page context bar to edit aliases and custom fields. Custom property names start with a letter or underscore and may contain letters, digits, `_`, `.`, or `-`. Values are limited to portable YAML strings, finite numbers, checkboxes/booleans, and string lists. A **Relation** uses that same string-list grammar: selecting other workspace Pages writes exact extension-free Wiki Link targets into frontmatter, for example:
 
 ```yaml
 ---

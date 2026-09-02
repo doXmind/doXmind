@@ -13,7 +13,7 @@ const page: FileItem = {
   name: "Page.md",
   content: "Body\n",
   sourceRevision: "sha256:one",
-  meta: { id: "page-1", tags: ["local"], aliases: ["Home"], status: "idea" },
+  meta: { id: "page-1", aliases: ["Home"], status: "idea" },
   isFolder: false,
   parentId: null,
   position: 0,
@@ -53,22 +53,19 @@ function renderPanel(saveProperties = vi.fn().mockResolvedValue(true)) {
 }
 
 describe("PagePropertiesPanel", () => {
-  it("shows current tags and aliases and saves only changed fields", async () => {
+  it("shows current aliases and saves only changed fields", async () => {
     const user = userEvent.setup();
     const saveProperties = renderPanel();
 
     await user.click(screen.getByRole("button", { name: "Page properties" }));
-    expect(screen.getByLabelText("Tags")).toHaveValue("local");
     expect(screen.getByLabelText("Aliases")).toHaveValue("Home");
 
-    await user.clear(screen.getByLabelText("Tags"));
-    await user.type(screen.getByLabelText("Tags"), "local, markdown");
     await user.clear(screen.getByLabelText("Aliases"));
+    await user.type(screen.getByLabelText("Aliases"), "Home, Start");
     await user.click(screen.getByRole("button", { name: "Save properties" }));
 
     expect(saveProperties).toHaveBeenCalledWith("page-1", {
-      tags: ["local", "markdown"],
-      aliases: null,
+      aliases: ["Home", "Start"],
     });
   });
 

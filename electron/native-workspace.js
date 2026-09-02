@@ -259,33 +259,6 @@ async function scanDocumentDto(root, absolute) {
   }
 }
 
-/**
- * The inline `#tag`s of a Page body.
- *
- * The second implementation of one grammar: this is CommonJS in the main process and cannot import
- * `src/lib/tags.ts`. `tests/fixtures/page-tag-contract.json` is what keeps the two honest.
- *
- * Fenced regions, inline code and link destinations are masked first, so a `#` inside them is not
- * a tag — the same exclusions the renderer's projection makes structurally.
- */
-function inlineTagsInBody(body) {
-  if (!body) return [];
-  const masked = body
-    .replace(/^```[\s\S]*?^```/gm, (run) => " ".repeat(run.length))
-    .replace(/`[^`\r\n]*`/g, (run) => " ".repeat(run.length))
-    .replace(/\[\[[^\]\r\n]*\]\]/g, (run) => " ".repeat(run.length))
-    .replace(/\]\([^)\r\n]*\)/g, (run) => " ".repeat(run.length));
-  const found = [];
-  const pattern = /(^|[\s(（【[「])#([\p{L}\p{N}_\-/]+)/gu;
-  for (const match of masked.matchAll(pattern)) {
-    const name = match[2];
-    if (!/[^\p{Nd}/]/u.test(name)) continue;
-    if (name.startsWith("/") || name.endsWith("/") || name.includes("//")) continue;
-    found.push(name);
-  }
-  return found;
-}
-
 async function documentDtoForPath(root, absolute) {
   const relPath = relativePath(root, absolute);
   const extension = path.extname(absolute).toLowerCase();
@@ -294,11 +267,9 @@ async function documentDtoForPath(root, absolute) {
   let idSource = "path";
   let title = path.basename(absolute, extension);
   let meta = {};
-  let body = "";
   if (documentType === "markdown") {
     const raw = await readUtf8(absolute);
     const split = splitPageSource(raw);
-    body = split.body;
     meta = pageMetaProjection(split.meta);
     const sourceId = portablePageId(meta.id);
     if (sourceId) {
@@ -327,13 +298,6 @@ async function documentDtoForPath(root, absolute) {
   if (Array.isArray(meta.aliases) && meta.aliases.every((value) => typeof value === "string")) {
     dto.aliases = meta.aliases;
   }
-  // Frontmatter tags and the inline `#tag`s in the body, which is what a tag pane counts and what
-  // `tag:` searches. Absent rather than empty, so a Page with no tags stays the shape it was.
-  const tags = [
-    ...(Array.isArray(meta.tags) ? meta.tags.filter((value) => typeof value === "string") : []),
-    ...inlineTagsInBody(body),
-  ];
-  if (tags.length) dto.tags = [...new Set(tags)];
   return dto;
 }
 
@@ -1172,7 +1136,7 @@ function sanitizeSearchCriteria(value) {
     for (const term of group) {
       if (!term || typeof term !== "object") continue;
       const field = term.field;
-      if (field !== "content" && field !== "file" && field !== "path" && field !== "tag") continue;
+      if (field !== "content" && field !== "file" && field !== "path") continue;
       if (typeof term.value !== "string" || !term.value) continue;
       let regex = null;
       if (typeof term.regexSource === "string" && term.regexSource) {
@@ -1192,33 +1156,11 @@ function sanitizeSearchCriteria(value) {
   return clean;
 }
 
-/** Every tag a Page carries, lower-cased, including each ancestor of a nested `a/b`. */
-function pageTagSet(meta) {
-  const tags = new Set();
-  const values = Array.isArray(meta?.tags) ? meta.tags : [];
-  for (const value of values) {
-    if (typeof value !== "string") continue;
-    const tag = value.trim().toLowerCase().replace(/^#/, "");
-    if (!tag) continue;
-    tags.add(tag);
-    // `tag:project` has to find a Page tagged `project/alpha`, the way a nested tag reads.
-    const parts = tag.split("/");
-    for (let index = 1; index < parts.length; index += 1) {
-      tags.add(parts.slice(0, index).join("/"));
-    }
-  }
-  return tags;
-}
-
 function matchesSearchTerm(term, context) {
   const test = (haystack) =>
     term.regex ? term.regex.test(haystack) : haystack.toLowerCase().includes(term.value);
   let hit;
-  if (term.field === "tag") {
-    hit = term.regex
-      ? [...context.tags].some((tag) => term.regex.test(tag))
-      : context.tags.has(term.value);
-  } else if (term.field === "file") {
+  if (term.field === "file") {
     hit = test(context.name);
   } else if (term.field === "path") {
     hit = test(context.path);
@@ -1239,7 +1181,7 @@ async function workspaceMarkdownSearch(rootValue, queryValue, limitValue, criter
     .trim()
     .toLowerCase();
   const criteria = sanitizeSearchCriteria(criteriaValue);
-  // `tag:project` is a complete query with no text in it, so the requirement is a query *or* a
+  // `path:notes` is a complete query with no text in it, so the requirement is a query *or* a
   // constraint — not a query string.
   if (!query && !criteria.length) throw new Error("search query is required");
   const limit = Math.min(Math.max(Number(limitValue || 50), 1), 200);
@@ -1259,7 +1201,6 @@ async function workspaceMarkdownSearch(rootValue, queryValue, limitValue, criter
         name: document.name,
         path: document.path,
         body,
-        tags: pageTagSet(split.meta),
       })
     ) {
       continue;
@@ -1278,7 +1219,7 @@ async function workspaceMarkdownSearch(rootValue, queryValue, limitValue, criter
         matches.push({ line: index + 1, preview: line.trim().slice(0, 240) });
       }
     }
-    // A query made only of constraints — `tag:project` alone — has no text to point at, so the
+    // A query made only of constraints — `path:notes` alone — has no text to point at, so the
     // Page is reported with its first non-empty line rather than dropped for having no line hits.
     if (!query && criteria.length && matchCount === 0) {
       const first = body.split(/\r\n|\n|\r/).findIndex((line) => line.trim());

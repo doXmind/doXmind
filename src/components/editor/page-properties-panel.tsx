@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Tags, X } from "lucide-react";
+import { Loader2, Plus, SlidersHorizontal, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
@@ -48,7 +48,6 @@ export function PagePropertiesPanel({
   const projected = useMemo(() => pagePropertiesFromMeta(file.meta), [file.meta]);
   const [open, setOpen] = useState(false);
   const [baseline, setBaseline] = useState<PageProperties>(projected);
-  const [tagsInput, setTagsInput] = useState(projected.tags.join(", "));
   const [aliasesInput, setAliasesInput] = useState(projected.aliases.join(", "));
   const [customDrafts, setCustomDrafts] = useState(() => customDraftsFrom(projected.custom));
   const [isSaving, setIsSaving] = useState(false);
@@ -64,7 +63,6 @@ export function PagePropertiesPanel({
 
   useEffect(() => {
     setBaseline(projected);
-    setTagsInput(projected.tags.join(", "));
     setAliasesInput(projected.aliases.join(", "));
     setCustomDrafts(customDraftsFrom(projected.custom));
     setError(null);
@@ -73,16 +71,14 @@ export function PagePropertiesPanel({
   const customProjection = useMemo(() => projectCustomDrafts(customDrafts), [customDrafts]);
   const current = useMemo<PageProperties>(
     () => ({
-      tags: parsePagePropertyInput(tagsInput),
       aliases: parsePagePropertyInput(aliasesInput),
       custom: customProjection.properties ?? baseline.custom,
     }),
-    [aliasesInput, baseline.custom, customProjection.properties, tagsInput]
+    [aliasesInput, baseline.custom, customProjection.properties]
   );
   const patch = useMemo(() => diffPageProperties(baseline, current), [baseline, current]);
 
   const resetDraft = () => {
-    setTagsInput(baseline.tags.join(", "));
     setAliasesInput(baseline.aliases.join(", "));
     setCustomDrafts(customDraftsFrom(baseline.custom));
     setError(null);
@@ -109,8 +105,7 @@ export function PagePropertiesPanel({
     }
   };
 
-  const propertyCount =
-    baseline.tags.length + baseline.aliases.length + Object.keys(baseline.custom).length;
+  const propertyCount = baseline.aliases.length + Object.keys(baseline.custom).length;
   const customError = customProjection.error
     ? t(customProjection.error.message, customProjection.error.values)
     : null;
@@ -132,7 +127,7 @@ export function PagePropertiesPanel({
             aria-label={t("title")}
             className="h-8 gap-2 rounded-lg bg-background/90 px-2.5 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground"
           >
-            <Tags className="h-3.5 w-3.5" />
+            <SlidersHorizontal className="h-3.5 w-3.5" />
             <span>{t("title")}</span>
             {propertyCount > 0 && (
               <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">
@@ -147,16 +142,6 @@ export function PagePropertiesPanel({
               <h2 className="text-sm font-semibold">{t("title")}</h2>
               <p className="mt-0.5 text-xs text-muted-foreground">{t("description")}</p>
             </div>
-            <label className="block space-y-1.5 text-xs font-medium">
-              <span>{t("tags")}</span>
-              <Input
-                value={tagsInput}
-                onChange={(event) => setTagsInput(event.target.value)}
-                placeholder={t("tagsPlaceholder")}
-                aria-label={t("tags")}
-                disabled={isSaving}
-              />
-            </label>
             <label className="block space-y-1.5 text-xs font-medium">
               <span>{t("aliases")}</span>
               <Input

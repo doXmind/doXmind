@@ -236,7 +236,7 @@ The Page Properties Module projects only top-level string, finite-number,
 boolean, or string-array values. A Relation control writes one or more exact,
 extension-free `[[workspace/path]]` strings using that same string-array grammar;
 relation identity never lives in a UI record. Generic key patches use the same
-optimistic revision guard as tags and aliases. Unknown or unsupported frontmatter
+optimistic revision guard as aliases. Unknown or unsupported frontmatter
 remains exact source rather than becoming a second metadata store.
 
 The old mounted DatabaseBlock component tree and writable `database-store` are

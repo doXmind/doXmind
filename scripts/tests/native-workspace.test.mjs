@@ -1667,13 +1667,11 @@ test("search honours the query operators the renderer parsed", async () => {
 
     const term = (field, value, extra = {}) => ({ field, value, negated: false, ...extra });
 
-    // A nested tag answers to its ancestor, the way `project/web` reads.
-    assert.deepEqual(await paths({ groups: [[term("tag", "project")]] }), ["Projects/Alpha.md"]);
     assert.deepEqual(await paths({ groups: [[term("path", "projects")]] }), ["Projects/Alpha.md"]);
     assert.deepEqual(await paths({ groups: [[term("file", "beta")]] }), ["Beta.md"]);
 
     // Negation, and OR inside one group.
-    assert.deepEqual(await paths({ groups: [[{ ...term("tag", "draft"), negated: true }]] }), [
+    assert.deepEqual(await paths({ groups: [[{ ...term("file", "beta"), negated: true }]] }), [
       "Gamma.md",
       "Projects/Alpha.md",
     ]);
@@ -1684,7 +1682,7 @@ test("search honours the query operators the renderer parsed", async () => {
 
     // Separate groups are ANDed.
     assert.deepEqual(
-      await paths({ groups: [[term("tag", "project")], [term("file", "alpha")]] }),
+      await paths({ groups: [[term("path", "projects")], [term("file", "alpha")]] }),
       ["Projects/Alpha.md"]
     );
 
@@ -1692,7 +1690,7 @@ test("search honours the query operators the renderer parsed", async () => {
     const constraintOnly = await invoke("workspace_markdown_search", {
       root,
       query: "",
-      criteria: { groups: [[term("tag", "draft")]] },
+      criteria: { groups: [[term("file", "beta")]] },
     });
     assert.deepEqual(
       constraintOnly.map((entry) => entry.path),
@@ -1797,55 +1795,6 @@ test("the scan skips the folders the user excluded, by name only", async () => {
     // A path-shaped or empty entry is discarded rather than matched, so it excludes nothing.
     const unfiltered = await invoke("workspace_scan", { root, excludeDirs: ["Archive/Old.md"] });
     assert.equal(unfiltered.documents.length, 2);
-  });
-});
-
-test("the scan reads inline #tags by the same grammar the renderer uses", async () => {
-  await withWorkspace(async (root) => {
-    const invoke = createNativeWorkspaceDispatcher();
-    const contract = JSON.parse(
-      await fs.readFile(new URL("../../tests/fixtures/page-tag-contract.json", import.meta.url), "utf8")
-    );
-
-    // One grammar, written twice: this is CommonJS in main and cannot import src/lib/tags.ts.
-    for (const [index, entry] of contract.cases.entries()) {
-      const name = `Tag ${index}.md`;
-      await fs.writeFile(path.join(root, name), `${entry.text}\n`);
-      const scan = await invoke("workspace_scan", { root });
-      const document = scan.documents.find((candidate) => candidate.path === name);
-      assert.deepEqual(document.tags ?? [], entry.tags, entry.name);
-      await fs.rm(path.join(root, name));
-    }
-  });
-});
-
-test("the scan merges frontmatter tags with the inline ones, without duplicates", async () => {
-  await withWorkspace(async (root) => {
-    const invoke = createNativeWorkspaceDispatcher();
-    await fs.writeFile(
-      path.join(root, "Both.md"),
-      "---\ntags:\n  - project\n---\n\nbody with #project and #inbox\n"
-    );
-    await fs.writeFile(path.join(root, "None.md"), "no tags here\n");
-
-    const scan = await invoke("workspace_scan", { root });
-    const both = scan.documents.find((candidate) => candidate.path === "Both.md");
-    assert.deepEqual(both.tags, ["project", "inbox"]);
-    // Absent rather than empty, so a Page with no tags stays the shape it was.
-    assert.equal("tags" in scan.documents.find((c) => c.path === "None.md"), false);
-  });
-});
-
-test("a code fence is not a source of tags", async () => {
-  await withWorkspace(async (root) => {
-    const invoke = createNativeWorkspaceDispatcher();
-    await fs.writeFile(
-      path.join(root, "Code.md"),
-      "```sh\n# not a tag\ngit commit -m '#nope'\n```\n\nbut #real is\n"
-    );
-
-    const scan = await invoke("workspace_scan", { root });
-    assert.deepEqual(scan.documents.find((c) => c.path === "Code.md").tags, ["real"]);
   });
 });
 
@@ -2131,10 +2080,10 @@ test("a constraint-only search reports the Page, not every line in it", async ()
     const constraintOnly = await invoke("workspace_markdown_search", {
       root,
       query: "",
-      criteria: { groups: [[{ field: "tag", value: "project" }]] },
+      criteria: { groups: [[{ field: "file", value: "tagged" }]] },
     });
     assert.equal(constraintOnly.length, 1);
-    // `tag:project` has no text to point at, so the Page is the hit: one preview, its first
+    // `file:tagged` has no text to point at, so the Page is the hit: one preview, its first
     // real line. Matching every line was `includes("")` being true for all of them.
     assert.equal(constraintOnly[0].matchCount, 1);
     assert.deepEqual(
@@ -2146,7 +2095,7 @@ test("a constraint-only search reports the Page, not every line in it", async ()
     const withText = await invoke("workspace_markdown_search", {
       root,
       query: "beta",
-      criteria: { groups: [[{ field: "tag", value: "project" }]] },
+      criteria: { groups: [[{ field: "file", value: "tagged" }]] },
     });
     assert.deepEqual(
       withText[0].matches.map((match) => match.preview),

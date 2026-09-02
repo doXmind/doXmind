@@ -1,7 +1,7 @@
 /**
  * Obsidian-style search syntax, parsed in the renderer into criteria the workspace scan evaluates.
  *
- * Supported: `file:` `path:` `tag:` `content:`, a leading `-` to negate any term, `OR` between
+ * Supported: `file:` `path:` `content:`, a leading `-` to negate any term, `OR` between
  * terms (looser than the implicit AND), `"quoted phrases"`, and `/regex/flags`.
  *
  * Deliberately absent, so nobody re-derives them as oversights: `line:` and `section:` need a
@@ -10,7 +10,7 @@
  * through to a plain content term, which finds the literal text rather than failing.
  */
 
-export type SearchField = "content" | "file" | "path" | "tag";
+export type SearchField = "content" | "file" | "path";
 
 export interface SearchTerm {
   field: SearchField;
@@ -77,12 +77,7 @@ function parseTerm(token: string): { term: SearchTerm; error?: string } | null {
   const colon = rest.indexOf(":");
   if (colon > 0) {
     const candidate = rest.slice(0, colon).toLowerCase();
-    if (
-      candidate === "file" ||
-      candidate === "path" ||
-      candidate === "tag" ||
-      candidate === "content"
-    ) {
+    if (candidate === "file" || candidate === "path" || candidate === "content") {
       field = candidate;
       rest = rest.slice(colon + 1);
     }
@@ -152,7 +147,7 @@ export function tokenizeSearchQuery(input: string): string[] {
 /**
  * Whether the query says something a plain word could not.
  *
- * A field prefix, a negation or a regex is a complete query however short — `tag:x` must not wait
+ * A field prefix, a negation or a regex is a complete query however short — `file:x` must not wait
  * for a third character — while a bare word still has to clear the minimum length, because one
  * letter matches most of a workspace.
  */

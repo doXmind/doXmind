@@ -13,11 +13,10 @@ interface LayoutState {
   // Desktop panel visibility
   isFilesSidebarOpen: boolean; // Files sidebar (left edge, independent)
   /** Which view the left sidebar shows. Not persisted: a session starts on the file tree. */
-  sidebarView: "files" | "search" | "tags";
+  sidebarView: "files" | "search";
   /**
-   * A search the sidebar should run, raised from outside it — clicking a tag pill, or a tag in
-   * the tag pane. The token distinguishes two clicks on the same tag, so the second one still
-   * re-runs rather than looking inert.
+   * A search the sidebar should run, raised from outside it. The token distinguishes two requests
+   * for the same query, so the second one still re-runs rather than looking inert.
    */
   sidebarSearchRequest: { query: string; token: number } | null;
   /** UI language. Both catalogs ship in the bundle, so switching needs no reload. */
@@ -62,7 +61,7 @@ interface LayoutState {
   // Actions
   toggleFilesSidebar: () => void;
   setFilesSidebarOpen: (open: boolean) => void;
-  setSidebarView: (view: "files" | "search" | "tags") => void;
+  setSidebarView: (view: "files" | "search") => void;
   openSidebarSearch: (query: string) => void;
   setLocale: (locale: "en" | "zh") => void;
   setThemeId: (id: string) => void;

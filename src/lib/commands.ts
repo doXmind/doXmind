@@ -81,17 +81,6 @@ export const WORKSPACE_COMMANDS: readonly WorkspaceCommand[] = [
     run: () => useLayoutStore.getState().openSidebarSearch(""),
   },
   {
-    id: "tags-pane",
-    labelKey: "tagsPane",
-    category: "navigation",
-    defaultBinding: null,
-    keywords: ["tag", "label"],
-    run: () => {
-      useLayoutStore.getState().setFilesSidebarOpen(true);
-      useLayoutStore.getState().setSidebarView("tags");
-    },
-  },
-  {
     id: "find-in-page",
     labelKey: "findInPage",
     category: "editor",

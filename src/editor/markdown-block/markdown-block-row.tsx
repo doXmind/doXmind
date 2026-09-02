@@ -104,8 +104,6 @@ import {
   type WikiLinkPage,
 } from "@/editor/markdown-block/wiki-link-suggestions";
 import { resolveKnowledgeWikiPage, type KnowledgeSourceCatalog } from "@/lib/knowledge-index";
-import { tagsInText } from "@/lib/tags";
-import { useLayoutStore } from "@/stores/layout-store";
 import {
   PageCollectionPreview,
   type PageCollectionPreviewContext,
@@ -4175,44 +4173,9 @@ function renderWikiText(
       );
       return;
     }
-    // A `#tag` inside the same run. Split after the Wiki Links, so a `#` inside `[[...]]` is
-    // already gone by the time this looks.
-    parts.push(...renderTagText(part, `${keyPrefix}-${index}`));
+    if (part) parts.push(part);
   });
   return parts;
-}
-
-/** Prose with its `#tags` turned into pills that search for themselves. */
-function renderTagText(text: string, keyPrefix: string): ReactNode[] {
-  const tags = tagsInText(text);
-  if (tags.length === 0) return [text];
-  const nodes: ReactNode[] = [];
-  let cursor = 0;
-  tags.forEach((tag, index) => {
-    if (tag.from > cursor) nodes.push(text.slice(cursor, tag.from));
-    nodes.push(<TagPill key={`${keyPrefix}-tag-${index}`} name={tag.name} />);
-    cursor = tag.to;
-  });
-  if (cursor < text.length) nodes.push(text.slice(cursor));
-  return nodes;
-}
-
-/** One rendered `#tag`. Clicking it runs the search that finds every Page carrying it. */
-function TagPill({ name }: { name: string }) {
-  return (
-    <button
-      type="button"
-      data-markdown-inline-tag={name}
-      aria-label={`Search for tag ${name}`}
-      className="rounded-[4px] bg-primary/10 px-1 text-primary hover:bg-primary/20"
-      onClick={(event) => {
-        event.stopPropagation();
-        useLayoutStore.getState().openSidebarSearch(`tag:${name}`);
-      }}
-    >
-      #{name}
-    </button>
-  );
 }
 
 /**

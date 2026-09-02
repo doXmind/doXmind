@@ -236,7 +236,6 @@ test("creates and reopens today's ordinary Markdown Daily Note", async ({ page }
         "id: ([0-9a-f-]+)",
         'created: "([^"\\r\\n]+)"',
         `date: "${key}"`,
-        'tags: \\["daily-note"\\]',
         `title: "${key}"`,
         'updated: "([^"\\r\\n]+)"',
         "---",

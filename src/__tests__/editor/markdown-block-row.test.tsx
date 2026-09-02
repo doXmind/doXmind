@@ -24,7 +24,6 @@ vi.mock("katex", () => ({
 }));
 
 import { MarkdownBlockDocument } from "@/editor/markdown-block/markdown-block-document";
-import { useLayoutStore } from "@/stores/layout-store";
 import {
   firstLineBox,
   MarkdownBlockRow,
@@ -165,24 +164,11 @@ describe("MarkdownBlockRow semantic previews", () => {
     expect(row.querySelector("pre")).toBeNull();
   });
 
-  it("renders an inline #tag as a pill that searches for it", async () => {
-    useLayoutStore.setState({ sidebarSearchRequest: null, sidebarView: "files" });
-    const row = renderInactive("see #project/web here\n");
+  it("leaves every inline sharp as ordinary prose", () => {
+    const row = renderInactive("see #project/web and C# and #1984 and src/lib#anchor\n");
 
-    const pill = screen.getByRole("button", { name: "Search for tag project/web" });
-    expect(pill.textContent).toBe("#project/web");
-    expect(row.textContent).toBe("see #project/web here");
-
-    fireEvent.click(pill);
-    expect(useLayoutStore.getState().sidebarSearchRequest?.query).toBe("tag:project/web");
-    expect(useLayoutStore.getState().sidebarView).toBe("search");
-  });
-
-  it("leaves a sharp that is not a tag as ordinary prose", () => {
-    const row = renderInactive("C# and #1984 and src/lib#anchor\n");
-
-    expect(screen.queryByRole("button", { name: /Search for tag/ })).toBeNull();
-    expect(row.textContent).toBe("C# and #1984 and src/lib#anchor");
+    expect(row.querySelector("[data-markdown-inline-tag]")).toBeNull();
+    expect(row.textContent).toBe("see #project/web and C# and #1984 and src/lib#anchor");
   });
 
   it("renders ==highlight== as a mark, not as its own punctuation", () => {

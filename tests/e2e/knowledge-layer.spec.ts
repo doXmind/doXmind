@@ -27,15 +27,12 @@ test("edits portable properties and rebuilds backlinks from Markdown files", asy
   await expect(page.getByTestId("markdown-block-runtime")).toBeVisible();
 
   await page.getByRole("button", { name: "Page properties" }).click();
-  await page.getByLabel("Tags").fill("local, knowledge");
   await page.getByLabel("Aliases").fill("Home");
   await page.getByRole("button", { name: "Save properties" }).click();
 
   await expect
     .poll(() => readFile(targetPath, "utf8"))
-    .toMatch(
-      /---\nid: [0-9a-f-]+\naliases: \["Home"\]\ntags: \["local","knowledge"\]\n---\n\n# Target\n\nPortable body\.\n/
-    );
+    .toMatch(/---\nid: [0-9a-f-]+\naliases: \["Home"\]\n---\n\n# Target\n\nPortable body\.\n/);
 
   await page.getByRole("button", { name: "Backlinks" }).click();
   const sourceLink = page.getByRole("button", { name: /Source\.md: Target/ });

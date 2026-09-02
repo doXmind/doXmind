@@ -4,7 +4,6 @@ import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useEditorStore } from "@/stores/editor-store";
 
 export interface PageProperties {
-  tags: string[];
   aliases: string[];
   custom: Record<string, PagePropertyValue>;
 }
@@ -29,7 +28,6 @@ const READ_ONLY_PAGE_PROPERTY_KEYS = new Set([
 
 export function pagePropertiesFromMeta(meta: DocumentMeta | undefined): PageProperties {
   return {
-    tags: normalizePagePropertyList(meta?.tags),
     aliases: normalizePagePropertyList(meta?.aliases),
     custom: projectCustomPageProperties(meta),
   };
@@ -44,7 +42,6 @@ export function diffPageProperties(
   next: PageProperties
 ): PagePropertiesPatch {
   const patch: PagePropertiesPatch = {};
-  if (!sameList(previous.tags, next.tags)) patch.tags = next.tags.length ? next.tags : null;
   if (!sameList(previous.aliases, next.aliases)) {
     patch.aliases = next.aliases.length ? next.aliases : null;
   }
