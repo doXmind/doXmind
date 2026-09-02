@@ -1,6 +1,4 @@
 import type {
-  AttachmentInspection,
-  AttachmentRecoveryRead,
   DocumentContent,
   DocumentHandle,
   DocumentMeta,
@@ -12,8 +10,6 @@ import type {
   MarkdownSearchResults,
   PageRelocationInput,
   PageRelocationResult,
-  PageRecoveryInspection,
-  PageRecoveryRead,
   StorageAdapter,
   StorageCreateInput,
   StorageImportInput,
@@ -166,34 +162,6 @@ export class DiskStorageAdapter implements StorageAdapter {
       name: input.name,
       bytes: input.bytes,
       ...(input.destinationDir === undefined ? {} : { destinationDir: input.destinationDir }),
-    });
-  }
-
-  async inspectAttachment(handle: DocumentHandle): Promise<AttachmentInspection> {
-    return this.invoke<AttachmentInspection>("workspace_inspect_attachment", {
-      root: this.requireRoot(),
-      path: requireHandlePath(handle),
-    });
-  }
-
-  async inspectPageRecovery(handle: DocumentHandle): Promise<PageRecoveryInspection> {
-    return this.invoke<PageRecoveryInspection>("workspace_inspect_page_recovery", {
-      root: this.requireRoot(),
-      path: requireHandlePath(handle),
-    });
-  }
-
-  async readPageRecovery(handle: DocumentHandle): Promise<PageRecoveryRead> {
-    return this.invoke<PageRecoveryRead>("workspace_read_page_recovery", {
-      root: this.requireRoot(),
-      path: requireHandlePath(handle),
-    });
-  }
-
-  async readAttachmentRecovery(handle: DocumentHandle): Promise<AttachmentRecoveryRead | null> {
-    return this.invoke<AttachmentRecoveryRead | null>("workspace_read_attachment_recovery", {
-      root: this.requireRoot(),
-      path: requireHandlePath(handle),
     });
   }
 

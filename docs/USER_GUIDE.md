@@ -8,8 +8,8 @@ For source installation and developer commands, see the [project README](../READ
 
 For the historical 1.8.0 transition, upgrade precautions, and verified fallback
 record, see the [1.8.0 release notes](releases/1.8.0.md). The current product
-boundary and recovery behavior in this guide supersede that transition-state
-implementation where they differ.
+boundary and legacy-sidecar behavior in this guide supersede that
+transition-state implementation where they differ.
 
 ## 1. Install and launch
 
@@ -91,9 +91,9 @@ family together with the repairs. An external change or write failure aborts or
 rolls back the transaction; ambiguous and unsafe targets are reported rather
 than guessed.
 
-Deleting through doXmind sends the source to the operating system Trash/Recycle Bin. Existing hidden legacy recovery files move to Trash with it; doXmind has no separate in-app Trash.
+Deleting through doXmind sends the source to the operating system Trash/Recycle Bin. Existing hidden legacy sidecar files move to Trash with it; doXmind has no separate in-app Trash.
 
-To recover a deleted item, restore the source and any legacy recovery-file family from the system Trash. On macOS, press `Cmd+Shift+.` in Finder or Trash to show hidden files.
+To restore a deleted item, put the source and any legacy sidecar family back from the system Trash. On macOS, press `Cmd+Shift+.` in Finder or Trash to show hidden files.
 
 ## 5. Edit a Markdown Page
 
@@ -299,43 +299,7 @@ Those editor bundles and their attachment create/write/cache and migration paths
 
 Use Preview/Acrobat for PDFs, Excel/Numbers/LibreOffice for workbooks and CSV files, and a browser or text editor for HTML.
 
-## 8. Export old recovery state
-
-Older doXmind versions could store PDF annotations or spreadsheet edits only in a hidden `.doxmind` sidecar. Normal Attachment open does not inspect that family. Select **Check legacy recovery** on the read-only Attachment card to invoke the isolated recovery path without entering the old editor.
-
-When recoverable PDF or spreadsheet state is detected, the Attachment card shows **Export recovery report**. Selecting it downloads a file such as:
-
-```text
-Spec.pdf.doxmind-recovery.md
-Budget.xlsx.doxmind-recovery.md
-```
-
-The report contains:
-
-- YAML frontmatter identifying the source, document type, export time, and recovery format version
-- A plain-language preservation note
-- The exact legacy editor state as formatted, lossless JSON in a fenced code block
-
-This action is strictly read-only:
-
-- It does not modify the PDF, workbook, or CSV source.
-- It does not rewrite, migrate, or delete the legacy sidecar.
-- It does not change `.bak`, `.lock`, or `.corrupt-*` recovery files.
-- It does not create a reconstructed PDF or XLSX.
-
-The report preserves unique old state for inspection or a later/manual recovery workflow. Keep it with the original Attachment and the complete legacy recovery-file family. If doXmind reports that recovery status is unknown, preserve all files and investigate before cleanup.
-
-Legacy Page artifacts use a separate, stricter path. Normal Page open does not
-inspect adjacent artifacts. Select the **Check legacy recovery** icon in the
-Page context bar; if a `.doxmind`, `.bak`, `.lock`, or `.corrupt-*` member
-exists, doXmind shows a recovery notice without loading that state into the
-editor. **Export Page recovery report**
-downloads every family member as a byte-exact Base64 payload and adds a readable
-UTF-8 preview when possible. This also preserves malformed or binary artifacts;
-decoding the Base64 recreates the original bytes. The original Markdown Page
-and every artifact remain unchanged.
-
-## 9. Understand legacy recovery files
+## 8. Understand legacy sidecar files
 
 Current Pages and new Attachments do not need or receive sidecars. Older builds may have left files such as:
 
@@ -345,15 +309,15 @@ Current Pages and new Attachments do not need or receive sidecars. Older builds 
 | `Research Report.pdf` | `.Research Report.pdf.doxmind` |
 | `Quarterly Plan.xlsx` | `.Quarterly Plan.xlsx.doxmind` |
 
-A recovery family may also contain:
+A sidecar family may also contain:
 
 - `<sidecar>.bak` — an earlier backup
 - `<sidecar>.lock` — a tiny coordination file that may persist
 - `<sidecar>.corrupt-*` — preserved evidence from a failed/corrupt migration
 
-Do not manually delete any of these while unique old edits may matter. Within a workspace, rename and move operations carry the existing recovery family with the source; deletion sends both to system Trash. Normal Page and Attachment operations preserve these bytes and do not create replacements.
+doXmind never opens these files. If one holds old edits you still need, read its JSON outside doXmind. Do not manually delete any of them while those edits may matter: within a workspace, rename and move operations carry the existing family with the source, and deletion sends both to system Trash. Normal Page and Attachment operations preserve these bytes and do not create replacements.
 
-## 10. Settings
+## 9. Settings
 
 Open **doXmind → Settings…** (`Cmd/Ctrl+,`) or select **Settings** at the bottom of the sidebar.
 
@@ -372,7 +336,7 @@ The current settings surface contains:
 
 Settings stay local on the device.
 
-## 11. Keyboard shortcuts
+## 10. Keyboard shortcuts
 
 The current public desktop release is for macOS, where shortcuts use `Cmd`. Browser development and compatibility builds on other platforms use `Ctrl` unless shown otherwise.
 
@@ -397,7 +361,7 @@ The current public desktop release is for macOS, where shortcuts use `Cmd`. Brow
 
 Standard undo, redo, cut, copy, paste, and select-all shortcuts work in the active Markdown block.
 
-## 12. Limits and troubleshooting
+## 11. Limits and troubleshooting
 
 ### A file does not appear in a workspace
 
@@ -412,7 +376,7 @@ That is intentional. These formats are read-only Attachments. Use **Open externa
 
 ### The old PDF/Excel editor is missing
 
-It has been physically removed. If a legacy sidecar contains unique edit state, use **Export recovery report**. The output is a Markdown preservation report with exact JSON, not an edited PDF/XLSX file.
+It has been physically removed. A legacy sidecar holding old edit state is left untouched on disk; read its JSON outside doXmind if you still need it.
 
 ### Export as PDF did not create a file
 
@@ -422,13 +386,13 @@ Choose **Export as PDF**, select a writable destination, and complete the Save d
 
 doXmind rejects a save based on a stale source revision. Reload/reopen the Page, review the external change, and then continue editing. The app does not use a sidecar hash as a conflict authority.
 
-### A legacy recovery report is unavailable
+### I want the contents of an old hidden sidecar
 
-Keep the source and all hidden `.doxmind`, `.bak`, `.lock`, and `.corrupt-*` files unchanged. An unavailable or unknown result is not permission to delete recovery evidence.
+doXmind does not read or export them. A sidecar is a JSON file: open it in a text editor. Keep the source and all hidden `.doxmind`, `.bak`, `.lock`, and `.corrupt-*` files unchanged until you are certain you no longer need them.
 
-## 13. Privacy and optional tooling
+## 12. Privacy and optional tooling
 
-Normal Page editing, local search, PDF generation, Attachment handling, and recovery-report export remain on the machine. The packaged Electron build uses in-process filesystem commands and does not launch Python/FastAPI.
+Normal Page editing, local search, PDF generation, and Attachment handling remain on the machine. The packaged Electron build uses in-process filesystem commands and does not launch Python/FastAPI.
 
 The app has no built-in cloud account, telemetry, AI runtime, or remote content-unfurl service. Packaged builds may contact the release service for update checks.
 

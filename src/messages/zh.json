@@ -105,25 +105,7 @@
     "unsupportedDescription": "此文件不是 Markdown 页面，无法在 doXmind 中编辑。",
     "readOnlyDescription": "此文件在 doXmind 中为只读。需要修改时，请使用系统默认应用打开。",
     "openExternally": "使用默认应用打开",
-    "reveal": "在访达中显示",
-    "checkRecovery": "检查旧版恢复文件",
-    "checkRecoveryFailed": "无法检查旧版恢复文件",
-    "checkingRecovery": "正在检查旧版 doXmind 编辑…",
-    "noRecovery": "未发现旧版 doXmind 编辑。",
-    "legacyTitle": "发现旧版 doXmind 编辑",
-    "legacyDescription": "可导出一份 Markdown 恢复报告，完整保留旧编辑状态；原附件和隐藏恢复文件均不会被修改。",
-    "exportRecovery": "导出恢复报告",
-    "unknownTitle": "恢复状态需要检查",
-    "unknownDescription": "doXmind 无法安全判断旧 sidecar 的状态；附件和 sidecar 均未被修改。"
-  },
-  "pageRecovery": {
-    "check": "检查旧版恢复文件",
-    "checkFailed": "无法检查旧版恢复文件",
-    "notOnDisk": "页面尚未保存到磁盘",
-    "noneFound": "未发现旧版页面恢复文件。",
-    "title": "发现旧版页面恢复文件",
-    "description": "发现 {count} 个保留的恢复文件。可导出逐字节恢复报告；Markdown 页面和完整文件组均不会被修改。",
-    "export": "导出页面恢复报告"
+    "reveal": "在访达中显示"
   },
   "pageProperties": {
     "title": "页面属性",

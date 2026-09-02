@@ -1,31 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import {
-  AlertTriangle,
-  ArchiveRestore,
-  ExternalLink,
-  File,
-  FolderOpen,
-  Loader2,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { ExternalLink, File, FolderOpen } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
-import {
-  buildLegacyAttachmentRecovery,
-  downloadLegacyAttachmentRecovery,
-} from "@/lib/legacy-attachment-recovery";
-import { createStorageAdapter, type AttachmentInspection } from "@/lib/storage";
 import { openFileExternally, revealFileInFinder } from "@/lib/storage/reveal";
-import { cn } from "@/lib/utils";
-import { useFileStore } from "@/stores/file-store";
 import type { FileItem } from "@/types";
 
 export interface AttachmentWorkspaceServices {
-  inspect: (file: FileItem) => Promise<AttachmentInspection>;
   openExternally: (file: FileItem) => Promise<void>;
   reveal: (file: FileItem) => Promise<void>;
-  exportRecovery: (file: FileItem) => Promise<void>;
 }
 
 interface AttachmentWorkspaceProps {
@@ -34,20 +18,8 @@ interface AttachmentWorkspaceProps {
 }
 
 const defaultServices: AttachmentWorkspaceServices = {
-  inspect: async (file) => {
-    if (!file.storageHandle) throw new Error("Attachment is not stored on disk");
-    const adapter = createStorageAdapter({ disk: { root: useFileStore.getState().rootPath } });
-    return adapter.inspectAttachment(file.storageHandle);
-  },
   openExternally: openFileExternally,
   reveal: revealFileInFinder,
-  exportRecovery: async (file) => {
-    if (!file.storageHandle) throw new Error("Attachment is not stored on disk");
-    const adapter = createStorageAdapter({ disk: { root: useFileStore.getState().rootPath } });
-    const state = (await adapter.readAttachmentRecovery?.(file.storageHandle))?.editor;
-    if (!state) throw new Error("No recoverable legacy edits were found");
-    downloadLegacyAttachmentRecovery(buildLegacyAttachmentRecovery(file, state));
-  },
 };
 
 export function AttachmentWorkspace({
@@ -55,11 +27,7 @@ export function AttachmentWorkspace({
   services = defaultServices,
 }: AttachmentWorkspaceProps) {
   const t = useTranslations("attachment");
-  const [inspection, setInspection] = useState<AttachmentInspection | null>(null);
-  const [inspectionError, setInspectionError] = useState<string | null>(null);
-  const [isInspecting, setIsInspecting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const inspectionRequest = useRef(0);
   const filePath = file.storageHandle?.relPath || file.storageHandle?.path || file.name;
   const fileName = filePath.split("/").filter(Boolean).pop() || file.name;
   const typeLabel =
@@ -70,31 +38,8 @@ export function AttachmentWorkspace({
         : t("htmlLabel");
 
   useEffect(() => {
-    inspectionRequest.current += 1;
-    setInspection(null);
-    setInspectionError(null);
-    setIsInspecting(false);
     setActionError(null);
   }, [file.id, filePath]);
-
-  const inspectRecovery = async () => {
-    const requestId = ++inspectionRequest.current;
-    setInspection(null);
-    setInspectionError(null);
-    setActionError(null);
-    setIsInspecting(true);
-    try {
-      const result = await services.inspect(file);
-      if (inspectionRequest.current === requestId) setInspection(result);
-    } catch (error) {
-      if (inspectionRequest.current === requestId) {
-        const detail = error instanceof Error ? error.message : String(error);
-        setInspectionError(`${t("checkRecoveryFailed")}: ${detail}`);
-      }
-    } finally {
-      if (inspectionRequest.current === requestId) setIsInspecting(false);
-    }
-  };
 
   const runAction = async (action: (file: FileItem) => Promise<void>) => {
     setActionError(null);
@@ -136,97 +81,12 @@ export function AttachmentWorkspace({
               <FolderOpen className="mr-2 h-4 w-4" />
               {t("reveal")}
             </Button>
-            <Button
-              variant="outline"
-              disabled={isInspecting}
-              onClick={() => void inspectRecovery()}
-            >
-              {isInspecting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <ArchiveRestore className="mr-2 h-4 w-4" />
-              )}
-              {t("checkRecovery")}
-            </Button>
           </div>
 
-          {(actionError || inspectionError) && (
+          {actionError && (
             <p role="alert" className="mt-4 text-sm text-destructive">
-              {actionError || inspectionError}
+              {actionError}
             </p>
-          )}
-        </div>
-
-        {isInspecting && (
-          <div className="flex items-center gap-2 px-1 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            {t("checkingRecovery")}
-          </div>
-        )}
-
-        {inspection?.recoveryStatus === "none" && (
-          <p role="status" className="px-1 text-sm text-muted-foreground">
-            {t("noRecovery")}
-          </p>
-        )}
-
-        {inspection?.recoveryStatus === "available" && (
-          <RecoveryNotice
-            title={t("legacyTitle")}
-            description={t("legacyDescription")}
-            actionLabel={t("exportRecovery")}
-            onAction={() => void runAction(services.exportRecovery)}
-          />
-        )}
-
-        {inspection?.recoveryStatus === "unknown" && (
-          <RecoveryNotice
-            title={t("unknownTitle")}
-            description={t("unknownDescription")}
-            destructive
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function RecoveryNotice({
-  title,
-  description,
-  actionLabel,
-  onAction,
-  destructive = false,
-}: {
-  title: string;
-  description: string;
-  actionLabel?: string;
-  onAction?: () => void;
-  destructive?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-xl border p-4",
-        destructive
-          ? "border-destructive/30 bg-destructive/5"
-          : "border-amber-500/30 bg-amber-500/5"
-      )}
-    >
-      <div className="flex items-start gap-3">
-        <AlertTriangle
-          className={cn(
-            "mt-0.5 h-5 w-5 shrink-0",
-            destructive ? "text-destructive" : "text-amber-600"
-          )}
-        />
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
-          {actionLabel && onAction && (
-            <Button variant="outline" size="sm" className="mt-3" onClick={onAction}>
-              {actionLabel}
-            </Button>
           )}
         </div>
       </div>

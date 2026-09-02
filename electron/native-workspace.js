@@ -75,10 +75,6 @@ const NATIVE_WORKSPACE_COMMANDS = new Set([
   "workspace_create_folder",
   "workspace_delete_folder",
   "doc_import_external",
-  "workspace_inspect_page_recovery",
-  "workspace_read_page_recovery",
-  "workspace_inspect_attachment",
-  "workspace_read_attachment_recovery",
 ]);
 
 function createNativeWorkspaceDispatcher(options = {}) {
@@ -161,14 +157,6 @@ function createNativeWorkspaceDispatcher(options = {}) {
         return deleteFolder(payload.root, payload.path, trashItem);
       case "doc_import_external":
         return importExternal(payload);
-      case "workspace_inspect_page_recovery":
-        return inspectPageRecovery(payload.root, payload.path);
-      case "workspace_read_page_recovery":
-        return readPageRecovery(payload.root, payload.path);
-      case "workspace_inspect_attachment":
-        return inspectAttachment(payload.root, payload.path);
-      case "workspace_read_attachment_recovery":
-        return readAttachmentRecovery(payload.root, payload.path);
       default:
         throw new Error(`unsupported native workspace command: ${command}`);
     }
@@ -1165,178 +1153,6 @@ async function importExternal(payload) {
   return imported;
 }
 
-async function inspectPageRecovery(rootValue, relPath) {
-  const { root, artifacts } = await pageRecoveryFamily(rootValue, relPath);
-  return {
-    recoveryStatus: artifacts.length ? "available" : "none",
-    artifacts: artifacts.map((artifact) => relativePath(root, artifact)),
-  };
-}
-
-async function readPageRecovery(rootValue, relPath) {
-  const { root, artifacts } = await pageRecoveryFamily(rootValue, relPath);
-  return {
-    artifacts: await Promise.all(
-      artifacts.map(async (artifact) => ({
-        path: relativePath(root, artifact),
-        bytes: [...(await fsp.readFile(artifact))],
-      }))
-    ),
-  };
-}
-
-async function pageRecoveryFamily(rootValue, relPath) {
-  const root = await canonicalWorkspaceRoot(rootValue);
-  ensureMarkdownPath(relPath);
-  const source = await resolveExistingWorkspacePath(root, relPath);
-  if (!(await fsp.stat(source)).isFile()) throw new Error(`Page path is not a file: ${relPath}`);
-  return { root, artifacts: await sidecarFamilyPaths(source) };
-}
-
-async function inspectAttachment(rootValue, relPath) {
-  const root = await canonicalWorkspaceRoot(rootValue);
-  const source = await resolveExistingWorkspacePath(root, relPath);
-  const kind = attachmentKind(source);
-  const sidecar = sidecarPathFor(source);
-  const backup = `${sidecar}.bak`;
-  const sidecarState = await attachmentArtifactState(sidecar);
-  const backupState = await attachmentArtifactState(backup);
-  if (sidecarState === "unsafe") {
-    return {
-      documentType: kind,
-      recoveryStatus: "unknown",
-      sidecarStatus: "unreadable",
-      sidecarPath: path.basename(sidecar),
-    };
-  }
-  if (sidecarState === "missing") {
-    return {
-      documentType: kind,
-      recoveryStatus: backupState === "missing" ? "none" : "unknown",
-      sidecarStatus: "missing",
-      sidecarPath: path.basename(sidecar),
-    };
-  }
-  if (kind === "html") {
-    return {
-      documentType: kind,
-      recoveryStatus: "none",
-      sidecarStatus: "current",
-      sidecarPath: path.basename(sidecar),
-    };
-  }
-  try {
-    const state = await loadAttachmentRecoveryState(source, kind);
-    let recoveryStatus = recoveryStatusForEditor(kind, state.editor);
-    if (recoveryStatus === "none" && backupState !== "missing") recoveryStatus = "unknown";
-    return {
-      documentType: kind,
-      recoveryStatus,
-      sidecarStatus: state.format,
-      sidecarPath: path.basename(sidecar),
-    };
-  } catch {
-    return {
-      documentType: kind,
-      recoveryStatus: "unknown",
-      sidecarStatus: "unreadable",
-      sidecarPath: path.basename(sidecar),
-    };
-  }
-}
-
-async function readAttachmentRecovery(rootValue, relPath) {
-  const root = await canonicalWorkspaceRoot(rootValue);
-  const source = await resolveExistingWorkspacePath(root, relPath);
-  const kind = attachmentKind(source);
-  if (kind !== "pdf" && kind !== "excel") {
-    throw new Error("attachment recovery requires a PDF or spreadsheet");
-  }
-  const sidecar = sidecarPathFor(source);
-  const artifactState = await attachmentArtifactState(sidecar);
-  if (artifactState === "missing") return null;
-  if (artifactState === "unsafe") throw new Error(`attachment_recovery_unreadable: ${sidecar}`);
-  const recoveryState = await loadAttachmentRecoveryState(source, kind);
-  return recoveryState.editor === null ? null : { editor: recoveryState.editor };
-}
-
-async function loadAttachmentRecoveryState(source, kind) {
-  const sidecar = sidecarPathFor(source);
-  let parsed;
-  try {
-    parsed = JSON.parse(utf8.decode(await readRegularAttachmentArtifact(sidecar)));
-  } catch {
-    throw new Error(`attachment_recovery_unreadable: ${sidecar}`);
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`attachment_recovery_unreadable: ${sidecar}`);
-  }
-  const editorKey = `${kind}_editor`;
-  const cacheKey = `${kind}_parsed_cache`;
-  if (Object.hasOwn(parsed, editorKey) || Object.hasOwn(parsed, cacheKey)) {
-    return {
-      format: "legacy",
-      editor: objectOrNull(parsed[editorKey]),
-    };
-  }
-  if (![1, 2].includes(parsed.version)) {
-    throw new Error(`attachment_recovery_unreadable: unsupported sidecar version at ${sidecar}`);
-  }
-  const blocks = parsed.extras && parsed.extras.blocks;
-  if (!blocks || typeof blocks !== "object" || Array.isArray(blocks)) {
-    throw new Error(`attachment_recovery_unreadable: missing block slots at ${sidecar}`);
-  }
-  const slots = Object.values(blocks);
-  if (slots.length !== 1 || !slots[0] || typeof slots[0] !== "object" || Array.isArray(slots[0])) {
-    throw new Error(`attachment_recovery_unreadable: ambiguous block slots at ${sidecar}`);
-  }
-  return {
-    format: "current",
-    editor: objectOrNull(slots[0].editor),
-  };
-}
-
-function recoveryStatusForEditor(kind, editor) {
-  if (editor === null) return "none";
-  const viewFields = kind === "pdf" ? new Set(["version"]) : new Set(["version", "activeSheetId"]);
-  const editFields =
-    kind === "pdf"
-      ? new Set(["edits", "textEdits", "paragraphEdits", "freeText", "highlights"])
-      : new Set([
-          "cells",
-          "rowHeights",
-          "colWidths",
-          "ops",
-          "workbookOps",
-          "filters",
-          "filterMode",
-          "frozen",
-          "validations",
-          "comments",
-          "conditionalFormats",
-        ]);
-  for (const [key, value] of Object.entries(editor)) {
-    if (!viewFields.has(key) && !editFields.has(key) && valueIsNonEmpty(value)) return "unknown";
-  }
-  for (const key of editFields) {
-    if (valueIsNonEmpty(editor[key])) return "available";
-  }
-  return "none";
-}
-
-function valueIsNonEmpty(value) {
-  if (value === null || value === undefined) return false;
-  if (typeof value === "boolean") return value;
-  if (typeof value === "number") return true;
-  if (typeof value === "string" || Array.isArray(value)) return value.length > 0;
-  if (typeof value === "object") return Object.keys(value).length > 0;
-  return Boolean(value);
-}
-
-function objectOrNull(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-}
-
 const MARKDOWN_SEARCH_PREVIEWS_PER_PAGE = 50;
 
 /**
@@ -2206,14 +2022,6 @@ function documentTypeForExtension(extension) {
   return "html";
 }
 
-function attachmentKind(filePath) {
-  const extension = path.extname(filePath).toLowerCase();
-  if (extension === ".pdf") return "pdf";
-  if ([".xlsx", ".xlsm", ".csv"].includes(extension)) return "excel";
-  if ([".html", ".htm"].includes(extension)) return "html";
-  throw new Error("attachment inspection requires PDF, spreadsheet, or HTML");
-}
-
 function stablePathId(relPath) {
   let hash = 0xcbf29ce484222325n;
   for (const byte of Buffer.from(relPath, "utf8")) {
@@ -2244,33 +2052,6 @@ async function lstatIfPresent(target) {
   } catch (error) {
     if (error?.code === "ENOENT") return null;
     throw error;
-  }
-}
-
-async function attachmentArtifactState(target) {
-  try {
-    const stat = await fsp.lstat(target);
-    return stat.isFile() && !stat.isSymbolicLink() ? "regular" : "unsafe";
-  } catch (error) {
-    return error?.code === "ENOENT" ? "missing" : "unsafe";
-  }
-}
-
-async function readRegularAttachmentArtifact(target) {
-  if ((await attachmentArtifactState(target)) !== "regular") {
-    throw new Error(`attachment_recovery_unreadable: ${target}`);
-  }
-  const noFollow = fs.constants.O_NOFOLLOW || 0;
-  let handle;
-  try {
-    handle = await fsp.open(target, fs.constants.O_RDONLY | noFollow);
-    const stat = await handle.stat();
-    if (!stat.isFile()) throw new Error(`attachment_recovery_unreadable: ${target}`);
-    return await handle.readFile();
-  } catch (error) {
-    throw new Error(`attachment_recovery_unreadable: ${target}`, { cause: error });
-  } finally {
-    await handle?.close();
   }
 }
 

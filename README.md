@@ -59,15 +59,15 @@ Autosave and explicit save atomically write only the Markdown file. Revision che
 
 Page PDF output also stays local: **Export as PDF** asks for a destination and then generates the PDF directly inside Electron. The live native Block view is the layout authority; no printer, driver, FastAPI service, or second Markdown renderer is involved. Cancelling the Save dialog writes nothing, while success produces a concrete `.pdf` file without modifying the Page or any legacy sidecar.
 
-## Attachments and legacy recovery
+## Attachments and legacy sidecars
 
 The currently surfaced Attachment types are PDF, Excel-family/CSV, and HTML. They open read-only, with actions to use their normal desktop application or reveal them in the file manager. Images and other files remain ordinary local assets/files but are not all surfaced as Attachment cards. doXmind does not create blank PDFs/workbooks or write new attachment sidecars.
 
-The former PDF/Excel editor bundles, attachment create/write/cache commands, and Synthetic Document migration writers have been removed. Only generic zero-write inspection/recovery and legacy-family move/trash behavior remain in the app. Optional CLI/MCP conversion may still parse PDF or workbook input read-only; those parsers are not attachment editors.
+The former PDF/Excel editor bundles, attachment create/write/cache commands, sidecar inspection/recovery commands, and Synthetic Document migration writers have been removed. Only legacy-family move/trash behavior remains in the app. Optional CLI/MCP conversion may still parse PDF or workbook input read-only; those parsers are not attachment editors.
 
-The read-only Attachment card has an explicit **Check legacy recovery** action. If it finds old PDF or spreadsheet edits in a hidden sidecar, it offers **Export recovery report**. Normal Attachment open does not inspect the sidecar family. The downloaded Markdown report embeds the exact legacy editor state as lossless, formatted JSON without modifying the source attachment or any sidecar, backup, lock, or corrupt-recovery file. It is a preservation bridge, not a reconstructed PDF or XLSX export.
+doXmind never opens a hidden sidecar. If an old PDF or spreadsheet sidecar holds edits you still need, read it outside doXmind — it is a JSON file — or recover them in the application that produced the source.
 
-Keep the source attachment, its legacy recovery-file family, and the exported report together until the old edits have been recovered in the appropriate application.
+Keep the source attachment and its legacy sidecar family together until those old edits no longer matter.
 
 ## Get started
 
@@ -79,7 +79,7 @@ The public release channel currently provides a macOS package for Apple silicon:
 2. Drag doXmind to Applications and open it.
 3. Choose **Open Folder** for a real-file workspace, **Open File** for one supported document, or create a Markdown Page.
 
-See the [User Guide](docs/USER_GUIDE.md) for storage behavior, importing, shortcuts, local PDF export, and legacy recovery.
+See the [User Guide](docs/USER_GUIDE.md) for storage behavior, importing, shortcuts, local PDF export, and legacy sidecars.
 
 ### Import existing files
 
@@ -121,8 +121,8 @@ npm run dev:all
 | Format                   | Role                 | Current contract                                                                                                            |
 | ------------------------ | -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `.md`, `.markdown`       | Page                 | Native block edit, YAML properties/relations, links/graph, Collection views, local images, exact copy, and local PDF export |
-| `.pdf`                   | Read-only Attachment | Open externally/reveal; old sidecar state can be exported as a recovery report                                              |
-| `.xlsx`, `.xlsm`, `.csv` | Read-only Attachment | Open externally/reveal; old sidecar state can be exported as a recovery report                                              |
+| `.pdf`                   | Read-only Attachment | Open externally/reveal; any legacy sidecar is preserved untouched and never read                                            |
+| `.xlsx`, `.xlsm`, `.csv` | Read-only Attachment | Open externally/reveal; any legacy sidecar is preserved untouched and never read                                            |
 | `.html`, `.htm`          | Read-only Attachment | Visible when already present in an opened workspace                                                                         |
 | Images and other files   | Local asset/file     | Remain ordinary files; Electron can import supported raster images into `assets/` for Markdown references                   |
 
@@ -144,9 +144,7 @@ One Markdown file is a complete Page:
 
 Block spans, selection, undo history, previews, and rendered HTML are replaceable in-memory or derived state. Page save atomically writes only `.md`/`.markdown`.
 
-Older versions may have created hidden `.doxmind` files beside Pages, PDFs, or workbooks. Current Page reads do not use legacy sidecar HTML as Page state, and normal operations never create or rewrite sidecar contents. Rename, move, and deletion may inventory the existing recovery family only to carry its bytes unchanged with the source or send the family to system Trash.
-
-There is no current Page or Attachment sidecar writer and no legacy Page HTML hydration reader. Normal Page/Attachment open does not inspect legacy sidecars. **Check legacy recovery** invokes a separate read-only recovery path; when an old Page artifact family exists, its explicit export report contains every artifact's byte-exact Base64 payload plus a readable UTF-8 preview when possible. It never feeds that state into the Page editor.
+Older versions may have created hidden `.doxmind` files beside Pages, PDFs, or workbooks. doXmind never reads their contents and never creates or rewrites one. Rename, move, and deletion inventory the existing family only to carry its bytes unchanged with the source or send the family to system Trash.
 
 A family may include:
 
@@ -157,7 +155,7 @@ A family may include:
 .Research Report.pdf.doxmind.corrupt-*
 ```
 
-Do not manually delete the family while recovery matters. Deletion through doXmind sends the source and its existing recovery artifacts to the operating system Trash/Recycle Bin.
+Do not manually delete the family while those old edits still matter. Deletion through doXmind sends the source and its existing sidecar artifacts to the operating system Trash/Recycle Bin.
 
 ## Desktop architecture
 
@@ -194,7 +192,7 @@ Included now:
 - A zero-write, navigable Page knowledge graph derived from resolved links
 - Safe relative local Markdown image previews plus Electron paste/drop import into workspace `assets/`
 - Atomic single-file Page writes and external-change conflict detection
-- Read-only Attachments and lossless legacy PDF/Excel recovery reports
+- Read-only Attachments beside untouched legacy PDF/Excel sidecars
 - Byte-exact Markdown source copy and printer-independent Page PDF generation inside Electron
 - Electron packaging without a Python process or second desktop runtime
 
@@ -253,7 +251,7 @@ Yes. The Markdown file is authoritative. doXmind rebuilds the native block view 
 <details>
 <summary>Does doXmind edit PDF, Excel, or HTML files?</summary>
 
-No. They are read-only Attachments. Open them in their normal desktop application. If an old PDF/Excel sidecar contains unique edits, doXmind can export the exact legacy state in a Markdown recovery report without modifying either file.
+No. They are read-only Attachments. Open them in their normal desktop application. An old PDF/Excel sidecar left by an earlier version is preserved untouched; doXmind does not read it.
 
 </details>
 
@@ -267,6 +265,6 @@ Backlinks, unresolved links, unlinked mentions, the Page graph, scalar/list and 
 <details>
 <summary>Does my document content leave the machine?</summary>
 
-Normal Page editing, search, PDF generation, attachment handling, and recovery reporting stay local. Packaged builds may contact the release service for update checks; doXmind does not fetch Page or Attachment content from a remote service.
+Normal Page editing, search, PDF generation, and attachment handling stay local. Packaged builds may contact the release service for update checks; doXmind does not fetch Page or Attachment content from a remote service.
 
 </details>

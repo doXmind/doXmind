@@ -21,7 +21,8 @@ def test_canonical_block_placeholder_survives_markdown_rendering() -> None:
 
     # The placeholder must survive as a standalone block-level HTML comment.
     # If a future renderer change wrapped it inside <p>...</p> (or any other
-    # element), the legacy recovery parser would not round-trip it cleanly.
+    # element), exporting a Page that still carries one would silently rewrite
+    # bytes the user wrote.
     assert not re.search(
         r"<[^/!][^>]*>[^<]*" + re.escape(placeholder),
         rendered,

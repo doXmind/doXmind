@@ -6,8 +6,8 @@
 > import or conversion command. None establishes an editable document type. The
 > current Page storage/editor contract
 > follows [ADR-0012](adr/0012-markdown-source-block-editor.md): one portable
-> Markdown file is the complete Page state; same-name `.doxmind` files are
-> legacy recovery artifacts, not active Page state.
+> Markdown file is the complete Page state; same-name `.doxmind` files are inert
+> legacy artifacts, not active Page state.
 
 doXmind ships two standalone shells over the same workspace (ADR
 [0010](adr/0010-cli-and-mcp-share-a-shell-agnostic-core.md)):
@@ -138,7 +138,7 @@ npx @modelcontextprotocol/inspector doxmind-mcp
 
 The shells write to disk directly. doXmind treats external Markdown edits as
 authoritative and writes the Markdown file atomically; it does not create or
-rebuild Page recovery state. Editing from the CLI/MCP is atomic at the
+rebuild any legacy sidecar state. Editing from the CLI/MCP is atomic at the
 file-write boundary.
 Editing the **same** document simultaneously in the app and a shell can still
 lose a write — avoid concurrent edits of one file.

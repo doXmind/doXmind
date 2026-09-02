@@ -447,16 +447,6 @@ try {
     assert.equal(await page.locator('[data-testid="local-image-block"]').count(), 2);
   });
 
-  await check("shows Page recovery without mutating the legacy artifact family", async () => {
-    await page.getByRole("button", { name: "Check legacy recovery" }).click();
-    const notice = page.getByTestId("page-legacy-recovery");
-    await notice.waitFor({ state: "visible" });
-    await notice.getByText(".Acceptance.doxmind.lock", { exact: false }).waitFor();
-    assert.deepEqual(await fsp.readFile(sidecarPath), sidecarBytes);
-    assert.deepEqual(await fsp.readFile(lockPath), lockBytes);
-    await saveArtifactScreenshot("page-recovery.png");
-  });
-
   await check(
     "exports the live Markdown Page to a real local PDF without printer services",
     async () => {
@@ -507,7 +497,6 @@ try {
       const excludedChrome = [
         "Collection Matrix",
         "Reference.pdf",
-        "Check legacy recovery",
         "More actions",
         "Hide files",
       ];
@@ -589,8 +578,6 @@ try {
       { action: "open", target: attachmentPath },
       { action: "reveal", target: attachmentPath },
     ]);
-    await page.getByRole("button", { name: "Check legacy recovery" }).click();
-    await page.getByRole("status").waitFor({ state: "visible" });
     await saveArtifactScreenshot("attachment-read-only.png");
   });
 
@@ -1376,7 +1363,6 @@ async function writeSuccessReport() {
           "focus-mode.png",
           "new-window.png",
           "collections-and-embed.png",
-          "page-recovery.png",
           "attachment-read-only.png",
           "final-page.png",
           "settings-light.png",

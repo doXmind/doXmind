@@ -6,8 +6,8 @@ Product scope follows [`PRODUCT_DIRECTION.md`](PRODUCT_DIRECTION.md): Markdown
 Page is the only editable content type, so PDF/Excel editor settings and a
 default document-type selector are intentionally excluded. Page storage follows
 [ADR-0012](adr/0012-markdown-source-block-editor.md): active Pages have no
-sidecar settings; existing `.doxmind` files are byte-preserved legacy recovery
-artifacts.
+sidecar settings; existing `.doxmind` files are byte-preserved legacy
+artifacts that nothing reads.
 
 Status legend:
 
@@ -150,7 +150,7 @@ General  ·  Appearance  ·  Editor  ·  Workspace  ·  Backup & Privacy  ·  Ab
 
 ### Legacy sidecar artifacts
 
-Legacy `.doxmind` files are recovery data, not active Page state. Settings must
+Legacy `.doxmind` files are inert leftovers, not active Page state. Settings must
 not offer automatic recreation or cleanup; generic “Show hidden files” is
 sufficient for inspection.
 

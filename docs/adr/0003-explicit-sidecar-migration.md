@@ -4,9 +4,10 @@ Status: superseded; historical record only
 
 Current status (2026-07-21): [ADR-0011](0011-local-markdown-knowledge-workspace.md)
 and [ADR-0012](0012-markdown-source-block-editor.md) replaced this migration
-strategy with zero-write inspection and explicit recovery export. The Synthetic
-Document migration implementation is removed, no current runtime reads
-`DOXMIND_SIDECAR_MIGRATE`, and setting that variable has no effect. The decision
+strategy with zero-write inspection and explicit recovery export, and
+[ADR-0015](0015-legacy-sidecars-are-inert.md) then removed that read path too.
+The Synthetic Document migration implementation is removed, no current runtime
+reads `DOXMIND_SIDECAR_MIGRATE`, and setting that variable has no effect. The decision
 text below is preserved to explain `.bak`, `.lock`, and `.corrupt-*` artifacts
 created by older releases; it must not be implemented by current Page or
 Attachment paths.

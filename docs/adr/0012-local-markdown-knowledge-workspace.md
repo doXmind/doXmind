@@ -5,8 +5,8 @@ Date: 2026-07-20
 
 Update (2026-07-21): [ADR-0012](0012-markdown-source-block-editor.md) refines
 decision 6 from “Sidecar may be a replaceable Page cache” to “normal Page
-operations do not use a Sidecar”; existing Sidecars remain legacy recovery
-artifacts.
+operations do not use a Sidecar”; existing Sidecars remain legacy artifacts, and
+[ADR-0015](0015-legacy-sidecars-are-inert.md) confirms nothing reads them.
 
 ## 背景
 

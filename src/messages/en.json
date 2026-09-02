@@ -105,25 +105,7 @@
     "unsupportedDescription": "This file is not a Markdown Page and cannot be edited in doXmind.",
     "readOnlyDescription": "This file is read-only in doXmind. Open it in its default app to make changes.",
     "openExternally": "Open externally",
-    "reveal": "Reveal in Finder",
-    "checkRecovery": "Check legacy recovery",
-    "checkRecoveryFailed": "Could not check legacy recovery",
-    "checkingRecovery": "Checking for legacy doXmind edits…",
-    "noRecovery": "No legacy doXmind edits were found.",
-    "legacyTitle": "Legacy doXmind edits found",
-    "legacyDescription": "Export a Markdown recovery report containing the exact old editor state. The attachment and hidden recovery file stay unchanged.",
-    "exportRecovery": "Export recovery report",
-    "unknownTitle": "Recovery status needs attention",
-    "unknownDescription": "doXmind could not safely inspect the legacy sidecar. The attachment and sidecar were not changed."
-  },
-  "pageRecovery": {
-    "check": "Check legacy recovery",
-    "checkFailed": "Could not check legacy recovery",
-    "notOnDisk": "Page is not stored on disk",
-    "noneFound": "No legacy Page recovery artifacts were found.",
-    "title": "Legacy Page recovery artifacts found",
-    "description": "{count, plural, one {# preserved artifact is available.} other {# preserved artifacts are available.}} Export a byte-for-byte recovery report; the Markdown Page and artifact family stay unchanged.",
-    "export": "Export Page recovery report"
+    "reveal": "Reveal in Finder"
   },
   "pageProperties": {
     "title": "Page properties",
