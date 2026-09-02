@@ -199,6 +199,13 @@ export function DesktopEditor() {
                 <ResizeHandle
                   side="left"
                   showSeparator={false}
+                  // Sat on the sidebar's own right edge, 8px left of the seam anyone can see:
+                  // `main` carries `margin-left: 8px`, so its border and rounded corner are the
+                  // line the eye reads as the divider. Hovering therefore lit a second 2px bar
+                  // beside the real one instead of lighting the real one. The handle is a `w-0`
+                  // box whose children are absolute, so translating it moves the hit strip and
+                  // the highlight onto that border without moving anything in flow.
+                  className="translate-x-2"
                   onResize={(delta) => setFilesSidebarWidth(filesSidebarWidth + delta)}
                   onDoubleClick={() => resetPanelWidths()}
                 />
