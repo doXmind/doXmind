@@ -540,8 +540,12 @@ samp,
 /* Floating content card: with the sidebar open, the header's content column
    and the editor surface read as one rounded panel inset from the sidebar by
    a small gap. The header column carries the editor's content surface (so the
-   editor background reads continuously up through the header) and rounds the
-   card's top-left; the editor surface rounds the bottom-left. The gap + a
+   editor background reads continuously up through the header). The editor
+   surface is not below the header — it starts at y=0 and the header floats
+   over it — so BOTH layers have to round the same top-left corner: if only
+   the header rounds it, the editor's square corner fills the notch behind
+   and the card reads as a right angle with a stray curved hairline over it.
+   The editor surface rounds the bottom-left on its own. The gap + a
    hairline left border replace the old hard right-angle seam. */
 .desktop-chrome-content-panel,
 .desktop-content-with-sidebar {
@@ -556,7 +560,7 @@ samp,
 }
 
 .desktop-content-with-sidebar {
-  border-top-left-radius: 0;
+  border-top-left-radius: var(--content-card-radius);
   border-bottom-left-radius: var(--content-card-radius);
 }
 
@@ -629,10 +633,6 @@ html.is-electron-macos .desktop-chrome-header[data-sidebar-open] {
 
 html.is-electron-macos .desktop-chrome-content-panel {
   background: var(--content-surface-bg);
-}
-
-html.is-electron-macos .desktop-content-with-sidebar {
-  border-top-left-radius: 0;
 }
 
 html.is-electron-macos .desktop-chrome-left-controls {
