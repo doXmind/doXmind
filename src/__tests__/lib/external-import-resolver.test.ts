@@ -39,7 +39,7 @@ describe("extensionOf", () => {
 });
 
 describe("planExternalImport — whitelist", () => {
-  it("accepts every supported extension", () => {
+  it("accepts Markdown and rejects everything else", () => {
     const plan = planExternalImport({
       items: [
         { name: "Plan.md", srcPath: "/tmp/Plan.md" },
@@ -55,11 +55,14 @@ describe("planExternalImport — whitelist", () => {
     expect(plan.accepted.map((entry) => entry.item.name)).toEqual([
       "Plan.md",
       "Knowledge.markdown",
+    ]);
+    // A Markdown editor imports Markdown. PDF and spreadsheets used to be copied in as
+    // attachments; they are turned away at the door now rather than landing in the workspace.
+    expect(plan.rejected.map((entry) => entry.item.name)).toEqual([
       "Spec.pdf",
       "Q3.xlsx",
       "Data.csv",
     ]);
-    expect(plan.rejected).toHaveLength(0);
     expect(plan.collisions).toHaveLength(0);
   });
 
@@ -108,7 +111,7 @@ describe("planExternalImport — whitelist", () => {
   });
 
   it("exports the canonical whitelist as a readonly tuple", () => {
-    expect(SUPPORTED_EXTENSIONS).toEqual([".md", ".markdown", ".pdf", ".xlsx", ".csv"]);
+    expect(SUPPORTED_EXTENSIONS).toEqual([".md", ".markdown"]);
   });
 });
 
@@ -170,17 +173,17 @@ describe("planExternalImport — bucket shape", () => {
       items: [
         { name: "A.md" },
         { name: "B.txt" },
-        { name: "C.pdf" },
-        { name: "D.xlsx" }, // collision
+        { name: "C.markdown" },
+        { name: "D.md" }, // collision
         { name: "E.png" },
       ],
       destFolderId: null,
-      existingNames: ["D.xlsx"],
+      existingNames: ["D.md"],
     });
 
-    expect(plan.accepted.map((entry) => entry.item.name)).toEqual(["A.md", "C.pdf"]);
+    expect(plan.accepted.map((entry) => entry.item.name)).toEqual(["A.md", "C.markdown"]);
     expect(plan.rejected.map((entry) => entry.item.name)).toEqual(["B.txt", "E.png"]);
-    expect(plan.collisions.map((entry) => entry.item.name)).toEqual(["D.xlsx"]);
+    expect(plan.collisions.map((entry) => entry.item.name)).toEqual(["D.md"]);
   });
 
   it("each bucket entry carries the original item reference (no clone)", () => {
@@ -222,7 +225,7 @@ describe("resolveImportPlan", () => {
     const plan = planExternalImport({
       items: [
         { name: "A.md", srcPath: "/tmp/A.md" },
-        { name: "B.pdf", srcPath: "/tmp/B.pdf" },
+        { name: "B.markdown", srcPath: "/tmp/B.markdown" },
       ],
       destFolderId: "folder-1",
       existingNames: [],
@@ -233,7 +236,7 @@ describe("resolveImportPlan", () => {
     expect(resolved.destFolderId).toBe("folder-1");
     expect(resolved.actions).toEqual([
       { item: plan.accepted[0].item, extension: ".md", name: "A.md", mode: "create" },
-      { item: plan.accepted[1].item, extension: ".pdf", name: "B.pdf", mode: "create" },
+      { item: plan.accepted[1].item, extension: ".markdown", name: "B.markdown", mode: "create" },
     ]);
     expect(resolved.rejected).toHaveLength(0);
   });
@@ -337,21 +340,21 @@ describe("resolveImportPlan", () => {
       items: [
         { name: "A.md", srcPath: "/tmp/A.md" }, // accepted
         { name: "B.txt", srcPath: "/tmp/B.txt" }, // rejected
-        { name: "C.pdf", srcPath: "/tmp/C.pdf" }, // collision → replace
-        { name: "D.xlsx", srcPath: "/tmp/D.xlsx" }, // collision → keep-both
+        { name: "C.markdown", srcPath: "/tmp/C.markdown" }, // collision → replace
+        { name: "D.md", srcPath: "/tmp/D.md" }, // collision → keep-both
         { name: "E.png" }, // rejected
         { name: "F.md", srcPath: "/tmp/F.md" }, // collision → skip
       ],
       destFolderId: "folder-x",
-      existingNames: ["C.pdf", "D.xlsx", "F.md"],
+      existingNames: ["C.markdown", "D.md", "F.md"],
     });
 
     const resolved = resolveImportPlan({
       plan,
-      existingNames: ["C.pdf", "D.xlsx", "F.md"],
+      existingNames: ["C.markdown", "D.md", "F.md"],
       decisions: {
-        "C.pdf": "replace",
-        "D.xlsx": "keep-both",
+        "C.markdown": "replace",
+        "D.md": "keep-both",
         "F.md": "skip",
       },
     });
@@ -361,14 +364,14 @@ describe("resolveImportPlan", () => {
       { item: plan.accepted[0].item, extension: ".md", name: "A.md", mode: "create" },
       {
         item: plan.collisions[0].item,
-        extension: ".pdf",
-        name: "C.pdf",
+        extension: ".markdown",
+        name: "C.markdown",
         mode: "replace",
       },
       {
         item: plan.collisions[1].item,
-        extension: ".xlsx",
-        name: "D (2).xlsx",
+        extension: ".md",
+        name: "D (2).md",
         mode: "create",
       },
     ]);

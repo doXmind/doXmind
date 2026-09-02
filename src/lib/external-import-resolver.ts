@@ -17,12 +17,12 @@
  *     existingNames: ["Other.md"],
  *   });
  *   plan.accepted   // copy these straight through
- *   plan.rejected   // toast "Only .md/.markdown/.pdf/.xlsx/.csv" — never copy
+ *   plan.rejected   // toast "Only .md/.markdown" — never copy
  *   plan.collisions // toast in this slice (#67); modal in #69
  */
 
 /** Whitelist of supported document extensions (lowercase, with dot). */
-export const SUPPORTED_EXTENSIONS = [".md", ".markdown", ".pdf", ".xlsx", ".csv"] as const;
+export const SUPPORTED_EXTENSIONS = [".md", ".markdown"] as const;
 
 export type SupportedExtension = (typeof SUPPORTED_EXTENSIONS)[number];
 
