@@ -16,6 +16,16 @@
 import { expect, test } from "@playwright/test";
 import { openPage, rows, activate, surfaceOf } from "./harness";
 
+/**
+ * The marks inside the surface being edited.
+ *
+ * Not `row.locator("strong")`: an active row holds the rendered preview as well as the editing
+ * surface, so counting across the row counts every mark twice and says nothing about which of the
+ * two is showing them.
+ */
+const editingMarks = (row: ReturnType<typeof rows>) =>
+  row.locator("[data-semantic-inline-content] strong");
+
 test("a paragraph with a hard line break renders its marks while being edited", async ({
   page,
 }) => {
@@ -32,8 +42,8 @@ test("a paragraph with a hard line break renders its marks while being edited", 
 
   await activate(rows(page).nth(1), "bold two");
   expect(await surfaceOf(rows(page).nth(1))).toBe("contenteditable");
-  await expect(rows(page).nth(1).locator("strong")).toHaveCount(2);
-  await expect(rows(page).nth(1)).not.toContainText("**");
+  await expect(editingMarks(rows(page).nth(1))).toHaveCount(2);
+  await expect(rows(page).nth(1).locator("[data-semantic-inline-content]")).not.toContainText("**");
 });
 
 test("Shift+Enter adds a line inside the Block instead of splitting it", async ({ page }) => {
@@ -47,7 +57,7 @@ test("Shift+Enter adds a line inside the Block instead of splitting it", async (
   // the existing one and make a blank line, which is a paragraph break and correct Markdown.
   await page.keyboard.press("Shift+Enter");
   await expect(rows(page)).toHaveCount(1);
-  await expect(rows(page).first().locator("strong")).toHaveCount(1);
+  await expect(editingMarks(rows(page).first())).toHaveCount(1);
 });
 
 test("a setext heading keeps the surface that can see its underline", async ({ page }) => {
