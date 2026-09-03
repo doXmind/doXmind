@@ -118,6 +118,10 @@ export function Tooltip({ children, content, side = "top", delayDuration = 200 }
         createPortal(
           <div
             ref={tooltipRef}
+            // Named for what it is: without a role the panel is a bare `div` to assistive tech, so
+            // the label a sighted user gets on hover was missing from the accessibility tree
+            // entirely rather than merely unannounced.
+            role="tooltip"
             style={{
               position: "fixed",
               top: position?.top ?? -9999,

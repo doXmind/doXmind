@@ -67,6 +67,8 @@ type EmptyMenuItem = {
 interface FolderTreeProps {
   onCreateFile: (parentId?: string | null) => void;
   onCreateFolder: (parentId?: string | null) => void;
+  /** Whether any folder is open, so the header can name what its button will do. */
+  onExpandedChange?: (hasExpanded: boolean) => void;
 }
 
 export interface FolderTreeHandle {
@@ -75,7 +77,7 @@ export interface FolderTreeHandle {
 }
 
 export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function FolderTree(
-  { onCreateFile, onCreateFolder },
+  { onCreateFile, onCreateFolder, onExpandedChange },
   ref
 ) {
   const t = useTranslations("sidebar");
@@ -158,13 +160,25 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
 
   const hasExpandedFolders = allFolders.some((f) => expandedFolderIds.has(f.id));
 
+  // The header owns the button and needs to name what pressing it will do; the state it depends
+  // on lives here, so it is reported rather than read back through the imperative handle, which
+  // a render cannot subscribe to.
+  useEffect(() => {
+    onExpandedChange?.(hasExpandedFolders);
+  }, [hasExpandedFolders, onExpandedChange]);
+
   useImperativeHandle(
     ref,
     () => ({
-      collapseAll: () => setExpandedFolderIds(new Set()),
+      // A toggle, not a one-way door: the button only ever closed folders, so once everything was
+      // shut the control did nothing and there was no way back but clicking each folder.
+      collapseAll: () =>
+        setExpandedFolderIds((current) =>
+          current.size > 0 ? new Set() : new Set(allFolders.map((folder) => folder.id))
+        ),
       hasExpandedFolders: () => hasExpandedFolders,
     }),
-    [hasExpandedFolders]
+    [allFolders, hasExpandedFolders]
   );
 
   // Build a D1-shaped tree snapshot from the file store. The policy module

@@ -19,9 +19,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip } from "@/components/ui/tooltip";
 import { BlockTypeOptionIcon } from "@/editor/markdown-block/block-gutter-controls";
 import type { MarkdownSettableBlockKind } from "@/editor/markdown-block/markdown-block-document";
-import { cn } from "@/lib/utils";
+import { cn, formatShortcut } from "@/lib/utils";
 
 export interface InlineFormatState {
   bold?: boolean;
@@ -94,7 +95,6 @@ export function InlineFormatToolbar({
     <button
       type="button"
       aria-label={`Change block type: ${typeLabel}`}
-      title="Change block type"
       // `editor-control` is the editor's one table of interaction states (editor.css): 20ms hover,
       // a pressed state at twice the hover tint, and the app's focus ring. The bare
       // `transition-colors` this used to carry inherited Tailwind's 150ms default, which made the
@@ -129,11 +129,23 @@ export function InlineFormatToolbar({
     >
       {blockTypeOptions.length && onTurnInto ? (
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>{typeControl}</DropdownMenuTrigger>
+          {/* Outside the trigger, not inside it: `asChild` clones its one child and injects the
+              trigger's props, so a component in that slot swallows them and the menu never opens.
+              This is the order `block-gutter-controls` already uses for the grip. */}
+          <ToolbarTooltip label="Change block type">
+            <DropdownMenuTrigger asChild>{typeControl}</DropdownMenuTrigger>
+          </ToolbarTooltip>
           <DropdownMenuContent
             align="start"
             sideOffset={8}
             aria-label="Inline block types"
+            // The same marker the toolbar itself carries, for the same reason. This panel is its
+            // own portal onto `document.body`, so without it the editor's caret-release listener
+            // read a press here as a press outside the Page: it cleared the active Block, the row
+            // re-rendered, the selection that keeps this toolbar visible went with it, and the
+            // button unmounted between the pointerdown and the click. Measured in the packaged
+            // app, picking Heading 2 here changed nothing at all and raised no error.
+            data-native-editor-overlay
             className="max-h-[min(24rem,calc(100vh-2rem))] w-52 rounded-xl border-border/80 bg-popover/95 p-1.5 shadow-xl backdrop-blur-xl"
           >
             {blockTypeOptions.map((option) => {
@@ -159,34 +171,50 @@ export function InlineFormatToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (
-        typeControl
+        <ToolbarTooltip label="Change block type">{typeControl}</ToolbarTooltip>
       )}
       <span role="separator" aria-orientation="vertical" className="mx-0.5 h-5 w-px bg-border" />
-      <FormatButton label="Bold" active={activeFormats.bold} onClick={onBold}>
+      <FormatButton label="Bold" shortcut="Ctrl+B" active={activeFormats.bold} onClick={onBold}>
         <Bold className="h-4 w-4" aria-hidden="true" />
       </FormatButton>
-      <FormatButton label="Italic" active={activeFormats.italic} onClick={onItalic}>
+      <FormatButton
+        label="Italic"
+        shortcut="Ctrl+I"
+        active={activeFormats.italic}
+        onClick={onItalic}
+      >
         <Italic className="h-4 w-4" aria-hidden="true" />
       </FormatButton>
-      <FormatButton label="Strikethrough" active={activeFormats.strike} onClick={onStrike}>
+      <FormatButton
+        label="Strikethrough"
+        shortcut="Ctrl+Shift+X"
+        active={activeFormats.strike}
+        onClick={onStrike}
+      >
         <Strikethrough className="h-4 w-4" aria-hidden="true" />
       </FormatButton>
-      <FormatButton label="Link" active={activeFormats.link} onClick={onLink}>
+      <FormatButton label="Link" shortcut="Ctrl+K" active={activeFormats.link} onClick={onLink}>
         <Link2 className="h-4 w-4" aria-hidden="true" />
       </FormatButton>
-      <FormatButton label="Inline code" active={activeFormats.code} onClick={onCode}>
+      <FormatButton
+        label="Inline code"
+        shortcut="Ctrl+E"
+        active={activeFormats.code}
+        onClick={onCode}
+      >
         <Code2 className="h-4 w-4" aria-hidden="true" />
       </FormatButton>
       <span role="separator" aria-orientation="vertical" className="mx-0.5 h-5 w-px bg-border" />
-      <button
-        type="button"
-        aria-label="More actions"
-        title="More actions"
-        className="editor-control flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground"
-        onClick={onMore}
-      >
-        <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-      </button>
+      <ToolbarTooltip label="More actions">
+        <button
+          type="button"
+          aria-label="More actions"
+          className="editor-control flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground"
+          onClick={onMore}
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </ToolbarTooltip>
     </div>
   );
   return position && typeof document !== "undefined"
@@ -194,30 +222,67 @@ export function InlineFormatToolbar({
     : toolbar;
 }
 
+/**
+ * The toolbar's own hover label.
+ *
+ * These controls carried a native `title` and nothing else, so the one surface in the editor made
+ * entirely of unlabelled glyphs was also the only one with no readable label: measured in the
+ * packaged app, hovering a format button for 1.4s put no popout in the document at all, while the
+ * gutter beside it — same gesture, same 320ms — showed its own. Same component as the gutter's, so
+ * both answer a hover the same way.
+ */
+function ToolbarTooltip({
+  label,
+  shortcut,
+  children,
+}: {
+  label: string;
+  shortcut?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip
+      side="top"
+      delayDuration={320}
+      content={
+        <span className="block text-center">
+          {label}
+          {shortcut ? <span className="ml-1.5 opacity-60">{formatShortcut(shortcut)}</span> : null}
+        </span>
+      }
+    >
+      {children}
+    </Tooltip>
+  );
+}
+
 function FormatButton({
   label,
+  shortcut,
   active = false,
   onClick,
   children,
 }: {
   label: string;
+  shortcut?: string;
   active?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-pressed={active}
-      title={label}
-      className={cn(
-        "editor-control flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground",
-        active && "bg-muted text-foreground"
-      )}
-      onClick={onClick}
-    >
-      {children}
-    </button>
+    <ToolbarTooltip label={label} shortcut={shortcut}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-pressed={active}
+        // No fill of its own for the lit state: `bg-muted` is the colour the shared hover tint is
+        // solved to land on, so "this format is on" and "the pointer is here" painted the same
+        // pixel. `editor-control` answers `aria-pressed` with the accent instead (editor.css).
+        className="editor-control flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground"
+        onClick={onClick}
+      >
+        {children}
+      </button>
+    </ToolbarTooltip>
   );
 }

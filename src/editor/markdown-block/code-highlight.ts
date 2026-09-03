@@ -85,6 +85,16 @@ const ALIASES: Record<string, keyof typeof LANGUAGE_MODULES> = {
   zsh: "bash",
 };
 
+/**
+ * Every language the chip can offer, canonical ids only.
+ *
+ * Derived from the module map rather than written out again, so a grammar added above appears in
+ * the picker without a second edit. Aliases are deliberately absent: `resolveCodeLanguage` maps
+ * `ts` onto `typescript` when the fence is read, and offering both spellings in one list would
+ * only ask the user to choose between two identical outcomes.
+ */
+export const CODE_LANGUAGES: readonly string[] = Object.keys(LANGUAGE_MODULES).sort();
+
 /** Canonical language id for a fence's info string, or null when we cannot highlight it. */
 export function resolveCodeLanguage(infoString: string): string | null {
   // A fence's info string may carry more than a language, e.g. "ts title=example".

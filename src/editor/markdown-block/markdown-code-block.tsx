@@ -2,7 +2,9 @@
 
 import {
   useEffect,
+  useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -14,6 +16,7 @@ import {
 
 import { splitDelimitedBlockSource } from "@/editor/markdown-block/block-editing-projection";
 import {
+  CODE_LANGUAGES,
   highlightCodeTokens,
   resolveCodeLanguage,
   type CodeToken,
@@ -591,9 +594,10 @@ const CODE_CHIP_CLASSES =
  * The code Block's language, as an editable chip.
  *
  * Absolutely positioned and mounted in both states, so it can neither add height on activation nor
- * disappear from a Block that is being edited. A free-text field rather than a menu, because a fence
- * info string is arbitrary in Markdown and a closed list would silently drop whatever the file
- * already says.
+ * disappear from a Block that is being edited. A combobox rather than a closed menu: the list is
+ * every grammar this build can highlight, so a language can be chosen instead of remembered, but
+ * what is typed still wins on Enter — a fence info string is arbitrary in Markdown, and a closed
+ * list would silently drop whatever the file already says.
  *
  * Shown at rest rather than on hover. At `opacity: 0` a Block's language was unreadable until the
  * pointer was on the row, so the one thing that says what a code Block *is* could only be found by
@@ -611,42 +615,106 @@ function CodeLanguageChip({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(language);
+  const [highlighted, setHighlighted] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const listboxId = useId();
 
   useEffect(() => {
     if (editing) inputRef.current?.select();
   }, [editing]);
 
-  const commit = () => {
+  // Substring rather than prefix: someone reaching for C# is as likely to type `sharp` as `c`.
+  const matches = useMemo(() => {
+    const query = draft.trim().toLowerCase();
+    if (!query) return CODE_LANGUAGES;
+    return CODE_LANGUAGES.filter((candidate) => candidate.includes(query));
+  }, [draft]);
+
+  const commit = (next: string) => {
     setEditing(false);
-    const next = draft.trim();
-    if (next !== language) onCommit(next);
+    const trimmed = next.trim();
+    if (trimmed !== language) onCommit(trimmed);
   };
 
   if (editing) {
     return (
-      <input
-        ref={inputRef}
-        aria-label="Code language"
-        value={draft}
-        placeholder="language"
-        spellCheck={false}
-        className={`w-24 bg-background text-foreground outline-none ring-1 ring-ring ${CODE_CHIP_CLASSES}`}
-        onChange={(event) => setDraft(event.target.value)}
-        onClick={(event) => event.stopPropagation()}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          event.stopPropagation();
-          if (event.key === "Enter") {
-            event.preventDefault();
-            commit();
-          } else if (event.key === "Escape") {
-            event.preventDefault();
-            setDraft(language);
-            setEditing(false);
+      <span className="relative inline-block">
+        <input
+          ref={inputRef}
+          role="combobox"
+          aria-expanded={matches.length > 0}
+          aria-controls={listboxId}
+          aria-activedescendant={
+            matches.length > 0 ? `${listboxId}-${matches[highlighted]}` : undefined
           }
-        }}
-      />
+          aria-label="Code language"
+          value={draft}
+          placeholder="language"
+          spellCheck={false}
+          autoComplete="off"
+          className={`w-32 bg-background text-foreground outline-none ring-1 ring-ring ${CODE_CHIP_CLASSES}`}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setHighlighted(0);
+          }}
+          onClick={(event) => event.stopPropagation()}
+          // A press inside the list is a choice, not a dismissal: `blur` fires before `click`, so
+          // committing the typed text here would close the list out from under the pointer.
+          onBlur={(event) => {
+            if (listRef.current?.contains(event.relatedTarget as Node)) return;
+            commit(draft);
+          }}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              if (matches.length === 0) return;
+              const step = event.key === "ArrowDown" ? 1 : -1;
+              setHighlighted((at) => (at + step + matches.length) % matches.length);
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              // The highlighted row when there is one, otherwise exactly what was typed — a fence
+              // may name a language this build cannot highlight, and Markdown still carries it.
+              commit(matches[highlighted] ?? draft);
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              setDraft(language);
+              setEditing(false);
+            }
+          }}
+        />
+        {matches.length > 0 && (
+          <ul
+            ref={listRef}
+            id={listboxId}
+            role="listbox"
+            aria-label="Code language"
+            className="absolute left-0 top-full z-20 mt-1 max-h-56 w-32 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-xl"
+          >
+            {matches.map((candidate, index) => (
+              <li
+                key={candidate}
+                id={`${listboxId}-${candidate}`}
+                role="option"
+                aria-selected={index === highlighted}
+                tabIndex={-1}
+                className={`cursor-default rounded px-2 py-1 text-xs ${
+                  index === highlighted ? "bg-accent text-accent-foreground" : "text-foreground"
+                }`}
+                onMouseEnter={() => setHighlighted(index)}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  commit(candidate);
+                }}
+              >
+                {candidate}
+              </li>
+            ))}
+          </ul>
+        )}
+      </span>
     );
   }
 

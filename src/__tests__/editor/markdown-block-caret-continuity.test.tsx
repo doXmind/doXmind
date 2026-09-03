@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -159,11 +161,22 @@ describe("caret and focus continuity", () => {
     const { container } = openPage("Alpha\n");
 
     // Blink aligns every scroll it performs on our behalf to this inset, including the ones a
-    // focus() triggers and the ones a row's own resize triggers. 80px of opaque chrome plus a
-    // 4px hairline.
+    // focus() triggers and the ones a row's own resize triggers — so it also decides how far a
+    // click moves the Page, and it must not reserve room for chrome that is not there. It read
+    // 84px, for the 44px title bar plus a 36px row of Page controls at `top-11 h-9`; that row was
+    // removed and the reserve was not, so 40px of it stood over nothing and clicking a fully
+    // visible Block scrolled the Page out from under the pointer. The two numbers are asserted
+    // together because they are one number: the header's own height plus a 4px hairline.
+    const header = readFileSync(
+      resolve(process.cwd(), "src/components/editor/unified-header.tsx"),
+      "utf8"
+    );
+    expect(header, "the chrome is one 44px row").toContain("desktop-chrome-header relative z-20");
+    expect(header).toMatch(/desktop-chrome-header[^"]*\bh-11\b/);
+
     expect(
       container.querySelector<HTMLElement>("[data-native-markdown-scroll]")?.style.scrollPaddingTop
-    ).toBe("84px");
+    ).toBe("48px");
   });
 
   it("focuses an activated Block without letting the browser choose the scroll", () => {
@@ -176,5 +189,37 @@ describe("caret and focus continuity", () => {
     // steps one that is partly visible — the bimodality that made an Enter walk jump 453px.
     expect(focus).toHaveBeenCalledWith({ preventScroll: true });
     focus.mockRestore();
+  });
+
+  /**
+   * A press has already chosen a pixel; the keyboard has chosen nothing of the sort.
+   *
+   * The row brings itself into view on activation, and that call could not tell the two apart.
+   * `nearest` aligns to the container's declared `scroll-padding-top` — an inset, not a measured
+   * obstruction — so a Block clicked anywhere inside it, or hanging past the bottom edge, was
+   * pulled clear the instant it was pressed. Measured on the packaged app: a fully visible row 45px
+   * down the port moved the Page 3px, and one hanging 27px past the bottom moved it 27px, both out
+   * from under the pointer that had just been put down.
+   *
+   * Asserted as "which call was made", like its neighbour above: jsdom implements no scrolling, so
+   * the pixels are in tests/e2e/block-ux/scroll-continuity.spec.ts and the contract is here.
+   */
+  it("brings a Block into view when the keyboard reaches it, and not when a press does", () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    const { container } = openPage("Alpha\n\nBeta\n");
+
+    fireEvent.click(screen.getByText("Beta"));
+    expect(scrollIntoView, "a press moves nothing").not.toHaveBeenCalled();
+
+    // The keyboard route into a Block: Enter on the row itself, which is how a Block-selection walk
+    // hands the caret back, and the one case that really can arrive off screen.
+    fireEvent.click(document.body);
+    const row = container.querySelectorAll<HTMLElement>("[data-native-block-row]")[0];
+    row.focus();
+    fireEvent.keyDown(row, { key: "Enter" });
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
   });
 });

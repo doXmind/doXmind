@@ -60,9 +60,6 @@
     "findAndReplace": "Find and replace",
     "foldAll": "Fold all sections",
     "unfoldAll": "Unfold all sections",
-    "splitRight": "Split right",
-    "closeOtherPane": "Close the other pane",
-    "focusOtherPane": "Focus the other pane",
     "toggleSidebar": "Toggle sidebar",
     "toggleFocusMode": "Toggle focus mode",
     "toggleHighContrast": "Toggle high contrast",
@@ -92,9 +89,7 @@
     "tabActions": "Tab actions",
     "closeTab": "Close",
     "closeOtherTabs": "Close others",
-    "closeAllTabs": "Close all",
-    "splitRight": "Split right",
-    "closeOtherPane": "Close other pane"
+    "closeAllTabs": "Close all"
   },
   "attachment": {
     "pdfLabel": "PDF attachment",
@@ -222,7 +217,8 @@
     "templateStudyNotes": "Study Notes",
     "templateStudyNotesDesc": "Lecture or study session notes",
     "templateJournal": "Journal Entry",
-    "templateJournalDesc": "Daily journal or reflection"
+    "templateJournalDesc": "Daily journal or reflection",
+    "expandAll": "Expand all"
   },
   "settings": {
     "appearance": "Appearance",

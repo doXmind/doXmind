@@ -111,34 +111,6 @@ export const WORKSPACE_COMMANDS: readonly WorkspaceCommand[] = [
     run: () => useEditorRefStore.getState().requestFoldAll?.(false),
   },
   {
-    id: "split-right",
-    labelKey: "splitRight",
-    category: "editor",
-    // Obsidian's ⌘\ is not expressible in `bindingForEvent`'s grammar, and nothing asked for a
-    // chord: the palette and the options menu are both one gesture away.
-    defaultBinding: null,
-    keywords: ["split", "pane", "side by side"],
-    run: () => useFileStore.getState().splitRight(),
-  },
-  {
-    id: "focus-other-pane",
-    labelKey: "focusOtherPane",
-    category: "editor",
-    // The only keyboard route into the second pane: the pane switch is otherwise a
-    // pointerdown, so without this a keyboard user can split and never leave the first Page.
-    defaultBinding: null,
-    keywords: ["split", "pane", "focus", "switch"],
-    run: () => useFileStore.getState().focusOtherPane(),
-  },
-  {
-    id: "close-other-pane",
-    labelKey: "closeOtherPane",
-    category: "editor",
-    defaultBinding: null,
-    keywords: ["split", "pane", "unsplit"],
-    run: () => useFileStore.getState().closeOtherPane(),
-  },
-  {
     id: "toggle-sidebar",
     labelKey: "toggleSidebar",
     category: "view",

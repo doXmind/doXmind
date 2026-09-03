@@ -1039,7 +1039,7 @@ describe("MarkdownBlockRow semantic previews", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Code language: ts" }));
-    const field = screen.getByRole("textbox", { name: "Code language" });
+    const field = screen.getByRole("combobox", { name: "Code language" });
     await user.clear(field);
     await user.type(field, "python{Enter}");
     expect(onSetCodeLanguage).toHaveBeenCalledWith(block.id, "python");

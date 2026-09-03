@@ -29,6 +29,7 @@ export function FilesSidebar() {
   const isLoading = useFileStore((s) => s.isLoading);
   const isSynced = useFileStore((s) => s.isSynced);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  const [foldersExpanded, setFoldersExpanded] = useState(false);
   const sidebarView = useLayoutStore((s) => s.sidebarView);
   const setSidebarView = useLayoutStore((s) => s.setSidebarView);
   const folderTreeRef = useRef<FolderTreeHandle>(null);
@@ -103,6 +104,7 @@ export function FilesSidebar() {
         onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
         onCollapseAll={() => folderTreeRef.current?.collapseAll()}
         canCollapseAll={sidebarView === "files" && files.some((file) => file.isFolder)}
+        foldersExpanded={foldersExpanded}
         onOpenSearch={() => setSidebarView(sidebarView === "search" ? "files" : "search")}
       />
 
@@ -118,6 +120,7 @@ export function FilesSidebar() {
               <FileListSkeleton />
             ) : (
               <FolderTree
+                onExpandedChange={setFoldersExpanded}
                 ref={folderTreeRef}
                 onCreateFile={handleCreateFile}
                 onCreateFolder={handleCreateFolder}

@@ -322,9 +322,35 @@ describe("MarkdownCodeBlock", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Code language: ts" }));
-    const field = screen.getByRole("textbox", { name: "Code language" });
+    const field = screen.getByRole("combobox", { name: "Code language" });
     await user.clear(field);
     await user.type(field, "python{Enter}");
+
+    expect(onSetLanguage).toHaveBeenCalledWith("block-1", "python");
+    await settle();
+  });
+
+  it("offers the languages it can highlight, and commits the one that is chosen", async () => {
+    const user = userEvent.setup();
+    const onSetLanguage = vi.fn();
+    render(
+      <Harness
+        initial={"```ts\nconst a = 1;\n```"}
+        editable={false}
+        onSetLanguage={onSetLanguage}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Code language: ts" }));
+    const field = screen.getByRole("combobox", { name: "Code language" });
+    await user.clear(field);
+    // Substring, not prefix: `python` is not reachable by typing `p` alone in a prefix match of
+    // the whole list, and someone reaching for a language rarely knows how it is spelled here.
+    await user.type(field, "yth");
+
+    const options = screen.getAllByRole("option");
+    expect(options.map((option) => option.textContent)).toContain("python");
+    await user.click(screen.getByRole("option", { name: "python" }));
 
     expect(onSetLanguage).toHaveBeenCalledWith("block-1", "python");
     await settle();
@@ -525,7 +551,7 @@ describe("MarkdownCodeBlock", () => {
     const onSetLanguage = vi.fn();
     render(<Harness initial={"```ts\nconst a = 1;\n```"} editable onSetLanguage={onSetLanguage} />);
     await user.click(screen.getByRole("button", { name: "Code language: ts" }));
-    const field = screen.getByRole("textbox", { name: "Code language" });
+    const field = screen.getByRole("combobox", { name: "Code language" });
     // A ring rather than a border: a border adds 2px to a box measured to fit the `pre`'s 16px of
     // top padding exactly, and the field would reach the first line the chip is clear of.
     expect(field.className).toContain("ring-1");

@@ -3290,6 +3290,117 @@ describe("MarkdownBlockRuntime", () => {
     );
   });
 
+  /**
+   * The floating toolbar's own Turn into, pressed the way a pointer presses it.
+   *
+   * Its type menu is a second portal onto `document.body` and carried no editor-overlay marker, so
+   * the caret-release listener read the press as a press outside the Page: the Block deactivated,
+   * the row re-rendered, the selection that keeps the toolbar visible went with it, and the button
+   * unmounted between the pointerdown and the click. Measured in the packaged app, picking
+   * Heading 2 here left the file untouched and raised no error at all.
+   */
+  it("turns the Block from the selection toolbar's own type menu", async () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "Turn me\n\nTwo\n" }} />);
+
+    fireEvent.click(screen.getByText("Turn me"));
+    const surface = screen.getByLabelText("Markdown block");
+    fireEvent.select(surface, { target: { selectionStart: 0, selectionEnd: 7 } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const toolbar = screen.getByRole("toolbar", { name: "Text formatting" });
+    pressMenuItem(within(toolbar).getByRole("button", { name: /^Change block type/ }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    pressMenuItem(
+      within(screen.getByRole("menu", { name: "Inline block types" })).getByRole("menuitem", {
+        name: "Heading 2",
+      })
+    );
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "## Turn me\n\nTwo\n" })
+    );
+  });
+
+  /**
+   * The shape the gutter's Turn into was dead on.
+   *
+   * `setKind` threw on any Block whose source spanned more than one line, and a menu item's
+   * `onClick` has nobody to catch it: the menu closed, the file was untouched, and the only trace
+   * was an uncaught error in the console. Every hard-wrapped paragraph in a real Page is this
+   * shape, so ten of the eleven Turn into options did nothing at all there.
+   */
+  it("turns a soft-wrapped paragraph into a heading from the gutter menu", async () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "One line\nsecond line\n\nTwo\n" }} />);
+
+    const grip = screen.getAllByRole("button", { name: "Block actions" })[0];
+    fireEvent.pointerDown(grip);
+    fireEvent.click(grip);
+    pressMenuItem(screen.getByRole("menuitem", { name: "Turn into" }));
+    pressMenuItem(screen.getByRole("menuitem", { name: "Heading 2" }));
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "## One line second line\n\nTwo\n" })
+    );
+  });
+
+  it("keeps a soft-wrapped paragraph in one list item from the gutter menu", async () => {
+    render(<MarkdownBlockRuntime file={{ ...file, content: "One line\nsecond line\n\nTwo\n" }} />);
+
+    const grip = screen.getAllByRole("button", { name: "Block actions" })[0];
+    fireEvent.pointerDown(grip);
+    fireEvent.click(grip);
+    pressMenuItem(screen.getByRole("menuitem", { name: "Turn into" }));
+    pressMenuItem(screen.getByRole("menuitem", { name: "Bulleted list" }));
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    // Indented under the marker, or the second line is a paragraph outside the item.
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "- One line\n  second line\n\nTwo\n" })
+    );
+  });
+
+  /**
+   * The whole-selection path wrote a bare prefix in front of the content, which is only right for a
+   * Block that is one line: a wrapped paragraph came out as a heading followed by the orphaned rest
+   * of itself. Silent, and in the user's file.
+   */
+  it("turns a selection holding a wrapped paragraph without splitting it", async () => {
+    const { container } = render(
+      <MarkdownBlockRuntime file={{ ...file, content: "one\n\ntwo wrapped\nonto two lines\n" }} />
+    );
+    fireEvent.click(screen.getByText("one"));
+    fireEvent.keyDown(screen.getByLabelText("Markdown block"), { key: "Escape" });
+    const rows = container.querySelectorAll<HTMLElement>("[data-native-block-row]");
+    fireEvent.keyDown(rows[0], { key: "ArrowDown", shiftKey: true });
+
+    const toolbar = screen.getByRole("toolbar", { name: "2 blocks selected" });
+    fireEvent.click(within(toolbar).getByText("Turn into"));
+    pressMenuItem(screen.getByRole("menuitem", { name: "Heading 2" }));
+
+    await act(async () => {
+      await useEditorRefStore.getState().requestSave?.();
+    });
+    expect(updateFile).toHaveBeenLastCalledWith(
+      "page-1",
+      expect.objectContaining({ content: "## one\n\n## two wrapped onto two lines\n" })
+    );
+  });
+
   it("turns a whole Block selection when the toolbar's menu item is really pressed", async () => {
     const { container } = render(
       <MarkdownBlockRuntime file={{ ...file, content: "one\n\ntwo\n\nthree\n" }} />

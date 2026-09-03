@@ -1733,19 +1733,80 @@ describe("MarkdownBlockDocument", () => {
     }
   });
 
-  it("does not flatten a soft-wrapped paragraph into a false single heading", () => {
+  /**
+   * A heading is one line, so a soft-wrapped paragraph becomes one line to become one.
+   *
+   * This used to throw. `setKind` is called straight out of a menu item's `onClick` and no caller
+   * catches it, so Turn into simply did nothing on any Block whose source spanned more than one
+   * line — every hard-wrapped paragraph, every list item with a continuation. Ten of the eleven
+   * options were dead there; only Text and Quote, which write every line, worked. Folding is the
+   * only single-Block heading a multi-line Block has, and it is one undo away.
+   */
+  it("folds a soft-wrapped paragraph into one heading rather than refusing", () => {
     const document = MarkdownBlockDocument.fromMarkdown("First line\nsecond line\n");
     const before = document.getSnapshot();
 
-    expect(() =>
-      document.apply({
-        type: "setKind",
-        blockId: before.blocks[0].id,
-        kind: "heading",
-        level: 2,
-      })
-    ).toThrow(/multi-line paragraph cannot become a heading/i);
-    expect(document.getSnapshot()).toEqual(before);
+    const result = document.apply({
+      type: "setKind",
+      blockId: before.blocks[0].id,
+      kind: "heading",
+      level: 2,
+    });
+
+    expect(result.snapshot.markdown).toBe("## First line second line\n");
+    // One Block, and a heading — not a heading followed by the orphaned rest of the paragraph,
+    // which is what leaving the newline in place would have parsed as.
+    expect(result.snapshot.blocks).toHaveLength(1);
+    expect(result.snapshot.blocks[0].kind).toBe("heading");
+    expect(document.undo()?.markdown).toBe("First line\nsecond line\n");
+  });
+
+  it("carries a hard line break's own syntax away with the break it folds", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("First line  \nsecond line\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+
+    const result = document.apply({ type: "setKind", blockId, kind: "heading", level: 1 });
+
+    // Neither the two trailing spaces nor a `\` survives as text in the heading.
+    expect(result.snapshot.markdown).toBe("# First line second line\n");
+  });
+
+  /**
+   * The other half of the same refusal: a list marker on line one leaves the rest of the Block
+   * outside the item unless the continuation is indented past it.
+   */
+  it("keeps every line inside the list item a multi-line Block becomes", () => {
+    const cases = [
+      ["bullet_list_item", "- One line\n  second line\n"],
+      ["ordered_list_item", "1. One line\n   second line\n"],
+      ["task_list_item", "- [ ] One line\n      second line\n"],
+    ] as const;
+
+    for (const [kind, expected] of cases) {
+      const document = MarkdownBlockDocument.fromMarkdown("One line\nsecond line\n");
+      const blockId = document.getSnapshot().blocks[0].id;
+
+      const result = document.apply({ type: "setKind", blockId, kind });
+
+      expect(result.snapshot.markdown).toBe(expected);
+      // One Block: an unindented second line would have parsed as a paragraph of its own.
+      expect(result.snapshot.blocks).toHaveLength(1);
+      expect(result.snapshot.blocks[0].kind).toBe(kind);
+    }
+  });
+
+  it("returns the exact bytes it started from when a multi-line list item goes back to text", () => {
+    const document = MarkdownBlockDocument.fromMarkdown("One line\nsecond line\n");
+    const blockId = document.getSnapshot().blocks[0].id;
+
+    const listed = document.apply({ type: "setKind", blockId, kind: "bullet_list_item" });
+    const back = document.apply({
+      type: "setKind",
+      blockId: listed.snapshot.blocks[0].id,
+      kind: "paragraph",
+    });
+
+    expect(back.snapshot.markdown).toBe("One line\nsecond line\n");
   });
 
   it("keeps a heading split at its start reconstructable from Markdown", () => {

@@ -92,6 +92,100 @@ test("walking ArrowUp never parks the Block behind the window chrome", async ({ 
   expect(behind).toEqual([]);
 });
 
+/**
+ * The pointer half: a press has already chosen a pixel, so the Page has nothing left to decide.
+ *
+ * A row brings itself into view on activation — `scrollIntoView({block: "nearest"})` in
+ * markdown-block-row.tsx — and that call could not tell a keyboard arrival from a press. `nearest`
+ * aligns to the container's declared `scroll-padding-top`, an inset rather than a measured
+ * obstruction, so a Block clicked anywhere inside it, or hanging past the bottom edge, was pulled
+ * clear the instant it was pressed. Measured on the packaged app: a fully visible row 45px down the
+ * port moved the Page 3px, and one hanging 27px past the bottom moved it 27px — both times out from
+ * under the pointer that had just been put down. (Before the reserve was corrected from 84px to 48
+ * the same clicks moved it 47px and 8px.) The keyboard keeps the scroll; the test above is its half.
+ */
+async function clickAndMeasure(page: Page, pick: (chromeBottom: number) => string) {
+  const chromeBottom = await page.evaluate(
+    () => document.querySelector("header.desktop-chrome-header")!.getBoundingClientRect().bottom
+  );
+  expect(chromeBottom).toBeGreaterThan(0);
+
+  await page.evaluate(() => {
+    document.querySelector("[data-native-markdown-scroll]")!.scrollTop = 600;
+  });
+
+  const target = await page.evaluate(pick(chromeBottom));
+  expect(target, "a row of the wanted shape is on screen").not.toBeNull();
+
+  const before = await page.evaluate(
+    () => document.querySelector("[data-native-markdown-scroll]")!.scrollTop
+  );
+  await page.mouse.click((target as { x: number; y: number }).x, (target as { y: number }).y);
+  await expect(page.locator('[data-native-block-row][data-active="true"]')).toHaveCount(1);
+  const after = await page.evaluate(
+    () => document.querySelector("[data-native-markdown-scroll]")!.scrollTop
+  );
+  return { before, after };
+}
+
+test("clicking a Block that is already visible does not move the Page", async ({ page }) => {
+  await openPage(page, "ClickScroll", longPage());
+
+  // The first row that clears the chrome completely. Nothing covers it, so nothing about putting a
+  // caret in it justifies moving the Page.
+  const { before, after } = await clickAndMeasure(
+    page,
+    (chromeBottom) => `(() => {
+      const rows = [...document.querySelectorAll("[data-native-block-row]")];
+      const row = rows.find((candidate) => candidate.getBoundingClientRect().top > ${chromeBottom} + 2);
+      if (!row) return null;
+      const box = row.getBoundingClientRect();
+      return { x: box.left + 60, y: box.top + box.height / 2 };
+    })()`
+  );
+
+  expect(after).toBe(before);
+});
+
+test("clicking a Block the window edges clip still does not move the Page", async ({ page }) => {
+  await openPage(page, "ClickScrollClipped", longPage());
+
+  // Clipped at the top by the chrome, pressed on the half of it a pointer can actually reach.
+  const top = await clickAndMeasure(
+    page,
+    (chromeBottom) => `(() => {
+      const rows = [...document.querySelectorAll("[data-native-block-row]")];
+      const row = rows.find((candidate) => {
+        const box = candidate.getBoundingClientRect();
+        return box.top < ${chromeBottom} && box.bottom > ${chromeBottom} + 8;
+      });
+      if (!row) return null;
+      const box = row.getBoundingClientRect();
+      return { x: box.left + 60, y: (${chromeBottom} + box.bottom) / 2 };
+    })()`
+  );
+  expect(top.after, "a row clipped by the chrome").toBe(top.before);
+
+  await page.keyboard.press("Escape");
+
+  // And clipped at the bottom, where `nearest` used to pull the whole row into the port.
+  const bottom = await clickAndMeasure(
+    page,
+    () => `(() => {
+      const port = document.querySelector("[data-native-markdown-scroll]").getBoundingClientRect();
+      const rows = [...document.querySelectorAll("[data-native-block-row]")];
+      const row = rows.find((candidate) => {
+        const box = candidate.getBoundingClientRect();
+        return box.top < port.bottom - 10 && box.bottom > port.bottom;
+      });
+      if (!row) return null;
+      const box = row.getBoundingClientRect();
+      return { x: box.left + 60, y: box.top + 8 };
+    })()`
+  );
+  expect(bottom.after, "a row hanging past the bottom edge").toBe(bottom.before);
+});
+
 test("a vertical walk keeps its column across a short Block", async ({ page }) => {
   const long = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike";
   await openPage(page, "GoalColumn", `${long}\n\nHi\n\n${long}\n`);

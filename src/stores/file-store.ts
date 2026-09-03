@@ -117,16 +117,6 @@ export interface WorkspaceRelocationOptions {
 interface FileState {
   files: FileItem[];
   currentFileId: string | null;
-  /**
-   * The Page in the other pane, or null when there is one pane. Always also in `openTabIds`.
-   *
-   * At most one pane may hold a given Page. Two runtimes over one file are two independent
-   * documents sharing one revision-guarded write and one cached `content`, so the loser's unsaved
-   * edits would be discarded by its own external-reload effect.
-   */
-  otherPaneFileId: string | null;
-  /** Whether the other pane draws left of the active one, so focus can swap without a jump. */
-  otherPaneOnLeft: boolean;
   openTabIds: string[];
   currentFolderId: string | null; // null = root view
   openTarget: OpenTarget;
@@ -170,24 +160,6 @@ interface FileState {
   setCurrentFile: (id: string | null) => void;
   requestCurrentFile: (id: string | null) => Promise<boolean>;
   closeTab: (id: string) => void;
-  /** Open the next tab beside the active Page. No-op when already split. */
-  splitRight: () => void;
-  /** Swap which pane is focused, keeping the two panes where they are on screen. */
-  focusOtherPane: () => void;
-  /**
-   * Make the pane showing `fileId` the active one.
-   *
-   * Idempotent, unlike `focusOtherPane`: a click raises both a pointerdown and a focus, and a
-   * swap on each of them lands back where it started.
-   */
-  focusPane: (fileId: string) => void;
-  /**
-   * Show `fileId` in one pane, keeping at most one pane per Page.
-   *
-   * When the other pane already holds it, this is a swap rather than a second copy.
-   */
-  showInPane: (fileId: string, target: "active" | "other") => void;
-  closeOtherPane: () => void;
   closeOtherTabs: (id: string) => void;
   closeAllTabs: () => void;
   /** Move an open tab to a new position, for drag reordering. */
@@ -338,26 +310,6 @@ async function executeFolderRelocation(
   return { plan, result, entries };
 }
 
-/**
- * The other pane's Page id, after anything that changes which Pages are open.
- *
- * One rule, applied everywhere tabs move: a Page that is gone, or that the active pane has
- * just landed on, cannot stay in the other pane. Two editors over one file are two
- * independent edit histories over one set of bytes, so either can silently overwrite the
- * other. Callers spread the result, which also drops the side when the split collapses.
- */
-function paneAfterTabsChanged(
-  otherPaneFileId: string | null,
-  currentFileId: string | null,
-  openTabIds: string[]
-): { otherPaneFileId: string | null; otherPaneOnLeft?: boolean } {
-  const survives =
-    otherPaneFileId !== null &&
-    otherPaneFileId !== currentFileId &&
-    openTabIds.includes(otherPaneFileId);
-  return survives ? { otherPaneFileId } : { otherPaneFileId: null, otherPaneOnLeft: false };
-}
-
 function relocatedPageState(
   state: FileState,
   oldId: string,
@@ -412,7 +364,6 @@ function relocatedPageState(
     files: sortFilesByOption(files, state.sortBy),
     currentFileId: state.currentFileId === oldId ? newId : state.currentFileId,
     openTabIds: migrateIdInList(state.openTabIds, oldId, newId),
-    otherPaneFileId: state.otherPaneFileId === oldId ? newId : state.otherPaneFileId,
     loadedContentIds: migrateIdInSet(state.loadedContentIds, oldId, newId),
     selectedFileIds: migrateIdInSet(state.selectedFileIds, oldId, newId),
     justCreatedFileId: state.justCreatedFileId === oldId ? newId : state.justCreatedFileId,
@@ -530,7 +481,6 @@ function relocatedFolderState(
   const migrateList = (ids: string[]) =>
     ids.map(migrateId).filter((id, index, all) => nextIdSet.has(id) && all.indexOf(id) === index);
   const migratedCurrentFileId = state.currentFileId ? migrateId(state.currentFileId) : null;
-  const migratedOtherPaneFileId = state.otherPaneFileId ? migrateId(state.otherPaneFileId) : null;
   const migratedCurrentFolderId = state.currentFolderId ? migrateId(state.currentFolderId) : null;
   const migratedJustCreatedFileId = state.justCreatedFileId
     ? migrateId(state.justCreatedFileId)
@@ -544,7 +494,6 @@ function relocatedFolderState(
     files: sortFilesByOption(files, state.sortBy),
     currentFileId: nextCurrentFileId,
     openTabIds: nextOpenTabIds,
-    ...paneAfterTabsChanged(migratedOtherPaneFileId, nextCurrentFileId, nextOpenTabIds),
     currentFolderId:
       migratedCurrentFolderId &&
       files.some((file) => file.id === migratedCurrentFolderId && file.isFolder)
@@ -833,8 +782,6 @@ export const useFileStore = create<FileState>()(
     (set, get) => ({
       files: [],
       currentFileId: null,
-      otherPaneFileId: null,
-      otherPaneOnLeft: false,
       openTabIds: [],
       currentFolderId: null,
       openTarget: "none",
@@ -862,7 +809,6 @@ export const useFileStore = create<FileState>()(
           set({
             files: [],
             openTabIds: [],
-            otherPaneFileId: null,
             isSynced: true,
             isLoading: false,
           });
@@ -882,7 +828,6 @@ export const useFileStore = create<FileState>()(
                 rootPath: null,
                 openFilePath: null,
                 openTabIds: [],
-                otherPaneFileId: null,
                 isSynced: true,
               });
             }
@@ -998,15 +943,6 @@ export const useFileStore = create<FileState>()(
               files,
               currentFileId: validCurrentFileId ?? validOpenTabIds[0] ?? null,
               openTabIds: validOpenTabIds,
-              // A Page the scan no longer sees cannot stay in the other pane — and neither
-              // can one the fallback above just made the active Page.
-              ...paneAfterTabsChanged(
-                state.otherPaneFileId
-                  ? (idMigrationByOldId.get(state.otherPaneFileId) ?? state.otherPaneFileId)
-                  : null,
-                validCurrentFileId ?? validOpenTabIds[0] ?? null,
-                validOpenTabIds
-              ),
               currentFolderId: validCurrentFolderId,
               selectedFileIds: validSelectedFileIds,
               loadedContentIds: preservedContentIds,
@@ -1025,7 +961,6 @@ export const useFileStore = create<FileState>()(
               files: [],
               currentFileId: null,
               openTabIds: [],
-              otherPaneFileId: null,
               currentFolderId: null,
               loadedContentIds: new Set(),
               selectedFileIds: new Set(),
@@ -1137,8 +1072,6 @@ export const useFileStore = create<FileState>()(
                     currentFileId:
                       state.currentFileId === fileId ? fullFile.handle.id : state.currentFileId,
                     openTabIds: migrateIdInList(state.openTabIds, fileId, fullFile.handle.id),
-                    otherPaneFileId:
-                      state.otherPaneFileId === fileId ? fullFile.handle.id : state.otherPaneFileId,
                     loadedContentIds: new Set([...state.loadedContentIds, fullFile.handle.id]),
                   };
                 })
@@ -1165,7 +1098,6 @@ export const useFileStore = create<FileState>()(
           files: [],
           currentFileId: null,
           openTabIds: [],
-          otherPaneFileId: null,
           currentFolderId: null,
           loadedContentIds: new Set(),
           isSynced: false,
@@ -1263,9 +1195,6 @@ export const useFileStore = create<FileState>()(
           files: [looseFile],
           currentFileId: looseFile.id,
           openTabIds: [looseFile.id],
-          // The whole workspace is being replaced; a pane holding one of its Pages is stale.
-          otherPaneFileId: null,
-          otherPaneOnLeft: false,
           currentFolderId: null,
           loadedContentIds: new Set([looseFile.id]),
           selectedFileIds: new Set(),
@@ -1286,7 +1215,6 @@ export const useFileStore = create<FileState>()(
           files: [],
           currentFileId: null,
           openTabIds: [],
-          otherPaneFileId: null,
           currentFolderId: null,
           loadedContentIds: new Set(),
           selectedFileIds: new Set(),
@@ -1388,8 +1316,6 @@ export const useFileStore = create<FileState>()(
               ),
               currentFileId: state.currentFileId === id ? originalFile.id : state.currentFileId,
               openTabIds: migrateIdInList(state.openTabIds, id, originalFile.id),
-              otherPaneFileId:
-                state.otherPaneFileId === id ? originalFile.id : state.otherPaneFileId,
               loadedContentIds: new Set([...state.loadedContentIds, originalFile.id]),
             }));
           } else if (updatedEntry) {
@@ -1412,7 +1338,6 @@ export const useFileStore = create<FileState>()(
               // the next scan drops the old id.
               currentFileId: state.currentFileId === id ? newId : state.currentFileId,
               openTabIds: migrateIdInList(state.openTabIds, id, newId),
-              otherPaneFileId: state.otherPaneFileId === id ? newId : state.otherPaneFileId,
               loadedContentIds: migrateIdInSet(state.loadedContentIds, id, newId),
             }));
           }
@@ -1474,7 +1399,6 @@ export const useFileStore = create<FileState>()(
           ),
           currentFileId: state.currentFileId === id ? nextId : state.currentFileId,
           openTabIds: migrateIdInList(state.openTabIds, id, nextId),
-          otherPaneFileId: state.otherPaneFileId === id ? nextId : state.otherPaneFileId,
           loadedContentIds: migrateIdInSet(state.loadedContentIds, id, nextId),
           selectedFileIds: migrateIdInSet(state.selectedFileIds, id, nextId),
           justCreatedFileId: state.justCreatedFileId === id ? nextId : state.justCreatedFileId,
@@ -1519,19 +1443,14 @@ export const useFileStore = create<FileState>()(
 
         const newFiles = state.files.filter((f) => !idsLeavingStore.has(f.id));
         const newOpenTabIds = state.openTabIds.filter((tabId) => !idsLeavingStore.has(tabId));
-        // Prefer a tab the other pane is not already showing, so deleting an unrelated Page
-        // does not collapse the split.
         const newCurrentId = idsLeavingStore.has(state.currentFileId || "")
-          ? (newOpenTabIds.find((tabId) => tabId !== state.otherPaneFileId) ??
-            newOpenTabIds[0] ??
-            null)
+          ? (newOpenTabIds[0] ?? null)
           : state.currentFileId;
 
         set({
           files: newFiles,
           currentFileId: newCurrentId,
           openTabIds: newOpenTabIds,
-          ...paneAfterTabsChanged(state.otherPaneFileId, newCurrentId, newOpenTabIds),
         });
 
         try {
@@ -1562,14 +1481,6 @@ export const useFileStore = create<FileState>()(
           // than through requestCurrentFile, so the refusal has to live here too.
           if (state.files.find((item) => item.id === id)?.isAsset) {
             return state.currentFileId === null ? {} : { currentFileId: null };
-          }
-          // Already open in the other pane: focus that pane rather than opening a second copy.
-          if (state.otherPaneFileId === id) {
-            return {
-              currentFileId: id,
-              otherPaneFileId: state.currentFileId,
-              otherPaneOnLeft: !state.otherPaneOnLeft,
-            };
           }
           const file = state.files.find((item) => item.id === id && !item.isFolder);
           if (!file) {
@@ -1611,89 +1522,13 @@ export const useFileStore = create<FileState>()(
         }
       },
 
-      splitRight: () => {
-        set((state) => {
-          if (state.otherPaneFileId !== null) return {};
-          // Never a copy of the active Page: the other pane takes the next open tab, and an empty
-          // pane is a legitimate state that renders the ordinary workspace home.
-          const index = state.currentFileId ? state.openTabIds.indexOf(state.currentFileId) : -1;
-          const next =
-            state.openTabIds.find((id, at) => at !== index && id !== state.currentFileId) ?? null;
-          return { otherPaneFileId: next, otherPaneOnLeft: false };
-        });
-      },
-
-      focusOtherPane: () => {
-        set((state) => {
-          if (state.otherPaneFileId === null) return {};
-          // Both ids are already open tabs and nothing unmounts, so this does not go through
-          // `setCurrentFile` and needs no dirty-save.
-          return {
-            currentFileId: state.otherPaneFileId,
-            otherPaneFileId: state.currentFileId,
-            otherPaneOnLeft: !state.otherPaneOnLeft,
-          };
-        });
-      },
-
-      focusPane: (fileId: string) => {
-        set((state) =>
-          state.otherPaneFileId !== null && state.otherPaneFileId === fileId
-            ? {
-                currentFileId: fileId,
-                otherPaneFileId: state.currentFileId,
-                otherPaneOnLeft: !state.otherPaneOnLeft,
-              }
-            : {}
-        );
-      },
-
-      showInPane: (fileId: string, target: "active" | "other") => {
-        set((state) => {
-          if (!state.openTabIds.includes(fileId)) return {};
-          if (target === "active") {
-            if (state.currentFileId === fileId) return {};
-            // Dropping the other pane's Page onto the active one trades them, rather than
-            // leaving the same Page in both.
-            if (state.otherPaneFileId === fileId) {
-              return {
-                currentFileId: fileId,
-                otherPaneFileId: state.currentFileId,
-                otherPaneOnLeft: !state.otherPaneOnLeft,
-              };
-            }
-            return { currentFileId: fileId };
-          }
-          if (state.otherPaneFileId === fileId) return {};
-          if (state.currentFileId === fileId) {
-            // The active pane's own Page dropped into the other one: the panes trade.
-            return state.otherPaneFileId === null
-              ? {}
-              : {
-                  currentFileId: state.otherPaneFileId,
-                  otherPaneFileId: fileId,
-                  otherPaneOnLeft: !state.otherPaneOnLeft,
-                };
-          }
-          return { otherPaneFileId: fileId };
-        });
-      },
-
-      closeOtherPane: () => {
-        set({ otherPaneFileId: null, otherPaneOnLeft: false });
-      },
-
       closeOtherTabs: (id: string) => {
-        set((state) =>
-          state.openTabIds.includes(id)
-            ? { openTabIds: [id], otherPaneFileId: null, otherPaneOnLeft: false }
-            : {}
-        );
+        set((state) => (state.openTabIds.includes(id) ? { openTabIds: [id] } : {}));
         void get().requestCurrentFile(id);
       },
 
       closeAllTabs: () => {
-        set({ openTabIds: [], otherPaneFileId: null, otherPaneOnLeft: false });
+        set({ openTabIds: [] });
         void get().requestCurrentFile(null);
       },
 
@@ -1717,13 +1552,7 @@ export const useFileStore = create<FileState>()(
             state.currentFileId === id
               ? (openTabIds[index] ?? openTabIds[index - 1] ?? null)
               : state.currentFileId;
-          // Closing the tab the other pane is showing closes that pane; leaving it would render a
-          // Page that is no longer open.
-          const otherPaneFileId = state.otherPaneFileId === id ? null : state.otherPaneFileId;
-          // And the tab the close fell through to may be the one the other pane already holds.
-          return otherPaneFileId === currentFileId
-            ? { openTabIds, currentFileId, otherPaneFileId: null, otherPaneOnLeft: false }
-            : { openTabIds, currentFileId, otherPaneFileId };
+          return { openTabIds, currentFileId };
         });
       },
 
@@ -1895,11 +1724,6 @@ export const useFileStore = create<FileState>()(
           transientFile: null,
           openTabIds: state.openTabIds.filter((id) => id !== transient.id),
           currentFileId: state.currentFileId === transient.id ? null : state.currentFileId,
-          ...paneAfterTabsChanged(
-            state.otherPaneFileId,
-            state.currentFileId === transient.id ? null : state.currentFileId,
-            state.openTabIds.filter((id) => id !== transient.id)
-          ),
           loadedContentIds: new Set(
             Array.from(state.loadedContentIds).filter((id) => id !== transient.id)
           ),
@@ -2080,7 +1904,6 @@ export const useFileStore = create<FileState>()(
             ),
             currentFileId: state.currentFileId === fileId ? movedId : state.currentFileId,
             openTabIds: migrateIdInList(state.openTabIds, fileId, movedId),
-            otherPaneFileId: state.otherPaneFileId === fileId ? movedId : state.otherPaneFileId,
             loadedContentIds: migrateIdInSet(state.loadedContentIds, fileId, movedId),
             selectedFileIds: migrateIdInSet(state.selectedFileIds, fileId, movedId),
             justCreatedFileId:
@@ -2286,9 +2109,7 @@ export const useFileStore = create<FileState>()(
         const newFiles = state.files.filter((f) => !fileIds.includes(f.id));
         const newOpenTabIds = state.openTabIds.filter((tabId) => !fileIds.includes(tabId));
         const newCurrentId = fileIds.includes(state.currentFileId || "")
-          ? (newOpenTabIds.find((tabId) => tabId !== state.otherPaneFileId) ??
-            newOpenTabIds[0] ??
-            null)
+          ? (newOpenTabIds[0] ?? null)
           : state.currentFileId;
 
         // Optimistic update
@@ -2297,7 +2118,6 @@ export const useFileStore = create<FileState>()(
           currentFileId: newCurrentId,
           openTabIds: newOpenTabIds,
           selectedFileIds: new Set(), // Clear selection after delete
-          ...paneAfterTabsChanged(state.otherPaneFileId, newCurrentId, newOpenTabIds),
         });
 
         try {

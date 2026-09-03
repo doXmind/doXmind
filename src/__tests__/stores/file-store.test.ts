@@ -170,7 +170,7 @@ describe("useFileStore disk workspace", () => {
     expect(useFileStore.getState().openTabIds).toEqual([]);
   });
 
-  it("drops a Page the rescan no longer sees out of the split", async () => {
+  it("drops a Page the rescan no longer sees out of the open tabs", async () => {
     invokeMock.mockImplementation(async (command: string) => {
       if (command === "workspace_scan") {
         return {
@@ -181,16 +181,13 @@ describe("useFileStore disk workspace", () => {
       throw new Error(`Unexpected command: ${command}`);
     });
 
-    // A split whose other pane holds a Page that is about to disappear from disk.
     useFileStore.setState({
       currentFileId: "doc-1",
-      otherPaneFileId: "gone",
       openTabIds: ["doc-1", "gone"],
     });
 
     await useFileStore.getState().loadFiles();
 
-    expect(useFileStore.getState().otherPaneFileId).toBeNull();
     expect(useFileStore.getState().openTabIds).toEqual(["doc-1"]);
   });
 
@@ -627,22 +624,6 @@ describe("useFileStore disk workspace", () => {
 
     expect(invokeMock).not.toHaveBeenCalledWith("doc_read", expect.anything());
     expect(useFileStore.getState().loadedContentIds.has("path:reference")).toBe(true);
-  });
-
-  it("leaves no pane pointing into the workspace a loose file replaced", async () => {
-    useFileStore.setState({
-      files: [markdownFile("doc-1", "One.md"), markdownFile("doc-2", "Two.md")] as never,
-      openTabIds: ["doc-1", "doc-2"],
-      currentFileId: "doc-1",
-      otherPaneFileId: "doc-2",
-      otherPaneOnLeft: true,
-    });
-
-    // openFile swaps in a whole new single-file workspace; the id the other pane held
-    // belongs to the workspace that just went away.
-    await useFileStore.getState().openFile("/workspace/reference.html");
-
-    expect(useFileStore.getState().otherPaneFileId).toBeNull();
   });
 
   it("opens a loose HTML attachment without reading it as a Page", async () => {
@@ -1983,85 +1964,6 @@ describe("useFileStore disk workspace", () => {
 
     expect(invokeMock).toHaveBeenCalledWith("doc_delete", { root: "/workspace", path: "Doc.md" });
     expect(useFileStore.getState().files).toHaveLength(0);
-  });
-
-  it("never leaves the same Page in both panes after a delete", async () => {
-    useFileStore.setState({
-      files: [markdownFile("doc-1", "One.md"), markdownFile("doc-2", "Two.md")] as never,
-      openTabIds: ["doc-1", "doc-2"],
-      currentFileId: "doc-1",
-      otherPaneFileId: "doc-2",
-      otherPaneOnLeft: false,
-    });
-    invokeMock.mockResolvedValueOnce({ path: "One.md", sidecarPath: null });
-
-    // Deleting the active Page used to fall back to the first surviving tab, which is the
-    // one the other pane already holds: two editors over one file, each with its own edit
-    // history, either able to overwrite the other.
-    await useFileStore.getState().deleteFile("doc-1");
-
-    const after = useFileStore.getState();
-    expect(after.currentFileId).toBe("doc-2");
-    expect(after.otherPaneFileId).toBeNull();
-  });
-
-  it("drops a deleted Page out of the other pane", async () => {
-    useFileStore.setState({
-      files: [markdownFile("doc-1", "One.md"), markdownFile("doc-2", "Two.md")] as never,
-      openTabIds: ["doc-1", "doc-2"],
-      currentFileId: "doc-1",
-      otherPaneFileId: "doc-2",
-      otherPaneOnLeft: false,
-    });
-    invokeMock.mockResolvedValueOnce({ path: "Two.md", sidecarPath: null });
-
-    await useFileStore.getState().deleteFile("doc-2");
-
-    const after = useFileStore.getState();
-    expect(after.currentFileId).toBe("doc-1");
-    expect(after.otherPaneFileId).toBeNull();
-  });
-
-  it("keeps the split when a Page neither pane holds is deleted", async () => {
-    useFileStore.setState({
-      files: [
-        markdownFile("doc-1", "One.md"),
-        markdownFile("doc-2", "Two.md"),
-        markdownFile("doc-3", "Three.md"),
-      ] as never,
-      openTabIds: ["doc-1", "doc-2", "doc-3"],
-      currentFileId: "doc-1",
-      otherPaneFileId: "doc-2",
-      otherPaneOnLeft: false,
-    });
-    invokeMock.mockResolvedValueOnce({ path: "Three.md", sidecarPath: null });
-
-    await useFileStore.getState().deleteFile("doc-3");
-
-    const after = useFileStore.getState();
-    expect(after.currentFileId).toBe("doc-1");
-    expect(after.otherPaneFileId).toBe("doc-2");
-  });
-
-  it("never leaves the same Page in both panes after a bulk delete", async () => {
-    useFileStore.setState({
-      files: [
-        markdownFile("doc-1", "One.md"),
-        markdownFile("doc-2", "Two.md"),
-        markdownFile("doc-3", "Three.md"),
-      ] as never,
-      openTabIds: ["doc-1", "doc-2", "doc-3"],
-      currentFileId: "doc-1",
-      otherPaneFileId: "doc-3",
-      otherPaneOnLeft: false,
-    });
-    invokeMock.mockResolvedValue({ path: "One.md", sidecarPath: null });
-
-    await useFileStore.getState().bulkDeleteFiles(["doc-1", "doc-2"]);
-
-    const after = useFileStore.getState();
-    expect(after.currentFileId).toBe("doc-3");
-    expect(after.otherPaneFileId).toBeNull();
   });
 
   it("preserves the original delete error if reverting with loadFiles also throws", async () => {

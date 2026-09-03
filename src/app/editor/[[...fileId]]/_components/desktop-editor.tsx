@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { FilesSidebar } from "@/components/sidebar/files-sidebar";
 import { DocumentWorkspace } from "@/components/workspace/document-workspace";
@@ -8,7 +8,7 @@ import { ResizeHandle } from "@/components/ui/resize-handle";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { WelcomeScreen } from "@/components/welcome-screen";
 import { WorkspaceHome } from "@/components/workspace/workspace-home";
-import { TAB_DRAG_TYPE, UnifiedHeader } from "@/components/editor/unified-header";
+import { UnifiedHeader } from "@/components/editor/unified-header";
 import { OutlineCollapsed } from "@/components/editor/mindlines/outline-collapsed";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -18,14 +18,6 @@ import { MINDLINES_WIDTH } from "@/lib/constants";
 import { MarkdownSkeleton } from "@/components/workspace/markdown-skeleton";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-
-/**
- * The narrowest a pane may be dragged.
- *
- * Measured, not guessed: the content column is the pane's width less 132px at every width, so this
- * leaves roughly 350px of text — about the point where a Markdown line stops being readable.
- */
-const MIN_PANE_PX = 480;
 
 export function DesktopEditor() {
   const currentFileId = useFileStore((s) => s.currentFileId);
@@ -37,61 +29,6 @@ export function DesktopEditor() {
     s.currentFileId ? s.loadedContentIds.has(s.currentFileId) : false
   );
   const openTarget = useFileStore((s) => s.openTarget);
-  const otherPaneFileId = useFileStore((s) => s.otherPaneFileId);
-  const otherPaneOnLeft = useFileStore((s) => s.otherPaneOnLeft);
-  const focusPane = useFileStore((s) => s.focusPane);
-  const showInPane = useFileStore((s) => s.showInPane);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const otherPaneFile = useFileStore((s) =>
-    s.otherPaneFileId ? s.files.find((file) => file.id === s.otherPaneFileId) : undefined
-  );
-  const isOtherPaneLoaded = useFileStore((s) =>
-    s.otherPaneFileId ? s.loadedContentIds.has(s.otherPaneFileId) : false
-  );
-  const loadFileContent = useFileStore((s) => s.loadFileContent);
-  /** Local, not persisted: a split lasts as long as the session that opened it. */
-  const [splitRatio, setSplitRatio] = useState(0.5);
-  const splitHostRef = useRef<HTMLDivElement>(null);
-
-  // The other pane's Page needs its content like any other. `loadFileContent` no-ops on a cache
-  // hit, so this cannot cause a second read.
-  useEffect(() => {
-    if (otherPaneFileId && !isOtherPaneLoaded) void loadFileContent(otherPaneFileId);
-  }, [otherPaneFileId, isOtherPaneLoaded, loadFileContent]);
-
-  const panes = useMemo(() => {
-    const active = {
-      fileId: currentFileId,
-      file: currentFile ?? null,
-      isLoaded: isCurrentFileLoaded,
-      isActive: true,
-      basis: otherPaneOnLeft ? (1 - splitRatio) * 100 : splitRatio * 100,
-    };
-    const other = {
-      fileId: otherPaneFileId,
-      file: otherPaneFile ?? null,
-      isLoaded: isOtherPaneLoaded,
-      isActive: false,
-      basis: otherPaneOnLeft ? splitRatio * 100 : (1 - splitRatio) * 100,
-    };
-    // Keyed by where a pane sits, never by which one is focused. Focusing the other pane
-    // swaps the two ids *and* flips the order, so under a role key React reuses each fiber
-    // for the other pane's Page: both editors rebuild their document from the last written
-    // content, dropping unsaved edits and both undo histories while the screen looks still.
-    return (otherPaneOnLeft ? [other, active] : [active, other]).map((pane, index) => ({
-      ...pane,
-      key: index === 0 ? "left" : "right",
-    }));
-  }, [
-    currentFileId,
-    currentFile,
-    isCurrentFileLoaded,
-    otherPaneFileId,
-    otherPaneFile,
-    isOtherPaneLoaded,
-    otherPaneOnLeft,
-    splitRatio,
-  ]);
   // VSCode-style: the sidebar appears whenever a file or folder is open.
   // The welcome surface can remain mounted beside it, so opening a folder
   // expands the file tree instead of replacing the main content with a blank
@@ -225,7 +162,7 @@ export function DesktopEditor() {
               {/* Outline rail — collapsed by default, expands into a floating
                 outline popover on hover. Keep it close to the scroll edge so
                 the popover reads as part of the document navigation chrome. */}
-              {!isFocusMode && hasLiveHeadings && otherPaneFileId === null && (
+              {!isFocusMode && hasLiveHeadings && (
                 <div
                   data-native-editor-chrome
                   // right-4 is the one chrome inset: the same 16px the word
@@ -257,109 +194,14 @@ export function DesktopEditor() {
                 </div>
               )}
 
-              {otherPaneFileId === null ? (
-                <EditorPane
-                  file={currentFile ?? null}
-                  isLoaded={isCurrentFileLoaded}
-                  isActive
-                  isSynced={isSynced}
-                  pendingFileId={currentFileId}
-                  openTarget={openTarget}
-                  reservedRightInset={outlineContentGutterPx}
-                />
-              ) : (
-                <div
-                  ref={splitHostRef}
-                  data-editor-split-host
-                  className="flex h-full min-h-0 w-full"
-                >
-                  {panes.map((pane, index) => (
-                    <Fragment key={pane.key}>
-                      {index > 0 && (
-                        <ResizeHandle
-                          side="left"
-                          // The divider is the only thing saying where one Page ends and the next
-                          // begins; without it the two columns read as one ragged document.
-                          className="z-20"
-                          onResize={(delta) => {
-                            const width = splitHostRef.current?.getBoundingClientRect().width ?? 0;
-                            if (width <= 0) return;
-                            // Clamped so neither pane drops below a readable column: the content
-                            // column is the pane's width less 132px, measured.
-                            const min = MIN_PANE_PX / width;
-                            setSplitRatio((ratio) =>
-                              Math.min(1 - min, Math.max(min, ratio + delta / width))
-                            );
-                          }}
-                          onDoubleClick={() => setSplitRatio(0.5)}
-                        />
-                      )}
-                      <div
-                        className="relative flex h-full min-h-0 flex-col overflow-hidden"
-                        style={{ flexBasis: `${pane.basis}%`, flexGrow: 0, flexShrink: 1 }}
-                        // Distinct from the document's own data-pane-active, which PDF export
-                        // and print select on; a wrapper sharing that name matches them too.
-                        data-editor-pane={pane.isActive ? "active" : "inactive"}
-                        data-pane-drop-target={dropTarget === pane.key ? "true" : undefined}
-                        onDragOver={(event) => {
-                          if (!event.dataTransfer.types.includes(TAB_DRAG_TYPE)) return;
-                          event.preventDefault();
-                          event.dataTransfer.dropEffect = "move";
-                          setDropTarget(pane.key);
-                        }}
-                        onDragLeave={(event) => {
-                          // Only when the pointer actually leaves this pane, not on the way over
-                          // one of its children.
-                          if (event.currentTarget.contains(event.relatedTarget as Node)) return;
-                          setDropTarget((current) => (current === pane.key ? null : current));
-                        }}
-                        onDrop={(event) => {
-                          const dropped = event.dataTransfer.getData(TAB_DRAG_TYPE);
-                          setDropTarget(null);
-                          if (!dropped) return;
-                          event.preventDefault();
-                          showInPane(dropped, pane.isActive ? "active" : "other");
-                        }}
-                        // Pointerdown alone owns this. A click raises pointerdown *and* focus, and
-                        // acting on both swapped the panes and then swapped them straight back:
-                        // by the time focus fired, the pane it landed on was the inactive one.
-                        onPointerDownCapture={
-                          pane.isActive || !pane.fileId ? undefined : () => focusPane(pane.fileId!)
-                        }
-                      >
-                        {/* Which pane a keystroke, a save or an undo will land in. Both panes
-                            reserve the same 2px, so focus moving never shifts a line of text. */}
-                        <span
-                          aria-hidden="true"
-                          // Chrome, not content: this is what keeps it off a printed page.
-                          data-native-editor-chrome
-                          className={cn(
-                            "pointer-events-none absolute inset-x-0 top-0 z-30 h-[2px] transition-colors duration-[20ms] ease-in",
-                            pane.isActive ? "bg-primary/50" : "bg-transparent"
-                          )}
-                        />
-                        {dropTarget === pane.key && (
-                          <span
-                            aria-hidden="true"
-                            className="pointer-events-none absolute inset-2 z-30 rounded-lg ring-2 ring-primary/40"
-                          />
-                        )}
-                        <EditorPane
-                          file={pane.file}
-                          isLoaded={pane.isLoaded}
-                          isActive={pane.isActive}
-                          isSynced={isSynced}
-                          pendingFileId={pane.fileId}
-                          openTarget={openTarget}
-                          // Only an unsplit editor reserves room for the outline rail; while split
-                          // the rail is suppressed, so neither pane pays for it.
-                          reservedRightInset={0}
-                        />
-                      </div>
-                    </Fragment>
-                  ))}
-                </div>
-              )}
+              <EditorPane
+                file={currentFile ?? null}
+                isLoaded={isCurrentFileLoaded}
+                isSynced={isSynced}
+                pendingFileId={currentFileId}
+                openTarget={openTarget}
+                reservedRightInset={outlineContentGutterPx}
+              />
             </main>
           </div>
         </div>
@@ -382,16 +224,10 @@ export function DesktopEditor() {
   );
 }
 
-/**
- * One editor column: the Page, its loading skeleton, or the empty-workspace surface.
- *
- * Extracted verbatim from the single-pane tree so an unsplit editor renders exactly the DOM it
- * always did — the split is a second instance of this, not a different shape.
- */
+/** The editor column: the Page, its loading skeleton, or the empty-workspace surface. */
 function EditorPane({
   file,
   isLoaded,
-  isActive,
   isSynced,
   pendingFileId,
   openTarget,
@@ -399,7 +235,6 @@ function EditorPane({
 }: {
   file: FileItem | null;
   isLoaded: boolean;
-  isActive: boolean;
   isSynced: boolean;
   pendingFileId: string | null;
   openTarget: string;
@@ -422,11 +257,7 @@ function EditorPane({
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.18, ease: "easeOut" }}
               >
-                <DocumentWorkspace
-                  file={file}
-                  isActivePane={isActive}
-                  reservedRightInset={reservedRightInset}
-                />
+                <DocumentWorkspace file={file} reservedRightInset={reservedRightInset} />
               </motion.div>
             ) : (
               <motion.div

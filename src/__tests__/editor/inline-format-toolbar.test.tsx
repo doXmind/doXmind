@@ -1,6 +1,9 @@
 import { createEvent, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { InlineFormatToolbar } from "@/editor/markdown-block/inline-format-toolbar";
@@ -178,12 +181,75 @@ describe("InlineFormatToolbar", () => {
     }
   });
 
-  it("still marks an applied format without reaching for a hover token", () => {
+  /**
+   * Seven glyphs and, until this, nothing that said what any of them did.
+   *
+   * The buttons carried a native `title` and no in-app label. Measured in the packaged app:
+   * hovering a format button for 1.4s put no popout in the document at all, while the gutter's own
+   * controls — same gesture, same 320ms delay — showed theirs. The one surface made entirely of
+   * unlabelled icons was the only one with no hover label.
+   */
+  it("names each control on hover, with the shortcut that reaches it", async () => {
+    const user = userEvent.setup();
+    render(<InlineFormatToolbar {...baseProps} visible typeLabel="Text" />);
+
+    await user.hover(screen.getByRole("button", { name: "Bold" }));
+
+    const tip = await screen.findByRole("tooltip");
+    expect(tip).toHaveTextContent("Bold");
+    // Mod, formatted for the platform: ⌘B on a Mac, Ctrl+B elsewhere.
+    expect(tip.textContent).toMatch(/(⌘|Ctrl\+)B/);
+  });
+
+  it("gives the type control and the overflow button a label too", async () => {
+    const user = userEvent.setup();
+    render(<InlineFormatToolbar {...baseProps} visible typeLabel="Text" />);
+
+    await user.hover(screen.getByRole("button", { name: "More actions" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("More actions");
+
+    await user.unhover(screen.getByRole("button", { name: "More actions" }));
+    await user.hover(screen.getByRole("button", { name: "Change block type: Text" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Change block type");
+  });
+
+  /**
+   * The lit state says it in a currency the hover state does not use.
+   *
+   * It was `bg-muted`, which is the exact value the shared hover tint is solved to land on — the
+   * table's own docblock says so. Measured on the packaged app in the dark theme: a lit Bold button
+   * read rgb(46,46,46) on a rgba(46,46,46,.95) panel, 1.04:1, while merely hovering an unlit
+   * neighbour lifted it clear. The hovered button looked lit and the lit one looked idle.
+   */
+  it("marks an applied format with the state the stylesheet paints, not a grey fill", () => {
     render(<InlineFormatToolbar {...baseProps} visible activeFormats={{ bold: true }} />);
 
-    // `bg-muted` on a pressed button is the format's own state, not a hover state: the table's tint
-    // is an overlay, so the two compose instead of fighting.
-    expect(screen.getByRole("button", { name: "Bold" }).className).toContain("bg-muted");
-    expect(screen.getByRole("button", { name: "Italic" }).className).not.toContain("bg-muted");
+    const bold = screen.getByRole("button", { name: "Bold" });
+    const italic = screen.getByRole("button", { name: "Italic" });
+
+    expect(bold).toHaveAttribute("aria-pressed", "true");
+    expect(italic).toHaveAttribute("aria-pressed", "false");
+    // No fill of its own — a grey here can only be the hover colour again.
+    expect(bold.className).not.toMatch(/\bbg-/);
+    expect(italic.className).not.toMatch(/\bbg-/);
+  });
+
+  /** The other half of the pair: the stylesheet has to answer `aria-pressed`, and not in grey. */
+  it("paints the pressed state from the accent, and keeps it accent under the pointer", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/app/styles/editor.css"), "utf8");
+
+    const on = css.match(/\.editor-control\[aria-pressed="true"\],[^{]*\{([^}]*)\}/)?.[1];
+    const onHover = css.match(
+      /\.editor-control\[aria-pressed="true"\]:hover:not\(:disabled\),[^{]*\{([^}]*)\}/
+    )?.[1];
+
+    expect(on, "editor.css declares an aria-pressed state").toBeTruthy();
+    expect(on).toMatch(/rgba\(35, 131, 226/);
+    expect(on).toMatch(/color:\s*#2383e2/);
+    // Written out rather than inherited: the shared hover rule is (0,3,0) and would otherwise
+    // repaint a lit control grey the moment the pointer arrived.
+    expect(onHover, "the lit hover is declared, not left to the cascade").toBeTruthy();
+    expect(onHover).toMatch(/rgba\(35, 131, 226/);
+    expect(onHover).toMatch(/color:\s*#2383e2/);
   });
 });
