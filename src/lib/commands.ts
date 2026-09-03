@@ -81,17 +81,6 @@ export const WORKSPACE_COMMANDS: readonly WorkspaceCommand[] = [
     run: () => useLayoutStore.getState().openSidebarSearch(""),
   },
   {
-    id: "tags-pane",
-    labelKey: "tagsPane",
-    category: "navigation",
-    defaultBinding: null,
-    keywords: ["tag", "label"],
-    run: () => {
-      useLayoutStore.getState().setFilesSidebarOpen(true);
-      useLayoutStore.getState().setSidebarView("tags");
-    },
-  },
-  {
     id: "find-in-page",
     labelKey: "findInPage",
     category: "editor",
@@ -120,34 +109,6 @@ export const WORKSPACE_COMMANDS: readonly WorkspaceCommand[] = [
     defaultBinding: null,
     keywords: ["expand", "sections", "outline"],
     run: () => useEditorRefStore.getState().requestFoldAll?.(false),
-  },
-  {
-    id: "split-right",
-    labelKey: "splitRight",
-    category: "editor",
-    // Obsidian's ⌘\ is not expressible in `bindingForEvent`'s grammar, and nothing asked for a
-    // chord: the palette and the options menu are both one gesture away.
-    defaultBinding: null,
-    keywords: ["split", "pane", "side by side"],
-    run: () => useFileStore.getState().splitRight(),
-  },
-  {
-    id: "focus-other-pane",
-    labelKey: "focusOtherPane",
-    category: "editor",
-    // The only keyboard route into the second pane: the pane switch is otherwise a
-    // pointerdown, so without this a keyboard user can split and never leave the first Page.
-    defaultBinding: null,
-    keywords: ["split", "pane", "focus", "switch"],
-    run: () => useFileStore.getState().focusOtherPane(),
-  },
-  {
-    id: "close-other-pane",
-    labelKey: "closeOtherPane",
-    category: "editor",
-    defaultBinding: null,
-    keywords: ["split", "pane", "unsplit"],
-    run: () => useFileStore.getState().closeOtherPane(),
   },
   {
     id: "toggle-sidebar",

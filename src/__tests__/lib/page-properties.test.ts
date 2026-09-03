@@ -13,10 +13,15 @@ describe("Page properties", () => {
     expect(
       pagePropertiesFromMeta({
         id: "page-1",
-        tags: ["local", " knowledge "],
+        aliases: ["Home", " Away "],
+      })
+    ).toEqual({ aliases: ["Home", "Away"], custom: {} });
+    expect(
+      pagePropertiesFromMeta({
+        id: "page-1",
         aliases: "not-an-array" as unknown as string[],
       })
-    ).toEqual({ tags: ["local", "knowledge"], aliases: [], custom: {} });
+    ).toEqual({ aliases: [], custom: {} });
   });
 
   it("normalizes comma/newline input without persisting blanks or duplicates", () => {
@@ -26,15 +31,13 @@ describe("Page properties", () => {
   it("patches only changed keys and uses null to remove an existing property", () => {
     expect(
       diffPageProperties(
-        { tags: ["local"], aliases: ["Home"], custom: { status: "idea", priority: 1 } },
+        { aliases: ["Home"], custom: { status: "idea", priority: 1 } },
         {
-          tags: ["local", "markdown"],
           aliases: [],
           custom: { status: "doing", published: false },
         }
       )
     ).toEqual({
-      tags: ["local", "markdown"],
       aliases: null,
       priority: null,
       published: false,
@@ -42,8 +45,8 @@ describe("Page properties", () => {
     });
     expect(
       diffPageProperties(
-        { tags: ["local"], aliases: ["Home"], custom: { topics: ["one"] } },
-        { tags: ["local"], aliases: ["Home"], custom: { topics: ["one"] } }
+        { aliases: ["Home"], custom: { topics: ["one"] } },
+        { aliases: ["Home"], custom: { topics: ["one"] } }
       )
     ).toEqual({});
   });
@@ -63,7 +66,6 @@ describe("Page properties", () => {
         "bad key": "ignored",
       })
     ).toEqual({
-      tags: [],
       aliases: [],
       custom: {
         priority: 2,

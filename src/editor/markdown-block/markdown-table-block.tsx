@@ -637,6 +637,19 @@ function TableAxisMenu({
 
   return (
     <span
+      // Not cell content, though it is a `span` directly inside a cell.
+      //
+      // `.markdown-page th > span` in editor.css gives a cell's content `min-height: 1lh` so an
+      // empty row keeps a line of height, and it matched this wrapper too: measured in the packaged
+      // app at the Page's 28px line-height, the wrapper was 28px tall and `translate(-50%, -50%)`
+      // therefore centred *that* on the cell's border rather than the 9px pill. The column pill
+      // drew at y 128.5-137.5 against a header cell whose top edge is 142.5 — the whole pill 5px
+      // clear of the table, with a strip under it belonging to neither. Travelling up to it, the
+      // pointer crossed that strip, left the `<table>`, and `onPointerLeave` cleared `hovered`: the
+      // pill went `opacity: 0; pointer-events: none` before the pointer arrived. Only a jump landing
+      // straight on it ever connected, which is why the report is that it vanishes on the way rather
+      // than that it never works. The attribute is what the stylesheet excludes on.
+      data-axis-anchor
       className="pointer-events-none absolute flex"
       // Inline rather than utility classes, and measured rather than derived. The offsets have to be
       // exact for the pill to sit on the table's own border line instead of over the cell's first

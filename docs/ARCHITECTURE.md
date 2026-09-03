@@ -37,8 +37,8 @@ The product surface is intentionally narrow:
   and other files remain ordinary assets/files but are not all shown as
   Attachment cards.
 - Existing Page/PDF/Excel Sidecars, Synthetic Documents, and
-  `extras.databases` are frozen legacy-recovery formats, not foundations for
-  new features.
+  `extras.databases` are dead formats: preserved on disk, never read, and not
+  foundations for new features.
 - Read-only PDF/spreadsheet parsing and import are optional local tooling paths.
   Page PDF export waits for the live native Block view, generates PDF bytes
   inside Electron with `webContents.printToPDF`, and atomically writes the
@@ -63,10 +63,9 @@ read without doXmind. New doXmind Pages carry a stable `id` in YAML
 frontmatter. External Markdown without an id opens without a write and uses a
 workspace-relative path identity until the user explicitly adds metadata.
 
-Old hidden `.doxmind` files may still be present. They are recovery artifacts,
-not a Page cache. Normal Page open/save never trusts or updates their HTML, id,
-hash, or extras. `extras.blocks` and `extras.databases` remain readable only by
-legacy inventory/export paths until their recovery gates pass.
+Old hidden `.doxmind` files may still be present. They are inert legacy
+artifacts, not a Page cache. Nothing reads their HTML, id, hash, or extras;
+Page open/save neither trusts nor updates them.
 
 ### Open
 
@@ -93,12 +92,10 @@ guard, not an OS-level atomic compare-and-swap; reintroducing a Sidecar hash is
 not an acceptable conflict mechanism.
 
 Legacy Synthetic PDF/Excel `markdown_hash`, placeholder, and
-`parsedCache.sourceHash` rules remain readable only by isolated recovery code.
-The Attachment surface inspects them without writing and can export a Markdown
-report containing the exact legacy editor-state JSON. It does not mount the old
-editors or reconstruct a PDF/workbook. Source binaries and the complete legacy
-Sidecar artifact family remain unchanged. New Attachments do not get editor
-sidecars.
+`parsedCache.sourceHash` rules are no longer read by anything. The Attachment
+surface opens the source read-only and never touches the Sidecar family. Source
+binaries and the complete legacy Sidecar artifact family remain unchanged. New
+Attachments do not get editor sidecars.
 
 ## Desktop and browser-dev architecture
 
@@ -124,17 +121,17 @@ The implementation is split across two runtime paths with strict ownership:
 
 Electron executes workspace commands inside the desktop process. The packaged
 app neither starts nor bundles Python/FastAPI. The Python command mirror exists
-for browser development, CLI/MCP, and explicit read-only recovery/conversion
-tooling; it is not a desktop lifecycle dependency. Tauri and the former Rust
-Page core are retired; adding another packaged shell requires a new ADR.
+for browser development, CLI/MCP, and read-only conversion tooling; it is not a
+desktop lifecycle dependency. Tauri and the former Rust Page core are retired;
+adding another packaged shell requires a new ADR.
 
 ### `electron/` — the desktop shell
 
 Electron exposes the same command names through its preload IPC bridge and
 implements workspace/Page operations in `electron/native-workspace.js` using
 Node filesystem APIs. Page reads and writes are Markdown-only. Existing legacy
-recovery artifact families travel transactionally with rename/move and are sent
-to system Trash on delete; no normal Page operation creates them.
+Sidecar artifact families travel transactionally with rename/move and are sent
+to system Trash on delete; nothing creates, reads, or rewrites them.
 
 Electron exposes `workspace_read_asset`: the command accepts only an existing
 workspace-relative supported raster file, rejects every symlink component,
@@ -168,14 +165,14 @@ FastAPI is a localhost service mounted at two routers (see `server/main.py`):
 
 | Router      | Purpose                                          |
 | ----------- | ------------------------------------------------ |
-| `images`    | Read-only recovery for pre-workspace image URLs. |
+| `images`    | Read-only serving for pre-workspace image URLs.  |
 | `workspace` | Localhost mirror of the Electron command surface |
 |             | browser dev mode (`POST /api/workspace/invoke`). |
 
 Browser dev mode (`npm run dev:all`) cannot call desktop commands, so the
-FastAPI workspace router exposes Page/workspace commands and the separate
-zero-write legacy recovery commands over HTTP. The Python implementation in
-`server/api/workspace.py` mirrors the Markdown-only Page contract.
+FastAPI workspace router exposes the Page/workspace commands over HTTP. The
+Python implementation in `server/api/workspace.py` mirrors the Markdown-only
+Page contract.
 Cross-runtime source/frontmatter fixtures keep Electron and browser-dev Python
 behavior aligned without making Python a packaged dependency.
 
@@ -239,7 +236,7 @@ The Page Properties Module projects only top-level string, finite-number,
 boolean, or string-array values. A Relation control writes one or more exact,
 extension-free `[[workspace/path]]` strings using that same string-array grammar;
 relation identity never lives in a UI record. Generic key patches use the same
-optimistic revision guard as tags and aliases. Unknown or unsupported frontmatter
+optimistic revision guard as aliases. Unknown or unsupported frontmatter
 remains exact source rather than becoming a second metadata store.
 
 The old mounted DatabaseBlock component tree and writable `database-store` are
@@ -277,9 +274,9 @@ deepen a raw Block only after exact-source fixtures and safe commands exist.
 
 No feature may introduce a second document tree. A structure that carries user
 semantics first needs a portable Markdown grammar, source-preservation tests and
-native block commands. Legacy DatabaseBlock UI/store code is absent; the
-`extras.databases` and PDF/Excel recovery readers stay isolated from Page
-editing until their explicit export gates are complete.
+native block commands. Legacy DatabaseBlock UI/store code is absent, and no
+reader of `extras.databases` or of PDF/Excel Sidecar state remains anywhere in
+the product.
 
 The current portable extension grammars are deliberately narrow:
 
@@ -325,23 +322,17 @@ writes the workspace or owns durable Page state. Daily Notes likewise use only
 normal folder/create/navigation commands to open or create
 `Daily Notes/YYYY-MM-DD.md` from the local calendar date.
 
-### Attachment recovery boundary
+### Attachment boundary
 
 `AttachmentWorkspace` is the only normal PDF/spreadsheet/HTML destination. It
-is read-only and offers Reveal/Open Externally. For a PDF or spreadsheet with
-recoverable legacy state, it additionally:
-
-1. inspects the legacy Sidecar and backup-bearing artifact family without
-   mutation;
-2. reads the old editor state through a compatibility reader; and
-3. downloads a `.doxmind-recovery.md` report whose fenced JSON is the exact
-   recovered state.
+is read-only and offers Reveal/Open Externally, and nothing else. It never
+opens, parses, or exports a legacy Sidecar.
 
 The old PDF and Excel editor workspaces, frontend libraries/dependencies,
-desktop/server editor and write/cache/create commands, and Synthetic Document
-migration writers are physically removed. Move, rename, and delete still
-preserve the source and its `.doxmind`, `.bak`, `.lock`, and `.corrupt-*` family
-together.
+desktop/server editor and write/cache/create commands, Sidecar
+inspection/recovery commands, and Synthetic Document migration writers are
+physically removed. Move, rename, and delete still preserve the source and its
+`.doxmind`, `.bak`, `.lock`, and `.corrupt-*` family together.
 
 ## Optional read-only CLI/MCP conversion
 
@@ -368,7 +359,7 @@ local-desk/
 │   └── lib/              Storage, export, import-policy, and UI utilities
 ├── server/               Optional FastAPI/browser-dev and tooling service (Python >=3.11)
 │   ├── api/              Routers: images, workspace
-│   ├── services/         Page storage, read-only recovery/parsing,
+│   ├── services/         Page storage, read-only parsing,
 │   │                     image and Markdown-projection helpers
 │   └── main.py           App factory
 ├── electron/             Electron desktop shell + Node workspace commands
@@ -388,8 +379,8 @@ local-desk/
 | Current Page identity index            | Rebuilt in Electron memory; app-private in browser development             |
 | Markdown search                        | On-demand, zero-write workspace scan                                       |
 | Preferences and recents                | Desktop WebView local application profile                                  |
-| Legacy Page/DatabaseBlock recovery     | Preserved Sidecars + byte-exact Markdown recovery reports                  |
-| Legacy PDF/Excel edit recovery state   | Preserved attachment Sidecar artifact families                             |
+| Legacy Page/DatabaseBlock state        | Preserved Sidecars, never read by doXmind                                  |
+| Legacy PDF/Excel edit state            | Preserved attachment Sidecar artifact families, never read by doXmind      |
 | Referenced/imported local image assets | Ordinary workspace files; Electron no-overwrite copy + Blob preview        |
 | Pre-write Page snapshots               | App-private `<DATA_DIR>/page-snapshots/`; never written into the workspace |
 
@@ -436,10 +427,10 @@ drives the active migration:
 - TipTap/ProseMirror runtimes, extensions and package dependencies are removed.
   Syntax outside the explicit native grammars continues as exact raw Blocks;
   richer controls cannot reintroduce a private editor schema.
-- Legacy PDF/Excel inspection and explicit Markdown recovery-report export are
-  complete. Dedicated editor bundles, attachment create/write/cache endpoints,
-  Synthetic Document migration writers, and dedicated dependencies are
-  physically removed. CLI/MCP retains only read-only parsing.
+- Legacy Sidecar inspection and recovery-report export are gone. Dedicated
+  editor bundles, attachment create/write/cache endpoints, Synthetic Document
+  migration writers, and dedicated dependencies are physically removed. CLI/MCP
+  retains only read-only parsing.
 - Frontmatter Properties/relations, the shared zero-write Page Catalog,
   backlinks, Daily Notes, all three Collection views and computed projections,
   Page graph, Toggles, slash commands, block-id transclusion, and Electron

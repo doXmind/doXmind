@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 
 import {
   Check,
-  Columns2,
   Copy,
   Download,
   Keyboard,
@@ -60,7 +59,6 @@ function TabDocumentIcon({ file }: { file: FileItem }) {
 }
 
 /** Identifies a tab drag to the panes, which are outside this component. */
-export const TAB_DRAG_TYPE = "application/x-doxmind-tab";
 
 export function UnifiedHeader() {
   const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
@@ -77,9 +75,6 @@ export function UnifiedHeader() {
   const files = useFileStore((s) => s.files);
   const openTabIds = useFileStore((s) => s.openTabIds);
   const reorderTab = useFileStore((s) => s.reorderTab);
-  const splitRight = useFileStore((s) => s.splitRight);
-  const closeOtherPane = useFileStore((s) => s.closeOtherPane);
-  const otherPaneFileId = useFileStore((s) => s.otherPaneFileId);
   const closeOtherTabs = useFileStore((s) => s.closeOtherTabs);
   const closeAllTabs = useFileStore((s) => s.closeAllTabs);
   const openTarget = useFileStore((s) => s.openTarget);
@@ -200,11 +195,12 @@ export function UnifiedHeader() {
 
   const handleCloseTab = (fileId: string) => {
     const file = useFileStore.getState().files.find((candidate) => candidate.id === fileId);
-    // Either mounted pane, not just the focused one: the other pane's tab has a live editor
-    // behind it too, and closing it used to unmount that editor with no prompt at all.
-    const isMountedPane =
-      fileId === currentFileId || fileId === useFileStore.getState().otherPaneFileId;
-    if (isMountedPane && file && isMarkdownFile(file) && useEditorStore.getState().isDirty) {
+    if (
+      fileId === currentFileId &&
+      file &&
+      isMarkdownFile(file) &&
+      useEditorStore.getState().isDirty
+    ) {
       setCloseRequestId(fileId);
       return;
     }
@@ -277,13 +273,14 @@ export function UnifiedHeader() {
           {isMacElectron && (
             <>
               {/* Two drag strips that physically avoid the macOS traffic-light
-                  cluster (centered at y=30, ~14px tall). These siblings restore window-drag
+                  cluster (12px dots centred at y=22 with the header's own
+                  buttons, so y=16..28). These siblings restore window-drag
                   for the empty space around the buttons without ever sitting
                   on top of the close/min/max controls. */}
               <span
                 data-window-drag-region
                 aria-hidden
-                className="pointer-events-auto absolute inset-x-0 top-0 h-5"
+                className="pointer-events-auto absolute inset-x-0 top-0 h-4"
               />
               <span
                 data-window-drag-region
@@ -371,14 +368,11 @@ export function UnifiedHeader() {
                       aria-selected={isActive}
                       data-no-drag
                       title={file.storageHandle?.relPath ?? file.name}
-                      // Dragging within the bar reorders; dragging onto a pane shows the Page
-                      // there. Dropped anywhere else the drag is simply abandoned.
+                      // Dragging within the bar reorders. Dropped anywhere else the drag is
+                      // simply abandoned.
                       draggable
                       onDragStart={(event) => {
                         event.dataTransfer.effectAllowed = "move";
-                        // A payload as well as the local state: reordering happens inside this
-                        // strip, but a pane is a different component and can only read the drag.
-                        event.dataTransfer.setData(TAB_DRAG_TYPE, file.id);
                         setDraggingTabId(file.id);
                       }}
                       onDragEnd={() => setDraggingTabId(null)}
@@ -611,13 +605,6 @@ export function UnifiedHeader() {
                       <ThemePickerPanel />
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
-
-                  <DropdownMenuItem
-                    onClick={() => (otherPaneFileId ? closeOtherPane() : splitRight())}
-                  >
-                    <Columns2 className="mr-2 h-4 w-4" />
-                    {otherPaneFileId ? t("closeOtherPane") : t("splitRight")}
-                  </DropdownMenuItem>
 
                   <DropdownMenuItem onClick={() => setKeyboardShortcutsOpen(true)}>
                     <Keyboard className="mr-2 h-4 w-4" />

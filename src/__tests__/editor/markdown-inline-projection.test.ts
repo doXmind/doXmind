@@ -54,7 +54,6 @@ describe("Markdown inline projection", () => {
           wiki: false,
           highlight: false,
           comment: false,
-          tag: false,
         },
       }),
       expect.objectContaining({

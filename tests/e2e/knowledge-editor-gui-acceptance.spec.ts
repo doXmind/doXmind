@@ -70,19 +70,11 @@ test("filters and drives the Slash menu entirely from the keyboard", async ({ pa
   await page.keyboard.type("Acceptance heading");
   await expectSource(slashPath, "## Acceptance heading\n\nBeta\n\nGamma\n");
 
-  await page.getByText("Beta", { exact: true }).click();
-  editor = page.locator("[data-native-block-editor]");
-  await editor.fill("/kanban");
-  const boardMenu = page.getByRole("listbox", { name: "Block commands" });
-  await expect(boardMenu.getByRole("option")).toHaveCount(1);
-  await expect(boardMenu.getByRole("option", { name: /Collection board/ })).toHaveAttribute(
-    "aria-selected",
-    "true"
-  );
-  await page.keyboard.press("Tab");
-  await expect
-    .poll(() => readFile(slashPath, "utf8"))
-    .toContain('```doxmind-collection\n{\n  "version": 2,\n  "view": "board"');
+  // The Collection half of this test is gone with the feature: the block set was trimmed to what
+  // Typora writes, which removed the Collection, Callout, Toggle, Embed and Wiki link commands, and
+  // `doxmind-collection` is no longer a shape this editor produces. What is left below is the same
+  // gesture on a command that still exists — a query the menu answers, and Escape leaving the typed
+  // text in the file untouched.
 
   await page.getByText("Gamma", { exact: true }).click();
   editor = page.locator("[data-native-block-editor]");
@@ -93,118 +85,6 @@ test("filters and drives the Slash menu entirely from the keyboard", async ({ pa
   await expect.poll(() => readFile(slashPath, "utf8")).toContain("\n\n/quote\n");
 
   await screenshot(page, "slash-inserted-blocks.png");
-});
-
-test("persists Relation properties as exact portable Wiki Links", async ({ page }) => {
-  const relationPath = join(workspaceDir, "Relations.md");
-  const original = [
-    "---",
-    "id: relation-source",
-    "title: Relation Source",
-    'future_schema: {"deep":{"flag":true}}',
-    "# authored frontmatter comment",
-    "---",
-    "",
-    "# Relation Source",
-    "",
-    "Portable body.",
-    "",
-  ].join("\n");
-  const expected = original.replace(
-    "# authored frontmatter comment\n---",
-    '# authored frontmatter comment\nproject: ["[[Plans/Roadmap]]","[[Reference/Spec]]"]\n---'
-  );
-  await mkdir(join(workspaceDir, "Plans"), { recursive: true });
-  await mkdir(join(workspaceDir, "Reference"), { recursive: true });
-  await Promise.all([
-    writeFile(relationPath, original, "utf8"),
-    writeFile(
-      join(workspaceDir, "Plans", "Roadmap.md"),
-      pageFixture("roadmap-page", "Roadmap", "# Roadmap\n\nPlan body.\n"),
-      "utf8"
-    ),
-    writeFile(
-      join(workspaceDir, "Reference", "Spec.md"),
-      pageFixture("spec-page", "Spec", "# Spec\n\nReference body.\n"),
-      "utf8"
-    ),
-  ]);
-
-  await openWorkspacePage(page, "Relations");
-  await page.getByRole("button", { name: "Page properties" }).click();
-  await page.getByRole("button", { name: "Add property" }).click();
-  await page.getByLabel("Property name 1").fill("project");
-  await page.getByLabel("Property type 1").selectOption("relation");
-  await page.getByLabel("Relate property 1 to Roadmap").check();
-  await page.getByLabel("Relate property 1 to Spec").check();
-  await page.getByRole("button", { name: "Save properties" }).click();
-
-  await expectSource(relationPath, expected);
-
-  await page.getByRole("button", { name: "Page properties" }).click();
-  await expect(page.getByLabel("Relate property 1 to Roadmap")).toBeChecked();
-  await expect(page.getByLabel("Relate property 1 to Spec")).toBeChecked();
-  await screenshot(page, "relation-properties.png");
-  await page.getByRole("button", { name: "Cancel" }).click();
-
-  expect(await readdir(workspaceDir)).toEqual(["Plans", "Reference", "Relations.md"]);
-});
-
-test("navigates Wiki Links, Backlinks, unlinked mentions, and Graph nodes", async ({ page }) => {
-  const fixtures = {
-    "Target.md": pageFixture("target-page", "Target", "# Target Page\n\nCanonical target.\n"),
-    "Navigator.md": pageFixture(
-      "navigator-page",
-      "Navigator",
-      "# Navigator\n\nOpen [[Target|linked target]].\n"
-    ),
-    "Mention.md": pageFixture(
-      "mention-page",
-      "Mention",
-      "# Mention\n\nTarget appears here without brackets.\n"
-    ),
-    "Graph Source.md": pageFixture(
-      "graph-source-page",
-      "Graph Source",
-      "# Graph Source\n\nFollow [[Target]].\n"
-    ),
-  };
-  await Promise.all(
-    Object.entries(fixtures).map(([name, source]) =>
-      writeFile(join(workspaceDir, name), source, "utf8")
-    )
-  );
-
-  await openWorkspacePage(page, "Navigator");
-  await page.getByRole("button", { name: "Open Page: linked target" }).click();
-  await expect(page).toHaveTitle("Target");
-  await expect(page.getByRole("heading", { name: "Target Page" })).toBeVisible();
-
-  await page.getByRole("button", { name: "Backlinks" }).click();
-  await expect(page.getByText("Incoming links (2)")).toBeVisible();
-  await expect(page.getByText("Unlinked mentions (1)")).toBeVisible();
-  const unlinkedMention = page.getByRole("button", {
-    name: "Unlinked mention from Mention.md: Target",
-  });
-  await expect(unlinkedMention).toBeVisible();
-  await screenshot(page, "backlinks-and-unlinked.png");
-  await unlinkedMention.click();
-  await expect(page).toHaveTitle("Mention");
-  await expect(page.getByRole("heading", { name: "Mention" })).toBeVisible();
-
-  await page.locator('[data-drop-target-id="target-page"]').click();
-  await expect(page).toHaveTitle("Target");
-  await page.getByRole("button", { name: "Graph" }).click();
-  await expect(page.getByRole("img", { name: "Knowledge graph" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open Page: Navigator" })).toBeVisible();
-  await screenshot(page, "knowledge-graph.png");
-  await page.getByRole("button", { name: "Open Page: Navigator" }).click();
-  await expect(page).toHaveTitle("Navigator");
-  await expect(page.getByRole("heading", { name: "Navigator" })).toBeVisible();
-
-  for (const [name, source] of Object.entries(fixtures)) {
-    expect(await readFile(join(workspaceDir, name), "utf8")).toBe(source);
-  }
 });
 
 test("creates and reopens today's ordinary Markdown Daily Note", async ({ page }) => {
@@ -236,7 +116,6 @@ test("creates and reopens today's ordinary Markdown Daily Note", async ({ page }
         "id: ([0-9a-f-]+)",
         'created: "([^"\\r\\n]+)"',
         `date: "${key}"`,
-        'tags: \\["daily-note"\\]',
         `title: "${key}"`,
         'updated: "([^"\\r\\n]+)"',
         "---",

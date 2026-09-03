@@ -15,15 +15,15 @@ describe("parseSearchQuery", () => {
   });
 
   it("ANDs separate terms and reads each field prefix", () => {
-    expect(shape("tag:project path:Notes roadmap")).toEqual([
-      ["tag:project"],
+    expect(shape("file:plan path:Notes roadmap")).toEqual([
+      ["file:plan"],
       ["path:notes"],
       ["content:roadmap"],
     ]);
   });
 
   it("negates a term with a leading dash", () => {
-    expect(shape("roadmap -tag:draft")).toEqual([["content:roadmap"], ["-tag:draft"]]);
+    expect(shape("roadmap -path:draft")).toEqual([["content:roadmap"], ["-path:draft"]]);
   });
 
   it("keeps a quoted phrase together and strips its quotes", () => {
@@ -53,10 +53,11 @@ describe("parseSearchQuery", () => {
   it("leaves an unsupported operator as literal text rather than failing", () => {
     // `line:` is not implemented; searching for the literal text is better than an error.
     expect(shape("line:12")).toEqual([["content:line:12"]]);
+    expect(shape("tag:project")).toEqual([["content:tag:project"]]);
   });
 
   it("only highlights the plain positive words", () => {
-    expect(parseSearchQuery("tag:project -alpha needle").text).toBe("needle");
+    expect(parseSearchQuery("path:project -alpha needle").text).toBe("needle");
   });
 });
 
@@ -77,7 +78,7 @@ describe("hasStructuredCriteria", () => {
   });
 
   it("is true for anything a plain word could not say", () => {
-    for (const query of ["tag:x", "-alpha", "/a/", "path:n"]) {
+    for (const query of ["file:x", "-alpha", "/a/", "path:n"]) {
       expect(hasStructuredCriteria(parseSearchQuery(query).criteria)).toBe(true);
     }
   });

@@ -420,6 +420,7 @@
  *   hover           tint at --editor-state-hover-alpha            20ms
  *   focus-visible   1px ring in --ring, 2px offset, no UA outline 20ms
  *   active          tint at --editor-state-active-alpha (2x)      20ms
+ *   on              accent ink, accent tint, hover at 2x          20ms
  *   disabled        opacity .5, no hover and no press             —
  *
  * 20ms is Notion's measured `background 0.02s ease-in` (docs/BLOCK_UX_REFERENCE.md, "Button hover
@@ -439,6 +440,14 @@
  * used: 0.045 of #212121 on white is rgb(245,245,245), and 0.0625 of #ECECEC on #212121 is
  * rgb(46,46,46) — the two themes' `--muted` exactly. Pressed doubles the alpha, which is the ratio
  * Notion uses between its own hover and pressed fills (0.08 -> 0.16).
+ *
+ * `on` is the one row that is not a grey, and it is not a grey on purpose. A toggle that is ON was
+ * painted `bg-muted` — the exact colour the hover tint above is solved to land on. Measured on the
+ * dark theme: the lit Bold button read rgb(46,46,46) on a rgba(46,46,46,.95) panel, 1.04:1, while
+ * merely hovering an unlit neighbour lifted it clear of the panel. The hovered button looked lit
+ * and the lit one looked idle. Grey is what "the pointer is here" means in this table, so "this
+ * format is on" has to say it in another currency: the editor's own accent, at the alphas the
+ * table already uses for a saturated ground (0.14 / 0.28, the selection fill and the axis handle).
  */
 :root {
   --editor-state-duration: 20ms;
@@ -505,6 +514,26 @@
   --editor-state-ring: 0 0 0 1px hsl(var(--ring));
   outline: 2px solid transparent;
   outline-offset: 2px;
+}
+
+/*
+ * On — a toggle whose state is `aria-pressed="true"`.
+ *
+ * The hover rule above is (0,3,0) and would otherwise repaint a lit control grey the moment the
+ * pointer arrived, so the lit hover is written out at (0,4,0) rather than left to the cascade. The
+ * colour is restated on both selectors for the same reason: Tailwind's `hover:text-foreground` is
+ * (0,2,0) and would win over a bare `[aria-pressed="true"]` on hover at equal specificity.
+ */
+.editor-control[aria-pressed="true"],
+.markdown-page [data-native-block-controls] button[aria-pressed="true"] {
+  --editor-state-tint: rgba(35, 131, 226, 0.14);
+  color: #2383e2;
+}
+
+.editor-control[aria-pressed="true"]:hover:not(:disabled),
+.markdown-page [data-native-block-controls] button[aria-pressed="true"]:hover:not(:disabled) {
+  --editor-state-tint: rgba(35, 131, 226, 0.28);
+  color: #2383e2;
 }
 
 .editor-control:disabled,
@@ -1063,7 +1092,34 @@
   @apply border-collapse;
   width: 100%;
   max-width: 100%;
-  table-layout: auto;
+  /*
+   * Every column the same width. `auto` sized each one to its own text, so the two columns of a
+   * freshly inserted table came out 471px and 483px, and a column added later took whatever its
+   * emptiness earned rather than its share. A utility class cannot say this: `.table-fixed` loses
+   * to this selector, so the decision has to live where the losing rule did.
+   */
+  table-layout: fixed;
+}
+
+/*
+ * A cell keeps one line of height with nothing in it.
+ *
+ * An empty cell has no line box, so a body row of empty cells collapsed to its own padding — 13px
+ * against the header's 41px, which is what a table looks like the moment it is inserted. `1lh`
+ * rather than a fixed length so it follows the reading-rhythm setting instead of pinning one
+ * line-height into the stylesheet.
+ *
+ * The exclusion is the row and column handles, which are also `span`s directly inside a cell and
+ * are not its content. This rule gave their positioned wrapper a 28px min-height, and
+ * `translate(-50%, -50%)` then centred *that* on the cell's border instead of the 9px pill:
+ * measured in the packaged app, the column pill drew at y 128.5-137.5 against a header cell whose
+ * top edge is 142.5, so the whole pill floated 5px clear of the table. Moving the pointer up to it
+ * crossed a strip belonging to neither, which left the `<table>` and cleared the hover state that
+ * keeps the pill visible — it vanished before the pointer arrived and could not be pressed at all.
+ */
+.markdown-page th > span:not([data-axis-anchor]),
+.markdown-page td > span:not([data-axis-anchor]) {
+  min-height: 1lh;
 }
 
 .markdown-page th,

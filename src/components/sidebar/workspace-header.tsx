@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronsDownUp, Hash, Search } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, Search } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -14,8 +14,9 @@ interface WorkspaceHeaderProps {
   onOpenTemplatePicker: () => void;
   onCollapseAll: () => void;
   onOpenSearch: () => void;
-  onOpenTags: () => void;
   canCollapseAll?: boolean;
+  /** Drives the label: the same control closes folders and opens them again. */
+  foldersExpanded?: boolean;
 }
 
 function rootLabel(root: string | null): string {
@@ -30,8 +31,8 @@ export function WorkspaceHeader({
   onOpenTemplatePicker,
   onCollapseAll,
   onOpenSearch,
-  onOpenTags,
   canCollapseAll = true,
+  foldersExpanded = false,
 }: WorkspaceHeaderProps) {
   const t = useTranslations("sidebar");
   const openTarget = useFileStore((s) => s.openTarget);
@@ -66,19 +67,8 @@ export function WorkspaceHeader({
               <Search className="h-4 w-4" />
             </Button>
           </Tooltip>
-          <Tooltip content={t("tags")} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onOpenTags}
-              className="sidebar-action-button h-7 w-7 rounded-lg"
-              aria-label={t("tags")}
-            >
-              <Hash className="h-4 w-4" />
-            </Button>
-          </Tooltip>
           {canCollapseAll && (
-            <Tooltip content={t("collapseAll")} side="bottom">
+            <Tooltip content={t(foldersExpanded ? "collapseAll" : "expandAll")} side="bottom">
               {/* Same Button as NewButton next to it, not a bare <button>. As a
                   bare button `.sidebar-action-button:hover` won and this filled
                   with the opaque --sidebar-hover while its neighbour filled with
@@ -89,9 +79,13 @@ export function WorkspaceHeader({
                 size="icon"
                 onClick={onCollapseAll}
                 className="sidebar-action-button h-7 w-7 rounded-lg"
-                aria-label={t("collapseAll")}
+                aria-label={t(foldersExpanded ? "collapseAll" : "expandAll")}
               >
-                <ChevronsDownUp className="h-4 w-4" />
+                {foldersExpanded ? (
+                  <ChevronsDownUp className="h-4 w-4" />
+                ) : (
+                  <ChevronsUpDown className="h-4 w-4" />
+                )}
               </Button>
             </Tooltip>
           )}

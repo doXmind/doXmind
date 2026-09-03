@@ -161,15 +161,19 @@ interface MarkdownPageStore {
 
 ### 5. Sidecar 只属于 legacy recovery
 
+> 本节的 read-only recovery inventory/adapter 部分已被
+> [ADR-0015](0015-legacy-sidecars-are-inert.md) 取代：现在没有任何代码读取 legacy
+> Sidecar。保留（preservation）要求不变。
+
 - 新代码不得创建 Page Sidecar、Page slot 或 `extras.databases`。
 - 已存在的 Markdown Page Sidecar、PDF/Excel Sidecar、`.bak`、`.lock` 和 corrupt copy
-  必须保持原 bytes，直到 recovery/export gate 完成；scope reduction 不是删除授权。
-- 正常 Page read 不信任 legacy Sidecar HTML、id 或 extras。独立的 read-only recovery
-  inventory/adapter 负责检测并导出其中无法从 Markdown 恢复的旧状态。
-- Page rename/move/delete 在过渡期仍需把已存在的 legacy Sidecar 作为 recovery artifact
-  一起移动或送入系统 Trash；这不是 Page data model 的一部分。
-- ADR-0002/0003/0004/0005 中的 Sidecar、correlation 和 migration 规则仅约束 legacy
-  recovery 路径，不得被新 Page feature 调用。
+  必须保持原 bytes；scope reduction 不是删除授权。
+- 正常 Page read 不信任 legacy Sidecar HTML、id 或 extras；ADR-0015 之后也不存在
+  任何其他读取路径。
+- Page rename/move/delete 仍需按文件名把已存在的 legacy Sidecar 一起移动或送入
+  系统 Trash；这不是 Page data model 的一部分。
+- ADR-0002/0003/0004/0005 中的 Sidecar、correlation 和 migration 规则只是历史记录，
+  不得被任何 Page feature 调用。
 
 ### 6. 知识层全部由文件派生
 
@@ -230,8 +234,9 @@ interface MarkdownPageStore {
 5. **Portable collections**：strict v1 compatibility、v2 Table/Board/Calendar 及
    relation/formula/rollup computed grammar 已落地；旧 DatabaseBlock row migration 仍需
    独立门禁。
-6. **Legacy recovery**：PDF/Excel Sidecar inventory/export 与 PAGELEG-1 的 Page
-   artifact-family 原始字节 export 均已完成。
+6. **Legacy recovery**：已按 [ADR-0015](0015-legacy-sidecars-are-inert.md) 整体撤销。
+   PDF/Excel Sidecar inventory/export 与 PAGELEG-1 的 Page artifact-family export
+   全部删除；Sidecar bytes 仅被保留，不再被读取。
 7. **Deletion**：删除 Page Sidecar writers/readers、TipTap runtime/dependencies、旧 HTML
    conformance 和不可达 adapters。每次删除必须通过真实依赖搜索，而不是只隐藏入口。
 

@@ -9,38 +9,6 @@ export type WorkspaceAttachmentType = "pdf" | "excel" | "html";
 /** File-format discriminator retained for attachment scanning and legacy compatibility. */
 export type WorkspaceDocumentType = WorkspacePageType | WorkspaceAttachmentType;
 
-export type AttachmentRecoveryStatus = "none" | "available" | "unknown";
-export type AttachmentSidecarStatus = "missing" | "legacy" | "current" | "unreadable";
-
-/** Result of a strictly read-only legacy-recovery inspection. */
-export interface AttachmentInspection {
-  documentType: WorkspaceAttachmentType;
-  recoveryStatus: AttachmentRecoveryStatus;
-  sidecarStatus: AttachmentSidecarStatus;
-  sidecarPath: string;
-}
-
-/** Exact legacy editor payload read through a strictly zero-write path. */
-export interface AttachmentRecoveryRead {
-  editor: PdfEditorState | ExcelEditorState | null;
-}
-
-export type PageRecoveryStatus = "none" | "available";
-
-/** Read-only inventory of legacy artifacts beside one Markdown Page. */
-export interface PageRecoveryInspection {
-  recoveryStatus: PageRecoveryStatus;
-  artifacts: string[];
-}
-
-/** Exact bytes of every inventoried Page recovery artifact. */
-export interface PageRecoveryRead {
-  artifacts: Array<{
-    path: string;
-    bytes: number[];
-  }>;
-}
-
 /** Workspace-confined bytes for a local Markdown image projection. */
 export interface WorkspaceAssetRead {
   path: string;
@@ -91,7 +59,6 @@ export interface DocumentOutlineItem {
 export interface DocumentMeta {
   id: string;
   title?: string | null;
-  tags?: string[] | null;
   aliases?: string[] | null;
   favorite?: boolean | null;
   created?: string | null;
@@ -113,10 +80,6 @@ export interface WorkspaceEntry {
   isFavorite?: boolean;
   /** Frontmatter aliases, carried by the scan so Wiki Links resolve without opening the Page. */
   aliases?: string[];
-
-  /** Frontmatter and inline tags, for the tag pane and `tag:` search. */
-
-  tags?: string[];
 }
 
 export interface StorageWriteInput {
@@ -171,275 +134,6 @@ export interface FolderRelocationInput {
 export interface FolderRelocationResult {
   path: string;
   writes: Array<{ path: string; revision: string }>;
-}
-
-export interface PdfEditorState {
-  version: 1 | 2;
-  edits?: Record<string, { text: string }>;
-  textEdits?: Record<
-    string,
-    {
-      pageIndex: number;
-      text: string;
-      originalText: string;
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-      fontSize: number;
-      originalFontSize?: number;
-      fontName?: string;
-      fontFamily?: string;
-      color?: string;
-      bold?: boolean;
-      italic?: boolean;
-      styleRanges?: PdfTextStyleRange[];
-    }
-  >;
-  /**
-   * v2 paragraph-level edits keyed by stable paragraph id (e.g. "p0-b3").
-   *
-   * Historical paragraph-level edit schema retained so recovery reports can
-   * serialize old sidecar payloads without losing fields.
-   */
-  paragraphEdits?: Record<
-    string,
-    {
-      pageIndex: number;
-      text: string;
-      originalText: string;
-      bbox: { x: number; y: number; width: number; height: number };
-      fontSize: number;
-      fontFamily?: string;
-      color?: string;
-      bold?: boolean;
-      italic?: boolean;
-      textAlign?: "left" | "center" | "right";
-      styleRanges?: PdfTextStyleRange[];
-      deleted?: boolean;
-    }
-  >;
-  freeText?: Array<{
-    id: string;
-    pageIndex: number;
-    text: string;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    fontSize: number;
-    fontFamily?: string;
-    color?: string;
-    bold?: boolean;
-    italic?: boolean;
-    textAlign?: "left" | "center" | "right";
-    styleRanges?: PdfTextStyleRange[];
-  }>;
-  highlights?: Array<{
-    id: string;
-    pageIndex: number;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    color?: string;
-    opacity?: number;
-  }>;
-}
-
-export interface PdfTextStyleRange {
-  start: number;
-  end: number;
-  color?: string;
-  highlightColor?: string;
-  bold?: boolean;
-  italic?: boolean;
-}
-
-/**
- * Historical `excel_editor` sidecar payload. The shape remains explicit so a
- * recovery report can preserve every old field; no mounted spreadsheet editor
- * consumes or writes it.
- */
-export interface ExcelEditorState {
-  version: 1;
-  /** Sheet id of the tab the user had focused last. */
-  activeSheetId?: string;
-  /**
-   * Sparse cell-level edits keyed by `"${sheetId}!${row},${col}"`. `value`
-   * holds the user-facing string; `formula` (when present) takes precedence
-   * during recalculation. `null` value clears the cell.
-   */
-  cells?: Record<
-    string,
-    {
-      value?: string | number | boolean | null;
-      formula?: string | null;
-      numberFormat?: string;
-      style?: ExcelCellStyle;
-    }
-  >;
-  /** Optional row height overrides keyed by `"${sheetId}!${row}"`. */
-  rowHeights?: Record<string, number>;
-  /** Optional column width overrides keyed by `"${sheetId}!${col}"`. */
-  colWidths?: Record<string, number>;
-  /**
-   * Structural operations the removed exporter replayed against the original
-   * spreadsheet.
-   */
-  ops?: ExcelStructuralOp[];
-  /**
-   * Workbook-level operations: add / rename / duplicate / delete sheets.
-   * Replayed *before* per-sheet `ops` so that sheet-id targets resolved by
-   * the cell/structural-op phases match the post-mutation tabs.
-   */
-  workbookOps?: ExcelWorkbookOp[];
-  /**
-   * Per-sheet column filters: when a column entry is present the user has
-   * checked a subset of its display values; rows whose cell in that
-   * column doesn't appear in the list are hidden. Keys are
-   * `${sheetId}!${col}`; values are the *visible* display strings.
-   */
-  filters?: Record<string, string[]>;
-  /** Per-sheet flag: shows the filter ▾ button on column headers. */
-  filterMode?: Record<string, boolean>;
-  /**
-   * Per-sheet freeze settings. `row` rows / `col` columns are pinned to
-   * the top-left of the viewport and don't scroll with the rest of the
-   * sheet. Keys are sheet ids; missing entry = no freeze.
-   */
-  frozen?: Record<string, { row: number; col: number }>;
-  /**
-   * Cell-level data validation rules. Keyed by `${sheetId}!${row},${col}`.
-   * Currently only "list" validation is supported — the cell becomes a
-   * dropdown picker over the listed values.
-   */
-  validations?: Record<string, ExcelDataValidation>;
-  /**
-   * Cell-level notes / comments keyed by `${sheetId}!${row},${col}`.
-   */
-  comments?: Record<string, ExcelCellComment>;
-  /**
-   * Per-sheet conditional-formatting rules in the historical editor schema.
-   */
-  conditionalFormats?: Record<string, ExcelConditionalFormatRule[]>;
-}
-
-export interface ExcelCellComment {
-  text: string;
-  author?: string;
-  /** ISO timestamp of last edit. Surfaced in the popover header. */
-  updatedAt?: string;
-}
-
-export type ExcelConditionalFormatCondition =
-  | { kind: "cellValue"; op: "gt" | "lt" | "gte" | "lte" | "eq" | "neq"; value: number | string }
-  | { kind: "between"; min: number; max: number; inclusive?: boolean }
-  | {
-      kind: "containsText";
-      text: string;
-      mode: "contains" | "notContains" | "startsWith" | "endsWith";
-      caseSensitive?: boolean;
-    }
-  | { kind: "duplicate" }
-  | { kind: "unique" }
-  | { kind: "blank" }
-  | { kind: "notBlank" }
-  | {
-      kind: "colorScale";
-      min: { value?: number; color: string };
-      mid?: { value?: number; color: string };
-      max: { value?: number; color: string };
-    };
-
-export interface ExcelConditionalFormatRule {
-  id: string;
-  /** Inclusive range over which the rule applies, in post-op coordinates. */
-  range: { top: number; left: number; bottom: number; right: number };
-  condition: ExcelConditionalFormatCondition;
-  /** For non-color-scale rules. Applied on top of the cell's base style. */
-  style?: Pick<
-    ExcelCellStyle,
-    "bold" | "italic" | "underline" | "strikethrough" | "color" | "background"
-  >;
-}
-
-export interface ExcelDataValidation {
-  type: "list";
-  /** Allowed display values, in order. */
-  values: string[];
-}
-
-export type ExcelWorkbookOp =
-  | { type: "addSheet"; sheetId: string; name: string; afterSheetId?: string | null }
-  | { type: "renameSheet"; sheetId: string; name: string }
-  | { type: "duplicateSheet"; sourceSheetId: string; sheetId: string; name: string }
-  | { type: "deleteSheet"; sheetId: string };
-
-export type ExcelStructuralOp =
-  | { type: "insertRow"; sheetId: string; before: number; count: number }
-  | { type: "deleteRow"; sheetId: string; index: number; count: number }
-  | { type: "insertCol"; sheetId: string; before: number; count: number }
-  | { type: "deleteCol"; sheetId: string; index: number; count: number }
-  | {
-      type: "mergeCells";
-      sheetId: string;
-      top: number;
-      left: number;
-      bottom: number;
-      right: number;
-    }
-  | {
-      type: "unmergeCells";
-      sheetId: string;
-      top: number;
-      left: number;
-      bottom: number;
-      right: number;
-    };
-
-export type ExcelBorderLineStyle = "thin" | "medium" | "thick" | "double" | "dashed" | "dotted";
-
-export interface ExcelBorderSide {
-  style: ExcelBorderLineStyle;
-  color?: string;
-}
-
-/**
- * Sparse per-side border config in the historical editor schema.
- */
-export interface ExcelBorderConfig {
-  top?: ExcelBorderSide;
-  right?: ExcelBorderSide;
-  bottom?: ExcelBorderSide;
-  left?: ExcelBorderSide;
-}
-
-export interface ExcelCellStyle {
-  bold?: boolean;
-  italic?: boolean;
-  underline?: boolean;
-  strikethrough?: boolean;
-  color?: string;
-  background?: string;
-  textAlign?: "left" | "center" | "right";
-  verticalAlign?: "top" | "middle" | "bottom";
-  /** Legacy two-state wrap toggle retained for lossless recovery. */
-  wrapText?: boolean;
-  /**
-   * Long-text behaviour. `clip` (default) truncates with ellipsis at the
-   * cell boundary; `wrap` breaks lines inside the cell; `overflow` lets
-   * the text spill outside the cell into adjacent (empty) space, mirroring
-   * Sheets / Excel's "Overflow" option.
-   */
-  textOverflow?: "clip" | "wrap" | "overflow";
-  fontSize?: number;
-  fontFamily?: string;
-  /** Counter-clockwise rotation in degrees, e.g. 0, 45, 90. */
-  rotation?: number;
-  /** Hyperlink URL — renders the cell as an underlined link. */
-  hyperlink?: string;
-  border?: ExcelBorderConfig;
 }
 
 export interface StorageCreateInput {
@@ -560,10 +254,6 @@ export interface StorageAdapter {
   readAsset(path: string): Promise<WorkspaceAssetRead>;
   importAsset(input: WorkspaceAssetImportInput): Promise<WorkspaceAssetImportResult>;
   write(handle: DocumentHandle, content: StorageWriteInput): Promise<DocumentContent>;
-  inspectPageRecovery(handle: DocumentHandle): Promise<PageRecoveryInspection>;
-  readPageRecovery(handle: DocumentHandle): Promise<PageRecoveryRead>;
-  inspectAttachment(handle: DocumentHandle): Promise<AttachmentInspection>;
-  readAttachmentRecovery?(handle: DocumentHandle): Promise<AttachmentRecoveryRead | null>;
   create(input: StorageCreateInput): Promise<WorkspaceEntry>;
   /**
    * Copy a file from outside the workspace into it, always-copy semantics —

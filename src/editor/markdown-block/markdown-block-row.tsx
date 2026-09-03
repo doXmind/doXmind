@@ -104,8 +104,6 @@ import {
   type WikiLinkPage,
 } from "@/editor/markdown-block/wiki-link-suggestions";
 import { resolveKnowledgeWikiPage, type KnowledgeSourceCatalog } from "@/lib/knowledge-index";
-import { tagsInText } from "@/lib/tags";
-import { useLayoutStore } from "@/stores/layout-store";
 import {
   PageCollectionPreview,
   type PageCollectionPreviewContext,
@@ -522,6 +520,14 @@ function MarkdownBlockRowView({
   const pendingClickOffsetRef = useRef<number | null>(null);
   /** Where a press landed when it hit the row's own spacing rather than any child of it. */
   const rowPressRef = useRef<{ x: number; y: number } | null>(null);
+  /**
+   * Whether this row's activation came from a press rather than the keyboard.
+   *
+   * Set by the three pointer paths below and spent by the scroll effect. A press has already chosen
+   * a pixel the user can see; the keyboard has chosen nothing of the sort, which is the whole reason
+   * the effect scrolls at all.
+   */
+  const pointerActivatedRef = useRef(false);
   const composingRef = useRef(false);
   /**
    * The textarea's own value while an IME composition is open.
@@ -878,8 +884,14 @@ function MarkdownBlockRowView({
   }, [active, autoFocusEditor, restoredSelection, surfaceKind]);
 
   useEffect(() => {
-    if (!active) return;
     const row = rowRef.current;
+    if (!active) {
+      // A press is only ever recorded on a Block that is about to become active, so this cannot
+      // normally be left set — cleared on the way out anyway, so it can never be spent on a later
+      // arrival that did come from the keyboard.
+      pointerActivatedRef.current = false;
+      return;
+    }
     // Unless whoever activated the Block has already scrolled it where they want it. Outline
     // navigation sets this immediately before its own smooth `block: "start"` scroll, and an instant
     // scroll issued while that one is in flight cancels it — the Page then stops wherever `nearest`
@@ -887,6 +899,18 @@ function MarkdownBlockRowView({
     // here so it lasts exactly one activation.
     if (row?.hasAttribute("data-outline-scroll")) {
       row.removeAttribute("data-outline-scroll");
+      return;
+    }
+    // A press has already chosen a pixel the user could see, so there is nothing to bring into view
+    // and everything to lose by moving it: `nearest` aligns to the container's `scroll-padding-top`,
+    // which is a declared inset rather than a measured obstruction, so a Block sitting anywhere
+    // inside it — or hanging past the bottom edge — was pulled clear the instant it was clicked.
+    // Measured on the packaged app: a fully visible row 45px down the port moved the Page 3px, and
+    // one hanging 27px past the bottom moved it 27px, in both cases out from under the pointer that
+    // had just been put down. The keyboard keeps the scroll, because a Block reached with an arrow
+    // really can be off screen.
+    if (pointerActivatedRef.current) {
+      pointerActivatedRef.current = false;
       return;
     }
     // The Block brings itself into view, since its own focus() no longer does. `nearest` is the
@@ -1556,6 +1580,7 @@ function MarkdownBlockRowView({
         // marquee past 4px of travel, and activating on the click that follows would tear the
         // selection down again.
         if (Math.abs(event.clientX - press.x) > 4 || Math.abs(event.clientY - press.y) > 4) return;
+        pointerActivatedRef.current = true;
         onActivate(block.id);
       }}
       onDragOver={(event) => {
@@ -1694,6 +1719,7 @@ function MarkdownBlockRowView({
             const anchor = pendingClickOffsetRef.current;
             pendingClickOffsetRef.current = null;
             if (anchor === null) {
+              pointerActivatedRef.current = true;
               onActivate(block.id);
               return;
             }
@@ -1718,6 +1744,7 @@ function MarkdownBlockRowView({
                   source,
                   sourceOnly ? null : inlineProjection
                 ) ?? anchor);
+            pointerActivatedRef.current = true;
             onActivate(block.id, { anchor, head });
           }
         }}
@@ -4175,44 +4202,9 @@ function renderWikiText(
       );
       return;
     }
-    // A `#tag` inside the same run. Split after the Wiki Links, so a `#` inside `[[...]]` is
-    // already gone by the time this looks.
-    parts.push(...renderTagText(part, `${keyPrefix}-${index}`));
+    if (part) parts.push(part);
   });
   return parts;
-}
-
-/** Prose with its `#tags` turned into pills that search for themselves. */
-function renderTagText(text: string, keyPrefix: string): ReactNode[] {
-  const tags = tagsInText(text);
-  if (tags.length === 0) return [text];
-  const nodes: ReactNode[] = [];
-  let cursor = 0;
-  tags.forEach((tag, index) => {
-    if (tag.from > cursor) nodes.push(text.slice(cursor, tag.from));
-    nodes.push(<TagPill key={`${keyPrefix}-tag-${index}`} name={tag.name} />);
-    cursor = tag.to;
-  });
-  if (cursor < text.length) nodes.push(text.slice(cursor));
-  return nodes;
-}
-
-/** One rendered `#tag`. Clicking it runs the search that finds every Page carrying it. */
-function TagPill({ name }: { name: string }) {
-  return (
-    <button
-      type="button"
-      data-markdown-inline-tag={name}
-      aria-label={`Search for tag ${name}`}
-      className="rounded-[4px] bg-primary/10 px-1 text-primary hover:bg-primary/20"
-      onClick={(event) => {
-        event.stopPropagation();
-        useLayoutStore.getState().openSidebarSearch(`tag:${name}`);
-      }}
-    >
-      #{name}
-    </button>
-  );
 }
 
 /**

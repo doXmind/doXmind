@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { NextIntlClientProvider } from "next-intl";
 import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -76,6 +79,23 @@ describe("Header control alignment", () => {
         String(label)
       ).toEqual([]);
     }
+  });
+
+  // Nothing in the DOM can align to the traffic lights — they are native
+  // NSViews, so electron/main.js has to place them on the line the header
+  // centres its own buttons on. Measured on macOS: `trafficLightPosition` is
+  // the cluster's top-left frame corner and the 12px dot's centre lands 7px
+  // below it, so a 44px header wants y=15. The previous y=19 painted the dots
+  // 4px below the toggle/search glyphs.
+  it("places the native traffic lights on the header's centre line", () => {
+    const HEADER_HEIGHT = 44; // h-11
+    const DOT_CENTRE_BELOW_POSITION = 7;
+
+    const main = readFileSync(join(process.cwd(), "electron/main.js"), "utf8");
+    const y = /trafficLightPosition: \{ x: 12, y: (\d+) \}/.exec(main)?.[1];
+
+    expect(y, "trafficLightPosition not found in electron/main.js").toBeDefined();
+    expect(Number(y) + DOT_CENTRE_BELOW_POSITION).toBe(HEADER_HEIGHT / 2);
   });
 
   // Three things hang off the window's right edge — this button, the outline

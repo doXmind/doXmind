@@ -55,14 +55,14 @@ artifact family back from disk. The matrix covers Block editing and history,
 Slash insertion, Properties and relations, Wiki navigation/backlinks/unlinked
 mentions/graph, Daily Notes, Table/Board/Calendar collections, computed fields,
 Page/heading/block embeds, local images, autosave, import conflicts, read-only
-attachments, and zero-write recovery exports.
+attachments, and untouched legacy artifact families.
 
 The production-shell acceptance is `scripts/electron-gui-acceptance.mjs`. It
 launches the packaged app with isolated user data and a temporary workspace, then
 checks the real preload/IPC boundary, renderer sandbox, native menu delivery,
 window creation and target de-duplication, Block operations, autosave, image
-paste/drop, Page recovery, real printer-independent Page PDF generation,
-attachment Open/Reveal request, focus mode, and light/dark Settings. For PDF it
+paste/drop, real printer-independent Page PDF generation, attachment
+Open/Reveal request, focus mode, and light/dark Settings. For PDF it
 controls only the Save-dialog destination, leaves `printToPDF` untouched, reads
 the real file back, checks its PDF signature/pages/text, and proves the Page and
 legacy artifact family stayed byte-identical. It fails on any `pageerror` or
@@ -82,7 +82,7 @@ Add scenarios to preflight when they cross multiple UI boundaries or represent a
 | Core blocks     | Text, headings 1-6, quote, divider, bullet list, ordered list, task list, table, code block | Assert native Block projection, keyboard operations, and Markdown-only persistence                                |
 | Legacy workbook | Detect existing edit state and export it without changing source/sidecar                    | Assert recovery output plus byte-identical source, sidecar, timestamps, and directory members                     |
 | Legacy PDF      | Detect existing annotation state and export it without changing source/sidecar              | Assert recovery output plus byte-identical source, sidecar, timestamps, and directory members                     |
-| Properties      | Edit tags, aliases, scalar/list fields, and exact Wiki-Link relations                       | Assert one revision-checked minimal frontmatter patch and byte-identical unrelated source                         |
+| Properties      | Edit aliases, scalar/list fields, and exact Wiki-Link relations                             | Assert one revision-checked minimal frontmatter patch and byte-identical unrelated source                         |
 | Daily Notes     | Open today's note from workspace home/palette                                               | Assert local-date `Daily Notes/YYYY-MM-DD.md`, safe dirty-Page save, and no private record                        |
 | Collections     | Query Pages through Table, Board, and Calendar; derive relations/formulas/rollups           | Assert deterministic read-only Page projections, fail-closed diagnostics, and zero persistence                    |
 | Knowledge graph | Open, rebuild, and navigate the active Page neighborhood                                    | Assert nodes/edges derive from resolved links with no workspace write                                             |

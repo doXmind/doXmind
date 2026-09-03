@@ -83,7 +83,7 @@ describe("Daily Notes", () => {
       "2026-07-22.md",
       "# 2026-07-22\n\n",
       "daily-folder",
-      { date: "2026-07-22", tags: ["daily-note"] }
+      { date: "2026-07-22" }
     );
   });
 

@@ -4,13 +4,6 @@ const invokeMock = vi.fn();
 
 import { DiskStorageAdapter } from "@/lib/storage";
 
-const baseHandle = {
-  mode: "disk" as const,
-  id: "doc-1",
-  documentType: "excel" as const,
-  path: "/workspace/Budget.xlsx",
-};
-
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -33,7 +26,7 @@ describe("DiskStorageAdapter HTTP fallback error shapes", () => {
       vi.fn().mockResolvedValue(jsonResponse(400, { detail: "raw text reason" }))
     );
     const adapter = new DiskStorageAdapter({ root: "/workspace" });
-    await expect(adapter.inspectAttachment(baseHandle)).rejects.toThrowError(/raw text reason/);
+    await expect(adapter.readAsset("assets/diagram.png")).rejects.toThrowError(/raw text reason/);
   });
 
   it("preserves structured error details", async () => {
@@ -42,17 +35,17 @@ describe("DiskStorageAdapter HTTP fallback error shapes", () => {
       vi.fn().mockResolvedValue(
         jsonResponse(409, {
           detail: {
-            code: "attachment_recovery_unavailable",
-            path: "/Users/foo/Bar.xlsx",
-            recovery: "preserve the legacy artifact family",
+            code: "asset_outside_workspace",
+            path: "/Users/foo/diagram.png",
+            recovery: "keep Markdown image sources inside the workspace",
           },
         })
       )
     );
     const adapter = new DiskStorageAdapter({ root: "/workspace" });
 
-    await expect(adapter.inspectAttachment(baseHandle)).rejects.toThrowError(
-      /attachment_recovery_unavailable/
+    await expect(adapter.readAsset("assets/diagram.png")).rejects.toThrowError(
+      /asset_outside_workspace/
     );
   });
 
@@ -62,13 +55,13 @@ describe("DiskStorageAdapter HTTP fallback error shapes", () => {
     // got dropped to "Workspace command failed: <command>".
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(400, { detail: 42 })));
     const adapter = new DiskStorageAdapter({ root: "/workspace" });
-    await expect(adapter.inspectAttachment(baseHandle)).rejects.toThrowError(/\b42\b/);
+    await expect(adapter.readAsset("assets/diagram.png")).rejects.toThrowError(/\b42\b/);
   });
 
   it("preserves scalar boolean details", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(400, { detail: true })));
     const adapter = new DiskStorageAdapter({ root: "/workspace" });
-    await expect(adapter.inspectAttachment(baseHandle)).rejects.toThrowError(/\btrue\b/);
+    await expect(adapter.readAsset("assets/diagram.png")).rejects.toThrowError(/\btrue\b/);
   });
 
   it("never replaces a native command error with an HTTP fallback error", async () => {

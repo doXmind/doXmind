@@ -159,13 +159,14 @@ function createWindow(target, recoveryAttempt = 0) {
   const chrome = isMac
     ? {
         titleBarStyle: "hiddenInset",
-        // Align the traffic lights to the header's natural content center. The
-        // header is h-11 (44px) and flex-centers its buttons at y=22. The native
-        // traffic-light cluster's visual center sits ~5px below trafficLightPosition.y,
-        // so y≈19 lands the dots' center on the toggle/search buttons' line (which
-        // no longer carry any top-offset nudge). x=12 matches the sidebar's left
-        // content edge and clears the 76px left-controls inset.
-        trafficLightPosition: { x: 12, y: 19 },
+        // Put the traffic lights on the same centre line as the header's own
+        // buttons. The header is h-11 (44px) and flex-centers its 28px toggle/
+        // search buttons at y=22. Measured on macOS: this position is the
+        // cluster's top-left *frame* corner, and the 12px dot's centre lands 7px
+        // below it — so y=22-7=15. (y=19 painted the dots 4px low.) x is the
+        // dot's exact left edge: 12 matches the sidebar's left content edge, and
+        // the cluster ends at x=49, clear of the 76px left-controls inset.
+        trafficLightPosition: { x: 12, y: 15 },
         transparent: true,
         vibrancy: "sidebar",
         backgroundColor: "#00000000",

@@ -27,6 +27,7 @@ import { MENU_PANEL_CLASS, MENU_ROW_CLASS } from "@/components/ui/dropdown-menu"
 import { FileItem } from "./file-item";
 import { useFileStore } from "@/stores/file-store";
 import type { FileItem as FileItemType } from "@/types";
+import { isMarkdownFile } from "@/lib/document-types";
 import { notify } from "@/lib/notifications";
 import { getErrorMessage, cn } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
@@ -66,6 +67,8 @@ type EmptyMenuItem = {
 interface FolderTreeProps {
   onCreateFile: (parentId?: string | null) => void;
   onCreateFolder: (parentId?: string | null) => void;
+  /** Whether any folder is open, so the header can name what its button will do. */
+  onExpandedChange?: (hasExpanded: boolean) => void;
 }
 
 export interface FolderTreeHandle {
@@ -74,7 +77,7 @@ export interface FolderTreeHandle {
 }
 
 export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function FolderTree(
-  { onCreateFile, onCreateFolder },
+  { onCreateFile, onCreateFolder, onExpandedChange },
   ref
 ) {
   const t = useTranslations("sidebar");
@@ -88,6 +91,14 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   const currentFolderId = useFileStore((s) => s.currentFolderId);
   const getFolders = useFileStore((s) => s.getFolders);
   const getFilesInFolder = useFileStore((s) => s.getFilesInFolder);
+  /**
+   * The tree lists Pages and folders, nothing else.
+   *
+   * Filtered here rather than in the store or the scan: an image still has to resolve when a Page
+   * renders it, a Wiki Link still has to reach an Attachment, and search still has to see the files
+   * it always saw. This is a decision about what the sidebar draws, so it is made where the sidebar
+   * draws it.
+   */
   const setCurrentFolder = useFileStore((s) => s.setCurrentFolder);
   const moveFileToFolder = useFileStore((s) => s.moveFileToFolder);
   const importExternalFile = useFileStore((s) => s.importExternalFile);
@@ -135,21 +146,39 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     }
   }, [currentFolderId, setCurrentFolder]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- files triggers recomputation through store methods
+  /* eslint-disable react-hooks/exhaustive-deps -- `files` is what triggers recomputation: both
+     read through store methods, which the rule cannot see into. A block disable rather than two
+     line ones, because the filter below wraps these calls across lines and a `next-line` comment
+     then stops short of the dependency array it was written for. */
   const viewFolders = useMemo(() => getFolders(null), [files, getFolders]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- same
-  const rootFiles = useMemo(() => getFilesInFolder(null), [files, getFilesInFolder]);
+  const rootFiles = useMemo(
+    () => getFilesInFolder(null).filter(isMarkdownFile),
+    [files, getFilesInFolder]
+  );
+  /* eslint-enable react-hooks/exhaustive-deps */
   const allFolders = useMemo(() => files.filter((f) => f.isFolder), [files]);
 
   const hasExpandedFolders = allFolders.some((f) => expandedFolderIds.has(f.id));
 
+  // The header owns the button and needs to name what pressing it will do; the state it depends
+  // on lives here, so it is reported rather than read back through the imperative handle, which
+  // a render cannot subscribe to.
+  useEffect(() => {
+    onExpandedChange?.(hasExpandedFolders);
+  }, [hasExpandedFolders, onExpandedChange]);
+
   useImperativeHandle(
     ref,
     () => ({
-      collapseAll: () => setExpandedFolderIds(new Set()),
+      // A toggle, not a one-way door: the button only ever closed folders, so once everything was
+      // shut the control did nothing and there was no way back but clicking each folder.
+      collapseAll: () =>
+        setExpandedFolderIds((current) =>
+          current.size > 0 ? new Set() : new Set(allFolders.map((folder) => folder.id))
+        ),
       hasExpandedFolders: () => hasExpandedFolders,
     }),
-    [hasExpandedFolders]
+    [allFolders, hasExpandedFolders]
   );
 
   // Build a D1-shaped tree snapshot from the file store. The policy module
@@ -717,7 +746,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   }, [folderMenu, emptyMenu, folderMenuFocus, emptyMenuFocus]);
 
   const renderFolder = (folder: FileItemType, depth = 0) => {
-    const folderFiles = getFilesInFolder(folder.id);
+    const folderFiles = getFilesInFolder(folder.id).filter(isMarkdownFile);
     const childFolders = getFolders(folder.id);
     const isCollapsed = !expandedFolderIds.has(folder.id);
     const isActiveFolder = activeParentId === folder.id;

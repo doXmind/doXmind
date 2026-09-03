@@ -2,8 +2,8 @@
 
 The Electron app calls filesystem commands directly. A regular browser cannot
 do that, so this router exposes the same command names over localhost. Markdown
-Pages are single-file sources of truth; sidecars are legacy recovery inputs for
-older Pages and Attachments, never part of the active Page write path.
+Pages are single-file sources of truth; legacy sidecars left by older versions
+are preserved and moved alongside their file, never read or written.
 """
 
 from __future__ import annotations
@@ -28,12 +28,6 @@ from pydantic import BaseModel, Field
 from send2trash import send2trash
 
 from config import get_settings
-from services.attachment_inspection import (
-    inspect_attachment as inspect_attachment_sidecar,
-)
-from services.attachment_inspection import (
-    read_attachment_recovery as read_attachment_recovery_sidecar,
-)
 from services.legacy_sidecar import sidecar_path_for
 from services.markdown_page_store import (
     MarkdownPageStore,
@@ -138,26 +132,6 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
         )
     if command == "workspace_read_asset":
         return read_workspace_asset(
-            str(payload.get("root") or ""),
-            str(payload.get("path") or ""),
-        )
-    if command == "workspace_inspect_page_recovery":
-        return inspect_page_recovery(
-            str(payload.get("root") or ""),
-            str(payload.get("path") or ""),
-        )
-    if command == "workspace_read_page_recovery":
-        return read_page_recovery(
-            str(payload.get("root") or ""),
-            str(payload.get("path") or ""),
-        )
-    if command == "workspace_inspect_attachment":
-        return inspect_attachment(
-            str(payload.get("root") or ""),
-            str(payload.get("path") or ""),
-        )
-    if command == "workspace_read_attachment_recovery":
-        return read_attachment_recovery(
             str(payload.get("root") or ""),
             str(payload.get("path") or ""),
         )
@@ -447,60 +421,6 @@ def _slugify_heading(text: str) -> str:
     return slug or "section"
 
 
-def inspect_page_recovery(root: str, rel_path: str) -> dict[str, Any]:
-    """Inventory a Page's legacy recovery artifacts without reading Page state."""
-    workspace, artifacts = _page_recovery_family(root, rel_path)
-    return {
-        "recoveryStatus": "available" if artifacts else "none",
-        "artifacts": [relative_path_string(workspace, artifact) for artifact in artifacts],
-    }
-
-
-def read_page_recovery(root: str, rel_path: str) -> dict[str, Any]:
-    """Read Page legacy recovery artifacts as exact raw bytes without parsing."""
-    workspace, artifacts = _page_recovery_family(root, rel_path)
-    return {
-        "artifacts": [
-            {
-                "path": relative_path_string(workspace, artifact),
-                "bytes": list(artifact.read_bytes()),
-            }
-            for artifact in artifacts
-        ]
-    }
-
-
-def _page_recovery_family(root: str, rel_path: str) -> tuple[Path, list[Path]]:
-    workspace = canonical_workspace_root(root)
-    ensure_markdown_path(rel_path)
-    page = resolve_existing_workspace_path(workspace, rel_path)
-    if page.is_symlink():
-        raise ValueError(f"Page path is a symbolic link: {rel_path}")
-    if not page.is_file():
-        raise ValueError(f"Page path is not a file: {rel_path}")
-    artifacts = _existing_legacy_sidecar_family(page)
-    for artifact in artifacts:
-        if artifact.is_symlink():
-            raise ValueError(f"legacy sidecar family contains a symbolic link: {artifact}")
-        if not artifact.is_file():
-            raise ValueError(f"legacy sidecar family member is not a file: {artifact}")
-    return workspace, artifacts
-
-
-def inspect_attachment(root: str, rel_path: str) -> dict[str, Any]:
-    """Inspect legacy attachment edits without invoking migration or repair paths."""
-    workspace = canonical_workspace_root(root)
-    path = resolve_existing_workspace_path(workspace, rel_path)
-    return inspect_attachment_sidecar(path)
-
-
-def read_attachment_recovery(root: str, rel_path: str) -> dict[str, Any] | None:
-    """Read exact legacy editor state without migrating or rewriting sidecars."""
-    workspace = canonical_workspace_root(root)
-    path = resolve_existing_workspace_path(workspace, rel_path)
-    return read_attachment_recovery_sidecar(path)
-
-
 def write_doc_workspace(root: str, rel_path: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Persist a Markdown Page and return its post-write read model.
 
@@ -619,8 +539,7 @@ def doc_import_external(
       and the FastAPI layer translates it to a 409.
     - ``"replace"`` — overwrite the user file at the destination. Any
       pre-existing ``.doxmind`` artifact is deliberately left byte-identical.
-      Normal Page open ignores it; the user can inspect and export it only
-      through the explicit legacy-recovery surface.
+      Normal Page open ignores it; nothing reads or rewrites it.
     """
     if mode not in {"create", "replace"}:
         raise ValueError(f"unsupported import mode: {mode}")

@@ -63,7 +63,6 @@ export async function openOrCreateDailyNote(
     }));
   return workspace.createFile(`${key}.md`, `# ${key}\n\n`, folderId, {
     date: key,
-    tags: ["daily-note"],
   });
 }
 

@@ -1042,45 +1042,11 @@ export class MarkdownBlockDocument {
         this.revision += 1;
         return { snapshot: this.getSnapshot() };
       }
-      let next: MarkdownBlockSource;
-      if (command.kind === "heading") {
-        if (/\r\n|\n|\r/.test(plain)) {
-          throw new Error("a multi-line paragraph cannot become a heading");
-        }
-        const level = command.level ?? 1;
-        next = {
-          ...block,
-          kind: "heading",
-          raw: `${"#".repeat(level)} ${plain}${separator}`,
-        };
-      } else if (command.kind === "paragraph") {
-        next = {
-          ...block,
-          kind: "paragraph",
-          raw: plain + separator,
-        };
-      } else if (command.kind === "blockquote") {
-        next = {
-          ...block,
-          kind: "blockquote",
-          raw: prefixSourceLines(plain, "> ") + separator,
-        };
-      } else {
-        if (/\r\n|\n|\r/.test(plain)) {
-          throw new Error("a multi-line Block cannot become a list item");
-        }
-        const prefix =
-          command.kind === "ordered_list_item"
-            ? "1. "
-            : command.kind === "task_list_item"
-              ? "- [ ] "
-              : "- ";
-        next = {
-          ...block,
-          kind: command.kind,
-          raw: prefix + plain + separator,
-        };
-      }
+      const next: MarkdownBlockSource = {
+        ...block,
+        kind: command.kind,
+        raw: renderSettableKindSource(command.kind, command.level, plain) + separator,
+      };
       if (next.kind === block.kind && next.raw === block.raw) {
         return { snapshot: this.getSnapshot() };
       }
@@ -1581,6 +1547,64 @@ function plainBlockContent(block: MarkdownBlockSource, content: string): string 
     return content.replace(/(^|(?:\r\n|\n|\r)) {0,3}>[ \t]?/g, "$1");
   }
   return content;
+}
+
+/**
+ * One Block's content, written as the source of a settable Block kind.
+ *
+ * The single place that knows what each kind's Markdown looks like, because there are two callers
+ * and they disagreed: `setKind` here, and the runtime's whole-selection Turn into, which pasted a
+ * bare prefix in front of the content. A prefix alone is only right for a Block that is one line —
+ * `## a\nb` is a heading *and* a paragraph, so converting a selection that held one wrapped
+ * paragraph quietly split it in two.
+ */
+export function renderSettableKindSource(
+  kind: MarkdownSettableBlockKind,
+  level: 1 | 2 | 3 | 4 | 5 | 6 | undefined,
+  content: string
+): string {
+  if (kind === "heading") return `${"#".repeat(level ?? 1)} ${foldSourceLines(content)}`;
+  if (kind === "blockquote") return prefixSourceLines(content, "> ");
+  if (kind === "paragraph") {
+    // Zero columns is a dedent: the indentation a continuation line carries belonged to the list
+    // marker the Block is leaving, and a paragraph has nothing for it to sit under. Without it
+    // `- a\n  b` turned back into a paragraph still reading `a\n  b`, so the round trip did not
+    // return the bytes it started from.
+    return indentContinuationLines(content, 0);
+  }
+  const prefix = kind === "ordered_list_item" ? "1. " : kind === "task_list_item" ? "- [ ] " : "- ";
+  return prefix + indentContinuationLines(content, prefix.length);
+}
+
+/**
+ * Fold a Block's lines into one, for the kinds Markdown can only write on a single line.
+ *
+ * An ATX heading *is* one line — `## a\nb` is a heading and then a paragraph, not a two-line
+ * heading — so a Block that spans several has to become one line to become a heading at all.
+ * Refusing instead is what this replaced, and it refused a great deal: every paragraph the author
+ * hard-wrapped, every list item with a continuation line, every soft break. `setKind` threw, no
+ * caller caught it, and ten of the eleven Turn into options did nothing at all on such a Block.
+ *
+ * The break's own syntax goes with the break: a trailing `\` is CommonMark's hard line break and
+ * means nothing once the lines are joined, and the indentation a continuation line carried was
+ * there to sit under a marker that is no longer above it.
+ */
+function foldSourceLines(source: string): string {
+  return source.replace(/[ \t]*\\?(?:\r\n|\n|\r)[ \t]*/g, " ").trim();
+}
+
+/**
+ * Re-indent a Block's continuation lines to sit under a list marker that is about to precede it.
+ *
+ * A list item's second line only belongs to the item if it is indented past the marker; left at
+ * column 0 it is a lazy continuation at best and a separate Block at worst. The existing
+ * indentation is replaced rather than added to — a paragraph's continuation lines may carry up to
+ * three insignificant spaces, and keeping them would push the text further right on every
+ * conversion.
+ */
+function indentContinuationLines(source: string, columns: number): string {
+  const indentation = " ".repeat(columns);
+  return source.replace(/(\r\n|\n|\r(?!\n))[ \t]*(?=[^\r\n])/g, `$1${indentation}`);
 }
 
 function prefixSourceLines(source: string, prefix: string): string {

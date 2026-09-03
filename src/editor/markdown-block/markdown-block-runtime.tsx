@@ -18,6 +18,7 @@ import {
 import {
   isMarkdownSourceOnlyBlockKind,
   MarkdownBlockDocument,
+  renderSettableKindSource,
   type MarkdownBlockApplyResult,
   type MarkdownBlockCommand,
   type MarkdownBlockView,
@@ -1813,7 +1814,21 @@ export function MarkdownBlockRuntime({
         // what re-activates the Block after the menu's press released the caret; Turn into returned
         // none and left the Page with no active Block, no editing surface and focus on `<body>`. The
         // conversion was correct and the user was locked out of the result until they clicked.
-        const result = documentRef.current.apply({ type: "setKind", blockId, kind, level });
+        // `setKind` still refuses the conversions it cannot represent — a list whose nesting the
+        // new marker would break — and it refuses by throwing. This is a menu item's `onClick`, so
+        // an escaping throw is an uncaught error in React's dispatch: the menu closes, the Block is
+        // unchanged, and the only trace is a console line the user never sees. Whatever it cannot
+        // do, it has to say.
+        let result: ReturnType<typeof documentRef.current.apply>;
+        try {
+          result = documentRef.current.apply({ type: "setKind", blockId, kind, level });
+        } catch (refusal) {
+          notify.error(
+            "Could not change this Block's type",
+            refusal instanceof Error ? { description: refusal.message } : undefined
+          );
+          return;
+        }
         publish(result, false);
         const converted = result.snapshot.blocks.find((block) => block.id === blockId);
         setBlockSelection(null);
@@ -1839,7 +1854,7 @@ export function MarkdownBlockRuntime({
           const content = normalizeEditorLineEndings(
             createBlockEditingProjection(block).editorText
           ).replace(/\n/g, lineEnding);
-          return `${settableKindPrefix(kind, level)}${content}${separator}`;
+          return `${renderSettableKindSource(kind, level, content)}${separator}`;
         })
         .join("");
       // The boundary to whatever follows the range is the document's to draw — `replaceBlocks`
@@ -3018,23 +3033,29 @@ export function MarkdownBlockRuntime({
         data-native-markdown-scroll
         // The safe area the window chrome eats, declared once for every scroll into this container.
         //
-        // The scroll port starts at y=0 and the chrome is painted opaque over the top of it — the
-        // title bar occupies 0-44 and the Page controls 44-80 — while the 44px spacer below scrolls
-        // away with the text. Every scroll the browser performed on our behalf aligned to the raw
-        // port, so a Block reached with the keyboard could land entirely underneath it: measured on
-        // a 200-Block Page at 1440x900, a 40-press ArrowUp walk put 4 rows completely behind the
-        // chrome and 9 more with their first line inside the opaque band, the worst at [-9.1, 29.9]
-        // with 0.0px of a 39.0px row visible. WCAG 2.2 SC 2.4.11 asks for the focused thing to be
-        // visible.
+        // The scroll port starts at y=0 and the chrome is painted opaque over the top of it, while
+        // the 44px spacer below scrolls away with the text. Every scroll the browser performed on
+        // our behalf aligned to the raw port, so a Block reached with the keyboard could land
+        // entirely underneath it: measured on a 200-Block Page at 1440x900, a 40-press ArrowUp walk
+        // put 4 rows completely behind the chrome and 9 more with their first line inside the
+        // opaque band, the worst at [-9.1, 29.9] with 0.0px of a 39.0px row visible. WCAG 2.2
+        // SC 2.4.11 asks for the focused thing to be visible.
         //
         // Declared rather than corrected a frame later, because the browser honours it on the
         // scrolls we never see: the focus() a row does when it activates, and the reflow when the
         // editing surface replaces the preview and the row changes height under an already-settled
         // scroll. A correction that ran in a rAF after the fact left the row behind the chrome for
         // the frame in between — measured, 7 of the same 40 presses, at top 41 and top 2. With this
-        // declared, 0 of 40. 84 is the 80px of chrome plus a 4px hairline, so the row's first line
-        // is not flush against the controls.
-        style={{ scrollPaddingTop: "84px" }}
+        // declared, 0 of 40.
+        //
+        // 48 is the header's own 44px (`h-11` on `.desktop-chrome-header`) plus a 4px hairline, so
+        // the row's first line is not flush against it. It was 84, for a second row of Page
+        // controls at `top-11 h-9` — 44 to 80 — that no longer exists: removing it left 40px of
+        // reserve over nothing, and `scroll-padding-top` is honoured on every scroll, so clicking a
+        // Block anywhere in that phantom band scrolled the Page out from under the pointer.
+        // Measured on the packaged app at scrollTop 600: a row at top 37 moved the Page 47px and
+        // one at top 76 moved it 8px, both of them fully visible and neither of them asked to move.
+        style={{ scrollPaddingTop: "48px" }}
         onPointerDown={handleDocumentPointerDown}
         onDragOver={handleBlockDragOver}
         onDrop={handleBlockDrop}
@@ -3274,7 +3295,9 @@ export function MarkdownBlockRuntime({
       </div>
       <div
         data-native-editor-chrome
-        className="flex h-8 shrink-0 items-center justify-end border-t px-4 text-xs text-muted-foreground"
+        // No rule above it: the count is a quiet reading of the Page, not a region of chrome that
+        // needs separating from one.
+        className="flex h-8 shrink-0 items-center justify-end px-4 text-xs text-muted-foreground"
       >
         {wordCount} {wordCount === 1 ? "word" : "words"}
       </div>
@@ -3627,27 +3650,6 @@ function BlockSelectionToolbar({
       </button>
     </div>
   );
-}
-
-/** Source marker for a settable Block kind, e.g. `"## "` or `"- [ ] "`. */
-function settableKindPrefix(
-  kind: MarkdownSettableBlockKind,
-  level?: 1 | 2 | 3 | 4 | 5 | 6
-): string {
-  switch (kind) {
-    case "heading":
-      return `${"#".repeat(level ?? 1)} `;
-    case "bullet_list_item":
-      return "- ";
-    case "ordered_list_item":
-      return "1. ";
-    case "task_list_item":
-      return "- [ ] ";
-    case "blockquote":
-      return "> ";
-    default:
-      return "";
-  }
 }
 
 /**

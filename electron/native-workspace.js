@@ -12,11 +12,6 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
-const {
-  capturePageSnapshot,
-  listPageSnapshots,
-  readPageSnapshot,
-} = require("./page-snapshots");
 const { TextDecoder } = require("node:util");
 
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
@@ -59,8 +54,6 @@ const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const NATIVE_WORKSPACE_COMMANDS = new Set([
   "workspace_scan",
   "workspace_markdown_search",
-  "page_snapshot_list",
-  "page_snapshot_read",
   "doc_read",
   "workspace_read_asset",
   "workspace_import_asset",
@@ -75,10 +68,6 @@ const NATIVE_WORKSPACE_COMMANDS = new Set([
   "workspace_create_folder",
   "workspace_delete_folder",
   "doc_import_external",
-  "workspace_inspect_page_recovery",
-  "workspace_read_page_recovery",
-  "workspace_inspect_attachment",
-  "workspace_read_attachment_recovery",
 ]);
 
 function createNativeWorkspaceDispatcher(options = {}) {
@@ -96,26 +85,6 @@ function createNativeWorkspaceDispatcher(options = {}) {
     switch (command) {
       case "workspace_scan":
         return workspaceScan(payload.root, payload.excludeDirs);
-      case "page_snapshot_list":
-        return listPageSnapshots(
-          await resolveExistingWorkspacePath(
-            await canonicalWorkspaceRoot(payload.root),
-            String(payload.path || "")
-          )
-        );
-      case "page_snapshot_read": {
-        const snapshot = await readPageSnapshot(
-          await resolveExistingWorkspacePath(
-            await canonicalWorkspaceRoot(payload.root),
-            String(payload.path || "")
-          ),
-          payload.id
-        );
-        // A snapshot is the whole file, frontmatter included, but a Page write takes a body
-        // and re-attaches the Page's own frontmatter. Split it here, with the same splitter
-        // the writer uses, so restoring cannot write the frontmatter a second time.
-        return { ...snapshot, body: splitPageSource(snapshot.markdown).body };
-      }
       case "workspace_markdown_search":
         return workspaceMarkdownSearch(
           payload.root,
@@ -161,14 +130,6 @@ function createNativeWorkspaceDispatcher(options = {}) {
         return deleteFolder(payload.root, payload.path, trashItem);
       case "doc_import_external":
         return importExternal(payload);
-      case "workspace_inspect_page_recovery":
-        return inspectPageRecovery(payload.root, payload.path);
-      case "workspace_read_page_recovery":
-        return readPageRecovery(payload.root, payload.path);
-      case "workspace_inspect_attachment":
-        return inspectAttachment(payload.root, payload.path);
-      case "workspace_read_attachment_recovery":
-        return readAttachmentRecovery(payload.root, payload.path);
       default:
         throw new Error(`unsupported native workspace command: ${command}`);
     }
@@ -271,33 +232,6 @@ async function scanDocumentDto(root, absolute) {
   }
 }
 
-/**
- * The inline `#tag`s of a Page body.
- *
- * The second implementation of one grammar: this is CommonJS in the main process and cannot import
- * `src/lib/tags.ts`. `tests/fixtures/page-tag-contract.json` is what keeps the two honest.
- *
- * Fenced regions, inline code and link destinations are masked first, so a `#` inside them is not
- * a tag — the same exclusions the renderer's projection makes structurally.
- */
-function inlineTagsInBody(body) {
-  if (!body) return [];
-  const masked = body
-    .replace(/^```[\s\S]*?^```/gm, (run) => " ".repeat(run.length))
-    .replace(/`[^`\r\n]*`/g, (run) => " ".repeat(run.length))
-    .replace(/\[\[[^\]\r\n]*\]\]/g, (run) => " ".repeat(run.length))
-    .replace(/\]\([^)\r\n]*\)/g, (run) => " ".repeat(run.length));
-  const found = [];
-  const pattern = /(^|[\s(（【[「])#([\p{L}\p{N}_\-/]+)/gu;
-  for (const match of masked.matchAll(pattern)) {
-    const name = match[2];
-    if (!/[^\p{Nd}/]/u.test(name)) continue;
-    if (name.startsWith("/") || name.endsWith("/") || name.includes("//")) continue;
-    found.push(name);
-  }
-  return found;
-}
-
 async function documentDtoForPath(root, absolute) {
   const relPath = relativePath(root, absolute);
   const extension = path.extname(absolute).toLowerCase();
@@ -306,11 +240,9 @@ async function documentDtoForPath(root, absolute) {
   let idSource = "path";
   let title = path.basename(absolute, extension);
   let meta = {};
-  let body = "";
   if (documentType === "markdown") {
     const raw = await readUtf8(absolute);
     const split = splitPageSource(raw);
-    body = split.body;
     meta = pageMetaProjection(split.meta);
     const sourceId = portablePageId(meta.id);
     if (sourceId) {
@@ -339,13 +271,6 @@ async function documentDtoForPath(root, absolute) {
   if (Array.isArray(meta.aliases) && meta.aliases.every((value) => typeof value === "string")) {
     dto.aliases = meta.aliases;
   }
-  // Frontmatter tags and the inline `#tag`s in the body, which is what a tag pane counts and what
-  // `tag:` searches. Absent rather than empty, so a Page with no tags stays the shape it was.
-  const tags = [
-    ...(Array.isArray(meta.tags) ? meta.tags.filter((value) => typeof value === "string") : []),
-    ...inlineTagsInBody(body),
-  ];
-  if (tags.length) dto.tags = [...new Set(tags)];
   return dto;
 }
 
@@ -586,12 +511,6 @@ async function writeWorkspacePage(rootValue, relPath, payload, beforePageReplace
   }
   const prefix = patchFrontmatterPrefix(split.prefix, metaPatch);
   const nextBytes = Buffer.from(`${prefix ?? ""}${markdown}`, "utf8");
-  // The state *before* this write, so an accidental overwrite has something to come back to.
-  // Only the ordinary Page write snapshots: link-repair writes go through `writePageBytes`, and
-  // deletion is already covered by the OS Trash.
-  if (existingBytes && !existingBytes.equals(nextBytes)) {
-    await capturePageSnapshot(absolute, existingBytes);
-  }
   await atomicWrite(absolute, nextBytes, {
     expectedRevision: payload.expectedRevision,
     beforeReplace: beforePageReplace,
@@ -1165,178 +1084,6 @@ async function importExternal(payload) {
   return imported;
 }
 
-async function inspectPageRecovery(rootValue, relPath) {
-  const { root, artifacts } = await pageRecoveryFamily(rootValue, relPath);
-  return {
-    recoveryStatus: artifacts.length ? "available" : "none",
-    artifacts: artifacts.map((artifact) => relativePath(root, artifact)),
-  };
-}
-
-async function readPageRecovery(rootValue, relPath) {
-  const { root, artifacts } = await pageRecoveryFamily(rootValue, relPath);
-  return {
-    artifacts: await Promise.all(
-      artifacts.map(async (artifact) => ({
-        path: relativePath(root, artifact),
-        bytes: [...(await fsp.readFile(artifact))],
-      }))
-    ),
-  };
-}
-
-async function pageRecoveryFamily(rootValue, relPath) {
-  const root = await canonicalWorkspaceRoot(rootValue);
-  ensureMarkdownPath(relPath);
-  const source = await resolveExistingWorkspacePath(root, relPath);
-  if (!(await fsp.stat(source)).isFile()) throw new Error(`Page path is not a file: ${relPath}`);
-  return { root, artifacts: await sidecarFamilyPaths(source) };
-}
-
-async function inspectAttachment(rootValue, relPath) {
-  const root = await canonicalWorkspaceRoot(rootValue);
-  const source = await resolveExistingWorkspacePath(root, relPath);
-  const kind = attachmentKind(source);
-  const sidecar = sidecarPathFor(source);
-  const backup = `${sidecar}.bak`;
-  const sidecarState = await attachmentArtifactState(sidecar);
-  const backupState = await attachmentArtifactState(backup);
-  if (sidecarState === "unsafe") {
-    return {
-      documentType: kind,
-      recoveryStatus: "unknown",
-      sidecarStatus: "unreadable",
-      sidecarPath: path.basename(sidecar),
-    };
-  }
-  if (sidecarState === "missing") {
-    return {
-      documentType: kind,
-      recoveryStatus: backupState === "missing" ? "none" : "unknown",
-      sidecarStatus: "missing",
-      sidecarPath: path.basename(sidecar),
-    };
-  }
-  if (kind === "html") {
-    return {
-      documentType: kind,
-      recoveryStatus: "none",
-      sidecarStatus: "current",
-      sidecarPath: path.basename(sidecar),
-    };
-  }
-  try {
-    const state = await loadAttachmentRecoveryState(source, kind);
-    let recoveryStatus = recoveryStatusForEditor(kind, state.editor);
-    if (recoveryStatus === "none" && backupState !== "missing") recoveryStatus = "unknown";
-    return {
-      documentType: kind,
-      recoveryStatus,
-      sidecarStatus: state.format,
-      sidecarPath: path.basename(sidecar),
-    };
-  } catch {
-    return {
-      documentType: kind,
-      recoveryStatus: "unknown",
-      sidecarStatus: "unreadable",
-      sidecarPath: path.basename(sidecar),
-    };
-  }
-}
-
-async function readAttachmentRecovery(rootValue, relPath) {
-  const root = await canonicalWorkspaceRoot(rootValue);
-  const source = await resolveExistingWorkspacePath(root, relPath);
-  const kind = attachmentKind(source);
-  if (kind !== "pdf" && kind !== "excel") {
-    throw new Error("attachment recovery requires a PDF or spreadsheet");
-  }
-  const sidecar = sidecarPathFor(source);
-  const artifactState = await attachmentArtifactState(sidecar);
-  if (artifactState === "missing") return null;
-  if (artifactState === "unsafe") throw new Error(`attachment_recovery_unreadable: ${sidecar}`);
-  const recoveryState = await loadAttachmentRecoveryState(source, kind);
-  return recoveryState.editor === null ? null : { editor: recoveryState.editor };
-}
-
-async function loadAttachmentRecoveryState(source, kind) {
-  const sidecar = sidecarPathFor(source);
-  let parsed;
-  try {
-    parsed = JSON.parse(utf8.decode(await readRegularAttachmentArtifact(sidecar)));
-  } catch {
-    throw new Error(`attachment_recovery_unreadable: ${sidecar}`);
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`attachment_recovery_unreadable: ${sidecar}`);
-  }
-  const editorKey = `${kind}_editor`;
-  const cacheKey = `${kind}_parsed_cache`;
-  if (Object.hasOwn(parsed, editorKey) || Object.hasOwn(parsed, cacheKey)) {
-    return {
-      format: "legacy",
-      editor: objectOrNull(parsed[editorKey]),
-    };
-  }
-  if (![1, 2].includes(parsed.version)) {
-    throw new Error(`attachment_recovery_unreadable: unsupported sidecar version at ${sidecar}`);
-  }
-  const blocks = parsed.extras && parsed.extras.blocks;
-  if (!blocks || typeof blocks !== "object" || Array.isArray(blocks)) {
-    throw new Error(`attachment_recovery_unreadable: missing block slots at ${sidecar}`);
-  }
-  const slots = Object.values(blocks);
-  if (slots.length !== 1 || !slots[0] || typeof slots[0] !== "object" || Array.isArray(slots[0])) {
-    throw new Error(`attachment_recovery_unreadable: ambiguous block slots at ${sidecar}`);
-  }
-  return {
-    format: "current",
-    editor: objectOrNull(slots[0].editor),
-  };
-}
-
-function recoveryStatusForEditor(kind, editor) {
-  if (editor === null) return "none";
-  const viewFields = kind === "pdf" ? new Set(["version"]) : new Set(["version", "activeSheetId"]);
-  const editFields =
-    kind === "pdf"
-      ? new Set(["edits", "textEdits", "paragraphEdits", "freeText", "highlights"])
-      : new Set([
-          "cells",
-          "rowHeights",
-          "colWidths",
-          "ops",
-          "workbookOps",
-          "filters",
-          "filterMode",
-          "frozen",
-          "validations",
-          "comments",
-          "conditionalFormats",
-        ]);
-  for (const [key, value] of Object.entries(editor)) {
-    if (!viewFields.has(key) && !editFields.has(key) && valueIsNonEmpty(value)) return "unknown";
-  }
-  for (const key of editFields) {
-    if (valueIsNonEmpty(editor[key])) return "available";
-  }
-  return "none";
-}
-
-function valueIsNonEmpty(value) {
-  if (value === null || value === undefined) return false;
-  if (typeof value === "boolean") return value;
-  if (typeof value === "number") return true;
-  if (typeof value === "string" || Array.isArray(value)) return value.length > 0;
-  if (typeof value === "object") return Object.keys(value).length > 0;
-  return Boolean(value);
-}
-
-function objectOrNull(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-}
-
 const MARKDOWN_SEARCH_PREVIEWS_PER_PAGE = 50;
 
 /**
@@ -1356,7 +1103,7 @@ function sanitizeSearchCriteria(value) {
     for (const term of group) {
       if (!term || typeof term !== "object") continue;
       const field = term.field;
-      if (field !== "content" && field !== "file" && field !== "path" && field !== "tag") continue;
+      if (field !== "content" && field !== "file" && field !== "path") continue;
       if (typeof term.value !== "string" || !term.value) continue;
       let regex = null;
       if (typeof term.regexSource === "string" && term.regexSource) {
@@ -1376,33 +1123,11 @@ function sanitizeSearchCriteria(value) {
   return clean;
 }
 
-/** Every tag a Page carries, lower-cased, including each ancestor of a nested `a/b`. */
-function pageTagSet(meta) {
-  const tags = new Set();
-  const values = Array.isArray(meta?.tags) ? meta.tags : [];
-  for (const value of values) {
-    if (typeof value !== "string") continue;
-    const tag = value.trim().toLowerCase().replace(/^#/, "");
-    if (!tag) continue;
-    tags.add(tag);
-    // `tag:project` has to find a Page tagged `project/alpha`, the way a nested tag reads.
-    const parts = tag.split("/");
-    for (let index = 1; index < parts.length; index += 1) {
-      tags.add(parts.slice(0, index).join("/"));
-    }
-  }
-  return tags;
-}
-
 function matchesSearchTerm(term, context) {
   const test = (haystack) =>
     term.regex ? term.regex.test(haystack) : haystack.toLowerCase().includes(term.value);
   let hit;
-  if (term.field === "tag") {
-    hit = term.regex
-      ? [...context.tags].some((tag) => term.regex.test(tag))
-      : context.tags.has(term.value);
-  } else if (term.field === "file") {
+  if (term.field === "file") {
     hit = test(context.name);
   } else if (term.field === "path") {
     hit = test(context.path);
@@ -1423,7 +1148,7 @@ async function workspaceMarkdownSearch(rootValue, queryValue, limitValue, criter
     .trim()
     .toLowerCase();
   const criteria = sanitizeSearchCriteria(criteriaValue);
-  // `tag:project` is a complete query with no text in it, so the requirement is a query *or* a
+  // `path:notes` is a complete query with no text in it, so the requirement is a query *or* a
   // constraint — not a query string.
   if (!query && !criteria.length) throw new Error("search query is required");
   const limit = Math.min(Math.max(Number(limitValue || 50), 1), 200);
@@ -1443,7 +1168,6 @@ async function workspaceMarkdownSearch(rootValue, queryValue, limitValue, criter
         name: document.name,
         path: document.path,
         body,
-        tags: pageTagSet(split.meta),
       })
     ) {
       continue;
@@ -1462,7 +1186,7 @@ async function workspaceMarkdownSearch(rootValue, queryValue, limitValue, criter
         matches.push({ line: index + 1, preview: line.trim().slice(0, 240) });
       }
     }
-    // A query made only of constraints — `tag:project` alone — has no text to point at, so the
+    // A query made only of constraints — `path:notes` alone — has no text to point at, so the
     // Page is reported with its first non-empty line rather than dropped for having no line hits.
     if (!query && criteria.length && matchCount === 0) {
       const first = body.split(/\r\n|\n|\r/).findIndex((line) => line.trim());
@@ -2206,14 +1930,6 @@ function documentTypeForExtension(extension) {
   return "html";
 }
 
-function attachmentKind(filePath) {
-  const extension = path.extname(filePath).toLowerCase();
-  if (extension === ".pdf") return "pdf";
-  if ([".xlsx", ".xlsm", ".csv"].includes(extension)) return "excel";
-  if ([".html", ".htm"].includes(extension)) return "html";
-  throw new Error("attachment inspection requires PDF, spreadsheet, or HTML");
-}
-
 function stablePathId(relPath) {
   let hash = 0xcbf29ce484222325n;
   for (const byte of Buffer.from(relPath, "utf8")) {
@@ -2244,33 +1960,6 @@ async function lstatIfPresent(target) {
   } catch (error) {
     if (error?.code === "ENOENT") return null;
     throw error;
-  }
-}
-
-async function attachmentArtifactState(target) {
-  try {
-    const stat = await fsp.lstat(target);
-    return stat.isFile() && !stat.isSymbolicLink() ? "regular" : "unsafe";
-  } catch (error) {
-    return error?.code === "ENOENT" ? "missing" : "unsafe";
-  }
-}
-
-async function readRegularAttachmentArtifact(target) {
-  if ((await attachmentArtifactState(target)) !== "regular") {
-    throw new Error(`attachment_recovery_unreadable: ${target}`);
-  }
-  const noFollow = fs.constants.O_NOFOLLOW || 0;
-  let handle;
-  try {
-    handle = await fsp.open(target, fs.constants.O_RDONLY | noFollow);
-    const stat = await handle.stat();
-    if (!stat.isFile()) throw new Error(`attachment_recovery_unreadable: ${target}`);
-    return await handle.readFile();
-  } catch (error) {
-    throw new Error(`attachment_recovery_unreadable: ${target}`, { cause: error });
-  } finally {
-    await handle?.close();
   }
 }
 

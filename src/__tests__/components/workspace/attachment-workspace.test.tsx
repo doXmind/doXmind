@@ -44,23 +44,14 @@ describe("AttachmentWorkspace", () => {
   it("opens an ordinary attachment as a read-only system-file surface", async () => {
     const user = userEvent.setup();
     const services: AttachmentWorkspaceServices = {
-      inspect: vi.fn().mockResolvedValue({
-        documentType: "pdf",
-        recoveryStatus: "none",
-        sidecarStatus: "missing",
-        sidecarPath: ".Spec.pdf.doxmind",
-      }),
       openExternally: vi.fn().mockResolvedValue(undefined),
       reveal: vi.fn().mockResolvedValue(undefined),
-      exportRecovery: vi.fn().mockResolvedValue(undefined),
     };
 
     renderAttachment(pdfFile, services);
 
     expect(await screen.findByText("PDF attachment")).toBeInTheDocument();
     expect(screen.getByText(/read-only in doXmind/i)).toBeInTheDocument();
-    expect(screen.queryByText(/legacy doXmind edits found/i)).not.toBeInTheDocument();
-    expect(services.inspect).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Open externally" }));
     await user.click(screen.getByRole("button", { name: "Reveal in Finder" }));
@@ -71,26 +62,18 @@ describe("AttachmentWorkspace", () => {
     });
   });
 
-  it("offers an explicit read-only recovery export only when legacy edits are available", async () => {
+  it("surfaces a failed system action without offering an editing path", async () => {
     const user = userEvent.setup();
     const services: AttachmentWorkspaceServices = {
-      inspect: vi.fn().mockResolvedValue({
-        documentType: "pdf",
-        recoveryStatus: "available",
-        sidecarStatus: "current",
-        sidecarPath: ".Spec.pdf.doxmind",
-      }),
-      openExternally: vi.fn().mockResolvedValue(undefined),
+      openExternally: vi.fn().mockRejectedValue(new Error("no default application")),
       reveal: vi.fn().mockResolvedValue(undefined),
-      exportRecovery: vi.fn().mockResolvedValue(undefined),
     };
 
     renderAttachment(pdfFile, services);
 
-    expect(services.inspect).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Check legacy recovery" }));
-    expect(await screen.findByText("Legacy doXmind edits found")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Export recovery report" }));
-    expect(services.exportRecovery).toHaveBeenCalledWith(pdfFile);
+    await user.click(screen.getByRole("button", { name: "Open externally" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("no default application");
+    expect(screen.getAllByRole("button")).toHaveLength(2);
   });
 });

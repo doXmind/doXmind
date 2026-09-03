@@ -36,8 +36,8 @@ export function SearchSidebar() {
     inputRef.current?.focus();
   }, []);
 
-  // A tag pill or the tag pane asks for a search. Keyed on the token, so clicking the same tag
-  // twice re-runs it instead of looking inert.
+  // Something outside the sidebar asks for a search. Keyed on the token, so the same query
+  // requested twice re-runs instead of looking inert.
   React.useEffect(() => {
     if (searchRequest) setQuery(searchRequest.query);
   }, [searchRequest]);
@@ -46,7 +46,7 @@ export function SearchSidebar() {
     const trimmed = searchQuery.trim();
     const parsed = parseSearchQuery(trimmed);
     setSyntaxError(parsed.error);
-    // A structured query is short but complete: `tag:x` must not wait for a third character,
+    // A structured query is short but complete: `file:x` must not wait for a third character,
     // while a bare letter still has to clear the minimum.
     const longEnough = trimmed.length >= MIN_QUERY_CHARS || hasStructuredCriteria(parsed.criteria);
     if (!longEnough || !rootPath) {
@@ -97,7 +97,7 @@ export function SearchSidebar() {
     0
   );
   const trimmed = query.trim();
-  // Highlight only the words the user actually searched for; `tag:project` marks nothing.
+  // Highlight only the words the user actually searched for; `path:project` marks nothing.
   const highlightText = parseSearchQuery(trimmed).text;
   const showEmpty = trimmed.length >= MIN_QUERY_CHARS && !isSearching && results.length === 0;
 

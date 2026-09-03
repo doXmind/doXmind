@@ -4,7 +4,7 @@ Status: amended by [ADR-0011](0011-local-markdown-knowledge-workspace.md); its
 Page storage/editor clauses are superseded by
 [ADR-0012](0012-markdown-source-block-editor.md).
 Create/edit applies to Markdown Pages; PDF/Excel operations are Attachment
-read/convert or legacy recovery only.
+read/convert only.
 
 doXmind 要新增两个入口：一个面向人/脚本的 `doxmind` **CLI**（完整文档工具箱），
 一个面向外部 AI agent 的 **MCP server**（完整工作区控制）。在此之前，全部文档

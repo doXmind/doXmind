@@ -26,8 +26,8 @@ const propertiesContract = JSON.parse(
 
 async function withWorkspace(run) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "doxmind-native-"));
-  // A Page write captures a snapshot under DATA_DIR, which defaults to the real ~/.doxmind:
-  // without this the suite leaves snapshot directories in the developer's own data.
+  // DATA_DIR defaults to the real ~/.doxmind, so anything app-private a command writes would
+  // otherwise land in the developer's own data.
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "doxmind-native-data-"));
   const previousDataDir = process.env.DATA_DIR;
   process.env.DATA_DIR = dataDir;
@@ -1389,186 +1389,6 @@ test("native workspace rejects final import symlinks and never indexes symlinked
   });
 });
 
-test("attachment recovery is local and read-only", async () => {
-  await withWorkspace(async (root) => {
-    const invoke = createNativeWorkspaceDispatcher();
-    await fs.writeFile(path.join(root, "Spec.pdf"), Buffer.from("%PDF-1.7\n", "latin1"));
-    const sidecarPath = path.join(root, ".Spec.pdf.doxmind");
-    const sidecar = Buffer.from(
-      JSON.stringify({
-        pdf_editor: { version: 1, highlights: [{ id: "h1" }] },
-        pdf_parsed_cache: { sourceHash: "abc", parsed: { pages: [1] } },
-      })
-    );
-    await fs.writeFile(sidecarPath, sidecar);
-    const lockPath = `${sidecarPath}.lock`;
-    const lock = Buffer.from("persistent migration lock\n");
-    await fs.writeFile(lockPath, lock);
-
-    assert.deepEqual(await invoke("workspace_inspect_attachment", { root, path: "Spec.pdf" }), {
-      documentType: "pdf",
-      recoveryStatus: "available",
-      sidecarStatus: "legacy",
-      sidecarPath: ".Spec.pdf.doxmind",
-    });
-    assert.deepEqual(
-      await invoke("workspace_read_attachment_recovery", { root, path: "Spec.pdf" }),
-      {
-        editor: { version: 1, highlights: [{ id: "h1" }] },
-      }
-    );
-
-    assert.deepEqual(await fs.readFile(sidecarPath), sidecar);
-    assert.deepEqual(await fs.readFile(lockPath), lock);
-    await assert.rejects(fs.stat(`${sidecarPath}.bak`), { code: "ENOENT" });
-  });
-});
-
-test("attachment recovery never follows a sidecar symlink", async (t) => {
-  if (process.platform === "win32") return t.skip("symbolic-link contract is exercised on Unix");
-  await withWorkspace(async (root) => {
-    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "doxmind-native-recovery-"));
-    try {
-      const invoke = createNativeWorkspaceDispatcher();
-      await fs.writeFile(path.join(root, "Spec.pdf"), Buffer.from("%PDF-1.7\n", "latin1"));
-      const externalSidecar = path.join(outside, "outside.json");
-      const externalBytes = Buffer.from(
-        JSON.stringify({ pdf_editor: { version: 1, highlights: [{ id: "outside" }] } })
-      );
-      await fs.writeFile(externalSidecar, externalBytes);
-      await fs.symlink(externalSidecar, path.join(root, ".Spec.pdf.doxmind"));
-
-      const inspection = await invoke("workspace_inspect_attachment", {
-        root,
-        path: "Spec.pdf",
-      });
-      assert.equal(inspection.recoveryStatus, "unknown");
-      assert.equal(inspection.sidecarStatus, "unreadable");
-      await assert.rejects(
-        invoke("workspace_read_attachment_recovery", { root, path: "Spec.pdf" }),
-        /attachment_recovery_unreadable/
-      );
-      assert.deepEqual(await fs.readFile(externalSidecar), externalBytes);
-    } finally {
-      await fs.rm(outside, { recursive: true, force: true });
-    }
-  });
-});
-
-test("Page recovery inspection inventories the complete legacy family without writing", async () => {
-  await withWorkspace(async (root) => {
-    const invoke = createNativeWorkspaceDispatcher();
-    const pagePath = path.join(root, "Notes.markdown");
-    await fs.writeFile(pagePath, "# Portable\n");
-    const artifacts = [
-      [".Notes.doxmind", Buffer.from('{"version":1}\n')],
-      [".Notes.doxmind.bak", Buffer.from([0, 1, 2])],
-      [".Notes.doxmind.lock", Buffer.alloc(0)],
-      [".Notes.doxmind.corrupt-200", Buffer.from("second")],
-      [".Notes.doxmind.corrupt-100", Buffer.from("first")],
-    ];
-    for (const [name, bytes] of artifacts) await fs.writeFile(path.join(root, name), bytes);
-    const before = await Promise.all(
-      artifacts.map(async ([name]) => {
-        const stat = await fs.stat(path.join(root, name));
-        return [name, stat.mtimeMs, await fs.readFile(path.join(root, name))];
-      })
-    );
-
-    assert.deepEqual(
-      await invoke("workspace_inspect_page_recovery", { root, path: "Notes.markdown" }),
-      {
-        recoveryStatus: "available",
-        artifacts: [
-          ".Notes.doxmind",
-          ".Notes.doxmind.bak",
-          ".Notes.doxmind.lock",
-          ".Notes.doxmind.corrupt-100",
-          ".Notes.doxmind.corrupt-200",
-        ],
-      }
-    );
-
-    const after = await Promise.all(
-      artifacts.map(async ([name]) => {
-        const stat = await fs.stat(path.join(root, name));
-        return [name, stat.mtimeMs, await fs.readFile(path.join(root, name))];
-      })
-    );
-    assert.deepEqual(after, before);
-    await assert.rejects(fs.stat(path.join(root, ".Notes.doxmind.bak.bak")), { code: "ENOENT" });
-  });
-});
-
-test("Page recovery read returns every artifact's exact raw bytes without writing", async () => {
-  await withWorkspace(async (root) => {
-    const invoke = createNativeWorkspaceDispatcher();
-    await fs.writeFile(path.join(root, "Raw.md"), "portable page\n");
-    const artifacts = [
-      [".Raw.doxmind", Buffer.from([0, 255, 96, 96, 96, 10])],
-      [".Raw.doxmind.bak", Buffer.alloc(0)],
-      [".Raw.doxmind.lock", Buffer.from("lock\r\n")],
-      [".Raw.doxmind.corrupt-z", Buffer.from([222, 173, 190, 239])],
-    ];
-    for (const [name, bytes] of artifacts) await fs.writeFile(path.join(root, name), bytes);
-    const before = await Promise.all(
-      artifacts.map(async ([name]) => {
-        const stat = await fs.stat(path.join(root, name));
-        return [name, stat.mtimeMs, await fs.readFile(path.join(root, name))];
-      })
-    );
-
-    assert.deepEqual(await invoke("workspace_read_page_recovery", { root, path: "Raw.md" }), {
-      artifacts: artifacts.map(([artifactPath, bytes]) => ({
-        path: artifactPath,
-        bytes: [...bytes],
-      })),
-    });
-
-    const after = await Promise.all(
-      artifacts.map(async ([name]) => {
-        const stat = await fs.stat(path.join(root, name));
-        return [name, stat.mtimeMs, await fs.readFile(path.join(root, name))];
-      })
-    );
-    assert.deepEqual(after, before);
-  });
-});
-
-test("Page recovery is absent for an ordinary Markdown-only Page", async () => {
-  await withWorkspace(async (root) => {
-    const invoke = createNativeWorkspaceDispatcher();
-    await fs.writeFile(path.join(root, "Clean.md"), "# Clean\n");
-
-    assert.deepEqual(await invoke("workspace_inspect_page_recovery", { root, path: "Clean.md" }), {
-      recoveryStatus: "none",
-      artifacts: [],
-    });
-    assert.deepEqual(await invoke("workspace_read_page_recovery", { root, path: "Clean.md" }), {
-      artifacts: [],
-    });
-  });
-});
-
-test("Page recovery rejects attachments and symbolic-link artifacts", async () => {
-  await withWorkspace(async (root) => {
-    const invoke = createNativeWorkspaceDispatcher();
-    await fs.writeFile(path.join(root, "Spec.pdf"), "%PDF\n");
-    await assert.rejects(
-      invoke("workspace_inspect_page_recovery", { root, path: "Spec.pdf" }),
-      /\.md or \.markdown/
-    );
-
-    await fs.writeFile(path.join(root, "Page.md"), "page\n");
-    await fs.writeFile(path.join(root, "outside"), "secret\n");
-    await fs.symlink(path.join(root, "outside"), path.join(root, ".Page.doxmind"));
-    await assert.rejects(
-      invoke("workspace_read_page_recovery", { root, path: "Page.md" }),
-      /symbolic link/
-    );
-  });
-});
-
 test("Electron boot has no FastAPI lifecycle or workspace proxy", async () => {
   const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
   const mainSource = await fs.readFile(path.join(repoRoot, "electron", "main.js"), "utf8");
@@ -1604,9 +1424,10 @@ test("Electron boot has no FastAPI lifecycle or workspace proxy", async () => {
   assert.equal(NATIVE_WORKSPACE_COMMANDS.has("workspace_relocate_folder"), true);
   assert.equal(NATIVE_WORKSPACE_COMMANDS.has("workspace_rename_folder"), false);
   assert.equal(NATIVE_WORKSPACE_COMMANDS.has("doc_copy_source"), true);
-  assert.equal(NATIVE_WORKSPACE_COMMANDS.has("workspace_read_attachment_recovery"), true);
-  assert.equal(NATIVE_WORKSPACE_COMMANDS.has("workspace_inspect_page_recovery"), true);
-  assert.equal(NATIVE_WORKSPACE_COMMANDS.has("workspace_read_page_recovery"), true);
+  assert.equal(NATIVE_WORKSPACE_COMMANDS.has("workspace_inspect_attachment"), false);
+  assert.equal(NATIVE_WORKSPACE_COMMANDS.has("workspace_read_attachment_recovery"), false);
+  assert.equal(NATIVE_WORKSPACE_COMMANDS.has("workspace_inspect_page_recovery"), false);
+  assert.equal(NATIVE_WORKSPACE_COMMANDS.has("workspace_read_page_recovery"), false);
 });
 
 test("keys nested inside a frontmatter mapping never become Page properties", async () => {
@@ -1747,58 +1568,6 @@ test("search reports every hit, at line numbers the editor can actually reach", 
   });
 });
 
-test("a Page write records the bytes it replaced, throttled and bounded", async () => {
-  await withWorkspace(async (root) => {
-    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "doxmind-snapshots-"));
-    const previousDataDir = process.env.DATA_DIR;
-    process.env.DATA_DIR = dataDir;
-    try {
-      const invoke = createNativeWorkspaceDispatcher();
-      await fs.writeFile(path.join(root, "Note.md"), "---\nid: note\n---\n\nfirst\n");
-
-      const write = async (markdown) => {
-        const opened = await invoke("doc_read", { root, path: "Note.md" });
-        return invoke("doc_write_workspace", {
-          root,
-          path: "Note.md",
-          payload: { markdown, expectedRevision: opened.revision },
-        });
-      };
-
-      // Nothing to recover before the first overwrite.
-      assert.deepEqual((await invoke("page_snapshot_list", { root, path: "Note.md" })).snapshots, []);
-
-      await write("second\n");
-      const afterFirst = await invoke("page_snapshot_list", { root, path: "Note.md" });
-      assert.equal(afterFirst.snapshots.length, 1);
-
-      // The snapshot is the state *before* the write, complete with its frontmatter.
-      const restored = await invoke("page_snapshot_read", {
-        root,
-        path: "Note.md",
-        id: afterFirst.snapshots[0].id,
-      });
-      assert.equal(restored.markdown, "---\nid: note\n---\n\nfirst\n");
-
-      // One per Page per five minutes: a save per keystroke must not fill the disk.
-      await write("third\n");
-      assert.equal((await invoke("page_snapshot_list", { root, path: "Note.md" })).snapshots.length, 1);
-
-      // The id is the only caller-supplied path segment, so it is validated before it is joined.
-      await assert.rejects(
-        invoke("page_snapshot_read", { root, path: "Note.md", id: "../../etc/passwd" }),
-        /invalid snapshot id/
-      );
-
-      // Snapshots live in app data, never beside the user's Markdown.
-      assert.deepEqual((await fs.readdir(root)).sort(), ["Note.md"]);
-    } finally {
-      if (previousDataDir === undefined) delete process.env.DATA_DIR;
-      else process.env.DATA_DIR = previousDataDir;
-      await fs.rm(dataDir, { recursive: true, force: true });
-    }
-  });
-});
 
 test("a failing snapshot never fails the Page save", async () => {
   await withWorkspace(async (root) => {
@@ -1846,13 +1615,11 @@ test("search honours the query operators the renderer parsed", async () => {
 
     const term = (field, value, extra = {}) => ({ field, value, negated: false, ...extra });
 
-    // A nested tag answers to its ancestor, the way `project/web` reads.
-    assert.deepEqual(await paths({ groups: [[term("tag", "project")]] }), ["Projects/Alpha.md"]);
     assert.deepEqual(await paths({ groups: [[term("path", "projects")]] }), ["Projects/Alpha.md"]);
     assert.deepEqual(await paths({ groups: [[term("file", "beta")]] }), ["Beta.md"]);
 
     // Negation, and OR inside one group.
-    assert.deepEqual(await paths({ groups: [[{ ...term("tag", "draft"), negated: true }]] }), [
+    assert.deepEqual(await paths({ groups: [[{ ...term("file", "beta"), negated: true }]] }), [
       "Gamma.md",
       "Projects/Alpha.md",
     ]);
@@ -1863,7 +1630,7 @@ test("search honours the query operators the renderer parsed", async () => {
 
     // Separate groups are ANDed.
     assert.deepEqual(
-      await paths({ groups: [[term("tag", "project")], [term("file", "alpha")]] }),
+      await paths({ groups: [[term("path", "projects")], [term("file", "alpha")]] }),
       ["Projects/Alpha.md"]
     );
 
@@ -1871,7 +1638,7 @@ test("search honours the query operators the renderer parsed", async () => {
     const constraintOnly = await invoke("workspace_markdown_search", {
       root,
       query: "",
-      criteria: { groups: [[term("tag", "draft")]] },
+      criteria: { groups: [[term("file", "beta")]] },
     });
     assert.deepEqual(
       constraintOnly.map((entry) => entry.path),
@@ -1976,55 +1743,6 @@ test("the scan skips the folders the user excluded, by name only", async () => {
     // A path-shaped or empty entry is discarded rather than matched, so it excludes nothing.
     const unfiltered = await invoke("workspace_scan", { root, excludeDirs: ["Archive/Old.md"] });
     assert.equal(unfiltered.documents.length, 2);
-  });
-});
-
-test("the scan reads inline #tags by the same grammar the renderer uses", async () => {
-  await withWorkspace(async (root) => {
-    const invoke = createNativeWorkspaceDispatcher();
-    const contract = JSON.parse(
-      await fs.readFile(new URL("../../tests/fixtures/page-tag-contract.json", import.meta.url), "utf8")
-    );
-
-    // One grammar, written twice: this is CommonJS in main and cannot import src/lib/tags.ts.
-    for (const [index, entry] of contract.cases.entries()) {
-      const name = `Tag ${index}.md`;
-      await fs.writeFile(path.join(root, name), `${entry.text}\n`);
-      const scan = await invoke("workspace_scan", { root });
-      const document = scan.documents.find((candidate) => candidate.path === name);
-      assert.deepEqual(document.tags ?? [], entry.tags, entry.name);
-      await fs.rm(path.join(root, name));
-    }
-  });
-});
-
-test("the scan merges frontmatter tags with the inline ones, without duplicates", async () => {
-  await withWorkspace(async (root) => {
-    const invoke = createNativeWorkspaceDispatcher();
-    await fs.writeFile(
-      path.join(root, "Both.md"),
-      "---\ntags:\n  - project\n---\n\nbody with #project and #inbox\n"
-    );
-    await fs.writeFile(path.join(root, "None.md"), "no tags here\n");
-
-    const scan = await invoke("workspace_scan", { root });
-    const both = scan.documents.find((candidate) => candidate.path === "Both.md");
-    assert.deepEqual(both.tags, ["project", "inbox"]);
-    // Absent rather than empty, so a Page with no tags stays the shape it was.
-    assert.equal("tags" in scan.documents.find((c) => c.path === "None.md"), false);
-  });
-});
-
-test("a code fence is not a source of tags", async () => {
-  await withWorkspace(async (root) => {
-    const invoke = createNativeWorkspaceDispatcher();
-    await fs.writeFile(
-      path.join(root, "Code.md"),
-      "```sh\n# not a tag\ngit commit -m '#nope'\n```\n\nbut #real is\n"
-    );
-
-    const scan = await invoke("workspace_scan", { root });
-    assert.deepEqual(scan.documents.find((c) => c.path === "Code.md").tags, ["real"]);
   });
 });
 
@@ -2265,38 +1983,6 @@ test("a case-only Attachment rename is a relocation, not a destination collision
   });
 });
 
-test("restoring a Page snapshot returns the file to its exact earlier bytes", async () => {
-  await withWorkspace(async (root) => {
-    const invoke = createNativeWorkspaceDispatcher();
-    const rel = "Note.md";
-    // Frontmatter is the case that matters: every Obsidian vault Page has it.
-    const original = "---\ntags:\n  - project\n---\n\nOriginal body.\n";
-    await fs.writeFile(path.join(root, rel), original, "utf8");
-
-    const before = await invoke("doc_read", { root, path: rel });
-    await invoke("doc_write_workspace", {
-      root,
-      path: rel,
-      payload: { markdown: "\nEdited body.\n", expectedRevision: before.revision },
-    });
-
-    const { snapshots } = await invoke("page_snapshot_list", { root, path: rel });
-    assert.equal(snapshots.length, 1);
-    const snapshot = await invoke("page_snapshot_read", { root, path: rel, id: snapshots[0].id });
-
-    // What the history panel restores through the ordinary write, which takes a body and
-    // re-attaches the Page's own frontmatter. Handing it the snapshot's whole bytes wrote
-    // the frontmatter a second time and left the duplicate sitting in the body.
-    const current = await invoke("doc_read", { root, path: rel });
-    await invoke("doc_write_workspace", {
-      root,
-      path: rel,
-      payload: { markdown: snapshot.body, expectedRevision: current.revision },
-    });
-
-    assert.equal(await fs.readFile(path.join(root, rel), "utf8"), original);
-  });
-});
 
 test("a constraint-only search reports the Page, not every line in it", async () => {
   await withWorkspace(async (root) => {
@@ -2310,10 +1996,10 @@ test("a constraint-only search reports the Page, not every line in it", async ()
     const constraintOnly = await invoke("workspace_markdown_search", {
       root,
       query: "",
-      criteria: { groups: [[{ field: "tag", value: "project" }]] },
+      criteria: { groups: [[{ field: "file", value: "tagged" }]] },
     });
     assert.equal(constraintOnly.length, 1);
-    // `tag:project` has no text to point at, so the Page is the hit: one preview, its first
+    // `file:tagged` has no text to point at, so the Page is the hit: one preview, its first
     // real line. Matching every line was `includes("")` being true for all of them.
     assert.equal(constraintOnly[0].matchCount, 1);
     assert.deepEqual(
@@ -2325,7 +2011,7 @@ test("a constraint-only search reports the Page, not every line in it", async ()
     const withText = await invoke("workspace_markdown_search", {
       root,
       query: "beta",
-      criteria: { groups: [[{ field: "tag", value: "project" }]] },
+      criteria: { groups: [[{ field: "file", value: "tagged" }]] },
     });
     assert.deepEqual(
       withText[0].matches.map((match) => match.preview),

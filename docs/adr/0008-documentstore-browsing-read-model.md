@@ -1,9 +1,10 @@
 # DocumentStore read model splits Browsing Runtime from Full Editor Runtime
 
 Status: superseded for Pages by
-[ADR-0012](0012-markdown-source-block-editor.md). Retained as historical context
-and for isolated legacy recovery code; Page hydration no longer uses Sidecar
-editor HTML. Its Rust/Tauri implementation is also retired by
+[ADR-0012](0012-markdown-source-block-editor.md). Retained as historical context;
+Page hydration no longer uses Sidecar editor HTML, and
+[ADR-0015](0015-legacy-sidecars-are-inert.md) removed the last code that read a
+Sidecar at all. Its Rust/Tauri implementation is also retired by
 [ADR-0013](0013-electron-only-desktop-runtime.md).
 
 ## Context
@@ -76,11 +77,7 @@ interface DocumentOutlineItem {
 }
 
 type DocumentSourceState =
-  | "sidecar_fresh"
-  | "sidecar_stale"
-  | "sidecar_missing"
-  | "sidecar_corrupt"
-  | "empty";
+  "sidecar_fresh" | "sidecar_stale" | "sidecar_missing" | "sidecar_corrupt" | "empty";
 ```
 
 `markdown` is the current Markdown body without frontmatter. The complete raw

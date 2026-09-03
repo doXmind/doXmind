@@ -11,7 +11,6 @@ import { UpdatePill } from "./update-pill";
 import { TemplatePicker, getLocalizedFileName, type FileTemplate } from "./template-picker";
 import { WorkspaceHeader } from "./workspace-header";
 import { SearchSidebar } from "./search-sidebar";
-import { TagsSidebar } from "./tags-sidebar";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { getErrorMessage } from "@/lib/utils";
@@ -30,6 +29,7 @@ export function FilesSidebar() {
   const isLoading = useFileStore((s) => s.isLoading);
   const isSynced = useFileStore((s) => s.isSynced);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  const [foldersExpanded, setFoldersExpanded] = useState(false);
   const sidebarView = useLayoutStore((s) => s.sidebarView);
   const setSidebarView = useLayoutStore((s) => s.setSidebarView);
   const folderTreeRef = useRef<FolderTreeHandle>(null);
@@ -104,14 +104,12 @@ export function FilesSidebar() {
         onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
         onCollapseAll={() => folderTreeRef.current?.collapseAll()}
         canCollapseAll={sidebarView === "files" && files.some((file) => file.isFolder)}
+        foldersExpanded={foldersExpanded}
         onOpenSearch={() => setSidebarView(sidebarView === "search" ? "files" : "search")}
-        onOpenTags={() => setSidebarView(sidebarView === "tags" ? "files" : "tags")}
       />
 
       {sidebarView === "search" ? (
         <SearchSidebar />
-      ) : sidebarView === "tags" ? (
-        <TagsSidebar />
       ) : (
         <ScrollArea className="min-h-0 flex-1">
           {/* min-h-full lets FolderTree's spacer reach the bottom of the
@@ -122,6 +120,7 @@ export function FilesSidebar() {
               <FileListSkeleton />
             ) : (
               <FolderTree
+                onExpandedChange={setFoldersExpanded}
                 ref={folderTreeRef}
                 onCreateFile={handleCreateFile}
                 onCreateFolder={handleCreateFolder}

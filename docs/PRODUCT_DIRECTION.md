@@ -8,7 +8,8 @@ roadmap. Architecture decisions that make this direction durable live in
 [`adr/0011-local-markdown-knowledge-workspace.md`](adr/0011-local-markdown-knowledge-workspace.md),
 [`adr/0012-markdown-source-block-editor.md`](adr/0012-markdown-source-block-editor.md),
 [`adr/0013-electron-only-desktop-runtime.md`](adr/0013-electron-only-desktop-runtime.md),
-and [`adr/0014-local-page-pdf-export.md`](adr/0014-local-page-pdf-export.md).
+[`adr/0014-local-page-pdf-export.md`](adr/0014-local-page-pdf-export.md),
+and [`adr/0015-legacy-sidecars-are-inert.md`](adr/0015-legacy-sidecars-are-inert.md).
 
 ## North star
 
@@ -39,7 +40,7 @@ types. Exporting a Page to PDF does not make PDF an editable content type.
 1. The user's workspace folder is the source of truth.
 2. One Markdown file is a complete Page. Normal Page operations do not require
    or create a same-name `.doxmind` file.
-3. Page body, properties, aliases, tags, and links live in Markdown or YAML
+3. Page body, properties, aliases, and links live in Markdown or YAML
    frontmatter.
 4. Markdown source is the editor state. Blocks are source spans and operations,
    not HTML/JSON records mirrored into another document model.
@@ -48,9 +49,9 @@ types. Exporting a Page to PDF does not make PDF an editable content type.
 6. Attachments are never silently rewritten. doXmind may preview, reveal, open,
    or reference them. Any future explicit conversion must create a Page without
    rewriting the source Attachment.
-7. Existing Page/PDF/Excel sidecars are legacy recovery artifacts until the
-   user has recovered or exported unique edits. They are never overwritten or
-   deleted as part of scope reduction.
+7. Existing Page/PDF/Excel sidecars are inert legacy artifacts. doXmind does not
+   read them, and they are never overwritten or deleted as part of scope
+   reduction.
 8. New features must strengthen Pages, links, properties, collections, or the
    local workspace. A second office-format editor requires a new product
    decision.
@@ -64,7 +65,7 @@ types. Exporting a Page to PDF does not make PDF an editable content type.
 | TipTap / ProseMirror                                                         | Removed             | No runtime, source import, or package dependency; raw Markdown is the fallback for syntax without semantic controls.                                                                             |
 | Blocks                                                                       | Keep and strengthen | Headings, lists, tasks, quotes, tables, code, math, Mermaid, callouts, portable `<details>` Toggles, raw fallback, and block handles are native; slash commands insert canonical Markdown.       |
 | Search, outline, tabs, command palette, templates                            | Keep                | All operate locally and primarily on Pages.                                                                                                                                                      |
-| Page properties, tags, aliases, and relations                                | Core                | Tags, aliases, scalar/list fields, and exact Wiki-Link relations use revision-guarded lossless YAML patches. Formulas and rollups are zero-write Collection projections, not persisted fields.   |
+| Page properties, aliases, and relations                                      | Core                | Aliases, scalar/list fields, and exact Wiki-Link relations use revision-guarded lossless YAML patches. Formulas and rollups are zero-write Collection projections, not persisted fields.         |
 | Page links                                                                   | Keep and strengthen | Local `[[Wiki Links]]` navigate from the native editor; Wiki and relative Markdown links are indexed from files. Page/Folder relocation repairs resolvable links transactionally.                |
 | Backlinks and unlinked mentions                                              | Keep and strengthen | Backlinks, unresolved links, and unlinked mentions rebuild on demand from Markdown with no workspace writes.                                                                                     |
 | Transclusion                                                                 | Keep and strengthen | Standalone Page, unique ATX heading, and unique `^block-id` embeds project recursively from Markdown with ambiguity/cycle/depth guards.                                                          |
@@ -150,7 +151,7 @@ Platform application profile
 ### Page
 
 - Body: Markdown.
-- Properties, tags, aliases, dates, and collection fields: YAML frontmatter.
+- Properties, aliases, dates, and collection fields: YAML frontmatter.
 - Stable identity: frontmatter `id` for doXmind-created Pages. External files
   without an id open without modification and use path identity until the user
   explicitly adds properties.
@@ -172,8 +173,7 @@ Platform application profile
 - The workspace may index filename, path, MIME type, and extractable text as a
   disposable cache.
 - New PDF/Excel edit state is not written.
-- Legacy PDF/Excel sidecars stay readable through the zero-write recovery path;
-  current code never migrates or rewrites them.
+- Legacy PDF/Excel sidecars are never opened, migrated, or rewritten.
 
 ### Collection
 
@@ -211,20 +211,15 @@ Scope reduction is intentionally two-stage:
 
 1. **Freeze and hide:** remove blank creation and primary navigation; stop all
    new editor work; classify the formats as Attachments in the shared model.
-2. **Recover and remove:** an explicit Attachment recovery action inspects
-   legacy sidecar edits without writing, exports the exact editor-state JSON in
-   a Markdown recovery report, and opens the source in the system application.
-   Normal Attachment open does not inspect sidecars. `LEGACY-03` removed
-   the old editor bundles, attachment create/write/cache commands, Synthetic
-   Document migration writers, and their dedicated dependencies.
+2. **Remove:** `LEGACY-03` removed the old editor bundles, attachment
+   create/write/cache commands, Synthetic Document migration writers, and their
+   dedicated dependencies. The Attachment card now only reveals the file or
+   opens it in the system application.
 
 The removal gate is satisfied only when all of the following are true:
 
 - New workspaces cannot create a PDF or spreadsheet editor state.
-- An existing edited sidecar is detected without mutating the source file.
-- The user can explicitly export a Markdown recovery report containing the
-  exact legacy editor-state JSON.
-- Opening a normal attachment creates no sidecar.
+- Opening a normal attachment creates no sidecar and reads no sidecar.
 - Automated tests prove that sources, sidecars, `.bak`, `.lock`, and
   `.corrupt-*` files are not silently deleted or overwritten.
 
@@ -242,7 +237,7 @@ The removal gate is satisfied only when all of the following are true:
 | DESKTOP-01 | Complete | Electron is the only packaged desktop shell, executes workspace commands in-process, and has no Python/FastAPI lifecycle or bundled server.                                                                   |
 | EDITOR-01  | Complete | One native runtime handles every Page; exact spans, guarded block/keyboard commands, CRLF-aware multi-block paste, IME-safe undo, autosave, semantic projections, and raw fallback share canonical Markdown.  |
 | EDITOR-02  | Complete | Production source and package dependencies contain no TipTap or ProseMirror; obsolete adapters, extensions and tests are deleted.                                                                             |
-| PAGE-01    | Complete | Tags, aliases, scalar/list properties, and exact Wiki-Link Page relations use revision-guarded minimal YAML patches while preserving untouched source.                                                        |
+| PAGE-01    | Complete | Aliases, scalar/list properties, and exact Wiki-Link Page relations use revision-guarded minimal YAML patches while preserving untouched source.                                                              |
 | PAGELEG-1  | Complete | A separate zero-write Page recovery path exports every legacy artifact as byte-exact Base64 plus readable UTF-8 preview; the old HTML reader, DatabaseBlock UI and writable store are deleted.                |
 | LINK-01    | Complete | Resolvable local Wiki Links navigate from native Blocks; Wiki and relative Markdown Page links are indexed with exact body-relative occurrences.                                                              |
 | INDEX-01   | Complete | A shared zero-write Page catalog produces deterministic links, backlinks, ambiguity, unresolved results, property projections, Collection membership, transclusion sources, and graph edges.                  |
@@ -280,16 +275,14 @@ type, and no user-facing flow creates a blank PDF or spreadsheet.
 
 - Keep the generic read-only Attachment surface with Reveal and Open
   Externally.
-- Keep zero-write legacy PDF/Excel sidecar inspection and explicit Markdown
-  recovery-report export covered by fixtures.
+- Keep sidecar inspection and recovery-report export removed.
 - Keep attachment editing out of normal navigation; the old editors are absent.
 - Keep the completed `LEGACY-03` deletion locked: no dedicated PDF/Excel editor
   bundle, create/write/cache endpoint, or Synthetic Document migration writer
   may return. Read-only CLI/MCP parsing is not an editor path.
 
-Exit: existing edits are recoverable; ordinary attachments are read-only and
-produce no doXmind state. Functional recovery and physical attachment-editor
-deletion are complete.
+Exit: ordinary attachments are read-only and produce no doXmind state, and the
+physical attachment-editor deletion is complete.
 
 ### Phase 2 — Markdown-only editor foundation
 
@@ -303,14 +296,14 @@ deletion are complete.
   migration must consume that explicit export rather than restore the old UI.
 - Keep the landed keyboard focus/navigation, revision guard, IME protection,
   exact multi-Block clipboard behavior, and grouped undo covered by fixtures.
-- Keep legacy Page artifact inventory/export locked with exact-byte, zero-write,
-  corrupt-input and path-boundary tests.
+- Keep legacy Page artifacts untouched: nothing inventories, opens, or exports
+  them.
 - Keep portable `<details>` Toggles and slash-command source insertion locked
   with exact-source tests. Electron image paste/drop may only copy verified
   raster bytes to `assets/` without overwrite and insert a safe relative
   Markdown destination; resize/crop/delete and remote fetch remain outside scope.
-- Keep all Page Sidecar writers and legacy HTML readers absent. Recovery commands
-  may read raw artifact bytes only and must never hydrate normal Page state.
+- Keep all Page Sidecar writers and legacy Sidecar readers absent, including the
+  removed inspection/recovery commands.
 
 Exit: Markdown is the only Page content/editor-state field; Page APIs contain no
 HTML, Extras, editor JSON, or Sidecar state. The normal Page lifecycle creates
@@ -318,7 +311,7 @@ no Sidecar, and the production bundle contains no TipTap/ProseMirror import.
 
 ### Phase 3 — Local Notion foundation
 
-- Keep frontmatter-backed tags, aliases, scalar/list fields, and exact Wiki-Link
+- Keep frontmatter-backed aliases, scalar/list fields, and exact Wiki-Link
   relation values lossless. Keep formulas and rollups as strict versioned
   Collection JSON projections; never persist their results as hidden Page state.
 - Make templates create ordinary Pages with properties.
@@ -388,10 +381,10 @@ when its verification statement passes.
 | EDITOR-01  | P0       | Build the native source-backed block kernel             | STORE-01             | Paragraph/heading commands and autosave preserve untouched source bytes.                                     |
 | EDITOR-02  | P0       | Migrate all supported blocks off TipTap                 | EDITOR-01            | Production imports and package dependencies contain no TipTap/ProseMirror.                                   |
 | EXPORT-01  | P0       | Make Page PDF export desktop-local                      | EDITOR-01            | Export generates and atomically writes a real PDF without a printer or server HTML-to-PDF request.           |
-| PAGELEG-1  | P0       | Inventory and export legacy Page Sidecar state          | STORE-01             | Unique legacy state is reported/recoverable without mutating Sidecar bytes.                                  |
-| LEGACY-01  | P0       | Inventory legacy PDF/Excel sidecars and edits           | DIR-01               | A read-only report distinguishes untouched attachments from recoverable edits.                               |
+| PAGELEG-1  | —        | _Withdrawn_ — legacy Page Sidecar inventory/export      | STORE-01             | Removed; Sidecar bytes are preserved but never opened.                                                       |
+| LEGACY-01  | —        | _Withdrawn_ — legacy PDF/Excel sidecar inventory        | DIR-01               | Removed; Sidecar bytes are preserved but never opened.                                                       |
 | ATTACH-01  | P0       | Build the generic Attachment surface                    | NAV-01               | PDF/spreadsheet/HTML opens without an editable document toolbar.                                             |
-| LEGACY-02  | P0       | Add explicit legacy export/recovery                     | LEGACY-01, ATTACH-01 | Fixture state appears exactly in a Markdown report while the full artifact family remains unchanged.         |
+| LEGACY-02  | —        | _Withdrawn_ — explicit legacy export/recovery           | LEGACY-01, ATTACH-01 | Removed with LEGACY-01; the artifact family remains unchanged on disk.                                       |
 | LEGACY-03  | P1       | Remove dedicated PDF/Excel editing paths                | LEGACY-02            | No new edit sidecar/write endpoint/editor bundle remains.                                                    |
 | PAGE-01    | P1       | Lock portable v1 frontmatter Properties                 | EDITOR-01            | Cross-runtime lossless source-patch fixtures cover external edits and every supported value type.            |
 | LINK-01    | P1       | Complete the portable Page-link surface                 | EDITOR-01            | Local Wiki Links navigate without rewriting source; link indexing remains in `INDEX-01`.                     |
@@ -416,7 +409,7 @@ DIR-01 → NAV-01 → ATTACH-01 → LEGACY-01 → LEGACY-02 → LEGACY-03
 ```
 
 Current delivery focus: keep the completed storage, Electron-only desktop,
-native editor, export/recovery, Page relation, computed Collection,
+native editor, export, Page relation, computed Collection,
 Table/Board/Calendar, block-id embed, local-image import/preview, graph, index,
 and link/backlink cuts locked. Remaining expansion work is deliberately outside
 this completed core: editable Collection cells, binary image editing or remote

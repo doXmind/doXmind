@@ -10,11 +10,11 @@ There is one first-class content type:
 
 - **Page** — one portable `.md` or `.markdown` file edited through source-backed block operations. Markdown is the editor state; normal Page operations do not create or require a same-name `.doxmind` file. Every Page uses the native editor; unsupported structures remain editable as exact raw Markdown. TipTap and ProseMirror runtimes, source imports, and package dependencies are removed. Resolvable local `[[Wiki Links]]` navigate without rewriting the source.
 
-PDF, spreadsheet, HTML, image, and other non-Markdown files are **Attachments**. Their normal workspace is read-only and offers reveal/open-externally actions, not independent create/edit/save stacks. Legacy PDF/Excel sidecars are inspected without writing and can be exported as a Markdown recovery report containing the exact old editor-state JSON. Dedicated attachment editors, create/write/cache endpoints, and Synthetic Document migration writers are physically removed. Preserve source files and the complete legacy artifact family.
+PDF, spreadsheet, HTML, image, and other non-Markdown files are **Attachments**. Their normal workspace is read-only and offers reveal/open-externally actions, not independent create/edit/save stacks. Legacy PDF/Excel sidecars are never read: doXmind neither parses their editor state nor exports it. Dedicated attachment editors, create/write/cache endpoints, sidecar inspection/recovery commands, and Synthetic Document migration writers are physically removed. Preserve source files and the complete legacy artifact family.
 
 Page PDF export is a fully local derived-output pipeline. The renderer waits for the source-backed Page view to settle, Electron generates PDF bytes in-process with `webContents.printToPDF`, and the main process atomically writes the user-selected destination from a native Save dialog. It must not depend on an installed printer/driver or add a Python/FastAPI lifecycle, server HTML-to-PDF path, or PyMuPDF Page-export dependency. Exported PDFs are derived files, not editable Page or Attachment state, and never receive sidecars.
 
-The active product boundary and roadmap live in [docs/PRODUCT_DIRECTION.md](docs/PRODUCT_DIRECTION.md), [ADR-0011](docs/adr/0011-local-markdown-knowledge-workspace.md), [ADR-0012](docs/adr/0012-markdown-source-block-editor.md), and [ADR-0013](docs/adr/0013-electron-only-desktop-runtime.md).
+The active product boundary and roadmap live in [docs/PRODUCT_DIRECTION.md](docs/PRODUCT_DIRECTION.md), [ADR-0011](docs/adr/0011-local-markdown-knowledge-workspace.md), [ADR-0012](docs/adr/0012-markdown-source-block-editor.md), [ADR-0013](docs/adr/0013-electron-only-desktop-runtime.md), and [ADR-0015](docs/adr/0015-legacy-sidecars-are-inert.md).
 
 ## 1. Think Before Coding
 
@@ -75,7 +75,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ## Storage Model
 
 The user's filesystem is the source of truth. Each Markdown Page is exactly one portable file. Attachments remain ordinary source files; new Page or Attachment sidecars must not be created.
-Legacy Page/PDF/Excel sidecars may still exist. Page and Attachment recovery reports provide explicit read-only export paths, but they do not authorize deletion or mutation of those bytes. Preserve the source plus `.doxmind`, `.bak`, `.lock`, and `.corrupt-*` artifacts as one family. A `<sidecar>.lock` file may appear next to a legacy sidecar; it is tiny, may persist after use, and must not be deleted manually.
+Legacy Page/PDF/Excel sidecars may still exist. doXmind neither reads nor rewrites them, and it must not delete or strand them either. Preserve the source plus `.doxmind`, `.bak`, `.lock`, and `.corrupt-*` artifacts as one family. A `<sidecar>.lock` file may appear next to a legacy sidecar; it is tiny, may persist after use, and must not be deleted manually.
 
 ```text
 ~/Documents/notes/
@@ -100,7 +100,7 @@ Markdown save algorithm:
 2. Preserve untouched source bytes and unknown frontmatter.
 3. Atomically write only the `.md`/`.markdown` file.
 
-Legacy Page/PDF/Excel sidecars may still exist. Do not delete, overwrite, or strand them. Attachment state remains readable only through zero-write inspection/recovery. Page recovery inventories the complete legacy artifact family and exports each member as exact raw bytes; it never parses legacy HTML/Extras into Page state.
+Legacy Page/PDF/Excel sidecars may still exist. Do not delete, overwrite, or strand them. Nothing reads their contents: rename, move, and delete inventory the artifact family only to carry its bytes unchanged with the source or send the whole family to system Trash.
 
 ## Environment Variables
 
@@ -120,11 +120,11 @@ This product intentionally excludes JWT auth, OAuth user login, password reset, 
 
 Do not rebuild these by accident. If a feature needs to return, make the product decision explicit and design it around the local desktop IDE model.
 
-Do not add blank PDF/Excel creation, PDF/Excel/HTML editing features, or new attachment sidecar writers. Reading existing legacy state and exporting exact recovery bytes/JSON in a Markdown report are permitted only as recovery. Dedicated PDF/Excel editor modules and write APIs have been deleted; do not recreate or mount them. Retained `pdf_blocks`/`excel_workbook` parsing is read-only CLI/MCP conversion support, not an editor boundary.
+Do not add blank PDF/Excel creation, PDF/Excel/HTML editing features, or new attachment sidecar writers. Do not reintroduce legacy sidecar inspection or recovery-report export in any form. Dedicated PDF/Excel editor modules and write APIs have been deleted; do not recreate or mount them. Retained `pdf_blocks`/`excel_workbook` parsing is read-only CLI/MCP conversion support, not an editor boundary.
 
 Do not add Page sidecar writers or TipTap-only Page semantics. New block behavior must round-trip through canonical Markdown and the native `MarkdownBlockDocument` Interface.
 
-There is no Page sidecar writer or legacy Page HTML reader. `workspace_inspect_page_recovery` and `workspace_read_page_recovery` are isolated raw-byte recovery commands; keep them zero-write and separate from normal Page I/O.
+There is no Page sidecar writer and no legacy sidecar reader of any kind. The `workspace_inspect_page_recovery`, `workspace_read_page_recovery`, `workspace_inspect_attachment`, and `workspace_read_attachment_recovery` commands were removed along with the UI that called them; do not reintroduce them.
 
 ## Commit hygiene
 

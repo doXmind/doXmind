@@ -1,42 +1,41 @@
 # Sidecar Format
 
-Status: legacy recovery only
+Status: historical reference only
 
 ADR-0012 removed Sidecars from the normal Markdown Page model. Everything in
-this document describes bytes that older releases may already have created and
-the isolated code needed to inventory, correlate, export, or recover them. New
-Page create/open/save code MUST NOT create these shapes or derive current Page
+this document describes bytes that older releases may already have created. No
+current code reads, parses, or exports them; the shapes are recorded here so a
+user or an external tool can make sense of files still sitting on disk. New Page
+create/open/save code MUST NOT create these shapes or derive current Page
 identity/content from them.
 
 This document is the historical wire-format reference for doXmind
 markdown-shaped Sidecars and External-reference Custom Block placeholders.
-Current code has no Page or Attachment Sidecar serializer. Read-only attachment
-inspection/recovery may parse known attachment state. PAGELEG-1 inventories a
-Page's legacy family and exports raw bytes without interpreting this shape;
-legacy-family move/Trash operations carry the same bytes unchanged.
+Current code has no Page or Attachment Sidecar serializer and no Sidecar reader.
+Legacy-family move/Trash operations carry the bytes unchanged without
+interpreting them.
 
 Markdown Page is the only first-class content type. Under ADR-0012, a Page is
 one Markdown file and must not receive new Sidecar state. PDF and Excel are
 Attachments and also must not receive new editor state. The contracts below
-remain normative only for reading, inventorying, and exporting bytes created by
-older versions.
+remain descriptive only, for anyone reading bytes created by older versions
+outside doXmind.
 
 ## Legacy Markdown-shaped Sidecar JSON Shape
 
 A Sidecar is a hidden `.doxmind` JSON file older builds placed next to a Page or
-Attachment. For a legacy Synthetic Document opened for recovery from `.pdf` or
-`.xlsx`, the Sidecar uses the same markdown shape and lives next to the original
-binary.
+Attachment. For a legacy Synthetic Document generated from `.pdf` or `.xlsx`,
+the Sidecar uses the same markdown shape and lives next to the original binary.
 
-Current recovery boundaries are deliberately smaller:
+What the product does with these bytes today:
 
 - Page Sidecar parsing and the historical `read_doc`/`write_doc` DTOs are
-  removed. Electron Page recovery reads each existing family member as opaque bytes and
-  records byte-exact Base64 in a Markdown report, including corrupt input.
-- Attachment inspection/recovery reads existing JSON bytes without migration,
-  cache refresh, normalization, or forensic-copy writes.
+  removed. Nothing opens a Sidecar, not even to inventory it.
+- Sidecar inspection and recovery-report export are removed too. Rename, move,
+  and delete locate family members by filename alone and move their bytes
+  unchanged.
 - `SyntheticDocumentFactory` and the PDF/Excel editor/write/cache/create paths
-  are removed. No current runtime writes the shapes documented below.
+  are removed. No current runtime reads or writes the shapes documented below.
 
 Historical full-write shape:
 
@@ -55,14 +54,14 @@ Historical full-write shape:
 }
 ```
 
-| Key             | Type    | Historical requirement | Meaning                                                                                                                                                                                        |
-| --------------- | ------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `version`       | integer | Yes                    | Sidecar schema version. The last written value was `2`; version `2` replaced `1` when cached editor HTML needed invalidation for ADR-0006.                                                     |
-| `id`            | string  | Full shape             | Historical document identifier. It may correlate recovery state but never overrides current Page frontmatter/path identity. Synthetic migrations may contain `path:<hash>` rather than a UUID. |
-| `html`          | string  | Full shape             | Historical lossless editor HTML/cache. Current Page editing never hydrates from it. See superseded [ADR-0008](adr/0008-documentstore-browsing-read-model.md).                                  |
-| `markdown_hash` | string  | Yes                    | Historical SHA-256 digest of complete Markdown. Synthetic Documents hashed their generated Markdown placeholder rather than the source PDF/XLSX bytes.                                         |
-| `updated_at`    | string  | Yes                    | UTC timestamp in ISO-8601 form, for example `2026-04-29T17:38:00Z`.                                                                                                                            |
-| `extras`        | object  | Optional               | Historical doXmind-only state. Attachment editor state may live under `extras.blocks.<id>`; Page/DatabaseBlock extras remain relevant only to read-only inventory/export.                      |
+| Key             | Type    | Historical requirement | Meaning                                                                                                                                                       |
+| --------------- | ------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`       | integer | Yes                    | Sidecar schema version. The last written value was `2`; version `2` replaced `1` when cached editor HTML needed invalidation for ADR-0006.                    |
+| `id`            | string  | Full shape             | Historical document identifier. It never overrides current Page frontmatter/path identity. Synthetic migrations may contain `path:<hash>` rather than a UUID. |
+| `html`          | string  | Full shape             | Historical lossless editor HTML/cache. Current Page editing never hydrates from it. See superseded [ADR-0008](adr/0008-documentstore-browsing-read-model.md). |
+| `markdown_hash` | string  | Yes                    | Historical SHA-256 digest of complete Markdown. Synthetic Documents hashed their generated Markdown placeholder rather than the source PDF/XLSX bytes.        |
+| `updated_at`    | string  | Yes                    | UTC timestamp in ISO-8601 form, for example `2026-04-29T17:38:00Z`.                                                                                           |
+| `extras`        | object  | Optional               | Historical doXmind-only state. Attachment editor state may live under `extras.blocks.<id>`; Page/DatabaseBlock extras are inert leftovers.                    |
 
 Readers MUST accept any non-empty string for `id`.
 Readers encountering a Sidecar with an empty id should treat the document as
@@ -72,8 +71,7 @@ Any reader recomputing the hash to detect staleness must include frontmatter;
 body-only hashing produces false stale results.
 
 Historical markdown-shape Sidecars used only these top-level keys. Legacy
-PDF/Excel Sidecars may instead contain the older top-level keys below. Current
-inspection/recovery recognizes them without migrating or rewriting them:
+PDF/Excel Sidecars may instead contain the older top-level keys below:
 
 - `source_path`
 - `updated_at_unix_nanos`
@@ -82,13 +80,13 @@ inspection/recovery recognizes them without migrating or rewriting them:
 - `excel_editor`
 - `excel_parsed_cache`
 
-Older slot-only writers could create a partial Sidecar before a full write; the
-shape remains part of the read-only recovery contract below.
+Older slot-only writers could create a partial Sidecar before a full write; that
+shape is documented below.
 
 `extras` contains historical doXmind-owned state that lacked a portable
 Markdown representation. No new Page or External-reference block state may be
-added here. The deprecated database block and old attachment blocks may retain
-their existing slots until export/recovery completes.
+added here. The deprecated database block and old attachment blocks keep their
+existing slots untouched.
 
 ### Partial Sidecar Shape
 
@@ -110,17 +108,17 @@ needed to record a slot value and link it to the `.md` body:
 ```
 
 A partial Sidecar omits `id`, `html`, and `source_path`. It is a legitimate
-legacy recovery state, not a corruption signal. Normal Page code leaves it
-byte-identical; no current workflow upgrades it.
+legacy shape, not a corruption signal. Normal Page code leaves it byte-identical;
+no current workflow upgrades it.
 
-Reader contract for partial Sidecars:
+Historical reader contract for partial Sidecars:
 
 - `id` MAY be absent. Readers MUST treat an absent `id` as "no Sidecar-recorded
   id" and MUST NOT treat it as malformed. Current Page identity still comes
   from frontmatter/path and is never synthesized from this file. (An
   _empty-string_ `id` is still malformed, per the rule above.)
-- `html` MAY be absent. Current Page editing ignores Sidecar HTML; a recovery
-  reader must therefore preserve absence rather than inventing Page state.
+- `html` MAY be absent. Current Page editing ignores Sidecar HTML entirely, so
+  absence has no effect on Page state.
 - `source_path` MAY be absent.
 - `version`, `markdown_hash`, `updated_at`, and `extras` follow the same rules
   as in the full shape. In particular, `markdown_hash` is still authoritative
@@ -169,32 +167,31 @@ for the matching block type:
 }
 ```
 
-Legacy Synthetic Document recovery contract:
+Legacy Synthetic Document shape, as older versions wrote it:
 
 - The historical markdown-shaped PDF/Excel state location is
   `extras.blocks.<block_id>`, where `<block_id>` matches the single placeholder
-  in `html`. Zero-write recovery also recognizes the original top-level
-  `pdf_editor` / `excel_editor` forms.
+  in `html`. Older builds also wrote the original top-level `pdf_editor` /
+  `excel_editor` forms.
 - `editor` stores user-facing editor state for that block. PDF editors use the
   PDF editor payload; Excel editors use the workbook editor payload. The slot
   may omit `editor` before the user has edited that file.
 - `parsedCache` stores parser output for the referenced source binary. It is an
-  object with `sourceHash` and `parsed`. Current recovery code does not refresh
-  it; the original Sidecar bytes preserve it.
-- Unknown sibling fields inside the block slot remain preserved because the
-  current recovery path never rewrites the Sidecar.
-- The source `.pdf` / `.xlsx` file is authoritative input. Current inspection
-  and recovery never mutate it; report export writes only a separate
-  user-selected Markdown file.
+  object with `sourceHash` and `parsed`. Nothing refreshes it; the original
+  Sidecar bytes preserve it.
+- Unknown sibling fields inside the block slot remain preserved because nothing
+  rewrites the Sidecar.
+- The source `.pdf` / `.xlsx` file is authoritative input and is never
+  mutated.
 - `markdown_hash` hashes the generated Synthetic Document markdown
   (frontmatter plus the one placeholder), not the source PDF/XLSX bytes. Source
   binary freshness belongs to `parsedCache.sourceHash`.
 - New Attachments MUST NOT create this shape. Attachment Sidecar writes are not
-  permitted; export writes only a separate user-selected Markdown report.
+  permitted.
 
 Legacy top-level `pdf_editor`, `pdf_parsed_cache`, `excel_editor`, and
-`excel_parsed_cache` fields are read-only recovery input. They stay in place and
-are never normalized into a rewritten Sidecar.
+`excel_parsed_cache` fields stay in place and are never read or normalized into
+a rewritten Sidecar.
 
 ### Retired Migration Algorithm (Historical)
 
@@ -209,9 +206,8 @@ the markdown-shaped Synthetic Document contract on open:
    `extras.blocks.<block_id>`.
 
 That implementation explains legacy `.bak`, `.lock`, and `.corrupt-*` files a
-user may still have. It has been removed. Current attachment inspection and
-recovery create none of them and preserve every existing family member
-byte-for-byte. `DOXMIND_SIDECAR_MIGRATE` has no current runtime caller and
+user may still have. It has been removed. Nothing creates them any more, and
+every existing family member is preserved byte-for-byte. `DOXMIND_SIDECAR_MIGRATE` has no current runtime caller and
 setting it has no effect; ADR-0003 is retained only as a history of the retired
 behavior.
 
@@ -225,11 +221,11 @@ The release compatibility fixtures live in
 - `pdf_markdown_shape.doxmind.json`
 - `excel_markdown_shape.doxmind.json`
 
-Release validation covers the zero-write boundary in the frontend adapter and
-recovery-report tests, Electron native-workspace tests, and Python Markdown-only
-workspace tests. These checks prove
-that recovery returns exact editor JSON while the source, Sidecar, `.bak`,
-`.lock`, and `.corrupt-*` family remains unchanged and no new `.bak` appears.
+No code reads these fixtures any more; they are kept as a record of the shapes
+older releases produced. Electron native-workspace tests and Python
+Markdown-only workspace tests still prove that the source, Sidecar, `.bak`,
+`.lock`, and `.corrupt-*` family survives rename, move, and delete unchanged and
+that no new `.bak` appears.
 
 Any compatibility change that touches Synthetic Documents must preserve all
 four fixture forms. A change that creates this shape for a new Attachment, adds
@@ -252,8 +248,8 @@ The historical canonical order was:
 ```
 
 `id` appears before `src`, and any additional attributes follow `src`.
-Read-only recovery parsers may recognize this historical form but must never
-serialize it into a new Attachment Sidecar.
+No current parser recognizes this form, and nothing may serialize it into a new
+Attachment Sidecar.
 
 Example:
 
@@ -281,23 +277,23 @@ Canonical extraction form:
 <!--\s*(?P<block_type>pdf-block|excel-block)\s+id="(?P<id>[^"]+)"\s+src="(?P<src>[^"]+)"(?P<attrs>.*?)\s*-->
 ```
 
-Read-only recovery implementations may use language-specific regexes or an HTML
-attribute parser, but they must recognize this historical form equivalently.
+It is recorded for anyone reading old bytes outside doXmind; the product itself
+no longer extracts placeholders.
 
 ## Historical Block Type Vocabulary
 
 | `block_type`                      | Historical category | Historical state location | Current handling                                   |
 | --------------------------------- | ------------------- | ------------------------- | -------------------------------------------------- |
-| `pdf-block`                       | External reference  | `extras.blocks.<id>`      | Zero-write attachment recovery only                |
-| `excel-block`                     | External reference  | `extras.blocks.<id>`      | Zero-write attachment recovery only                |
+| `pdf-block`                       | External reference  | `extras.blocks.<id>`      | Not read; preserved on disk only                   |
+| `excel-block`                     | External reference  | `extras.blocks.<id>`      | Not read; preserved on disk only                   |
 | `mermaid`, `callout`, `math`      | Self-contained      | None                      | Native Markdown/source rendering; no Sidecar state |
-| `toggle`, `page-link`, `database` | Historical custom   | Shape-dependent           | Raw Markdown + byte-exact Page recovery report     |
+| `toggle`, `page-link`, `database` | Historical custom   | Shape-dependent           | Raw Markdown; Sidecar bytes preserved, not read    |
 
 Self-contained syntax lives entirely in Markdown. Historical Sidecar `html` may
 contain a cached rendering, but current Page behavior does not read it.
-PAGELEG-1 preserves deprecated `database` payload bytes in an explicit report.
-Migration into portable Page collections remains future work and does not
-justify restoring a Sidecar reader, writer, or DatabaseBlock UI.
+Deprecated `database` payload bytes survive untouched on disk. Migration into
+portable Page collections remains future work and does not justify restoring a
+Sidecar reader, writer, or DatabaseBlock UI.
 
 ## Renderer Invisibility
 

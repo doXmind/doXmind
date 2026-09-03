@@ -1,4 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
@@ -268,6 +270,39 @@ describe("rendered grid", () => {
     expect(columnHandle.closest(".absolute")).toHaveStyle({ left: "50%", top: "-0.5px" });
     // Mid-row, on the table's left border line.
     expect(rowHandle.closest(".absolute")).toHaveStyle({ top: "50%", left: "-0.5px" });
+  });
+
+  /**
+   * The box `translate(-50%, -50%)` centres has to be the pill's box.
+   *
+   * `DropdownMenu` wraps its trigger in an `inline-block`, so the flex item inside the positioned
+   * wrapper is a line box rather than the 9px pill. Measured in the packaged app at the Page's 28px
+   * line-height, the wrapper was 28px tall and the transform lifted it 14px instead of 4.5: the
+   * column pill drew at y 138.5-147.5 in source, but 128.5-137.5 in fact, against a header cell
+   * whose top edge is 142.5 — the whole pill floated 5px clear of the table. Travelling up to it,
+   * the pointer crossed a strip belonging to neither cell nor pill, left the `<table>`, and
+   * `onPointerLeave` cleared `hovered`: the pill went `opacity: 0; pointer-events: none` before the
+   * pointer arrived, so it could not be pressed at all. The row pill sat 3px off its row's centre
+   * from the same cause. jsdom lays out no tables, so what is pinned is the mechanism the
+   * measurement proved. It is the same wrapper, and the same fix, as the block gutter's grip.
+   */
+  it("keeps a handle's wrapper out of the rule that gives a cell's content its height", () => {
+    const { container } = renderGrid(ALIGNED);
+
+    for (const handle of container.querySelectorAll<HTMLElement>("[data-axis-handle]")) {
+      const positioned = handle.closest(".absolute") as HTMLElement;
+      expect(positioned.tagName).toBe("SPAN");
+      expect(positioned.hasAttribute("data-axis-anchor")).toBe(true);
+    }
+
+    // The other half of the pair, which jsdom cannot compute: the stylesheet has to exclude on the
+    // attribute, and go on giving a real cell's content its line of height.
+    const css = readFileSync(resolve(process.cwd(), "src/app/styles/editor.css"), "utf8");
+    const rule = css.match(/\.markdown-page th > span([^{]*)\{([^}]*)\}/);
+    expect(rule?.[1], "the cell-content rule excludes the handle wrapper").toContain(
+      ":not([data-axis-anchor])"
+    );
+    expect(rule?.[2]).toContain("min-height: 1lh");
   });
 
   it("hides the handles until the Block is active, rather than showing an inert one", () => {
