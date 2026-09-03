@@ -70,19 +70,11 @@ test("filters and drives the Slash menu entirely from the keyboard", async ({ pa
   await page.keyboard.type("Acceptance heading");
   await expectSource(slashPath, "## Acceptance heading\n\nBeta\n\nGamma\n");
 
-  await page.getByText("Beta", { exact: true }).click();
-  editor = page.locator("[data-native-block-editor]");
-  await editor.fill("/kanban");
-  const boardMenu = page.getByRole("listbox", { name: "Block commands" });
-  await expect(boardMenu.getByRole("option")).toHaveCount(1);
-  await expect(boardMenu.getByRole("option", { name: /Collection board/ })).toHaveAttribute(
-    "aria-selected",
-    "true"
-  );
-  await page.keyboard.press("Tab");
-  await expect
-    .poll(() => readFile(slashPath, "utf8"))
-    .toContain('```doxmind-collection\n{\n  "version": 2,\n  "view": "board"');
+  // The Collection half of this test is gone with the feature: the block set was trimmed to what
+  // Typora writes, which removed the Collection, Callout, Toggle, Embed and Wiki link commands, and
+  // `doxmind-collection` is no longer a shape this editor produces. What is left below is the same
+  // gesture on a command that still exists — a query the menu answers, and Escape leaving the typed
+  // text in the file untouched.
 
   await page.getByText("Gamma", { exact: true }).click();
   editor = page.locator("[data-native-block-editor]");
