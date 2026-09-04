@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/readme/banner-dark.png" />
-    <img src="docs/readme/banner-light.png" width="900" alt="doXmind — a fully local, Markdown-native editor" />
-  </picture>
+  <img src="docs/readme/banner-light.png" width="900" alt="doXmind — a fully local, Markdown-native editor" />
 </p>
 
 A fully local, Markdown-native editor. One Page is one `.md` file on your disk,
@@ -10,10 +7,7 @@ and that file is the whole document — no database, no account, no cloud sync, 
 telemetry.
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/readme/doxmind-overview-dark.png" />
-    <img src="docs/readme/doxmind-overview.png" width="1100" alt="doXmind editing an ordinary Markdown file" />
-  </picture>
+  <img src="docs/readme/doxmind-overview.png" width="1100" alt="doXmind editing an ordinary Markdown file" />
 </p>
 
 [doxmind.com](https://doxmind.com/) ·
