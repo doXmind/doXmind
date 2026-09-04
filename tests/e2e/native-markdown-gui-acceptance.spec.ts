@@ -206,7 +206,7 @@ test("operates source-backed Blocks through direct manipulation", async ({ page 
   await expect(gutter).toHaveCSS("opacity", "0");
   await headingRow.hover();
   await expect(gutter).toHaveCSS("opacity", "1");
-  await expect(gutter.getByRole("button", { name: "Add block" })).toBeVisible();
+  await expect(gutter.getByRole("button", { name: "Insert block" })).toBeVisible();
   await gutter.getByRole("button", { name: "Block actions" }).click();
 
   const actionsMenu = page.getByRole("menu", { name: "Block actions menu" });

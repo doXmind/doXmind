@@ -46,6 +46,11 @@ import type {
   MarkdownSettableBlockKind,
 } from "@/editor/markdown-block/markdown-block-document";
 import { Tooltip } from "@/components/ui/tooltip";
+import { SlashCommandIcon } from "@/editor/markdown-block/slash-command-icon";
+import {
+  searchMarkdownSlashCommands,
+  type MarkdownSlashCommandId,
+} from "@/editor/markdown-block/slash-commands";
 import { cn } from "@/lib/utils";
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
@@ -116,6 +121,12 @@ export interface BlockGutterControlsProps {
   onMenuOpenChange?: (open: boolean) => void;
   /** `above` when the user Option/Alt-clicked, matching Notion's "⌥-click to add above". */
   onAdd: (placement: "below" | "above") => void;
+  /**
+   * A Block kind chosen from the insert menu.
+   *
+   * Separate from `onAdd`, which still serves the ⌥-click that inserts a blank Block without asking.
+   */
+  onInsertKind: (kind: MarkdownSlashCommandId, placement: "below" | "above") => void;
   onTurnInto: (kind: MarkdownSettableBlockKind, level?: HeadingLevel) => void;
   onCopyMarkdown: () => void | Promise<void>;
   onDuplicate: () => void;
@@ -141,6 +152,7 @@ export function BlockGutterControls({
   describedBy,
   onMenuOpenChange,
   onAdd,
+  onInsertKind,
   onTurnInto,
   onCopyMarkdown,
   onDuplicate,
@@ -153,7 +165,22 @@ export function BlockGutterControls({
   onDragEnd,
 }: BlockGutterControlsProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [insertOpen, setInsertOpen] = useState(false);
+  const [insertQuery, setInsertQuery] = useState("");
+  const insertSearchRef = useRef<HTMLInputElement>(null);
+  const addRef = useRef<HTMLButtonElement>(null);
+  /**
+   * Whether the press that is opening the menu was an ⌥-click.
+   *
+   * `DropdownMenuTrigger` clones its child and REPLACES `onClick`, so the button cannot keep a
+   * handler of its own to intercept the modifier; the press is recorded in the capture phase and
+   * answered where the menu would otherwise open.
+   */
+  const altPressRef = useRef(false);
   const [query, setQuery] = useState("");
+  // The same fourteen commands, ranked the same way, as the caret-anchored slash panel — including
+  // its pinyin and acronym matching, which comes free with the search function.
+  const insertCommands = useMemo(() => searchMarkdownSlashCommands(insertQuery), [insertQuery]);
   const searchRef = useRef<HTMLInputElement>(null);
   const gripRef = useRef<HTMLButtonElement>(null);
   const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -213,6 +240,35 @@ export function BlockGutterControls({
     return () => window.clearTimeout(timer);
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!insertOpen) return;
+    const timer = window.setTimeout(() => insertSearchRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [insertOpen]);
+
+  const handleInsertOpenChange = (open: boolean) => {
+    if (open && altPressRef.current) {
+      // ⌥-click keeps the meaning the tooltip has promised since before the menu existed: a blank
+      // Block above, with nothing to choose. The menu never opens.
+      altPressRef.current = false;
+      onAdd("above");
+      return;
+    }
+    setInsertOpen(open);
+    onMenuOpenChange?.(open);
+    if (!open) {
+      setInsertQuery("");
+      // Nothing was inserted, so nothing re-rendered the row and no surface took the caret; without
+      // this the focus the trigger gave up lands on <body> and the next keystroke is lost.
+      window.setTimeout(() => addRef.current?.focus({ preventScroll: true }), 0);
+    }
+  };
+
+  const runInsert = (kind: MarkdownSlashCommandId) => {
+    handleInsertOpenChange(false);
+    onInsertKind(kind, "below");
+  };
+
   const handleOpenChange = (open: boolean) => {
     setMenuOpen(open);
     onMenuOpenChange?.(open);
@@ -235,29 +291,96 @@ export function BlockGutterControls({
       // fixture. With no leading to add, the line box is the 24px button and both resolve alike.
       className={cn("flex items-center gap-0.5 leading-[0]", className)}
     >
-      <Tooltip
-        side="top"
-        delayDuration={320}
-        content={
-          <span className="block text-center">
-            Click to add below
-            <span className="block opacity-60">⌥-click to add above</span>
-          </span>
-        }
-      >
-        <button
-          type="button"
-          aria-label="Add block"
-          aria-describedby={describedBy}
-          tabIndex={buttonTabIndex}
-          // 20ms hover feedback, measured from Notion. Tailwind's default 150ms `transition-colors`
-          // makes a pointer-tracking control feel like it is lagging behind the cursor.
-          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          onClick={(event) => onAdd(event.altKey ? "above" : "below")}
+      <DropdownMenu open={insertOpen} onOpenChange={handleInsertOpenChange}>
+        <Tooltip
+          side="top"
+          delayDuration={320}
+          content={
+            <span className="block text-center">
+              Click to insert below
+              <span className="block opacity-60">⌥-click to add a blank Block above</span>
+            </span>
+          }
         >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </Tooltip>
+          <DropdownMenuTrigger asChild>
+            <button
+              ref={addRef}
+              type="button"
+              aria-label="Insert block"
+              aria-describedby={describedBy}
+              tabIndex={buttonTabIndex}
+              // 20ms hover feedback, measured from Notion. Tailwind's default 150ms
+              // `transition-colors` makes a pointer-tracking control feel like it is lagging behind
+              // the cursor.
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors duration-[20ms] ease-in hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-[state=open]:bg-muted data-[state=open]:text-foreground"
+              // ⌥-click keeps its old meaning — a blank Block above, with nothing to choose — so the
+              // gesture that was documented in this tooltip before the menu existed still works.
+              // The trigger's own click opens the menu; this runs first and suppresses it.
+              onPointerDownCapture={(event) => {
+                altPressRef.current = event.altKey;
+              }}
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+        </Tooltip>
+        <DropdownMenuContent
+          align="start"
+          sideOffset={6}
+          aria-label="Insert block"
+          // The slash panel's measured geometry, because it is the same list: 314px wide and no
+          // taller than 434px (docs/BLOCK_UX_REFERENCE.md). Opening two panels over one command set
+          // at two different sizes is how a product starts looking assembled rather than designed.
+          className={`max-h-[min(434px,calc(100vh-2rem))] w-[314px] ${MENU_PANEL_CLASS}`}
+        >
+          <div className="p-1">
+            <div className="flex h-9 items-center gap-2 rounded-lg border border-border/80 bg-background/70 px-2.5 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring/25">
+              <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <input
+                ref={insertSearchRef}
+                type="search"
+                aria-label="Search blocks"
+                placeholder="Search blocks…"
+                value={insertQuery}
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
+                onChange={(event) => setInsertQuery(event.target.value)}
+                onMouseDown={(event) => event.stopPropagation()}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") handleInsertOpenChange(false);
+                  if (event.key === "Enter" && insertCommands[0]) {
+                    event.preventDefault();
+                    runInsert(insertCommands[0].id);
+                  }
+                }}
+              />
+            </div>
+          </div>
+          {insertCommands.length ? (
+            insertCommands.map((command) => (
+              <DropdownMenuItem
+                key={command.id}
+                aria-label={command.title}
+                className="gap-2.5"
+                onClick={() => runInsert(command.id)}
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
+                  <SlashCommandIcon name={command.icon} />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-left">{command.title}</span>
+                {command.shortcut ? (
+                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                    {command.shortcut}
+                  </span>
+                ) : null}
+              </DropdownMenuItem>
+            ))
+          ) : (
+            <p className="px-3 py-5 text-center text-xs text-muted-foreground">
+              No matching blocks
+            </p>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
       <DropdownMenu open={menuOpen} onOpenChange={handleOpenChange}>
         <Tooltip
           side="top"

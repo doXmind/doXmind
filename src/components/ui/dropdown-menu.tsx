@@ -441,6 +441,14 @@ export function DropdownMenuContent({
         if ((event.target as Element).closest?.("[data-dropdown-sub-content]")) {
           return;
         }
+        // Nor on the trigger itself, which is otherwise the one control in the app that cannot be
+        // un-pressed: this fires on `mousedown` and closes, and the trigger's own `click` then reads
+        // an already-false `open` and opens it straight back. Measured against the block gutter's
+        // grip — a second press left the menu on screen — so pressing the button again looked like a
+        // menu that was stuck rather than one that toggles.
+        if (triggerRef.current?.contains(event.target as Node)) {
+          return;
+        }
         setOpen(false);
       }
     };
@@ -452,7 +460,7 @@ export function DropdownMenuContent({
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [open, setOpen]);
+  }, [open, setOpen, triggerRef]);
 
   // An open sub-panel owns the keyboard: it walks its own rows, and it answers Escape by closing
   // only itself. Stepping into "Turn into" and changing your mind must cost one level, not the
