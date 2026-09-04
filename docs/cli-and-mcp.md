@@ -66,7 +66,7 @@ Set `DOXMIND_CODESIGN_IDENTITY` to code-sign the macOS binaries.
 
 ## CLI
 
-```bash
+````bash
 doxmind ls                      # list workspace documents
 doxmind search "TODO"           # full-text search markdown
 doxmind read notes/idea.md            # print markdown (--html / --json)
@@ -75,13 +75,19 @@ doxmind edit notes/idea.md --content "# Idea\n\nrewritten"   # or pipe via stdin
 doxmind export notes/idea.md --to html --out idea.html
 doxmind export notes/idea.md --to md --out idea-copy.md
 doxmind convert spec.pdf              # parse PDF -> JSON blocks
-doxmind mv a.md sub/a.md              # move/rename (prompts unless --yes)
+doxmind mv notes/spec.pdf notes/report.pdf   # move/rename an Attachment (prompts unless --yes)
+
+...and, after the closing ``` of the example block, add:
+
+`mv` moves Attachments only. A Markdown Page or folder target fails closed with
+`Page rename/move must use workspace_relocate_page` — relocating a Page needs
+the desktop's link-impact preview and transactional repair.
 doxmind rm old.md                     # -> system Trash (prompts unless --yes)
 doxmind mkdir drafts
 doxmind import ~/Downloads/report.pdf --dest inbox
 doxmind index rebuild
 doxmind --root /path/to/workspace ls  # override the workspace root
-```
+````
 
 `doxmind export` supports only `html` and `md` (default: `html`). The `md`
 result is a byte-for-byte copy of the complete Page file, including BOM,
@@ -93,16 +99,21 @@ flow; neither the CLI nor MCP exports PDF.
 
 ## MCP server
 
-`doxmind-mcp` speaks MCP over stdio and exposes these tools: `list_workspace`,
-`search_documents`, `read_document`, `read_pdf`, `read_excel`,
-`export_document`, `create_document`, `edit_document`, `rename_document`,
-`move_document`, `delete_document` (→ system Trash), `create_folder`,
-`import_document`.
+`doxmind-mcp` speaks MCP over stdio. Its Markdown Page tools are
+`list_workspace`, `search_documents`, `read_document`, `create_document`,
+`edit_document`, `export_document`, `rename_document`, `move_document`,
+`delete_document` (→ system Trash), `create_folder`, and `import_document`.
+`rename_document` and `move_document` take Attachments only — a Markdown Page
+or folder target fails closed, because relocating one needs the desktop's
+link-impact preview. Two further tools, `read_pdf` and `read_excel`, parse a
+workspace PDF or spreadsheet read-only into JSON for the calling agent;
+doXmind never edits those files.
 
 `export_document` has the same `html`/`md`-only contract and defaults to HTML.
 
 It also exposes resources: `docs://list` (a listing of every document with its
-stable id) and `doc:///<id>` (a document's markdown content, addressed by id).
+stable id) and `doc:///<id>` (a Page's Markdown source, addressed by id; a
+non-Markdown Attachment returns a one-line read-only note instead of content).
 
 ### Claude Code
 

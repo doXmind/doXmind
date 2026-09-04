@@ -59,16 +59,11 @@ When a folder is open, **File → New Page** (`Cmd/Ctrl+N`) creates a real Markd
 
 ## 3. Import files into a workspace
 
-External drag import accepts exactly:
-
-- `.md` and `.markdown`
-- `.pdf`
-- `.xlsx`
-- `.csv`
+External drag import accepts exactly `.md` and `.markdown`. Anything else is refused with "Only .md and .markdown are supported" and is never copied.
 
 Import copies the file into the chosen workspace folder and leaves the external source unchanged. When the name already exists, choose **Replace**, **Keep both**, or **Skip**.
 
-`.html` and `.htm` files already present inside an opened folder are shown as read-only Attachments, but HTML is not in the external drag-import whitelist. `.xlsm` can remain visible as an existing spreadsheet Attachment but is likewise not accepted by that import path.
+`.pdf`, `.xlsx`, `.xlsm`, `.csv`, `.html`, and `.htm` files that are already inside an opened folder show up as read-only Attachments, but none of them can be dragged in from outside.
 
 DOCX and PPTX are not Pages, stable workspace imports, or supported inputs to the current conversion tools. Optional standalone Python tooling can parse explicitly selected PDF and spreadsheet sources read-only; that tooling is separate from the packaged desktop app and never changes the original source implicitly.
 
@@ -160,7 +155,7 @@ Choose **Today's Daily Note** from the workspace home or command palette. doXmin
 
 ### Page Collections
 
-A Collection is a strict fenced JSON definition inside any Page. Rows, cards, and events are ordinary Markdown Pages selected from the current workspace catalog. Version 1 Table definitions remain supported; version 2 adds Table, Board, and Calendar views plus optional computed properties. The slash menu can insert a valid starter for each view.
+A Collection is a strict fenced JSON definition inside any Page. Rows, cards, and events are ordinary Markdown Pages selected from the current workspace catalog. Version 1 Table definitions remain supported; version 2 adds Table, Board, and Calendar views plus optional computed properties. A definition is written by hand inside the fence — the slash menu no longer inserts a starter for one.
 
 For example, a project may carry only portable source properties:
 
@@ -241,8 +236,6 @@ Resize, crop, deletion, remote-image fetching, and binary image editing are not 
 - A source Block can end with an Obsidian-compatible anchor such as `Requirements text. ^requirements`. A standalone `![[Spec#^requirements]]` embeds the unique matching Block without rewriting the target Page. Portable ids start with an ASCII letter or digit and continue with letters, digits, `_`, or `-`; anchors inside fenced code, Mermaid, or block math are not candidates. Missing or duplicate ids fail closed.
 - Activate any embed Block to edit its original expression. Ambiguous or missing targets/fragments, cycles, and depth limits stay explicit instead of guessing.
 
-Backlinks, unresolved outgoing links, and unlinked mentions rebuild from Page files in the Page context. **Graph** rebuilds the same resolved-link index without writing the workspace, centers the active Page, shows a bounded deterministic neighborhood, and opens a Page when you activate its node. Refresh after external file changes when needed.
-
 ### Save and external edits
 
 Autosave writes after a short pause. `Cmd/Ctrl+S` saves immediately.
@@ -251,27 +244,7 @@ Save atomically writes only the Page's `.md`/`.markdown` file. It does not creat
 
 The storage layer reads the complete raw file, separates frontmatter from the Markdown body, and gives the body to the native Block editor. Opening a file does not modify it merely because it lacks a frontmatter id. Unknown frontmatter and untouched body source remain preserved when a supported edit patches another span.
 
-Before each ordinary save, doXmind keeps a byte-for-byte copy of the file as it
-was, so an accidental overwrite has something to come back to. These snapshots
-live in app data, never in your folder, and **History** in the Page's top bar
-lists them. Restoring one replaces the body and leaves the Page's current
-properties in place; like any other edit it loses to a concurrent external
-change rather than overwriting it.
-
 You can edit the same file in another application. If the on-disk revision changes while doXmind holds an older revision, the app stops the stale write instead of silently overwriting the external change. Reload/reopen the Page, review the external edit, and then continue.
-
-### Two Pages side by side
-
-**Split right** in the command palette, or on a tab's right-click menu, puts a
-second Page beside the first. Each pane is a full editor with its own saving and
-undo; a thin bar along the top of one pane marks the one your next keystroke,
-`Cmd/Ctrl+S` or PDF export will reach. Click a pane, or run **Focus the other
-pane**, to move to it.
-
-Drag a tab onto a pane to open it there. A Page is only ever in one pane at a
-time: dropping it onto the pane already showing it does nothing, and dropping
-the other pane's Page swaps the two. Drag the divider to resize, double-click it
-to even the panes up, and run **Close the other pane** to go back to one.
 
 ## 6. Copy the complete Markdown source or export a Page to PDF
 
