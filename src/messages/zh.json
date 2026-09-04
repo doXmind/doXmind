@@ -48,7 +48,8 @@
     "switchToDark": "切换到深色模式",
     "enableHighContrast": "开启高对比度",
     "disableHighContrast": "关闭高对比度",
-    "keyboardShortcuts": "键盘快捷键"
+    "keyboardShortcuts": "键盘快捷键",
+    "searchAllFiles": "在所有 Page 中搜索“{query}”"
   },
   "commands": {
     "newPage": "新建页面",

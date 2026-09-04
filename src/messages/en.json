@@ -48,7 +48,8 @@
     "switchToDark": "Switch to Dark Mode",
     "enableHighContrast": "Enable High Contrast",
     "disableHighContrast": "Disable High Contrast",
-    "keyboardShortcuts": "Keyboard Shortcuts"
+    "keyboardShortcuts": "Keyboard Shortcuts",
+    "searchAllFiles": "Search all Pages for “{query}”"
   },
   "commands": {
     "newPage": "New Page",
