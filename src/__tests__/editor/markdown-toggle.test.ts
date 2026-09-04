@@ -1,17 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  markdownToggleTemplate,
-  parseMarkdownToggle,
-} from "@/editor/markdown-block/markdown-toggle";
+import { parseMarkdownToggle } from "@/editor/markdown-block/markdown-toggle";
 
 describe("portable Markdown toggle", () => {
   it("uses an ordinary HTML details block and preserves nested Markdown", () => {
-    const source = markdownToggleTemplate("\r\n");
+    // The literal a legacy file holds. It came from `markdownToggleTemplate`, the insert template
+    // for the `/toggle` slash command; that command went with the trim to Typora parity, so the
+    // template had no product caller left. `parseMarkdownToggle` below is what still matters —
+    // files written before the trim still contain these blocks.
+    const source =
+      "<details>\r\n<summary>Toggle</summary>\r\n\r\nWrite something…\r\n\r\n</details>";
 
-    expect(source).toBe(
-      "<details>\r\n<summary>Toggle</summary>\r\n\r\nWrite something…\r\n\r\n</details>"
-    );
     expect(parseMarkdownToggle(source)).toEqual({
       open: false,
       summary: "Toggle",

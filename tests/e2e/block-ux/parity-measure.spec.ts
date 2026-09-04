@@ -23,6 +23,15 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { openPage } from "./harness";
 
+// One worker per file is what made this suite 38 minutes: `fullyParallel: false` in
+// playwright.config.ts keeps a file's tests serial, so history.spec.ts alone held a worker for 18.4
+// minutes while the other idled — Playwright's own run summary says "Consider running tests from
+// slow files in parallel." Every test here opens its own `mkdtemp` workspace through `openPage`, so
+// there is no shared state to serialise for. The specs that DO share a fixed directory
+// (browsing-runtime, import-conflict, knowledge-editor-gui-acceptance, markdown-autosave-focus,
+// native-markdown-gui-acceptance) are deliberately not given this.
+test.describe.configure({ mode: "parallel" });
+
 const REPORT = process.env.PARITY_REPORT ?? "/tmp/doxmind-parity-report.json";
 
 /** Every kind the gutter has to align against, in the order the fixture writes them. */

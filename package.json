@@ -36,7 +36,6 @@
     "prepare": "husky",
     "server": "cd server && python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000",
     "dev:all": "node scripts/dev.mjs",
-    "gen:outline-stress": "node scripts/generate-outline-stress-md.mjs",
     "electron": "electron .",
     "electron:test-native": "node --test scripts/tests/*.test.mjs",
     "electron:smoke": "node scripts/electron-smoke.mjs",

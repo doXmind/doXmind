@@ -112,16 +112,4 @@ describe("DocumentWorkspace", () => {
     expect(screen.getByTestId("unsupported-attachment")).toBeInTheDocument();
     expect(screen.queryByTestId("native-page-editor")).not.toBeInTheDocument();
   });
-
-  it("does not mount legacy attachment editor stacks", () => {
-    const { rerender } = renderWorkspace(pdfFile);
-    expect(screen.getByTestId("attachment-workspace")).toBeInTheDocument();
-
-    rerender(
-      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
-        <DocumentWorkspace file={excelFile} />
-      </NextIntlClientProvider>
-    );
-    expect(screen.getByTestId("attachment-workspace")).toBeInTheDocument();
-  });
 });

@@ -15,7 +15,10 @@ export default defineConfig({
   },
   use: {
     baseURL,
-    trace: "retain-on-failure",
+    // Off in CI, where nothing uploads the artifact: the workflow has no `upload-artifact` step, so
+    // every action was being recorded and then discarded with the runner. Kept locally, where the
+    // trace viewer is the reason to have it.
+    trace: process.env.CI ? "off" : "retain-on-failure",
   },
   projects: [
     {

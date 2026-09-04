@@ -68,28 +68,6 @@ export function rowWith(page: Page, text: string): Locator {
   return rows(page).filter({ hasText: text }).first();
 }
 
-export async function rowIndexWith(page: Page, text: string): Promise<number> {
-  return page.evaluate((needle) => {
-    const all = [...document.querySelectorAll("[data-native-block-row]")];
-    return all.findIndex((row) => (row.textContent ?? "").includes(needle));
-  }, text);
-}
-
-/**
- * Release the caret and any Block selection.
- *
- * Presses the editor's own right-hand margin. Not the left margin: rows carry `margin-left: -4rem`
- * so they span it, and not the sidebar either, which would move focus out of the editor entirely and
- * make the next assertion about a different surface.
- */
-/**
- * The Block's height once it has stopped changing on its own.
- *
- * Equations typeset asynchronously, so a height read the instant a Page opens can be the height of
- * the un-typeset source. Comparing that against a later read makes activation look like it resized
- * the Block when all that happened was KaTeX finishing: the equation height test failed once in a
- * full run and passed every time it was run alone.
- */
 export async function settledHeight(row: Locator): Promise<number> {
   let previous = -1;
   for (let attempt = 0; attempt < 20; attempt += 1) {

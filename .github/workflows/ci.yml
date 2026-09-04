@@ -43,8 +43,14 @@ jobs:
       - run: npm run electron:smoke
 
   e2e:
-    name: Native Markdown editor (Chromium E2E)
+    name: Native Markdown editor (Chromium E2E) ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
+    # Four runners over a suite that is 38 minutes on one. The tests themselves are the whole job —
+    # setup measured 55s — so the only lever is running fewer of them per runner.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -56,8 +62,10 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: npm ci
       - run: python -m pip install -r server/requirements.txt
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      # `--only-shell` fetches the headless shell instead of the full headed Chromium; the suite
+      # never runs headed. `--with-deps` stays — the system libraries are still needed.
+      - run: npx playwright install --with-deps --only-shell chromium
+      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/4
         env:
           DOXMIND_PYTHON: python
 

@@ -609,31 +609,6 @@ export function DropdownMenuItem({
   );
 }
 
-/**
- * Joins a row a menu renders for itself — a raw `<button role="menuitem">` whose click navigates
- * inside the open menu instead of closing it — to the same roving focus ring `DropdownMenuItem`
- * uses. Without the `data-dropdown-item` marker and the focus effect, `DropdownMenuContent`'s
- * arrow-key walk reads straight past the row and a keyboard user can never reach it.
- *
- * Must be called from a component rendered inside `DropdownMenuContent`, not from the component
- * that renders the `DropdownMenu` itself — the shared focus lives in the menu's context.
- */
-export function useDropdownMenuItemFocus(itemId: string) {
-  const { focusedId } = React.useContext(DropdownMenuContext);
-  const ref = React.useRef<HTMLButtonElement>(null);
-  const isFocused = focusedId === itemId;
-
-  React.useEffect(() => {
-    if (isFocused) ref.current?.focus();
-  }, [isFocused]);
-
-  return {
-    ref,
-    "data-dropdown-item": itemId,
-    tabIndex: isFocused ? 0 : -1,
-  } as const;
-}
-
 export function DropdownMenuSeparator() {
   // -mx-1.5 matches MENU_PANEL_CLASS's 6px padding so the rule spans the panel.
   return <div role="separator" className="-mx-1.5 my-1 h-px bg-muted" />;

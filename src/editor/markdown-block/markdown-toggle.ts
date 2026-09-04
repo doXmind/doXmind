@@ -39,12 +39,6 @@ export function parseMarkdownToggle(source: string): MarkdownToggle | null {
   };
 }
 
-export function markdownToggleTemplate(lineEnding: "\r\n" | "\n" | "\r" = "\n"): string {
-  return ["<details>", "<summary>Toggle</summary>", "", "Write something…", "", "</details>"].join(
-    lineEnding
-  );
-}
-
 export function isMarkdownToggleOpeningLine(line: string): boolean {
   return DETAILS_OPENING.test(line);
 }
