@@ -8,6 +8,7 @@ telemetry.
   <img src="docs/readme/doxmind-overview.png" width="1100" alt="doXmind editing an ordinary Markdown file" />
 </p>
 
+[doxmind.com](https://doxmind.com/) ·
 [Download the latest release](https://github.com/doXmind/releases/releases/latest) ·
 [User guide](docs/USER_GUIDE.md) · [Product direction](docs/PRODUCT_DIRECTION.md)
 
