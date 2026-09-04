@@ -141,17 +141,17 @@ product:
   is for when _nothing else is lighting up to take over_, and while the Page holds focus something
   always is. Pinned by `tests/e2e/block-ux/caret-gutter-continuity.spec.ts`, which fails with
   `0.11s` against the rule removed.
-- **"Hover states are 20ms" held everywhere it was a hover state**, but two emoji-picker buttons
-  carried a bare `transition-colors` and so Tailwind's 150ms default; both now carry `20ms`. The
-  three other 150ms/200ms sites an audit flagged — `switch.tsx`, `input.tsx`, `.skip-to-content` —
+- **"Hover states are 20ms" held everywhere it was a hover state.** The two exceptions that audit
+  found were emoji-picker buttons, and that component has since been deleted with the rest of the
+  Page-icon surface. The three remaining 150ms/200ms sites it flagged — `switch.tsx`, `input.tsx`, `.skip-to-content` —
   are not hover states: the first two transition a focus ring and a checked state, and the third is
   the skip link sliding into view, where the animation is the feature. The sentence means hover, not
   every transition in the product.
 - **"Only menus get an entry animation" is a claim about menus, not about the keyframe.**
   `animate-in fade-in-0 zoom-in-95` is also used by the tooltip, the popover primitive, the command
   palette and the quick switcher — all overlays, none caret-anchored, so none of them contradict the
-  rule this sentence exists to state. The real gap is the other way: two menus (the sidebar folder
-  and empty-area context menus) hard-cut instead of animating in. The slash panel's omission is
+  rule this sentence exists to state. The gap this once named — the sidebar folder and
+  empty-area context menus hard-cutting into view — is closed; both now carry the same keyframe. The slash panel's omission is
   deliberate and correct — it _is_ caret-anchored.
 
 ## Local trap worth knowing
@@ -329,7 +329,7 @@ indicator or ghost node afterwards.
   with no code loads none of it. Output is reduced to `{ text, className }` tokens and rendered as
   React elements — nothing derived from a document reaches the DOM as markup (ADR-0011). An unknown
   language falls back to plain text rather than deriving a module path from the document. The
-  _editing_ surface stays plain; only the rendered Block is highlighted.
+  _editing_ surface is highlighted too: the `<pre>` is mounted in both states and never unmounted, and the editing surface is a transparent textarea laid exactly over it, so the glyphs the user reads are always the rendered ones.
 - Callout type icon and accent per `[!TYPE]`, matched on the editing surface so activation does not
   repaint it.
 - Table cells carry their own source offsets, so clicking a cell puts the caret in that cell; Tab
@@ -337,12 +337,9 @@ indicator or ghost node afterwards.
 
 ### Known gaps, measured not guessed
 
-- The active code editing surface is a plain textarea — highlighting applies to the rendered Block
-  only. Highlighting while editing needs a token-aware editing surface, which is a much larger
-  change than a preview.
-- Table row/column _insertion_ has no hover control; Tab-at-the-end is the only way to add a row, and
-  there is no way to add a column.
 - `isMarkdownLinkOpaqueBlockSource` judges a span by its raw text alone, so a genuine nested list
-  item indented 4+ columns is treated as indented code and its wiki links are masked out of the
-  knowledge index. Pre-existing; the fix belongs at the two call sites, which should skip the check
-  when the span has a `listDepth`.
+  item indented 4+ columns is treated as indented code and its wiki links are masked out of link
+  relocation: rename or move a Page and the links inside such an item are left pointing at the old
+  path. Pre-existing; the fix belongs at the two call sites — `page-link-relocation.ts`, which the
+  rename and move paths run, and `knowledge-index.ts`, whose `buildKnowledgeIndex` no component
+  calls any more — which should skip the check when the span has a `listDepth`.

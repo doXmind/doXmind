@@ -23,7 +23,7 @@ Design principles:
 2. If there is a sensible default and no real disagreement, ship the default — don't add a toggle.
 3. If the choice is per-document or per-cell, it doesn't belong in app settings.
 4. Don't expose paths, watchers, or internals just because they exist.
-5. local-first is a stance, not a configuration surface — express it in About, don't add a "block network" toggle for an app that makes no requests.
+5. local-first is a stance, not a configuration surface — express it in About, don't add a "block network" toggle for an app whose only outbound request is the update check the user starts.
 
 ---
 
@@ -39,9 +39,9 @@ General  ·  Appearance  ·  Editor  ·  Workspace  ·  Backup & Privacy  ·  Ab
 
 ### Language
 
-| Item             | Control                     | Default       | Status      |
-| ---------------- | --------------------------- | ------------- | ----------- |
-| Display language | Select (English / 简体中文) | follow system | `[partial]` |
+| Item             | Control                   | Default | Status                                      |
+| ---------------- | ------------------------- | ------- | ------------------------------------------- |
+| Display language | Segmented: English / 中文 | English | `[done]` (in Appearance, not a General tab) |
 
 ### Startup
 
@@ -63,28 +63,28 @@ General  ·  Appearance  ·  Editor  ·  Workspace  ·  Backup & Privacy  ·  Ab
 
 ### Theme
 
-| Item        | Control                                                                              | Default | Status   |
-| ----------- | ------------------------------------------------------------------------------------ | ------- | -------- |
-| Mode        | Segmented: Light / Dark / System                                                     | System  | `[done]` |
-| Light theme | Theme grid (notion …)                                                                | notion  | `[done]` |
-| Dark theme  | Theme grid (dark / nord / forest / ocean / obsidian / cyberpunk / amethyst / carbon) | dark    | `[done]` |
+| Item        | Control                                                                                              | Default | Status   |
+| ----------- | ---------------------------------------------------------------------------------------------------- | ------- | -------- |
+| Mode        | Segmented: Light / Dark / System                                                                     | System  | `[done]` |
+| Light theme | Dropdown (doXmind / Notion / GitHub / VS Code / Atom One / Solarized / Tokyo / Catppuccin / Gruvbox) | doXmind | `[done]` |
+| Dark theme  | Dropdown (doXmind / Notion / GitHub / VS Code / Atom One / Solarized / Tokyo / Catppuccin / Gruvbox) | doXmind | `[done]` |
 
 ### Typography
 
-| Item                | Control                               | Default   | Status   |
-| ------------------- | ------------------------------------- | --------- | -------- |
-| UI font size        | Number (px, 12–18)                    | 14        | `[done]` |
-| Editor font size    | Number (px)                           | 16        | `[done]` |
-| Code font size      | Number (px)                           | 14        | `[done]` |
-| Editor font family  | Dropdown grouped Sans / Serif / Mono  | system-ui | `[done]` |
-| Editor line spacing | Segmented: Compact / Normal / Relaxed | Normal    | `[done]` |
+| Item         | Control            | Default | Status   |
+| ------------ | ------------------ | ------- | -------- |
+| UI font size | Number (px, 10–22) | 13      | `[done]` |
+
+| Code font size | Number (px, 10–22) | 12 | `[done]` |
+| Editor font family | Dropdown grouped Sans / Serif / Mono | system-ui | `[done]` |
+| Editor line spacing | Segmented: Compact / Normal / Relaxed | Normal | `[done]` |
 
 ### Behavior
 
-| Item                           | Control | Default | Status   |
-| ------------------------------ | ------- | ------- | -------- |
-| Use pointer cursors on buttons | Toggle  | off     | `[done]` |
-| Reset appearance to defaults   | Button  | —       | `[done]` |
+| Item | Control | Default | Status |
+| ---- | ------- | ------- | ------ |
+
+| Reset appearance to defaults | Button | — | `[partial]` (store action exists, no UI calls it) |
 
 ---
 
@@ -156,9 +156,9 @@ sufficient for inspection.
 
 ### Search
 
-| Item             | Control   | Default                            | Status  |
-| ---------------- | --------- | ---------------------------------- | ------- |
-| Excluded folders | Tag input | `.git`, `node_modules`, `.doxmind` | `[new]` |
+| Item             | Control                                                          | Default                                                                                                                       | Status   |
+| ---------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------- |
+| Excluded folders | Textarea, one folder name per line (path-shaped entries dropped) | empty — `.doxmind`, `.git`, `node_modules`, `target`, `.next`, `out`, `dist`, `build` are always skipped and are not editable | `[done]` |
 
 ---
 
@@ -174,10 +174,10 @@ sufficient for inspection.
 
 ### Trash
 
-| Item                        | Control                           | Default | Status                               |
-| --------------------------- | --------------------------------- | ------- | ------------------------------------ |
-| Auto-empty trash older than | Segmented: Never / 7d / 30d / 90d | Never   | `[new]`                              |
-| Manage trash                | Link — opens sidebar trash panel  | —       | `[new]` (replaces current Trash tab) |
+| Item                        | Control                           | Default | Status                                                                                                               |
+| --------------------------- | --------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------- |
+| Auto-empty trash older than | Segmented: Never / 7d / 30d / 90d | Never   | `[new]`                                                                                                              |
+| Manage trash                | —                                 | —       | Dropped. There is no in-app Trash: deletes go to the OS Trash via `shell.trashItem`, and recovery happens in Finder. |
 
 ### Privacy statement
 
@@ -189,17 +189,21 @@ sufficient for inspection.
 
 ## 6. About
 
-| Item                 | Content                                   | Status  |
-| -------------------- | ----------------------------------------- | ------- |
-| Logo + product name  | doXmind                                   | `[new]` |
-| Version              | `x.y.z`                                   | `[new]` |
-| Platform             | macOS x.y / Windows / Linux               | `[new]` |
-| Data directory       | `~/.doxmind` + Open in Finder + Copy path | `[new]` |
-| Log directory        | + Open in Finder                          | `[new]` |
-| GitHub               | Link                                      | `[new]` |
-| Report an issue      | Link                                      | `[new]` |
-| Third-party licenses | Modal / link                              | `[new]` |
-| Reset all settings   | Button (with strong confirmation)         | `[new]` |
+| Item               | Content                                                       | Status               |
+| ------------------ | ------------------------------------------------------------- | -------------------- |
+| Version            | `x.y.z`                                                       | `[done]`             |
+| Channel            | release channel                                               | `[done]`             |
+| Build              | build identifier                                              | `[done]`             |
+| Provided by        | publisher                                                     | `[done]`             |
+| Check for updates  | Button + status line; becomes "Restart to update" once staged | `[done]` `[desktop]` |
+| Privacy            | Modal — local-first, no sign-in/sync/telemetry/AI             | `[done]`             |
+| Acknowledgements   | Modal — third-party components                                | `[done]`             |
+| Platform           | macOS x.y / Windows / Linux                                   | `[new]`              |
+| Data directory     | `~/.doxmind` + Open in Finder + Copy path                     | `[new]`              |
+| Log directory      | + Open in Finder                                              | `[new]`              |
+| GitHub             | Link                                                          | `[new]`              |
+| Report an issue    | Link                                                          | `[new]`              |
+| Reset all settings | Button (with strong confirmation)                             | `[new]`              |
 
 ---
 
@@ -209,11 +213,11 @@ These looked plausible but fail one of the design principles above. Dropped, wit
 
 ### From General
 
-| Dropped                                                    | Why                                                                                                              |
-| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Confirm before deleting > N items (configurable threshold) | Always confirm destructive actions. A configurable threshold is theater.                                         |
-| Confirm before emptying trash (toggle)                     | Emptying trash should always confirm. Not a setting.                                                             |
-| Remember window size & position per workspace              | Electron already restores last window geometry. Per-workspace memory is a feature without a complaint behind it. |
+| Dropped                                                    | Why                                                                                                                                                        |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Confirm before deleting > N items (configurable threshold) | Always confirm destructive actions. A configurable threshold is theater.                                                                                   |
+| Confirm before emptying trash (toggle)                     | Emptying trash should always confirm. Not a setting.                                                                                                       |
+| Remember window size & position per workspace              | Every window opens at a fixed 1400×900; nothing persists geometry today. Restoring the last size and position at all comes before making it per-workspace. |
 
 ### From Appearance
 
@@ -234,20 +238,11 @@ These looked plausible but fail one of the design principles above. Dropped, wit
 | Mermaid theme follows app theme (toggle)           | Default on, no setting.                                                                                           |
 | Auto-save interval (1s / 5s / 30s segmented)       | Simplified to a single on/off. Picking an interval is decision fatigue; 5s is the right default.                  |
 
-### From Editor — PDF
+### From Editor — PDF and Excel
 
-| Dropped                 | Why                                                                                   |
-| ----------------------- | ------------------------------------------------------------------------------------- |
-| Default annotation tool | Tools should be sticky in the editor toolbar (last-used wins). Not an app preference. |
-| Default highlight color | Belongs to the in-editor color picker, not Settings.                                  |
-
-### From Editor — Excel
-
-| Dropped                   | Why                                                   |
-| ------------------------- | ----------------------------------------------------- |
-| Show row & column headers | Per-sheet view setting, not an app preference.        |
-| Decimal display precision | Per-cell formatting. Excel itself models it that way. |
-| Default font              | Per-cell formatting.                                  |
+| Dropped                                                                                                                   | Why                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every PDF and spreadsheet preference (annotation tool, highlight color, row/column headers, decimal precision, cell font) | doXmind is a pure Markdown editor. PDF, Excel, CSV and HTML are files it leaves alone: they open read-only with Reveal and Open externally, and there is no PDF or spreadsheet editor to configure. |
 
 ### From Workspace
 
@@ -261,10 +256,10 @@ These looked plausible but fail one of the design principles above. Dropped, wit
 
 ### From Backup & Privacy
 
-| Dropped                                             | Why                                                                                                                                     |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Snapshot location (custom path picker)              | Hardcode `~/.doxmind/snapshots`. Exposing the path adds support burden and migration risk for a feature most users will never relocate. |
-| Block all outbound network requests (master toggle) | The app makes no network requests. A toggle for a non-event is theater. The privacy badge in About expresses the stance.                |
+| Dropped                                             | Why                                                                                                                                                                                                                                                     |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Snapshot location (custom path picker)              | Hardcode `~/.doxmind/snapshots`. Exposing the path adds support burden and migration risk for a feature most users will never relocate.                                                                                                                 |
+| Block all outbound network requests (master toggle) | The app makes exactly one outbound request, and only when the user asks for it: the update-feed check behind About → Check for updates. A master toggle for one explicitly-invoked request is theater. The Privacy panel in About expresses the stance. |
 
 ---
 
@@ -282,5 +277,5 @@ Recommended order:
 1. **Layout shell + Appearance** — highest visible win, zero new logic
 2. **Workspace tab** (file tree + recent management) — daily-touched surface
 3. **Markdown editor preferences** — typography, save, image paste
-4. **Trash migration to sidebar panel** — required before settings can drop the Trash tab
-5. **Backup & Privacy + About** — completes the IA
+
+4. **Backup & Privacy + About** — completes the IA

@@ -28,10 +28,11 @@ The product surface is intentionally narrow:
 - Every Page uses the native source-backed block Adapter. Understood syntax has
   semantic controls; unfamiliar or complex syntax remains editable as exact raw
   Markdown instead of switching to a second editor model.
-- Portable `<details>` Toggles, slash-command source insertion, scalar/list and
-  exact Wiki-Link relation Properties, Daily Notes, read-only Table/Board/Calendar
-  Collections with computed projections, and the Page graph all deepen that same
-  Markdown/file model.
+- Slash-command source insertion, Wiki Links and `![[…]]` transclusion, Daily
+  Notes, and local-image import all deepen that same Markdown/file model.
+  Portable `<details>` Toggles and read-only Table/Board/Calendar Collections
+  with computed projections are still parsed and rendered from existing files,
+  but nothing in the editor creates them.
 - PDF, spreadsheet, and HTML files are the currently surfaced Attachments. They
   remain locally accessible without becoming separate editing products. Images
   and other files remain ordinary assets/files but are not all shown as
@@ -232,17 +233,18 @@ content is the Markdown body, while frontmatter remains canonical in the same
 file. Stores ask the Page storage Interface to write Markdown and supported
 metadata patches; they never persist editor HTML, editor JSON, or Extras.
 
-The Page Properties Module projects only top-level string, finite-number,
-boolean, or string-array values. A Relation control writes one or more exact,
-extension-free `[[workspace/path]]` strings using that same string-array grammar;
-relation identity never lives in a UI record. Generic key patches use the same
-optimistic revision guard as aliases. Unknown or unsupported frontmatter
-remains exact source rather than becoming a second metadata store.
+There is no Properties editor. Frontmatter is read — `title`, `aliases` and
+portable scalar/list values feed Wiki-Link resolution and `doxmind-collection`
+relation fields — but no UI writes it back: the Properties panel was removed,
+and `savePageProperties` / `file-store.updatePageProperties` have no production
+caller. Unknown or unsupported frontmatter remains exact source rather than
+becoming a second metadata store.
 
 The old mounted DatabaseBlock component tree and writable `database-store` are
-physically removed. PAGELEG-1 exports the complete legacy Page artifact family
-as exact raw bytes, including any `extras.databases` payload, but no production
-UI parses, mounts or mutates it.
+physically removed. Nothing reads or exports `extras.databases`: the legacy Sidecar inspection and
+recovery-read commands were removed along with the UI that called them, so the
+artifact family is only ever carried with its source, trashed with it, or left
+alone.
 
 ### Page editor Seam
 
@@ -257,7 +259,7 @@ UI parses, mounts or mutates it.
   Mermaid are rendered from source with local KaTeX/Mermaid libraries.
 - The slash menu is an Adapter over source commands: a slash-only paragraph is
   replaced by a portable Markdown template. It does not persist a command node.
-- Collection, transclusion, graph, and image projections are read-only. Their
+- Collection, transclusion, and image projections are read-only. Their
   loading/error/print-ready state is ephemeral and cannot become Page content.
 - Block rows expose keyboard focus independently of edit mode. Boundary Arrow
   navigation, `Alt+Arrow` movement, duplicate/delete shortcuts, CRLF-preserving
@@ -312,10 +314,11 @@ portable Properties, exact body, and source revision supply the knowledge index
 and `doxmind-collection` evaluator. Attachments and legacy artifacts never cross
 this catalog Interface.
 
-Links, backlinks, unresolved links, unlinked mentions, transclusion sources,
-Collection membership, and graph edges are deterministic projections of that
-catalog. The Page graph uses a bounded neighborhood with the current Page at the
-center. Collection v1/v2 evaluates relations, formulas, rollups, filters, sort,
+Wiki-Link resolution, transclusion sources, and Collection membership are
+deterministic projections of that catalog. Backlinks, unlinked mentions and the
+Page graph are not built at all: `buildKnowledgeIndex` still computes backlinks
+and unlinked mentions, but nothing outside the unit tests calls it, and the
+graph module is gone. Collection v1/v2 evaluates relations, formulas, rollups, filters, sort,
 Board groups, and Calendar days in memory; relation resolution reuses the same
 path/title/alias knowledge resolver and preserves ambiguity. Neither Module
 writes the workspace or owns durable Page state. Daily Notes likewise use only
@@ -359,8 +362,8 @@ local-desk/
 │   └── lib/              Storage, export, import-policy, and UI utilities
 ├── server/               Optional FastAPI/browser-dev and tooling service (Python >=3.11)
 │   ├── api/              Routers: images, workspace
-│   ├── services/         Page storage, read-only parsing,
-│   │                     image and Markdown-projection helpers
+│   ├── services/         Page storage, read-only PDF/spreadsheet parsing,
+│   │                     legacy-sidecar paths, and Markdown/HTML projection
 │   └── main.py           App factory
 ├── electron/             Electron desktop shell + Node workspace commands
 ├── scripts/              Local dev / build orchestration (Node)
@@ -371,28 +374,20 @@ local-desk/
 
 ## Storage ownership at a glance
 
-| Concern                                | Owner                                                                      |
-| -------------------------------------- | -------------------------------------------------------------------------- |
-| Page body, properties, aliases, links  | `~/.../Foo.md` (one complete user file)                                    |
-| Block spans, selection, undo, preview  | In-memory `MarkdownBlockDocument` / React Adapter                          |
-| Surfaced Attachments                   | Workspace PDF/spreadsheet/HTML files                                       |
-| Current Page identity index            | Rebuilt in Electron memory; app-private in browser development             |
-| Markdown search                        | On-demand, zero-write workspace scan                                       |
-| Preferences and recents                | Desktop WebView local application profile                                  |
-| Legacy Page/DatabaseBlock state        | Preserved Sidecars, never read by doXmind                                  |
-| Legacy PDF/Excel edit state            | Preserved attachment Sidecar artifact families, never read by doXmind      |
-| Referenced/imported local image assets | Ordinary workspace files; Electron no-overwrite copy + Blob preview        |
-| Pre-write Page snapshots               | App-private `<DATA_DIR>/page-snapshots/`; never written into the workspace |
+| Concern                                | Owner                                                                 |
+| -------------------------------------- | --------------------------------------------------------------------- |
+| Page body, properties, aliases, links  | `~/.../Foo.md` (one complete user file)                               |
+| Block spans, selection, undo, preview  | In-memory `MarkdownBlockDocument` / React Adapter                     |
+| Surfaced Attachments                   | Workspace PDF/spreadsheet/HTML files                                  |
+| Current Page identity index            | Rebuilt in Electron memory; app-private in browser development        |
+| Markdown search                        | On-demand, zero-write workspace scan                                  |
+| Preferences and recents                | Desktop WebView local application profile                             |
+| Legacy Page/DatabaseBlock state        | Preserved Sidecars, never read by doXmind                             |
+| Legacy PDF/Excel edit state            | Preserved attachment Sidecar artifact families, never read by doXmind |
+| Referenced/imported local image assets | Ordinary workspace files; Electron no-overwrite copy + Blob preview   |
 
 Anything not in this table should be treated as either a bug or a new
 ownership decision that needs to be added here.
-
-A Page snapshot is a byte-for-byte copy of the file as it stood _before_ an
-ordinary Page write, frontmatter and BOM included, kept outside the workspace so
-a vault gains no doXmind-owned file. Capturing one never fails a save. Restoring
-one goes through the ordinary revision-guarded write and therefore replaces the
-body while the Page keeps its current frontmatter: a snapshot coming back is
-just another edit, and loses to a concurrent external change like any other.
 
 Workspace scan/open writes no doXmind-owned file into the mounted folder.
 Browser development may persist the current frontmatter-id/path map under
@@ -431,10 +426,12 @@ drives the active migration:
   editor bundles, attachment create/write/cache endpoints, Synthetic Document
   migration writers, and dedicated dependencies are physically removed. CLI/MCP
   retains only read-only parsing.
-- Frontmatter Properties/relations, the shared zero-write Page Catalog,
-  backlinks, Daily Notes, all three Collection views and computed projections,
-  Page graph, Toggles, slash commands, block-id transclusion, and Electron
-  local-image paste/drop import are active. Editable Collection records,
+- The shared zero-write Page Catalog, Daily Notes, all three Collection views
+  and computed projections, slash commands, block-id transclusion, and Electron
+  local-image paste/drop import are active. Frontmatter Properties/relations,
+  backlinks, the Page graph and Toggle insertion are not: their panels and
+  commands were removed, and legacy `<details>` and Collection blocks are read
+  rather than written. Editable Collection records,
   executable formulas, remote images, and resize/crop/binary editing remain
   outside the product boundary rather than implied capabilities.
 
