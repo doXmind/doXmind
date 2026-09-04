@@ -18,10 +18,10 @@
  *     `onActivate`. When the mapping breaks, the rendered preview is swapped for an editing surface
  *     focused at end-of-Block and clicking into the middle of a Block silently jumps to its end.
  *   - The row's leading spacing strip is `padding-top` on the row, so it belongs to the row and not
- *     to any content. Nothing currently handles a press there: the activation handlers live on the
- *     content box, and `handleDocumentPointerDown` in markdown-block-runtime.tsx returns as soon as
- *     the target is inside a `[data-block-id]`. The tests below assert what a user expects — the
- *     Block activates and takes a caret — and are expected to fail.
+ *     to any content, and a press there activates the Block like any other. `onPointerDown` on the
+ *     row records the press and its `onClick` calls `onActivate` when the press landed on the row
+ *     itself and travelled under 4px (markdown-block-row.tsx) — the 4px is what keeps a Block-
+ *     selection sweep that begins in the strip from activating on the click that ends it.
  *
  * Every test opens its own Page. Each fixture Block is preceded by one lead paragraph, which does
  * two things: it gives the fixture row a preceding row, and `--row-lead` is set by
@@ -31,6 +31,15 @@
  */
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
+
+// One worker per file is what made this suite 38 minutes: `fullyParallel: false` in
+// playwright.config.ts keeps a file's tests serial, so history.spec.ts alone held a worker for 18.4
+// minutes while the other idled — Playwright's own run summary says "Consider running tests from
+// slow files in parallel." Every test here opens its own `mkdtemp` workspace through `openPage`, so
+// there is no shared state to serialise for. The specs that DO share a fixed directory
+// (browsing-runtime, import-conflict, knowledge-editor-gui-acceptance, markdown-autosave-focus,
+// native-markdown-gui-acceptance) are deliberately not given this.
+test.describe.configure({ mode: "parallel" });
 
 import {
   activate,

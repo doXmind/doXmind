@@ -1,5 +1,14 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+// One worker per file is what made this suite 38 minutes: `fullyParallel: false` in
+// playwright.config.ts keeps a file's tests serial, so history.spec.ts alone held a worker for 18.4
+// minutes while the other idled — Playwright's own run summary says "Consider running tests from
+// slow files in parallel." Every test here opens its own `mkdtemp` workspace through `openPage`, so
+// there is no shared state to serialise for. The specs that DO share a fixed directory
+// (browsing-runtime, import-conflict, knowledge-editor-gui-acceptance, markdown-autosave-focus,
+// native-markdown-gui-acceptance) are deliberately not given this.
+test.describe.configure({ mode: "parallel" });
+
 import {
   KIND_FIXTURES,
   activate,
@@ -191,10 +200,6 @@ async function chooseAction(row: Locator, label: string): Promise<void> {
 /** The caret-anchored insert panel, portalled onto `document.body`. */
 function slashMenu(page: Page): Locator {
   return page.getByRole("listbox", { name: "Block commands" });
-}
-
-function selectedRows(page: Page): Locator {
-  return page.locator('[data-native-block-row][data-block-selected="true"]');
 }
 
 /**

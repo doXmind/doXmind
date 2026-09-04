@@ -25,7 +25,9 @@ export default defineConfig({
         "**/types/**",
       ],
     },
-    reporters: ["default", "html"],
+    // `html` wrote a 1.1MB report to html/ on every local and CI run and nothing ever read it.
+    // `npx vitest run --reporter=html` still produces one on demand.
+    reporters: ["default"],
     testTimeout: 10000,
     onConsoleLog(log, type) {
       if (type === "stderr" && /^\[ERROR\] \[(Store:File|Chat)\]/.test(log)) {
