@@ -39,8 +39,6 @@ file is lost by opening it here.
   calendar date.
 - **Local images.** Pasting or dropping an image copies it into `assets/` and
   inserts a relative Markdown reference. Nothing is fetched from the network.
-- **Export to PDF.** The rendered Page is written straight to a file you
-  choose, inside the app, with no printer or driver involved.
 
 ## The block set
 
