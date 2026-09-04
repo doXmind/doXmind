@@ -64,7 +64,6 @@ export function UnifiedHeader() {
   const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
   const toggleFilesSidebar = useLayoutStore((s) => s.toggleFilesSidebar);
   const toggleSearchBar = useLayoutStore((s) => s.toggleSearchBar);
-  const openCommandPalette = useLayoutStore((s) => s.openCommandPalette);
   const setKeyboardShortcutsOpen = useLayoutStore((s) => s.setKeyboardShortcutsOpen);
   const autosaveEnabled = useLayoutStore((s) => s.autosaveEnabled);
   const toggleAutosave = useLayoutStore((s) => s.toggleAutosave);
@@ -304,23 +303,6 @@ export function UnifiedHeader() {
                   aria-label={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")}
                 >
                   <PanelLeft className="h-4 w-4" />
-                </Button>
-              </Tooltip>
-
-              {/* Global search — opens the command palette (file names +
-                  cross-document content search), same as Cmd/Ctrl+P. */}
-              <Tooltip
-                content={t("searchTooltip", { shortcut: formatShortcut("Ctrl+P") })}
-                side="bottom"
-              >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="desktop-header-button relative z-10 h-7 w-7 rounded-md"
-                  onClick={openCommandPalette}
-                  aria-label={t("searchTooltip", { shortcut: formatShortcut("Ctrl+P") })}
-                >
-                  <Search className="h-4 w-4" />
                 </Button>
               </Tooltip>
             </>
