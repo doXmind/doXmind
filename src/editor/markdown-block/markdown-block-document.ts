@@ -149,6 +149,15 @@ export type MarkdownBlockCommand =
       raw?: string;
       /** Insert above the anchor instead of below it (Notion's ⌥-click on the gutter `+`). */
       before?: boolean;
+      /**
+       * Where the caret goes inside `raw`, when the end of the template is not where typing starts.
+       *
+       * End-of-content is right for a heading or a list item and wrong for every template with a
+       * body: measured against `markdownSlashCommandCaret`, a code fence wants 4 rather than 8, a
+       * table 40 rather than 45, an equation 2 rather than 5, and a Mermaid fence 11 rather than 37.
+       * A source offset, like the one `insertAfter` returns; ignored without `raw`.
+       */
+      caret?: number;
     }
   | {
       type: "setTaskChecked";
@@ -1105,7 +1114,12 @@ export class MarkdownBlockDocument {
       }
       this.commitSources(sourceBlocks);
       this.revision += 1;
-      const cursor = splitBlockSource(inserted.raw).content.length;
+      // Clamped because this is public API and an out-of-range offset would be a selection the
+      // editor cannot place; `markdownSlashCommandCaret` is in range by construction.
+      const cursor =
+        command.caret === undefined
+          ? splitBlockSource(inserted.raw).content.length
+          : Math.min(Math.max(command.caret, 0), inserted.raw.length);
       return {
         snapshot: this.getSnapshot(),
         selection: { blockId: inserted.id, anchor: cursor, head: cursor },

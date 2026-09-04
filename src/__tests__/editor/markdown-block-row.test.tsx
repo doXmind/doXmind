@@ -221,7 +221,7 @@ describe("MarkdownBlockRow semantic previews", () => {
     const row = document.querySelector<HTMLElement>("[data-native-block-row]")!;
     expect(row).toHaveAttribute("tabindex", "0");
     expect(row).toHaveAttribute("data-active", "false");
-    expect(screen.getByRole("button", { name: "Add block" })).toHaveAttribute("tabindex", "-1");
+    expect(screen.getByRole("button", { name: "Insert block" })).toHaveAttribute("tabindex", "-1");
     expect(screen.getByRole("button", { name: "Block actions" })).toHaveAttribute("tabindex", "-1");
     expect(screen.queryByRole("combobox", { name: "Block type" })).not.toBeInTheDocument();
 
@@ -258,7 +258,7 @@ describe("MarkdownBlockRow semantic previews", () => {
     );
 
     const row = document.querySelector<HTMLElement>("[data-native-block-row]")!;
-    const add = screen.getByRole("button", { name: "Add block" });
+    const add = screen.getByRole("button", { name: "Insert block" });
     const handle = screen.getByRole("button", { name: "Block actions" });
     const textarea = screen.getByRole("textbox", { name: "Markdown block" });
     expect(row).toHaveAttribute("aria-current", "true");

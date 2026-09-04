@@ -97,18 +97,24 @@ async function settleFrames(page: Page): Promise<void> {
 }
 
 /**
- * Press a row's gutter `+`.
+ * Press a row's gutter `+` and end up with a blank Block, which is what every caller here wants.
  *
  * The controls carry `pointer-events: none` until the row is hovered, so the hover is part of the
- * gesture rather than a nicety. `above` is Option/Alt-click, which the button reads off `event.altKey`.
+ * gesture rather than a nicety. `above` is Option/Alt-click, which inserts a blank Block without
+ * asking. A plain click opens the insert menu, so "below" also picks **Text** — the one row that
+ * writes no template of its own and therefore lands the same bytes the bare `+` used to.
  */
 async function pressAdd(row: Locator, placement: "below" | "above"): Promise<void> {
   await row.scrollIntoViewIfNeeded();
   await row.hover();
-  const add = gutter(row).getByRole("button", { name: "Add block" });
+  const add = gutter(row).getByRole("button", { name: "Insert block" });
   await expect(add).toBeVisible();
-  if (placement === "above") await add.click({ modifiers: ["Alt"] });
-  else await add.click();
+  if (placement === "above") {
+    await add.click({ modifiers: ["Alt"] });
+    return;
+  }
+  await add.click();
+  await row.page().getByRole("menuitem", { name: "Text", exact: true }).click();
 }
 
 /**
@@ -290,21 +296,77 @@ test("Option-clicking Add above a list item continues the list", async ({ page }
   await expectSource(opened, `- Bullet one\n- Inserted above\n- Bullet two\n\n${TAIL}`);
 });
 
-test("the Add button's tooltip records both placements", async ({ page }) => {
+/**
+ * The gutter `+` asks which Block before it writes one.
+ *
+ * It used to insert a blank paragraph and leave the user to convert it, which is a Markdown editor
+ * asking its user to do the editor's job. The menu it opens is the same fourteen commands the
+ * caret-anchored slash panel offers, from the same source, so there is one block set rather than
+ * two lists that can drift.
+ *
+ * Both halves are asserted against the file: a chosen Block writes its own Markdown, and a menu
+ * that is opened and dismissed writes nothing at all. The second half is the one that matters —
+ * the slash panel reaches this state by putting a literal `/` in the Page, and the `+` must not.
+ */
+test("the insert menu writes the Markdown of the Block that is chosen", async ({ page }) => {
+  const source = `Alpha paragraph.\n\n${TAIL}`;
+  const opened = await openPage(page, "InsertMenu", source);
+  const row = rows(page).first();
+
+  await row.scrollIntoViewIfNeeded();
+  await row.hover();
+  await gutter(row).getByRole("button", { name: "Insert block" }).click();
+
+  const menu = page.getByRole("menu", { name: "Insert block" });
+  await expect(menu).toBeVisible();
+  // Nothing has reached the document yet.
+  await expectSourceUnchanged(opened, source);
+
+  await menu.getByRole("menuitem", { name: "Quote", exact: true }).click();
+
+  await expect.poll(() => readSource(opened)).toBe(`Alpha paragraph.\n\n> \n\n${TAIL}`);
+});
+
+test("a dismissed insert menu leaves the file byte-identical", async ({ page }) => {
+  const source = `Alpha paragraph.\n\n${TAIL}`;
+  const opened = await openPage(page, "InsertDismiss", source);
+  const row = rows(page).first();
+
+  await row.scrollIntoViewIfNeeded();
+  await row.hover();
+  const add = gutter(row).getByRole("button", { name: "Insert block" });
+
+  await add.click();
+  await expect(page.getByRole("menu", { name: "Insert block" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu", { name: "Insert block" })).toHaveCount(0);
+  await expectSourceUnchanged(opened, source);
+
+  // And again by pressing the button a second time, which is the other way a user closes it. The
+  // shared menu used to re-open here: its outside-press listener fires on `mousedown` and closes,
+  // and the trigger's own `click` then read an already-false `open`.
+  await add.click();
+  await expect(page.getByRole("menu", { name: "Insert block" })).toBeVisible();
+  await add.click();
+  await expect(page.getByRole("menu", { name: "Insert block" })).toHaveCount(0);
+  await expectSourceUnchanged(opened, source);
+});
+
+test("the insert button's tooltip records both gestures", async ({ page }) => {
   const source = `Alpha paragraph.\n\n${TAIL}`;
   const opened = await openPage(page, "Tip", source);
   const row = rows(page).first();
   await row.hover();
-  await gutter(row).getByRole("button", { name: "Add block" }).hover();
+  await gutter(row).getByRole("button", { name: "Insert block" }).hover();
 
   // The tooltip is a portalled `<div>` with no `role="tooltip"` and no `aria-describedby` back to the
   // button, so its text is the only handle there is. Asserted anyway: Option-click is undiscoverable
   // unless the control says so.
-  const secondLine = page.getByText("⌥-click to add above", { exact: true });
+  const secondLine = page.getByText("⌥-click to add a blank Block above", { exact: true });
   await expect(secondLine).toBeVisible();
   const tooltip = secondLine.locator("..");
-  await expect(tooltip).toContainText("Click to add below");
-  await expect(tooltip).toContainText("⌥-click to add above");
+  await expect(tooltip).toContainText("Click to insert below");
+  await expect(tooltip).toContainText("⌥-click to add a blank Block above");
 
   await expectSourceUnchanged(opened, source);
 });

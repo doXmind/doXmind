@@ -12,7 +12,6 @@ import {
   TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
-import * as LucideIcons from "lucide-react";
 import { createPortal } from "react-dom";
 import {
   type ChangeEvent,
@@ -55,6 +54,7 @@ import {
 import { hasDesktopBridge, invokeDesktop } from "@/lib/native-shell";
 import { MENU_PANEL_CLASS } from "@/components/ui/dropdown-menu";
 import { InlineImageChip } from "@/editor/markdown-block/inline-image-chip";
+import { SlashCommandIcon } from "@/editor/markdown-block/slash-command-icon";
 import { isMarkdownSourceOnlyBlockKind } from "@/editor/markdown-block/markdown-block-document";
 import { InlineFormatToolbar } from "@/editor/markdown-block/inline-format-toolbar";
 import {
@@ -235,7 +235,18 @@ interface MarkdownBlockRowProps {
   onSplit: (blockId: string, from: number, to: number) => void;
   onMergeBackward: (blockId: string) => void;
   onMergeForward?: (blockId: string) => void;
-  onInsertAfter: (blockId: string, placement?: "below" | "above") => void;
+  /**
+   * `kind` is a Block type chosen from the gutter `+`'s insert menu; without it the Block is blank,
+   * which is what ⌥-click and the Mod+Enter shortcut still ask for.
+   *
+   * A third argument on the existing callback rather than a second prop: `sameRowProps` compares key
+   * counts before values, so one more prop costs every row on the Page its memo.
+   */
+  onInsertAfter: (
+    blockId: string,
+    placement?: "below" | "above",
+    kind?: MarkdownSlashCommandId
+  ) => void;
   onCopyMarkdown?: (blockId: string) => void | Promise<void>;
   onDuplicate: (blockId: string) => void;
   onDelete: (blockId: string) => void;
@@ -1656,6 +1667,7 @@ function MarkdownBlockRowView({
             describedBy={descriptionId}
             onMenuOpenChange={setControlsMenuOpen}
             onAdd={(placement) => onInsertAfter(block.id, placement)}
+            onInsertKind={(kind, placement) => onInsertAfter(block.id, placement, kind)}
             onTurnInto={(kind, level) => onSetKind(block.id, kind, level)}
             onCopyMarkdown={() =>
               onCopyMarkdown ? onCopyMarkdown(block.id) : navigator.clipboard?.writeText(block.raw)
@@ -2335,13 +2347,6 @@ function slashMenuPosition(surface: HTMLElement, triggerOffset: number): SlashMe
     maxHeight: Math.max(Math.min(flipped ? above : below, 434), 120),
     flipped,
   };
-}
-
-/** Renders a command's Lucide icon by name, falling back to a neutral glyph. */
-function SlashCommandIcon({ name }: { name: string }) {
-  const icons = LucideIcons as unknown as Record<string, LucideIcon | undefined>;
-  const Icon = icons[name] ?? LucideIcons.Pilcrow;
-  return <Icon className="h-4 w-4" aria-hidden="true" />;
 }
 
 interface CaretPointHost {

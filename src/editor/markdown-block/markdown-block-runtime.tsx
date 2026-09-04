@@ -2527,8 +2527,25 @@ export function MarkdownBlockRuntime({
   );
 
   const handleInsertAfter = useCallback(
-    (blockId: string, placement?: "below" | "above") =>
-      apply({ type: "insertAfter", blockId, before: placement === "above" }),
+    (blockId: string, placement?: "below" | "above", kind?: MarkdownSlashCommandId) => {
+      // No kind, or Text: byte-for-byte what the `+` did before it grew a menu. Text deliberately
+      // passes no `raw` rather than an empty one — `insertAfter`'s own list-continuation rule then
+      // writes `- ` beside a bullet and keeps the list tight, where `raw: ""` would put a blank
+      // paragraph between the two items and split the list in half.
+      if (!kind || kind === "text") {
+        apply({ type: "insertAfter", blockId, before: placement === "above" });
+        return;
+      }
+      const lineEnding = preferredSourceLineEnding(documentRef.current.getSnapshot().markdown);
+      apply({
+        type: "insertAfter",
+        blockId,
+        before: placement === "above",
+        raw: markdownSlashCommandSource(kind, lineEnding),
+        // The end of a template is not where typing starts for the four that have a body.
+        caret: markdownSlashCommandCaret(kind, lineEnding),
+      });
+    },
     [apply]
   );
 

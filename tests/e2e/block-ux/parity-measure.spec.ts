@@ -170,7 +170,7 @@ test("measure block UX geometry against the recorded Notion reference", async ({
 
     await row.hover();
     const controls = row.locator("[data-native-block-controls]");
-    const add = row.getByRole("button", { name: "Add block" });
+    const add = row.getByRole("button", { name: "Insert block" });
     const grip = row.getByRole("button", { name: "Block actions" });
 
     const [controlsBox, addBox, gripBox, textCentre, glyphX] = await Promise.all([
@@ -238,7 +238,7 @@ test("measure block UX geometry against the recorded Notion reference", async ({
     };
   });
   report.addButtonStyle = await firstRow
-    .getByRole("button", { name: "Add block" })
+    .getByRole("button", { name: "Insert block" })
     .evaluate((el) => {
       const cs = getComputedStyle(el);
       return {
@@ -285,7 +285,7 @@ test("measure block UX geometry against the recorded Notion reference", async ({
   // same way `menus.spec.ts` reaches it, via an Option-click on the gutter `+`.
   const firstForSlash = rows.first();
   await firstForSlash.hover();
-  await firstForSlash.getByRole("button", { name: "Add block" }).click({ modifiers: ["Alt"] });
+  await firstForSlash.getByRole("button", { name: "Insert block" }).click({ modifiers: ["Alt"] });
   await expect(rows.first()).toHaveAttribute("data-active", "true");
   await page.keyboard.type("/");
   const slash = page.getByRole("listbox", { name: "Block commands" });

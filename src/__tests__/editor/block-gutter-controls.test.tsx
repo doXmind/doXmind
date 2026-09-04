@@ -9,6 +9,7 @@ function renderControls(overrides: Partial<ComponentProps<typeof BlockGutterCont
   const props: ComponentProps<typeof BlockGutterControls> = {
     currentKind: "paragraph",
     onAdd: vi.fn(),
+    onInsertKind: vi.fn(),
     onTurnInto: vi.fn(),
     onCopyMarkdown: vi.fn(),
     onDuplicate: vi.fn(),
@@ -27,15 +28,67 @@ describe("BlockGutterControls", () => {
     const { props } = renderControls();
 
     const controls = screen.getByRole("group", { name: "Block controls" });
-    const add = screen.getByRole("button", { name: "Add block" });
+    const add = screen.getByRole("button", { name: "Insert block" });
     const actions = screen.getByRole("button", { name: "Block actions" });
 
     expect(controls).toContainElement(add);
     expect(controls).toContainElement(actions);
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
 
+    // The + asks which Block before it writes one. Nothing reaches the document on the press
+    // itself, which is the difference from the blank paragraph it used to insert.
     await user.click(add);
-    expect(props.onAdd).toHaveBeenCalledOnce();
+    expect(screen.getByRole("menu", { name: "Insert block" })).toBeVisible();
+    expect(props.onAdd).not.toHaveBeenCalled();
+    expect(props.onInsertKind).not.toHaveBeenCalled();
+  });
+
+  it("inserts the Block kind chosen from the + menu, and nothing before that", async () => {
+    const user = userEvent.setup();
+    const { props } = renderControls();
+
+    await user.click(screen.getByRole("button", { name: "Insert block" }));
+    const menu = screen.getByRole("menu", { name: "Insert block" });
+    // The same fourteen the caret-anchored slash panel offers, from the same source.
+    expect(within(menu).getAllByRole("menuitem")).toHaveLength(14);
+
+    await user.click(within(menu).getByRole("menuitem", { name: "Table" }));
+
+    expect(props.onInsertKind).toHaveBeenCalledWith("table", "below");
+    expect(props.onAdd).not.toHaveBeenCalled();
+  });
+
+  it("filters the + menu, and takes Enter as the first match", async () => {
+    const user = userEvent.setup();
+    const { props } = renderControls();
+
+    await user.click(screen.getByRole("button", { name: "Insert block" }));
+    await user.type(screen.getByRole("searchbox", { name: "Search blocks" }), "quo");
+
+    const menu = screen.getByRole("menu", { name: "Insert block" });
+    expect(within(menu).getByRole("menuitem", { name: "Quote" })).toBeVisible();
+    expect(within(menu).queryByRole("menuitem", { name: "Table" })).not.toBeInTheDocument();
+
+    await user.keyboard("{Enter}");
+    expect(props.onInsertKind).toHaveBeenCalledWith("quote", "below");
+  });
+
+  /**
+   * The gesture the tooltip has promised since before the menu existed. It has to survive the
+   * button becoming a menu trigger, which is why the press is intercepted in the capture phase
+   * rather than left to the trigger's own click.
+   */
+  it("keeps ⌥-click inserting a blank Block above, without opening the menu", async () => {
+    const user = userEvent.setup();
+    const { props } = renderControls();
+
+    await user.keyboard("{Alt>}");
+    await user.click(screen.getByRole("button", { name: "Insert block" }));
+    await user.keyboard("{/Alt}");
+
+    expect(props.onAdd).toHaveBeenCalledWith("above");
+    expect(props.onInsertKind).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu", { name: "Insert block" })).not.toBeInTheDocument();
   });
 
   it("opens a searchable Turn into menu from the grip", async () => {
@@ -177,7 +230,7 @@ describe("BlockGutterControls", () => {
   it("can remove inactive gutter controls from the tab order", () => {
     renderControls({ buttonTabIndex: -1, describedBy: "block-description" });
 
-    expect(screen.getByRole("button", { name: "Add block" })).toHaveAttribute("tabindex", "-1");
+    expect(screen.getByRole("button", { name: "Insert block" })).toHaveAttribute("tabindex", "-1");
     expect(screen.getByRole("button", { name: "Block actions" })).toHaveAttribute(
       "aria-describedby",
       "block-description"
@@ -355,7 +408,7 @@ describe("BlockGutterControls", () => {
     const controls = screen.getByRole("group", { name: "Block controls" });
     expect(controls.className).toContain("items-center");
     expect(controls.className).toContain("leading-[0]");
-    for (const name of ["Add block", "Block actions"]) {
+    for (const name of ["Insert block", "Block actions"]) {
       expect(screen.getByRole("button", { name }).className).toContain("h-6 w-6");
     }
   });
