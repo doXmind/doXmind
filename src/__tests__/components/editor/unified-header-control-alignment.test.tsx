@@ -34,7 +34,11 @@ function renderHeader() {
   );
 }
 
-const HEADER_ACTIONS = [/^Hide Files$/, /^Search \(/, /^More actions$/];
+// The magnifier that sat between these two is gone: it opened the command palette, while the
+// sidebar's own magnifier — the same glyph at the same size, forty pixels away in the same column —
+// opened the workspace search. Two identical icons, and the one in the chrome gave the shallower
+// results of the two. ⌘P and the Edit menu still reach the palette.
+const HEADER_ACTIONS = [/^Hide Files$/, /^More actions$/];
 
 function headerAction(label: RegExp) {
   return screen.getByRole("button", { name: label });

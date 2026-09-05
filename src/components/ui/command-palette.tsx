@@ -5,26 +5,15 @@ import { useTranslations } from "next-intl";
 import { WORKSPACE_COMMANDS, formatBinding } from "@/lib/commands";
 import { bindingFor, useHotkeysStore } from "@/stores/hotkeys-store";
 import { createPortal } from "react-dom";
-import {
-  AlertTriangle,
-  ArrowRight,
-  FilePlus,
-  FileText,
-  Keyboard,
-  Loader2,
-  Palette,
-  RefreshCw,
-  Search,
-  X,
-} from "lucide-react";
+import { ArrowRight, FilePlus, FileText, Keyboard, Palette, Search, X } from "lucide-react";
 import { cn, formatShortcut } from "@/lib/utils";
 import { MENU_PANEL_CLASS, MENU_ROW_CLASS } from "@/components/ui/dropdown-menu";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useFileStore } from "@/stores/file-store";
+import { useLayoutStore } from "@/stores/layout-store";
+import { searchQuickSwitcherFiles } from "@/lib/quick-switcher-search";
 
 import { useThemeManager } from "@/hooks/use-theme-manager";
-import { createStorageAdapter, searchMarkdown, type MarkdownSearchResult } from "@/lib/storage";
-import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -61,6 +50,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 function CommandPaletteContent({ onClose }: { onClose: () => void }) {
   const t = useTranslations("commandPalette");
   const tCommands = useTranslations("commands");
+  const openSidebarSearch = useLayoutStore((state) => state.openSidebarSearch);
   const overrides = useHotkeysStore((state) => state.overrides);
   const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
   const [query, setQuery] = React.useState("");
@@ -68,62 +58,8 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
 
-  // Search state
-  const [fileSearchResults, setFileSearchResults] = React.useState<MarkdownSearchResult[]>([]);
-  const [isSearching, setIsSearching] = React.useState(false);
-  const [searchError, setSearchError] = React.useState<string | null>(null);
-  const abortControllerRef = React.useRef<AbortController | null>(null);
-
   const files = useFileStore((s) => s.files);
-  const rootPath = useFileStore((s) => s.rootPath);
   const { currentTheme, toggleBaseMode } = useThemeManager();
-
-  // Perform search with debounce
-  const performSearch = useDebouncedCallback(async (searchQuery: string) => {
-    const trimmedQuery = searchQuery.trim();
-    if (trimmedQuery.length < MIN_CONTENT_SEARCH_CHARS || !rootPath) {
-      abortControllerRef.current?.abort();
-      setFileSearchResults([]);
-      setSearchError(null);
-      setIsSearching(false);
-      return;
-    }
-
-    // Cancel previous request
-    abortControllerRef.current?.abort();
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
-    setIsSearching(true);
-    setSearchError(null);
-
-    try {
-      const adapter = createStorageAdapter({ disk: { root: rootPath } });
-      const filesRes = await searchMarkdown(adapter, trimmedQuery, {
-        limit: 10,
-        signal: controller.signal,
-      }).catch(() => null);
-
-      if (!controller.signal.aborted && filesRes) setFileSearchResults(filesRes.results);
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      setSearchError(t("searchFailed"));
-    } finally {
-      setIsSearching(false);
-    }
-  }, 300);
-
-  // Trigger search when query changes
-  React.useEffect(() => {
-    performSearch(query);
-  }, [query, performSearch]);
-
-  // Cleanup on unmount
-  React.useEffect(() => {
-    return () => {
-      abortControllerRef.current?.abort();
-    };
-  }, []);
 
   // Build commands list
   const commands = React.useMemo<CommandItem[]>(() => {
@@ -182,30 +118,59 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
     if (!query.trim()) return commands;
 
     const lowerQuery = query.toLowerCase();
-    return commands.filter((cmd) => {
-      const matchLabel = cmd.label.toLowerCase().includes(lowerQuery);
-      const matchKeywords = cmd.keywords?.some((kw) => kw.toLowerCase().includes(lowerQuery));
-      return matchLabel || matchKeywords;
-    });
-  }, [commands, query]);
+    // Files are ranked, not filtered. A plain `includes` puts "Meeting notes 2024" and "Notes" in
+    // declaration order for `notes`, and cannot find `Road map` from `rdmp` at all; the quick
+    // switcher already had the scorer for this, so the two file lists in the app now agree on what
+    // a good match is.
+    const rankedFileIds = new Map(
+      searchQuickSwitcherFiles(files, query).map((file, index) => [`file-${file.id}`, index])
+    );
+    return commands
+      .filter((cmd) => {
+        if (cmd.category === "navigation" && cmd.id.startsWith("file-")) {
+          return rankedFileIds.has(cmd.id);
+        }
+        const matchLabel = cmd.label.toLowerCase().includes(lowerQuery);
+        const matchKeywords = cmd.keywords?.some((kw) => kw.toLowerCase().includes(lowerQuery));
+        return matchLabel || matchKeywords;
+      })
+      .sort((a, b) => {
+        const rankA = rankedFileIds.get(a.id);
+        const rankB = rankedFileIds.get(b.id);
+        if (rankA === undefined || rankB === undefined) return 0;
+        return rankA - rankB;
+      });
+  }, [commands, query, files]);
 
-  // Convert search results to command items
+  /**
+   * One row that hands the query to the workspace search, rather than ten shallow answers here.
+   *
+   * This section used to run its own `searchMarkdown` over the whole workspace — the same adapter,
+   * the same IPC, the same full read of every Page as the sidebar's search view, differing only in
+   * a `limit` of 10 against 50 and in passing no structured criteria. It then threw away the
+   * per-line matches the adapter had deliberately kept: one row per Page, opened at the top rather
+   * than at the line that matched. The panel it now defers to groups every hit under its Page,
+   * marks the matched run, jumps to the line, understands `file:`/`path:`/`-`/OR/regex, and stays
+   * open while the reader walks the results. Two scans of the same files to show the worse half of
+   * one answer is not a second feature.
+   */
   const searchFileCommands = React.useMemo<CommandItem[]>(() => {
-    return fileSearchResults.map((result, index) => ({
-      id: `search-file-${index}`,
-      label: result.metadata?.name || "Unknown file",
-      icon: <FileText className="h-4 w-4" />,
-      category: "searchFiles" as const,
-      action: () => {
-        const fileId = result.metadata.fileId;
-        navigateToEditorFile(fileId);
-        onClose();
+    const trimmed = query.trim();
+    if (trimmed.length < MIN_CONTENT_SEARCH_CHARS) return [];
+    return [
+      {
+        id: "search-workspace-escalate",
+        label: t("searchAllFiles", { query: trimmed }),
+        icon: <FileText className="h-4 w-4" />,
+        category: "searchFiles" as const,
+        action: () => {
+          openSidebarSearch(trimmed);
+          onClose();
+        },
+        keywords: [],
       },
-      keywords: [],
-      preview: result.content.slice(0, 100),
-      score: result.score !== undefined ? Math.round(result.score * 100) : undefined,
-    }));
-  }, [fileSearchResults, onClose]);
+    ];
+  }, [query, t, openSidebarSearch, onClose]);
 
   // Group filtered commands by category
   const groupedCommands = React.useMemo(() => {
@@ -259,8 +224,6 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
   React.useEffect(() => {
     setQuery("");
     setSelectedIndex(0);
-    setFileSearchResults([]);
-    setSearchError(null);
     // Only auto-focus on desktop to avoid keyboard popup on mobile
     if (window.innerWidth >= 768) {
       inputRef.current?.focus();
@@ -366,28 +329,6 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        {/* Search status */}
-        {isSearching && (
-          <div className="flex items-center gap-2 border-b border-border px-3.5 py-2 text-xs text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Searching...
-          </div>
-        )}
-
-        {searchError && (
-          <div className="flex items-center gap-2 border-b border-border bg-yellow-50 px-3.5 py-2 text-xs text-yellow-600 dark:bg-yellow-900/20">
-            <AlertTriangle className="h-3 w-3" />
-            <span className="flex-1">{searchError}</span>
-            <button
-              onClick={() => performSearch(query)}
-              className="flex items-center gap-1 hover:underline"
-            >
-              <RefreshCw className="h-3 w-3" />
-              Retry
-            </button>
-          </div>
-        )}
-
         {/* Command list */}
         <div
           ref={listRef}
@@ -395,7 +336,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
           role="listbox"
           aria-label={t("commandsLabel")}
         >
-          {flattenedCommands.length === 0 && !isSearching ? (
+          {flattenedCommands.length === 0 ? (
             <div className="px-2 py-8 text-center text-sm text-muted-foreground">
               {query.trim() ? t("noResults") : t("empty")}
             </div>
