@@ -753,7 +753,7 @@ try {
     await formattedRow.hover();
     const gutterControls = formattedRow.locator("[data-native-block-controls]");
     await waitForHoverControls(gutterControls);
-    await gutterControls.getByRole("button", { name: "Add block" }).waitFor({
+    await gutterControls.getByRole("button", { name: "Insert block" }).waitFor({
       state: "visible",
     });
     const blockActions = gutterControls.getByRole("button", { name: "Block actions" });
@@ -772,12 +772,13 @@ try {
     await turnInto.waitFor({ state: "visible" });
     await turnInto.focus();
     await turnInto.press("Enter");
-    await blockMenu.getByRole("menuitem", { name: "Back to block actions" }).waitFor({
+    const turnIntoMenu = page.getByRole("menu", { name: "Turn into", exact: true });
+    await turnIntoMenu.getByRole("menuitem", { name: "Heading 3" }).waitFor({
       state: "visible",
     });
-    await blockMenu.getByRole("menuitem", { name: "Heading 3" }).waitFor({
-      state: "visible",
-    });
+    await page.keyboard.press("Escape");
+    await turnIntoMenu.waitFor({ state: "hidden" });
+    await blockMenu.waitFor({ state: "visible" });
     await page.keyboard.press("Escape");
     await blockMenu.waitFor({ state: "hidden" });
 
