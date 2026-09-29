@@ -14,6 +14,20 @@ test("desktop menus route Undo and Redo to Markdown source history", async () =>
   assert.match(electronMenu, /emitToFocused\(["']menu:\/\/redo["']/);
 });
 
+test("single-window Open actions do not broadcast dialogs to every renderer", async () => {
+  const electronMenu = await fs.readFile(path.join(repoRoot, "electron/menus.js"), "utf8");
+  const main = await fs.readFile(path.join(repoRoot, "electron/main.js"), "utf8");
+
+  assert.match(electronMenu, /focusThenEmitFocused\("menu:\/\/open-file"\)/);
+  assert.match(electronMenu, /focusThenEmitFocused\("menu:\/\/open-folder"\)/);
+  assert.match(electronMenu, /focusThenEmitFocused\("tray:\/\/open-file"\)/);
+  assert.match(electronMenu, /focusThenEmitFocused\("tray:\/\/open-folder"\)/);
+  assert.match(
+    main,
+    /function emitToFocused\(eventName, payload\) \{\s*const target = BrowserWindow\.getFocusedWindow\(\) \|\| BrowserWindow\.getAllWindows\(\)\[0\];\s*if \(!target\) return;/
+  );
+});
+
 test("no menu accelerator steals a key the command registry lets the user rebind", async () => {
   const menus = await fs.readFile(path.join(repoRoot, "electron/menus.js"), "utf8");
   const commands = await fs.readFile(path.join(repoRoot, "src/lib/commands.ts"), "utf8");

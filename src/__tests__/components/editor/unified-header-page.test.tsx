@@ -1,5 +1,5 @@
 import { NextIntlClientProvider } from "next-intl";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -107,5 +107,30 @@ describe("UnifiedHeader Page safety", () => {
 
     expect(discardPendingChanges).toHaveBeenCalledOnce();
     expect(useFileStore.getState().currentFileId).toBeNull();
+  });
+
+  it("reorders tabs from the dragged tab's native drag payload", () => {
+    useFileStore.setState({
+      files: [page, { ...page, id: "page-2", name: "Second.md" }],
+      currentFileId: page.id,
+      openTabIds: [page.id, "page-2"],
+    });
+    useEditorStore.setState({ isDirty: false, isSaving: false });
+    renderHeader();
+
+    const tabs = screen.getAllByRole("tab");
+    const values = new Map<string, string>();
+    const dataTransfer = {
+      effectAllowed: "none",
+      dropEffect: "none",
+      setData: (type: string, value: string) => values.set(type, value),
+      getData: (type: string) => values.get(type) ?? "",
+    };
+    fireEvent.dragStart(tabs[0], { dataTransfer });
+    fireEvent.dragOver(tabs[1], { dataTransfer });
+    fireEvent.drop(tabs[1], { dataTransfer });
+
+    expect(values.get("text/plain")).toBe(page.id);
+    expect(useFileStore.getState().openTabIds).toEqual(["page-2", page.id]);
   });
 });

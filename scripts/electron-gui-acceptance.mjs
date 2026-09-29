@@ -34,6 +34,15 @@ const PAGE_SOURCE = [
   "",
   "Drop target.",
   "",
+  "中文 PDF 字体回归：本地页面导出应保留这些汉字。",
+  "",
+  "<details>",
+  "<summary>折叠内容</summary>",
+  "",
+  "导出的 PDF 必须包含这段默认折叠的正文。",
+  "",
+  "</details>",
+  "",
 ].join("\n");
 const BLOCK_EDITOR_SUBTREE_SOURCE = [
   "- Markdown is the only source of truth",
@@ -277,7 +286,7 @@ try {
 
   await check("opens the Page in the native Block editor", async () => {
     await page.getByText("Electron GUI Acceptance", { exact: true }).waitFor();
-    assert.equal(await page.locator("[data-native-block-row]").count(), 4);
+    assert.equal(await page.locator("[data-native-block-row]").count(), 6);
     assert.match(page.url(), /\/editor\//);
   });
 
@@ -320,19 +329,32 @@ try {
     await waitForWindowCount(initialWindowCount + 1);
     await fsp.mkdir(ARTIFACT_DIR, { recursive: true });
     await newWindow.screenshot({ path: path.join(ARTIFACT_DIR, "new-window.png"), fullPage: true });
+
+    await stubOpenDialog({ canceled: true, filePaths: [] });
+    await clickApplicationMenu("File", "Open File…");
+    await waitForOpenDialogCalls(1);
+    await page.waitForTimeout(150);
+    assert.equal(
+      await countOpenDialogCalls(),
+      1,
+      "one Open File action opened more than one dialog"
+    );
+    await clearOpenDialogStub();
+
     await newWindow.close();
     await waitForWindowCount(initialWindowCount);
   });
 
   await check("duplicates a Block from the keyboard and undoes it in one step", async () => {
+    const initialBlockCount = await page.locator("[data-native-block-row]").count();
     let editor = await activateBlock("First block.");
     await editor.press(`${modifier}+Shift+D`);
-    assert.equal(await page.locator("[data-native-block-row]").count(), 5);
+    assert.equal(await page.locator("[data-native-block-row]").count(), initialBlockCount + 1);
     await saveAndWait((source) => occurrences(source, "First block.") === 2);
 
     editor = page.locator("[data-native-block-editor]");
     await editor.press(`${modifier}+z`);
-    assert.equal(await page.locator("[data-native-block-row]").count(), 4);
+    assert.equal(await page.locator("[data-native-block-row]").count(), initialBlockCount);
     await saveAndWait((source) => occurrences(source, "First block.") === 1);
   });
 
@@ -494,6 +516,8 @@ try {
       const normalizedText = extractedText.replace(/\s+/g, " ").trim();
       assert.match(normalizedText, /Electron GUI Acceptance/);
       assert.match(normalizedText, /First block\. autosaved/);
+      assert.match(normalizedText, /中文 PDF 字体回归：本地页面导出应保留这些汉字/);
+      assert.match(normalizedText, /导出的 PDF 必须包含这段默认折叠的正文/);
       const excludedChrome = [
         "Collection Matrix",
         "Reference.pdf",
@@ -1271,6 +1295,43 @@ async function waitForSaveDialogCalls(count, timeout = 10_000) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error(`timed out waiting for ${count} Electron save dialog call(s)`);
+}
+
+async function stubOpenDialog(response) {
+  await electronApp.evaluate(({ dialog }, result) => {
+    globalThis.__DOXMIND_GUI_OPEN_DIALOG_CALLS__ = [];
+    globalThis.__DOXMIND_GUI_OPEN_DIALOG_ORIGINAL__ = dialog.showOpenDialog;
+    dialog.showOpenDialog = async (ownerWindow, options) => {
+      globalThis.__DOXMIND_GUI_OPEN_DIALOG_CALLS__.push({
+        ownerWindowId: ownerWindow?.id ?? null,
+        options,
+      });
+      return result;
+    };
+  }, response);
+}
+
+async function waitForOpenDialogCalls(count, timeout = 10_000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if ((await countOpenDialogCalls()) >= count) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`timed out waiting for ${count} Electron open dialog call(s)`);
+}
+
+async function countOpenDialogCalls() {
+  return electronApp.evaluate(() => globalThis.__DOXMIND_GUI_OPEN_DIALOG_CALLS__?.length ?? 0);
+}
+
+async function clearOpenDialogStub() {
+  await electronApp.evaluate(({ dialog }) => {
+    if (globalThis.__DOXMIND_GUI_OPEN_DIALOG_ORIGINAL__) {
+      dialog.showOpenDialog = globalThis.__DOXMIND_GUI_OPEN_DIALOG_ORIGINAL__;
+    }
+    delete globalThis.__DOXMIND_GUI_OPEN_DIALOG_ORIGINAL__;
+    delete globalThis.__DOXMIND_GUI_OPEN_DIALOG_CALLS__;
+  });
 }
 
 async function waitForFile(filePath, timeout = 10_000) {

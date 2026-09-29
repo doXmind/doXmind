@@ -118,6 +118,9 @@
     padding: 0 !important;
     background: #ffffff !important;
     color: #1f1f1f !important;
+    font-family:
+      -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+      sans-serif !important;
     font-size: 11pt !important;
     line-height: 1.6 !important;
     caret-color: transparent !important;

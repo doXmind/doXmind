@@ -11,7 +11,7 @@
  * (emitToFocused); app-scoped actions broadcast to all windows (emitToAll).
  *
  * `deps` provides: recents (OpenTarget[]), emitToAll, emitToFocused,
- * focusThenEmitAll(event), focusMainWindow().
+ * focusThenEmitAll(event), focusThenEmitFocused(event), focusMainWindow().
  */
 
 const { app, Menu, Tray, nativeImage } = require("electron");
@@ -40,7 +40,7 @@ function appRecentSubmenu(recents, emitToAll) {
 }
 
 function buildAppMenu(deps) {
-  const { recents, emitToAll, emitToFocused, focusThenEmitAll } = deps;
+  const { recents, emitToAll, emitToFocused, focusThenEmitAll, focusThenEmitFocused } = deps;
   return Menu.buildFromTemplate([
     {
       label: "doXmind",
@@ -84,12 +84,12 @@ function buildAppMenu(deps) {
         {
           label: "Open File…",
           accelerator: "CmdOrCtrl+Alt+O",
-          click: () => focusThenEmitAll("menu://open-file"),
+          click: () => focusThenEmitFocused("menu://open-file"),
         },
         {
           label: "Open Folder…",
           accelerator: "CmdOrCtrl+Shift+O",
-          click: () => focusThenEmitAll("menu://open-folder"),
+          click: () => focusThenEmitFocused("menu://open-folder"),
         },
         { label: "Open Recent", submenu: appRecentSubmenu(recents, emitToAll) },
         { type: "separator" },
@@ -235,7 +235,7 @@ async function buildDockMenu(deps) {
 }
 
 function buildTrayMenu(deps) {
-  const { recents, emitToAll, focusMainWindow } = deps;
+  const { recents, emitToAll, focusMainWindow, focusThenEmitFocused } = deps;
   const recentItems = recents.length
     ? recents.slice(0, 10).map((r) => ({
         label: basename(r.path),
@@ -254,17 +254,11 @@ function buildTrayMenu(deps) {
     { type: "separator" },
     {
       label: "Open File…",
-      click: () => {
-        focusMainWindow();
-        emitToAll("tray://open-file", null);
-      },
+      click: () => focusThenEmitFocused("tray://open-file"),
     },
     {
       label: "Open Folder…",
-      click: () => {
-        focusMainWindow();
-        emitToAll("tray://open-folder", null);
-      },
+      click: () => focusThenEmitFocused("tray://open-folder"),
     },
     { label: "Recent Files", submenu: recentItems },
     { type: "separator" },

@@ -755,6 +755,18 @@ describe("print.css collapsed toggles", () => {
   });
 });
 
+describe("print.css CJK fallback", () => {
+  const printCss = readStyles("print.css");
+
+  it("keeps Chinese glyphs on an installed system font in exported PDFs", () => {
+    const markdownPage = rules(printCss).find((candidate) =>
+      candidate.selectors.includes(".markdown-page")
+    );
+    expect(markdownPage?.body).toMatch(/font-family:[\s\S]*PingFang SC/);
+    expect(markdownPage?.body).toMatch(/Hiragino Sans GB/);
+  });
+});
+
 /**
  * Text selection is one value everywhere, and it is Notion's.
  *

@@ -72,6 +72,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   const [contextMenuReady, setContextMenuReady] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const [newName, setNewName] = useState(getNameWithoutExtension(file.name));
+  const renameSubmitted = useRef(false);
   // OS Trash is the recovery path (per ADR 0005). Confirm is defense-in-depth;
   // older recovery artifacts, when present, travel with the source file.
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -273,6 +274,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isAsset) return;
+    renameSubmitted.current = false;
     setNewName(getNameWithoutExtension(file.name));
     setIsRenaming(true);
   };
@@ -280,6 +282,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   // Auto-enter rename mode for newly created files
   useEffect(() => {
     if (file.id === justCreatedFileId) {
+      renameSubmitted.current = false;
       setNewName(getNameWithoutExtension(file.name));
       setIsRenaming(true);
       clearJustCreatedFileId();
@@ -293,6 +296,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   };
 
   const handleRename = async () => {
+    if (renameSubmitted.current) return;
     const trimmedName = newName.trim();
     // Bail on empty or unchanged names before any I/O. Compare against the
     // displayed (extension-stripped) name — that's what the input shows.
@@ -309,9 +313,13 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
       file.storageHandle?.path?.split("/").pop() ||
       file.name;
     const fullName = withOriginalExtension(currentFilename, trimmedName);
+    // Enter followed by blur is one action, even if the rename resolves before React unmounts the
+    // input. Keep this session latched until another rename starts.
+    renameSubmitted.current = true;
     try {
       await renameFile(file.id, fullName, { confirm: confirmPageRelocation });
     } catch (error) {
+      renameSubmitted.current = false;
       log.error("Failed to rename file", error);
       notify.error(t("failedToRename"));
     }
@@ -319,6 +327,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   };
 
   const cancelRename = () => {
+    renameSubmitted.current = false;
     setNewName(getNameWithoutExtension(file.name));
     setIsRenaming(false);
   };
@@ -384,6 +393,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
   // Context menu action handlers (close menu, then execute)
   const handleContextMenuRename = () => {
     setContextMenu(null);
+    renameSubmitted.current = false;
     setNewName(getNameWithoutExtension(file.name));
     setIsRenaming(true);
   };
@@ -624,6 +634,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
               isAttachment={isAttachment}
               onOpenExternally={handleOpenExternally}
               onRename={() => {
+                renameSubmitted.current = false;
                 setNewName(getNameWithoutExtension(file.name));
                 setIsRenaming(true);
               }}
@@ -659,6 +670,7 @@ export function FileItem({ file, depth = 0 }: FileItemProps) {
             ref={contextMenuRef}
             role="menu"
             aria-label="File actions"
+            onClick={(event) => event.stopPropagation()}
             style={{
               position: "fixed",
               top: contextMenu.y,

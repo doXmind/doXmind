@@ -16,6 +16,7 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
+import { createUntitledPage } from "@/lib/create-untitled-page";
 import { useTranslations, useLocale } from "next-intl";
 
 const log = storeLogger.child("FilesSidebar");
@@ -48,9 +49,8 @@ export function FilesSidebar() {
       }
     });
 
-    const name = `Untitled-${maxNum + 1}.md`;
     try {
-      const newId = await createFile(name, "", parentId);
+      const newId = await createUntitledPage(createFile, maxNum + 1, parentId);
       navigateToEditorFile(newId);
     } catch (error) {
       log.error("Failed to create file", error);

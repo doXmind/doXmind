@@ -353,8 +353,9 @@ function emitToAll(eventName, payload) {
 }
 
 function emitToFocused(eventName, payload) {
-  const focused = BrowserWindow.getFocusedWindow();
-  deliver(eventName, payload, focused ? new Set([focused.webContents.id]) : null);
+  const target = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+  if (!target) return;
+  deliver(eventName, payload, new Set([target.webContents.id]));
 }
 
 function focusMainWindow() {
@@ -364,8 +365,16 @@ function focusMainWindow() {
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
+    return win;
   } else {
-    createWindow(null);
+    return createWindow(null);
+  }
+}
+
+function focusThenEmitFocused(eventName) {
+  const target = BrowserWindow.getFocusedWindow() || focusMainWindow();
+  if (target && !target.isDestroyed()) {
+    deliver(eventName, null, new Set([target.webContents.id]));
   }
 }
 
@@ -375,7 +384,14 @@ function focusThenEmitAll(eventName) {
 }
 
 function menuDeps() {
-  return { recents: currentRecents, emitToAll, emitToFocused, focusThenEmitAll, focusMainWindow };
+  return {
+    recents: currentRecents,
+    emitToAll,
+    emitToFocused,
+    focusThenEmitAll,
+    focusThenEmitFocused,
+    focusMainWindow,
+  };
 }
 
 async function refreshMenus() {

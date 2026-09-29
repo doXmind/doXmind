@@ -7,8 +7,16 @@ export function resolveWikiLinkTarget(
   currentFileId: string,
   rawTarget: string
 ): FileItem | null {
+  return resolveWikiLink(files, currentFileId, rawTarget).page;
+}
+
+export function resolveWikiLink(
+  files: readonly FileItem[],
+  currentFileId: string,
+  rawTarget: string
+): { status: "resolved" | "unresolved" | "ambiguous"; page: FileItem | null } {
   const target = wikiPagePart(rawTarget);
-  if (!target) return null;
+  if (!target) return { status: "unresolved", page: null };
 
   const pages = files.filter(
     (file) =>
@@ -37,8 +45,11 @@ export function resolveWikiLinkTarget(
     current ? pagePath(current) : "",
     target
   );
-  if (!resolution.page) return null;
-  return pages.find((file) => file.id === resolution.page?.id) ?? null;
+  if (!resolution.page) return { status: resolution.status, page: null };
+  return {
+    status: resolution.status,
+    page: pages.find((file) => file.id === resolution.page?.id) ?? null,
+  };
 }
 
 function pagePath(file: FileItem): string {

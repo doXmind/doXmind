@@ -160,8 +160,8 @@ interface FileState {
   setCurrentFile: (id: string | null) => void;
   requestCurrentFile: (id: string | null) => Promise<boolean>;
   closeTab: (id: string) => void;
-  closeOtherTabs: (id: string) => void;
-  closeAllTabs: () => void;
+  closeOtherTabs: (id: string) => Promise<void>;
+  closeAllTabs: () => Promise<void>;
   /** Move an open tab to a new position, for drag reordering. */
   reorderTab: (id: string, toIndex: number) => void;
   renameFile: (id: string, name: string, options?: WorkspaceRelocationOptions) => Promise<void>;
@@ -1451,6 +1451,9 @@ export const useFileStore = create<FileState>()(
           files: newFiles,
           currentFileId: newCurrentId,
           openTabIds: newOpenTabIds,
+          loadedContentIds: new Set(
+            [...state.loadedContentIds].filter((loadedId) => !idsLeavingStore.has(loadedId))
+          ),
         });
 
         try {
@@ -1501,35 +1504,60 @@ export const useFileStore = create<FileState>()(
       requestCurrentFile: async (id: string | null) => {
         // The one choke point that keeps a workspace file out of an editor tab, whichever surface
         // asked: the sidebar, the command palette, the quick switcher, a Wiki Link, the URL sync.
-        if (id && get().files.find((file) => file.id === id)?.isAsset) return false;
+        const requestedFile = id ? get().files.find((file) => file.id === id) : null;
+        if (id && (!requestedFile || requestedFile.isAsset || requestedFile.isFolder)) return false;
         const request = ++fileNavigationRequest;
         if (get().currentFileId === id) return true;
-        if (!useEditorStore.getState().isDirty) {
-          get().setCurrentFile(id);
-          return true;
+        if (useEditorStore.getState().isDirty) {
+          const requestSave = useEditorRefStore.getState().requestSave;
+          if (!requestSave) return false;
+          try {
+            const saved = await requestSave();
+            if (!saved || request !== fileNavigationRequest) return false;
+          } catch (error) {
+            log.error("Failed to save Page before switching", error);
+            return false;
+          }
         }
 
-        const requestSave = useEditorRefStore.getState().requestSave;
-        if (!requestSave) return false;
-        try {
-          const saved = await requestSave();
-          if (!saved || request !== fileNavigationRequest) return false;
-          get().setCurrentFile(id);
-          return true;
-        } catch (error) {
-          log.error("Failed to save Page before switching", error);
-          return false;
+        // Switching back to a cached Page must still observe edits made outside the app. Read
+        // before navigation so a failed or missing disk read cannot open a blank/stale editor.
+        if (
+          id &&
+          requestedFile &&
+          get().loadedContentIds.has(id) &&
+          !id.startsWith(TRANSIENT_ID_PREFIX)
+        ) {
+          try {
+            const requestedPath = storagePathKey(requestedFile.storageHandle);
+            await get().loadFileContent(id, { force: true, throwOnError: true });
+            if (request !== fileNavigationRequest) return false;
+            const refreshed =
+              get().files.find((file) => file.id === id) ??
+              (requestedPath
+                ? get().files.find((file) => storagePathKey(file.storageHandle) === requestedPath)
+                : undefined);
+            if (!refreshed) return false;
+            id = refreshed.id;
+          } catch (error) {
+            log.error("Failed to refresh Page before switching", error);
+            return false;
+          }
         }
+        if (request !== fileNavigationRequest) return false;
+        get().setCurrentFile(id);
+        return true;
       },
 
-      closeOtherTabs: (id: string) => {
-        set((state) => (state.openTabIds.includes(id) ? { openTabIds: [id] } : {}));
-        void get().requestCurrentFile(id);
+      closeOtherTabs: async (id: string) => {
+        if (!get().openTabIds.includes(id)) return;
+        if (!(await get().requestCurrentFile(id))) return;
+        set((state) => ({ openTabIds: state.openTabIds.includes(id) ? [id] : state.openTabIds }));
       },
 
-      closeAllTabs: () => {
+      closeAllTabs: async () => {
+        if (!(await get().requestCurrentFile(null))) return;
         set({ openTabIds: [] });
-        void get().requestCurrentFile(null);
       },
 
       reorderTab: (id: string, toIndex: number) => {

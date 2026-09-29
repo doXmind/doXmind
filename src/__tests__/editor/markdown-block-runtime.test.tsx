@@ -1352,6 +1352,8 @@ describe("MarkdownBlockRuntime", () => {
     });
 
     expect(screen.getByRole("alert")).toHaveTextContent(/changed outside doxmind/i);
+    expect(screen.getByRole("alert").closest("[data-native-markdown-scroll]")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveClass("sticky", "top-12", "z-30");
     expect(screen.getByLabelText("Markdown block")).toHaveValue("Local draft");
     expect(updateFile).not.toHaveBeenCalled();
     expect(useEditorStore.getState().isDirty).toBe(true);

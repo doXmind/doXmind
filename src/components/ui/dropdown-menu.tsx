@@ -600,7 +600,7 @@ export function DropdownMenuItem({
         // `cursor-pointer` for the same reason — the custom rows are pointer, these were default.
         isFocused && "bg-accent text-accent-foreground",
         "focus-visible:ring-1 focus-visible:ring-ring",
-        disabled && "pointer-events-none opacity-50",
+        disabled && "cursor-not-allowed opacity-50",
         inset && "pl-8",
         className
       )}

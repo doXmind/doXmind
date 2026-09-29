@@ -1568,7 +1568,6 @@ test("search reports every hit, at line numbers the editor can actually reach", 
   });
 });
 
-
 test("a failing snapshot never fails the Page save", async () => {
   await withWorkspace(async (root) => {
     const previousDataDir = process.env.DATA_DIR;
@@ -1645,6 +1644,26 @@ test("search honours the query operators the renderer parsed", async () => {
       ["Beta.md"]
     );
     assert.equal(constraintOnly[0].matches[0].preview, "needle in beta");
+  });
+});
+
+test("search applies the same excluded directory names as the workspace scan", async () => {
+  await withWorkspace(async (root) => {
+    const invoke = createNativeWorkspaceDispatcher();
+    await fs.mkdir(path.join(root, "archive"), { recursive: true });
+    await fs.writeFile(path.join(root, "Visible.md"), "needle visible\n");
+    await fs.writeFile(path.join(root, "archive", "Hidden.md"), "needle hidden\n");
+
+    const results = await invoke("workspace_markdown_search", {
+      root,
+      query: "needle",
+      excludeDirs: ["archive"],
+    });
+
+    assert.deepEqual(
+      results.map((entry) => entry.path),
+      ["Visible.md"]
+    );
   });
 });
 

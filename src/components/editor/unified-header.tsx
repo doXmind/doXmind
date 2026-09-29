@@ -355,6 +355,7 @@ export function UnifiedHeader() {
                       draggable
                       onDragStart={(event) => {
                         event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", file.id);
                         setDraggingTabId(file.id);
                       }}
                       onDragEnd={() => setDraggingTabId(null)}
@@ -364,10 +365,11 @@ export function UnifiedHeader() {
                         event.dataTransfer.dropEffect = "move";
                       }}
                       onDrop={(event) => {
-                        if (!draggingTabId || draggingTabId === file.id) return;
+                        const draggedId = event.dataTransfer.getData("text/plain") || draggingTabId;
+                        if (!draggedId || draggedId === file.id) return;
                         event.preventDefault();
                         reorderTab(
-                          draggingTabId,
+                          draggedId,
                           tabFiles.findIndex((t) => t.id === file.id)
                         );
                         setDraggingTabId(null);
