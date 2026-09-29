@@ -723,6 +723,7 @@ describe("useFileStore disk workspace", () => {
           storageHandle: { mode: "disk", id: "doc-1", kind: "document", relPath: "Doc.md" },
         },
       ],
+      loadedContentIds: new Set(["doc-1"]),
     });
     invokeMock.mockImplementation(async (command: string) => {
       if (command === "doc_read") {
@@ -926,6 +927,40 @@ describe("useFileStore disk workspace", () => {
 
     await expect(useFileStore.getState().requestCurrentFile("page-b")).resolves.toBe(false);
     expect(useFileStore.getState().currentFileId).toBe("page-a");
+  });
+
+  it("refreshes a cached Page from disk before switching back to it", async () => {
+    useFileStore.setState({
+      files: [
+        { ...markdownFile("page-a", "A.md"), content: "A" },
+        { ...markdownFile("page-b", "B.md"), content: "old disk value" },
+      ],
+      currentFileId: "page-a",
+      openTabIds: ["page-a", "page-b"],
+      loadedContentIds: new Set(["page-b"]),
+    });
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "doc_read") {
+        return {
+          markdown: "external edit",
+          revision: "sha256:external",
+          meta: { id: "page-b", title: "B" },
+          outline: [],
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await expect(useFileStore.getState().requestCurrentFile("page-b")).resolves.toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith("doc_read", { root: "/workspace", path: "B.md" });
+    expect(useFileStore.getState().getFile("page-b")?.content).toBe("external edit");
+    expect(useFileStore.getState().currentFileId).toBe("page-b");
+  });
+
+  it("refuses a deleted Page id instead of opening a blank editor tab", async () => {
+    await expect(useFileStore.getState().requestCurrentFile("deleted-page")).resolves.toBe(false);
+    expect(useFileStore.getState().currentFileId).toBe(null);
+    expect(useFileStore.getState().openTabIds).toEqual([]);
   });
 
   it("lets a newer navigation intent cancel an in-flight dirty switch", async () => {
@@ -1954,6 +1989,7 @@ describe("useFileStore disk workspace", () => {
           storageHandle: { mode: "disk", id: "doc-1", kind: "document", relPath: "Doc.md" },
         },
       ],
+      loadedContentIds: new Set(["doc-1"]),
     });
     invokeMock.mockResolvedValueOnce({
       path: "Doc.md",
@@ -1964,6 +2000,7 @@ describe("useFileStore disk workspace", () => {
 
     expect(invokeMock).toHaveBeenCalledWith("doc_delete", { root: "/workspace", path: "Doc.md" });
     expect(useFileStore.getState().files).toHaveLength(0);
+    expect(useFileStore.getState().loadedContentIds.has("doc-1")).toBe(false);
   });
 
   it("preserves the original delete error if reverting with loadFiles also throws", async () => {
@@ -2094,12 +2131,22 @@ describe("useFileStore tabs", () => {
   });
 
   it("closes the others and keeps the one that was kept", async () => {
-    useFileStore.getState().closeOtherTabs("b");
+    await useFileStore.getState().closeOtherTabs("b");
     expect(useFileStore.getState().openTabIds).toEqual(["b"]);
   });
 
-  it("closes them all", () => {
-    useFileStore.getState().closeAllTabs();
+  it("closes them all", async () => {
+    await useFileStore.getState().closeAllTabs();
     expect(useFileStore.getState().openTabIds).toEqual([]);
+  });
+
+  it("keeps tabs visible when Close All cannot save the dirty Page", async () => {
+    useEditorStore.setState({ isDirty: true });
+    useEditorRefStore.setState({ requestSave: vi.fn().mockResolvedValue(false) });
+
+    await useFileStore.getState().closeAllTabs();
+
+    expect(useFileStore.getState().openTabIds).toEqual(["a", "b", "c"]);
+    expect(useFileStore.getState().currentFileId).toBe("a");
   });
 });

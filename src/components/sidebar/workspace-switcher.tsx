@@ -15,6 +15,8 @@ import {
 import { Modal, ModalFooter, ModalHeader } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { useFileStore } from "@/stores/file-store";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
+import { useEditorStore } from "@/stores/editor-store";
 import { useDesktopShell } from "@/hooks/use-desktop-shell";
 import { pickNativeFolder } from "@/lib/native-dialog";
 import { openNewWindow } from "@/lib/window";
@@ -44,6 +46,7 @@ interface WorkspaceSwitcherProps {
 
 export function WorkspaceSwitcher({ label, titleAttr }: WorkspaceSwitcherProps) {
   const t = useTranslations("sidebar");
+  const tEditor = useTranslations("editor");
   const { isDesktop: isDesktopShell } = useDesktopShell();
 
   const recents = useFileStore((s) => s.recents);
@@ -53,6 +56,7 @@ export function WorkspaceSwitcher({ label, titleAttr }: WorkspaceSwitcherProps) 
   const closeOpened = useFileStore((s) => s.closeOpened);
 
   const [pendingFolderPath, setPendingFolderPath] = useState<string | null>(null);
+  const [closeFolderPromptOpen, setCloseFolderPromptOpen] = useState(false);
 
   // Hide the active target from the recents shortlist — pointing at "the
   // workspace you're already in" wastes a slot and is surprising on click.
@@ -108,6 +112,29 @@ export function WorkspaceSwitcher({ label, titleAttr }: WorkspaceSwitcherProps) 
   };
 
   const handleCloseFolder = () => {
+    if (useEditorStore.getState().isDirty) {
+      setCloseFolderPromptOpen(true);
+      return;
+    }
+    closeOpened();
+  };
+
+  const handleSaveAndCloseFolder = async () => {
+    const requestSave = useEditorRefStore.getState().requestSave;
+    if (!requestSave) return;
+    try {
+      if (!(await requestSave())) return;
+      setCloseFolderPromptOpen(false);
+      closeOpened();
+    } catch (error) {
+      log.error("Failed to save Page before closing workspace", error);
+      notify.error("Could not save Page");
+    }
+  };
+
+  const handleDiscardAndCloseFolder = () => {
+    useEditorRefStore.getState().discardPendingChanges?.();
+    setCloseFolderPromptOpen(false);
     closeOpened();
   };
 
@@ -187,6 +214,29 @@ export function WorkspaceSwitcher({ label, titleAttr }: WorkspaceSwitcherProps) 
         onCancel={() => setPendingFolderPath(null)}
         onConfirm={handleConfirmTarget}
       />
+      <Modal open={closeFolderPromptOpen} onClose={() => setCloseFolderPromptOpen(false)}>
+        <ModalHeader onClose={() => setCloseFolderPromptOpen(false)}>
+          {tEditor("closeUnsavedTitle")}
+        </ModalHeader>
+        <p className="text-sm text-muted-foreground">
+          {tEditor("closeUnsavedBody", {
+            name:
+              useFileStore
+                .getState()
+                .files.find((file) => file.id === useFileStore.getState().currentFileId)?.name ??
+              "Page",
+          })}
+        </p>
+        <ModalFooter>
+          <Button variant="ghost" onClick={() => setCloseFolderPromptOpen(false)}>
+            {tEditor("cancel")}
+          </Button>
+          <Button variant="outline" onClick={handleDiscardAndCloseFolder}>
+            {tEditor("dontSave")}
+          </Button>
+          <Button onClick={handleSaveAndCloseFolder}>{tEditor("save")}</Button>
+        </ModalFooter>
+      </Modal>
     </>
   );
 }

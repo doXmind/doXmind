@@ -1,12 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { DiskStorageAdapter, searchMarkdown } from "@/lib/storage";
+import { useWorkspaceSettingsStore } from "@/stores/workspace-settings-store";
 
 describe("storage search helpers", () => {
   it("searches disk markdown through workspace search commands", async () => {
     const invokeMock = vi.fn(async (command: string, payload: Record<string, unknown>) => {
       if (command === "workspace_markdown_search") {
-        expect(payload).toEqual({ root: "/workspace", query: "roadmap", limit: 5 });
+        expect(payload).toEqual({
+          root: "/workspace",
+          query: "roadmap",
+          limit: 5,
+          excludeDirs: [],
+        });
         return [
           {
             id: "doc-1",
@@ -43,6 +49,21 @@ describe("storage search helpers", () => {
       root: "/workspace",
       query: "roadmap",
       limit: 5,
+      excludeDirs: [],
     });
+  });
+
+  it("passes excluded directory names into native Markdown search", async () => {
+    useWorkspaceSettingsStore.getState().setExcludedScanDirs(["archive"]);
+    const invoke = vi.fn(async () => []);
+    const adapter = new DiskStorageAdapter({ root: "/workspace", invoke: invoke as never });
+
+    await adapter.searchMarkdown("roadmap");
+
+    expect(invoke).toHaveBeenCalledWith(
+      "workspace_markdown_search",
+      expect.objectContaining({ excludeDirs: ["archive"] })
+    );
+    useWorkspaceSettingsStore.getState().setExcludedScanDirs([]);
   });
 });

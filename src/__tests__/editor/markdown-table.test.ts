@@ -363,6 +363,7 @@ describe("rendered grid", () => {
 
     expect(screen.getByRole("menuitem", { name: "Insert above" })).toBeDisabled();
     expect(screen.getByRole("menuitem", { name: "Delete" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Delete" })).not.toHaveClass("pointer-events-none");
     expect(screen.getByRole("menuitem", { name: "Insert below" })).toBeEnabled();
     expect(screen.getByRole("menuitem", { name: "Clear contents" })).toBeEnabled();
   });

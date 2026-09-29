@@ -90,7 +90,8 @@ function createNativeWorkspaceDispatcher(options = {}) {
           payload.root,
           payload.query,
           payload.limit,
-          payload.criteria
+          payload.criteria,
+          payload.excludeDirs
         );
       case "doc_read":
         return readWorkspacePage(payload.root, payload.path);
@@ -1142,7 +1143,13 @@ function evaluateSearchCriteria(groups, context) {
   return groups.every((group) => group.some((term) => matchesSearchTerm(term, context)));
 }
 
-async function workspaceMarkdownSearch(rootValue, queryValue, limitValue, criteriaValue) {
+async function workspaceMarkdownSearch(
+  rootValue,
+  queryValue,
+  limitValue,
+  criteriaValue,
+  excludeDirs
+) {
   const root = await canonicalWorkspaceRoot(rootValue);
   const query = String(queryValue || "")
     .trim()
@@ -1152,7 +1159,7 @@ async function workspaceMarkdownSearch(rootValue, queryValue, limitValue, criter
   // constraint — not a query string.
   if (!query && !criteria.length) throw new Error("search query is required");
   const limit = Math.min(Math.max(Number(limitValue || 50), 1), 200);
-  const scan = await workspaceScan(root);
+  const scan = await workspaceScan(root, excludeDirs);
   const results = [];
   for (const document of scan.documents) {
     if (document.documentType !== "markdown") continue;

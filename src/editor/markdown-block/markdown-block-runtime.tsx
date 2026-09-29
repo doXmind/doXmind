@@ -71,7 +71,7 @@ import {
   type MarkdownSlashCommandId,
 } from "@/editor/markdown-block/slash-commands";
 import { wikiLinkPages } from "@/editor/markdown-block/wiki-link-suggestions";
-import { resolveWikiLinkTarget } from "@/editor/markdown-block/wiki-link";
+import { resolveWikiLink, resolveWikiLinkTarget } from "@/editor/markdown-block/wiki-link";
 import { markdownImageDestinationForPage } from "@/editor/markdown-block/markdown-image";
 import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
 import { navigateToEditorFile, navigateToWorkspacePage } from "@/lib/editor-navigation";
@@ -544,9 +544,14 @@ export function MarkdownBlockRuntime({
         return hit;
       },
       open: (target) => {
-        const destination = resolveWikiLinkTarget(useFileStore.getState().files, file.id, target);
+        const resolution = resolveWikiLink(useFileStore.getState().files, file.id, target);
+        const destination = resolution.page;
         if (destination) {
           void navigateToEditorFile(destination.id);
+          return;
+        }
+        if (resolution.status === "ambiguous") {
+          notify.error(`“${target}” matches more than one Page`);
           return;
         }
         // An unresolved link is a Page the author intends to write, so clicking it writes one.
@@ -3013,37 +3018,6 @@ export function MarkdownBlockRuntime({
           ) : null}
         </div>
       ) : null}
-      {hasExternalConflict ? (
-        <div
-          role="alert"
-          data-native-editor-chrome
-          className="flex items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm"
-        >
-          <span>
-            {saveBlockedByConflict
-              ? "This Page changed outside doXmind. Saving — and closing the window — stays blocked until you choose which version to keep."
-              : "This Page changed outside doXmind. Saving is paused to protect both versions."}
-          </span>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              title="Replace what is in the editor with the file as it is on disk. Your unsaved edits are lost."
-              className="shrink-0 rounded border px-2 py-1 text-xs hover:bg-muted"
-              onClick={reloadExternalMarkdown}
-            >
-              Reload disk version
-            </button>
-            <button
-              type="button"
-              title="Write what is in the editor over the file. The change made outside doXmind is lost."
-              className="shrink-0 rounded border px-2 py-1 text-xs hover:bg-muted"
-              onClick={keepLocalMarkdown}
-            >
-              Keep my version
-            </button>
-          </div>
-        </div>
-      ) : null}
       <div
         ref={scrollElementRef}
         className="min-h-0 flex-1 overflow-y-auto"
@@ -3078,6 +3052,37 @@ export function MarkdownBlockRuntime({
         onDrop={handleBlockDrop}
       >
         <div aria-hidden data-native-editor-chrome className="h-11 shrink-0" />
+        {hasExternalConflict ? (
+          <div
+            role="alert"
+            data-native-editor-chrome
+            className="sticky top-12 z-30 flex items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm"
+          >
+            <span>
+              {saveBlockedByConflict
+                ? "This Page changed outside doXmind. Saving — and closing the window — stays blocked until you choose which version to keep."
+                : "This Page changed outside doXmind. Saving is paused to protect both versions."}
+            </span>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                title="Replace what is in the editor with the file as it is on disk. Your unsaved edits are lost."
+                className="shrink-0 rounded border px-2 py-1 text-xs hover:bg-muted"
+                onClick={reloadExternalMarkdown}
+              >
+                Reload disk version
+              </button>
+              <button
+                type="button"
+                title="Write what is in the editor over the file. The change made outside doXmind is lost."
+                className="shrink-0 rounded border px-2 py-1 text-xs hover:bg-muted"
+                onClick={keepLocalMarkdown}
+              >
+                Keep my version
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div
           className={`editor-page-frame relative ${
             lineHeight === "compact"

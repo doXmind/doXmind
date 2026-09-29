@@ -422,7 +422,8 @@ export class DiskStorageAdapter implements StorageAdapter {
       root: this.requireRoot(),
       query: normalizedQuery,
       limit: options.limit,
-      // Omitted when absent so a plain query sends exactly the payload it always did.
+      excludeDirs: getExcludedScanDirs(),
+      // The search must apply the same directory exclusions as the workspace tree.
       ...(options.criteria ? { criteria: options.criteria } : {}),
     });
 

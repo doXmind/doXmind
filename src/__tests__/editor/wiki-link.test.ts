@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveWikiLinkTarget } from "@/editor/markdown-block/wiki-link";
+import { resolveWikiLink, resolveWikiLinkTarget } from "@/editor/markdown-block/wiki-link";
 import type { FileItem } from "@/stores/file-store";
 
 function page(id: string, relPath: string): FileItem {
@@ -93,6 +93,10 @@ describe("resolveWikiLinkTarget", () => {
     ];
 
     expect(resolveWikiLinkTarget(files, "current", "Roadmap")).toBeNull();
+    expect(resolveWikiLink(files, "current", "Roadmap")).toEqual({
+      status: "ambiguous",
+      page: null,
+    });
   });
 
   it("keeps a qualified path unresolved instead of falling back to its basename", () => {
